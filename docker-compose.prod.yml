@@ -1,0 +1,117 @@
+# HiFate-bazi Docker Compose 生产环境配置
+# 使用方式：docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+version: '3.8'
+
+services:
+  # 主服务 - 生产模式
+  web:
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    # 生产模式：自动重启
+    restart: always
+    # 不挂载源代码（使用镜像内代码）
+    volumes: []
+    
+  # 八字分析服务 - 生产模式
+  bazi-analyzer:
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+    volumes: []
+    
+  # 运势分析服务 - 生产模式
+  fortune-analyzer:
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+    volumes: []
+    
+  # 规则服务 - 生产模式
+  rule-service:
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+    volumes: []
+
+  # MySQL - 生产模式
+  mysql:
+    # 不暴露到宿主机（安全）
+    ports: []
+    expose:
+      - "3306"
+    environment:
+      # 生产环境使用环境变量中的强密码
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 3G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    restart: always
+    
+  # Redis - 生产模式
+  redis:
+    # 不暴露到宿主机
+    ports: []
+    expose:
+      - "6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+

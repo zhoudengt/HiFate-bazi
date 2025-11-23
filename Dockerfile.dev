@@ -1,0 +1,39 @@
+# HiFate-bazi 开发环境 Dockerfile
+# 支持热更新，自动重载
+
+FROM python:3.11-slim
+
+# 环境变量
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    APP_HOME=/app
+
+WORKDIR ${APP_HOME}
+
+# 安装系统依赖
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y \
+        build-essential \
+        curl \
+        git \
+        vim \
+        procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# 复制依赖文件
+COPY requirements.txt .
+
+# 安装 Python 依赖
+RUN python -m pip install --upgrade pip \
+    && pip install -r requirements.txt
+
+# 安装开发工具（热更新）
+RUN pip install watchdog flask-reload
+
+# 暴露端口
+EXPOSE 8001
+
+# 开发模式启动命令（支持热更新）
+CMD ["python", "server/start.py", "8001", "--reload"]
+

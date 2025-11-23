@@ -1,0 +1,188 @@
+# HiFate-bazi Docker Compose 基础配置
+# 适用于：本地开发 + 生产部署
+
+version: '3.8'
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: hifate-mysql
+    ports:
+      - "13306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts:/docker-entrypoint-initdb.d
+    command: 
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max_connections=500
+    restart: unless-stopped
+    networks:
+      - hifate-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: hifate-redis
+    ports:
+      - "16379:6379"
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - hifate-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # 主服务
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hifate-web
+    ports:
+      - "${WEB_PORT:-8001}:8001"
+    environment:
+      # 数据库配置
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      
+      # Redis 配置
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      
+      # 应用配置
+      APP_ENV: ${APP_ENV:-production}
+      DEBUG: ${DEBUG:-False}
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      
+      # 时区
+      TZ: Asia/Shanghai
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hifate-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 八字分析微服务
+  bazi-analyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hifate-bazi-analyzer
+    ports:
+      - "50051:50051"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVICE_PORT: 50051
+      TZ: Asia/Shanghai
+    command: python services/bazi_analyzer_service.py
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hifate-network
+
+  # 运势分析微服务
+  fortune-analyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hifate-fortune-analyzer
+    ports:
+      - "50052:50052"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVICE_PORT: 50052
+      TZ: Asia/Shanghai
+    command: python services/fortune_analysis_service.py
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hifate-network
+
+  # 规则服务
+  rule-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hifate-rule-service
+    ports:
+      - "50053:50053"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVICE_PORT: 50053
+      TZ: Asia/Shanghai
+    command: python services/rule_service_grpc.py
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hifate-network
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  hifate-network:
+    driver: bridge
+

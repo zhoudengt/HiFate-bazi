@@ -1,0 +1,159 @@
+# HiFate-bazi 生产环境自动部署
+# 触发条件：推送到 master 分支
+
+name: 🚀 Deploy to Production
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  deploy:
+    name: 部署到生产服务器
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. 检出代码
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        
+      # 2. 设置 SSH
+      - name: 🔑 Setup SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          
+      # 3. 添加服务器到已知主机
+      - name: 📝 Add server to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.PROD_SERVER_HOST }} >> ~/.ssh/known_hosts
+          
+      # 4. 备份数据库（生产环境）
+      - name: 💾 Backup database
+        run: |
+          ssh ${{ secrets.PROD_SERVER_USER }}@${{ secrets.PROD_SERVER_HOST }} << 'EOF'
+            set -e
+            
+            echo "💾 备份生产数据库..."
+            cd /opt/HiFate-bazi
+            
+            # 创建备份目录
+            mkdir -p backups
+            
+            # 备份数据库
+            BACKUP_FILE="backups/mysql_backup_$(date +%Y%m%d_%H%M%S).sql"
+            docker-compose exec -T mysql mysqldump -u root -p${MYSQL_ROOT_PASSWORD} bazi_system > $BACKUP_FILE
+            
+            echo "✅ 数据库备份完成：$BACKUP_FILE"
+            
+            # 保留最近7天的备份
+            find backups/ -name "mysql_backup_*.sql" -mtime +7 -delete
+          EOF
+          
+      # 5. 部署到生产服务器
+      - name: 🚀 Deploy to production server
+        run: |
+          ssh ${{ secrets.PROD_SERVER_USER }}@${{ secrets.PROD_SERVER_HOST }} << 'EOF'
+            set -e
+            
+            echo "🔄 开始部署到生产环境..."
+            
+            # 进入项目目录
+            cd /opt/HiFate-bazi
+            
+            # 拉取最新代码
+            echo "📥 拉取最新代码..."
+            git fetch origin
+            git checkout master
+            git pull origin master
+            
+            # 构建新镜像
+            echo "🔨 构建新镜像..."
+            docker-compose -f docker-compose.yml -f docker-compose.prod.yml build --no-cache
+            
+            # 滚动更新（零停机部署）
+            echo "🔄 滚动更新服务..."
+            docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps --build web
+            
+            # 等待新容器启动
+            echo "⏳ 等待新容器启动..."
+            sleep 20
+            
+            # 健康检查
+            echo "🏥 健康检查..."
+            if curl -f http://localhost:8001/api/health; then
+              echo "✅ 新版本运行正常，更新其他服务..."
+              
+              # 更新其他微服务
+              docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps --build bazi-analyzer
+              sleep 10
+              docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps --build fortune-analyzer
+              sleep 10
+              docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps --build rule-service
+              
+              echo "✅ 所有服务更新完成"
+            else
+              echo "❌ 新版本健康检查失败，回滚..."
+              
+              # 回滚到上一个版本
+              git reset --hard HEAD^
+              docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+              
+              echo "❌ 已回滚到上一个版本"
+              exit 1
+            fi
+            
+            # 清理未使用的镜像
+            echo "🧹 清理旧镜像..."
+            docker image prune -f
+            
+            # 最终健康检查
+            echo "🏥 最终健康检查..."
+            sleep 10
+            if curl -f http://localhost:8001/api/health; then
+              echo "✅ 部署成功！所有服务运行正常"
+            else
+              echo "❌ 部署后健康检查失败"
+              docker-compose logs --tail=50
+              exit 1
+            fi
+            
+            echo "🎉 生产环境部署完成！"
+          EOF
+          
+      # 6. 通知（可选，需要配置 Slack/钉钉等）
+      - name: 📢 Send notification
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ 生产环境部署成功"
+          else
+            echo "❌ 生产环境部署失败"
+          fi
+          
+      # 7. 显示部署信息
+      - name: 📊 Deployment summary
+        if: success()
+        run: |
+          echo "=========================================="
+          echo "🎉 部署成功！"
+          echo "=========================================="
+          echo "环境：生产环境 (Production)"
+          echo "分支：master"
+          echo "提交：${{ github.sha }}"
+          echo "提交者：${{ github.actor }}"
+          echo "访问：https://${{ secrets.PROD_SERVER_HOST }}"
+          echo "=========================================="
+          
+      # 8. 创建发布标签
+      - name: 🏷️ Create release tag
+        if: success()
+        run: |
+          TAG_NAME="v$(date +%Y%m%d_%H%M%S)"
+          git tag $TAG_NAME
+          git push origin $TAG_NAME
+          echo "✅ 已创建发布标签：$TAG_NAME"
+

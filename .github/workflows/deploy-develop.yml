@@ -1,0 +1,107 @@
+# HiFate-bazi 开发环境自动部署
+# 触发条件：推送到 develop 分支
+
+name: 🚀 Deploy to Development
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  deploy:
+    name: 部署到开发服务器
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. 检出代码
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        
+      # 2. 设置 SSH
+      - name: 🔑 Setup SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.DEV_SSH_PRIVATE_KEY }}
+          
+      # 3. 添加服务器到已知主机
+      - name: 📝 Add server to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.DEV_SERVER_HOST }} >> ~/.ssh/known_hosts
+          
+      # 4. 部署到开发服务器
+      - name: 🚀 Deploy to development server
+        run: |
+          ssh ${{ secrets.DEV_SERVER_USER }}@${{ secrets.DEV_SERVER_HOST }} << 'EOF'
+            set -e
+            
+            echo "🔄 开始部署到开发环境..."
+            
+            # 进入项目目录
+            cd /opt/HiFate-bazi
+            
+            # 拉取最新代码
+            echo "📥 拉取最新代码..."
+            git fetch origin
+            git checkout develop
+            git pull origin develop
+            
+            # 停止旧容器
+            echo "🛑 停止旧容器..."
+            docker-compose -f docker-compose.yml -f docker-compose.dev.yml down
+            
+            # 构建新镜像
+            echo "🔨 构建新镜像..."
+            docker-compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache
+            
+            # 启动新容器
+            echo "✅ 启动新容器..."
+            docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+            
+            # 清理未使用的镜像
+            echo "🧹 清理旧镜像..."
+            docker image prune -f
+            
+            # 等待服务启动
+            echo "⏳ 等待服务启动..."
+            sleep 15
+            
+            # 健康检查
+            echo "🏥 健康检查..."
+            if curl -f http://localhost:8001/api/health; then
+              echo "✅ 部署成功！服务运行正常"
+            else
+              echo "❌ 部署失败！服务未响应"
+              docker-compose logs --tail=50
+              exit 1
+            fi
+            
+            echo "🎉 开发环境部署完成！"
+          EOF
+          
+      # 5. 通知（可选，需要配置 Slack/钉钉等）
+      - name: 📢 Send notification
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ 开发环境部署成功"
+          else
+            echo "❌ 开发环境部署失败"
+          fi
+          
+      # 6. 显示部署信息
+      - name: 📊 Deployment summary
+        if: success()
+        run: |
+          echo "=========================================="
+          echo "🎉 部署成功！"
+          echo "=========================================="
+          echo "环境：开发环境 (Development)"
+          echo "分支：develop"
+          echo "提交：${{ github.sha }}"
+          echo "提交者：${{ github.actor }}"
+          echo "访问：http://${{ secrets.DEV_SERVER_HOST }}"
+          echo "=========================================="
+
