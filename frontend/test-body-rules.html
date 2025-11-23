@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>身体类规则测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-info {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .rule-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #4CAF50;
+        }
+        .rule-card.should-not-match {
+            border-left-color: #f44336;
+        }
+        .rule-id {
+            font-weight: bold;
+            color: #2196F3;
+        }
+        .condition {
+            color: #666;
+            margin: 5px 0;
+        }
+        .result-text {
+            margin: 10px 0;
+        }
+        .check-result {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .check-item {
+            padding: 5px 0;
+        }
+        .check-item.pass {
+            color: #4CAF50;
+        }
+        .check-item.fail {
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-info">
+        <h1>身体类规则测试</h1>
+        <p><strong>测试八字：</strong>1988年9月16日 05:00 男</p>
+        <p><strong>八字：</strong>戊辰/辛酉/甲戌/丁卯</p>
+        <p><strong>日干：</strong>甲（五行=木）</p>
+        <p><strong>日支：</strong>戌</p>
+        <p><strong>性别：</strong>男</p>
+    </div>
+
+    <div id="check-result" class="check-result">
+        <h2>检查结果</h2>
+        <div id="check-list"></div>
+    </div>
+
+    <div id="rules-container">
+        <h2>匹配到的规则</h2>
+        <div id="rules-list"></div>
+    </div>
+
+    <script>
+        // 测试数据
+        const testData = {
+            solar_date: '1988-09-16',
+            solar_time: '05:00',
+            gender: 'male'
+        };
+
+        // 期望的匹配结果
+        const expectedMatches = [
+            { id: '70012', desc: '日干=甲', shouldMatch: true },
+            { id: '70022', desc: '五行=木', shouldMatch: true },
+            { id: '70023', desc: '五行=火', shouldMatch: false },
+            { id: '70024', desc: '五行=土', shouldMatch: false },
+            { id: '70057', desc: '日支=戌', shouldMatch: true }
+        ];
+
+        // 发送API请求
+        fetch('/api/v1/bazi/formula-analysis', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(testData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const matchedRules = data.data.matched_rules.health || [];
+                const ruleDetails = data.data.rule_details;
+                
+                // 显示匹配结果
+                displayRules(matchedRules, ruleDetails);
+                
+                // 显示检查结果
+                displayCheckResults(matchedRules);
+            } else {
+                document.getElementById('rules-list').innerHTML = '<p>错误：' + (data.error || '未知错误') + '</p>';
+            }
+        })
+        .catch(error => {
+            document.getElementById('rules-list').innerHTML = '<p>请求失败：' + error.message + '</p>';
+        });
+
+        function displayRules(matchedRules, ruleDetails) {
+            const container = document.getElementById('rules-list');
+            
+            if (matchedRules.length === 0) {
+                container.innerHTML = '<p>⚠️ 没有匹配到任何规则</p>';
+                return;
+            }
+            
+            let html = `<p>共匹配到 ${matchedRules.length} 条规则</p>`;
+            
+            matchedRules.forEach(ruleId => {
+                const detail = ruleDetails[ruleId] || {};
+                const cond1 = detail['筛选条件1'] || detail.condition1 || '';
+                const cond2 = detail['筛选条件2'] || detail.condition2 || '';
+                const gender = detail['性别'] || detail.gender || '';
+                const result = detail['结果'] || detail.result || '';
+                
+                // 检查是否应该匹配
+                const shouldNotMatch = ['70023', '70024', '70025', '70026'].includes(ruleId);
+                const cardClass = shouldNotMatch ? 'rule-card should-not-match' : 'rule-card';
+                
+                html += `
+                    <div class="${cardClass}">
+                        <div class="rule-id">规则ID: ${ruleId}</div>
+                        <div class="condition">条件：${cond1}=${cond2} (${gender})</div>
+                        <div class="result-text">${result}</div>
+                        ${shouldNotMatch ? '<div style="color: red;">⚠️ 此规则不应该匹配！</div>' : ''}
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+
+        function displayCheckResults(matchedRules) {
+            const container = document.getElementById('check-list');
+            let html = '';
+            let passCount = 0;
+            let failCount = 0;
+            
+            expectedMatches.forEach(expected => {
+                const matched = matchedRules.includes(expected.id);
+                const pass = matched === expected.shouldMatch;
+                
+                if (pass) {
+                    passCount++;
+                } else {
+                    failCount++;
+                }
+                
+                const status = pass ? '✓' : '✗';
+                const className = pass ? 'pass' : 'fail';
+                const expectedText = expected.shouldMatch ? '应该匹配' : '不应该匹配';
+                const actualText = matched ? '已匹配' : '未匹配';
+                
+                html += `
+                    <div class="check-item ${className}">
+                        ${status} 规则${expected.id} (${expected.desc}): ${expectedText} - ${actualText}
+                    </div>
+                `;
+            });
+            
+            html = `<div style="margin-bottom: 15px;">
+                        <strong>测试结果：</strong>
+                        通过 ${passCount} 项，失败 ${failCount} 项
+                    </div>` + html;
+            
+            container.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
+

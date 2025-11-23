@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HiFate系统</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-layout.css">
+    <script src="js/sidebar.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <div class="main-content">
+            <div class="content-header">
+                <div class="header-left">
+                    <h1 class="header-title">HiFate系统</h1>
+                </div>
+                <div class="header-user">
+                    <button onclick="Auth.logout()" class="btn btn-secondary">退出</button>
+                </div>
+            </div>
+            
+            <div class="content-body">
+                <div class="menu-grid">
+            <a href="pan.html" class="menu-card">
+                <h2>📊 八字排盘</h2>
+                <p>查看完整的八字排盘信息</p>
+            </a>
+            <a href="dayun.html" class="menu-card">
+                <h2>📈 大运分析</h2>
+                <p>查看大运序列和当前大运</p>
+            </a>
+            <a href="liunian.html" class="menu-card">
+                <h2>📅 流年分析</h2>
+                <p>查看流年序列和当前流年</p>
+            </a>
+            <a href="yigua.html" class="menu-card">
+                <h2>🔮 一事一卦</h2>
+                <p>基于《周易》六十四卦占卜</p>
+            </a>
+            <a href="fortune.html" class="menu-card">
+                <h2>📊 大运流年流月</h2>
+                <p>整合查看大运、流年、流月</p>
+            </a>
+            <a href="hand-analysis.html" class="menu-card">
+                <h2>✋ 手相分析</h2>
+                <p>上传手掌照片，生成命理报告</p>
+            </a>
+            <a href="face-analysis.html" class="menu-card">
+                <h2>👤 面相分析</h2>
+                <p>上传头部面相照片，生成命理报告</p>
+            </a>
+            <a href="bazi-daily-fortune.html" class="menu-card">
+                <h2>📅 今日运势</h2>
+                <p>基于八字查看今日运势分析</p>
+            </a>
+            <a href="bazi-monthly-fortune.html" class="menu-card">
+                <h2>📆 当月运势</h2>
+                <p>基于八字查看本月运势分析</p>
+            </a>
+            <a href="formula-analysis.html" class="menu-card">
+                <h2>📊 算法公式分析</h2>
+                <p>868条规则：财富、婚配、性格、总评、身体、十神命格</p>
+            </a>
+            <a href="third-party-services.html" class="menu-card">
+                <h2>🚀 第三方服务集成</h2>
+                <p>统一支付服务测试</p>
+            </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script>
+        Auth.checkAuth();
+    </script>
+</body>
+</html>
+

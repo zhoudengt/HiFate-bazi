@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package fortune.rule;
+
+// 面相手相规则匹配和八字融合分析服务
+
+// 手相特征
+message HandFeatures {
+  string hand_shape = 1;  // 手型
+  float hand_shape_ratio = 2;  // 手型比例
+  float hand_shape_confidence = 3;  // 手型置信度
+  map<string, string> finger_lengths = 4;  // 指长分类
+  map<string, float> finger_ratios = 5;  // 指长比例（连续值）
+  map<string, string> palm_lines = 6;  // 掌纹信息
+  map<string, float> measurements = 7;  // 测量数据
+  map<string, float> finger_thickness = 8;  // 手指粗细
+  map<string, string> palm_texture = 9;  // 手掌纹理
+  repeated string special_marks = 10;  // 特殊标记（JSON格式）
+  string hand_orientation = 11;  // 左右手
+}
+
+// 面相特征
+message FaceFeatures {
+  map<string, float> san_ting_ratio = 1;  // 三停比例
+  map<string, string> facial_attributes = 2;  // 面部属性
+  map<string, float> feature_measurements = 3;  // 五官测量数据
+  repeated string special_features = 4;  // 特殊特征
+}
+
+// 八字信息
+message BaziInfo {
+  string solar_date = 1;  // 阳历日期 YYYY-MM-DD
+  string solar_time = 2;  // 出生时间 HH:MM
+  string gender = 3;  // 性别 male/female
+  bool use_bazi = 4;  // 是否使用八字信息
+}
+
+// 八字数据（从八字服务获取）
+message BaziData {
+  map<string, int32> element_counts = 1;  // 五行计数
+  map<string, int32> ten_gods_stats = 2;  // 十神统计
+  map<string, string> bazi_pillars = 3;  // 四柱信息（JSON格式）
+  string metadata_json = 4;  // 完整八字数据（JSON字符串）
+}
+
+// 分析洞察
+message AnalysisInsight {
+  string category = 1;  // 类别（健康/事业/财运/感情等）
+  string content = 2;  // 内容
+  float confidence = 3;  // 置信度 0-1
+  string source = 4;  // 来源（hand/face/integrated）
+  string feature = 5;  // 特征描述
+}
+
+// 手相规则匹配请求
+message HandRuleMatchRequest {
+  HandFeatures hand_features = 1;  // 手相特征
+  BaziInfo bazi_info = 2;  // 八字信息（可选）
+  BaziData bazi_data = 3;  // 八字数据（如果已获取）
+}
+
+// 面相规则匹配请求
+message FaceRuleMatchRequest {
+  FaceFeatures face_features = 1;  // 面相特征
+  BaziInfo bazi_info = 2;  // 八字信息（可选）
+  BaziData bazi_data = 3;  // 八字数据（如果已获取）
+}
+
+// 规则匹配响应
+message RuleMatchResponse {
+  bool success = 1;  // 是否成功
+  string error_message = 2;  // 错误信息
+  repeated AnalysisInsight hand_insights = 3;  // 手相规则洞察
+  repeated AnalysisInsight face_insights = 4;  // 面相规则洞察
+  repeated AnalysisInsight integrated_insights = 5;  // 融合分析洞察
+  repeated string recommendations = 6;  // 建议
+  BaziData bazi_data = 7;  // 八字数据（如果获取了）
+}
+
+// 健康检查请求
+message HealthCheckRequest {}
+
+// 健康检查响应
+message HealthCheckResponse {
+  string status = 1;
+}
+
+// 面相手相规则匹配服务定义
+service FortuneRuleService {
+  // 手相规则匹配和八字融合
+  rpc MatchHandRules(HandRuleMatchRequest) returns (RuleMatchResponse);
+  
+  // 面相规则匹配和八字融合
+  rpc MatchFaceRules(FaceRuleMatchRequest) returns (RuleMatchResponse);
+  
+  // 健康检查
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+

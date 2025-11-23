@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>面相分析 - HiFate系统</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-layout.css">
+    <style>
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #f9f9f9;
+        }
+        .upload-area:hover {
+            border-color: #007bff;
+            background: #f0f8ff;
+        }
+        .upload-area.dragover {
+            border-color: #007bff;
+            background: #e7f3ff;
+        }
+        .preview-container {
+            position: relative;
+            display: inline-block;
+            max-width: 100%;
+            margin-top: 20px;
+        }
+        .preview-image {
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 8px;
+            display: block;
+        }
+        .grid-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                linear-gradient(rgba(255, 165, 0, 0.15) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 165, 0, 0.15) 1px, transparent 1px);
+            background-size: 20px 20px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            border-radius: 8px;
+        }
+        .grid-overlay.active {
+            opacity: 1;
+        }
+        .status-overlay {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            white-space: nowrap;
+        }
+        .status-overlay.active {
+            opacity: 1;
+        }
+        .status-overlay::after {
+            content: '...';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+        .play-button {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px;
+            height: 60px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+        .play-button.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .play-button::before {
+            content: '';
+            width: 0;
+            height: 0;
+            border-left: 20px solid #007bff;
+            border-top: 12px solid transparent;
+            border-bottom: 12px solid transparent;
+            margin-left: 5px;
+        }
+        .bazi-form {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .result-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .insight-item {
+            padding: 10px;
+            margin: 10px 0;
+            background: #f0f8ff;
+            border-left: 4px solid #007bff;
+            border-radius: 4px;
+        }
+        .category-section {
+            margin-bottom: 25px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+        }
+        
+        .category-title {
+            margin: 0 0 12px 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: #007bff;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .category-insights {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .insight-item .category {
+            font-weight: bold;
+            color: #007bff;
+        }
+        .recommendation-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            border-radius: 4px;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        .error {
+            padding: 15px;
+            background: #f8d7da;
+            color: #721c24;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="main-content">
+            <div class="content-header">
+                <div class="header-left">
+                    <h1 class="header-title">面相分析</h1>
+                </div>
+                <div class="header-user">
+                    <a href="index.html" class="btn btn-secondary">返回首页</a>
+                </div>
+            </div>
+            
+            <div class="content-body">
+                <div class="upload-section">
+                    <div class="upload-area" id="uploadArea">
+                        <p>📷 点击或拖拽上传头部面相照片</p>
+                        <p style="font-size: 12px; color: #666; margin-top: 10px;">
+                            支持 JPG、PNG 格式，建议正面清晰照片，尺寸 800x600 以上
+                        </p>
+                        <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                    </div>
+                    <div class="preview-container" id="previewContainer" style="display: none;">
+                        <img id="previewImage" class="preview-image">
+                        <div class="grid-overlay" id="gridOverlay"></div>
+                        <div class="status-overlay" id="statusOverlay">正在识别面部特征</div>
+                        <div class="play-button" id="playButton"></div>
+                    </div>
+                </div>
+
+                <div class="bazi-form" id="baziForm">
+                    <h3>八字信息（可选，提供后可生成更准确的报告）</h3>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="useBazi" checked> 结合八字分析
+                        </label>
+                    </div>
+                    <div id="baziFields">
+                        <div class="form-group">
+                            <label>阳历日期：</label>
+                            <input type="date" id="solarDate">
+                        </div>
+                        <div class="form-group">
+                            <label>出生时间：</label>
+                            <input type="time" id="solarTime">
+                        </div>
+                        <div class="form-group">
+                            <label>性别：</label>
+                            <select id="gender">
+                                <option value="male">男</option>
+                                <option value="female">女</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" id="analyzeBtn" onclick="analyzeFace()" disabled>
+                        开始分析
+                    </button>
+                </div>
+
+                <div id="resultSection" class="result-section" style="display: none;">
+                    <h2>分析结果</h2>
+                    <div id="resultContent"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script>
+        // 检查登录
+        Auth.checkAuth();
+
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const previewImage = document.getElementById('previewImage');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const useBaziCheckbox = document.getElementById('useBazi');
+        const baziFields = document.getElementById('baziFields');
+
+        let selectedFile = null;
+
+        // 点击上传区域
+        uploadArea.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // 文件选择
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                handleFile(file);
+            }
+        });
+
+        // 拖拽上传
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) {
+                handleFile(file);
+            }
+        });
+
+        // 处理文件
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) {
+                alert('请上传图片文件');
+                return;
+            }
+
+            selectedFile = file;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImage.src = e.target.result;
+                const previewContainer = document.getElementById('previewContainer');
+                previewContainer.style.display = 'block';
+                analyzeBtn.disabled = false;
+                
+                // 隐藏网格和状态提示（等待分析时显示）
+                document.getElementById('gridOverlay').classList.remove('active');
+                document.getElementById('statusOverlay').classList.remove('active');
+                document.getElementById('playButton').classList.remove('active');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // 八字信息开关
+        useBaziCheckbox.addEventListener('change', () => {
+            baziFields.style.display = useBaziCheckbox.checked ? 'block' : 'none';
+        });
+
+        // 分析面相
+        async function analyzeFace() {
+            if (!selectedFile) {
+                alert('请先上传头部面相照片');
+                return;
+            }
+
+            const useBazi = useBaziCheckbox.checked;
+            const solarDate = document.getElementById('solarDate').value;
+            const solarTime = document.getElementById('solarTime').value;
+            const gender = document.getElementById('gender').value;
+
+            if (useBazi && (!solarDate || !solarTime)) {
+                alert('请填写完整的八字信息');
+                return;
+            }
+
+            analyzeBtn.disabled = true;
+            analyzeBtn.textContent = '分析中...';
+
+            const resultSection = document.getElementById('resultSection');
+            const resultContent = document.getElementById('resultContent');
+            resultSection.style.display = 'block';
+            resultContent.innerHTML = '<div class="loading">正在分析，请稍候...</div>';
+
+            // 显示网格覆盖和进度提示
+            const gridOverlay = document.getElementById('gridOverlay');
+            const statusOverlay = document.getElementById('statusOverlay');
+            const playButton = document.getElementById('playButton');
+            
+            gridOverlay.classList.add('active');
+            statusOverlay.classList.add('active');
+            playButton.classList.add('active');
+
+            try {
+                // 使用流式 API
+                const formData = new FormData();
+                formData.append('image', selectedFile);
+                formData.append('use_bazi', useBazi);
+                if (useBazi) {
+                    formData.append('solar_date', solarDate);
+                    formData.append('solar_time', solarTime);
+                    formData.append('gender', gender);
+                }
+
+                const token = localStorage.getItem('bazi_token');
+                const apiKey = API_CONFIG.fortuneApiKey || 'fortune_analysis_default_key_2024';
+                
+                // 使用流式接口（添加 API Key 认证）
+                const headers = {
+                    'X-API-Key': apiKey
+                };
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+                
+                const response = await fetch(`${API_CONFIG.baseURL}/fortune/face/analyze/stream`, {
+                    method: 'POST',
+                    headers: headers,
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`请求失败: ${response.status}`);
+                }
+
+                // 使用 EventSource 处理 SSE 流
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let finalData = null;
+                let lastReceivedData = null;
+                let receivedComplete = false;
+                let receivedError = false;
+
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) {
+                            console.log('✅ SSE流已结束');
+                            break;
+                        }
+
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop() || '';
+
+                        for (const line of lines) {
+                            if (line.trim() === '') continue;
+                            
+                            if (line.startsWith('data: ')) {
+                                try {
+                                    const data = JSON.parse(line.slice(6));
+                                    lastReceivedData = data;
+                                    console.log('📥 收到SSE数据:', data.type, data.statusText || '');
+                                    
+                                    // 前端只负责展示，不做业务逻辑判断
+                                    // 根据后端返回的指令更新UI
+                                    if (data.statusText) {
+                                        statusOverlay.textContent = data.statusText;
+                                    }
+                                    
+                                    if (data.showGrid !== undefined) {
+                                        if (data.showGrid) {
+                                            gridOverlay.classList.add('active');
+                                        } else {
+                                            gridOverlay.classList.remove('active');
+                                        }
+                                    }
+                                    
+                                    if (data.showStatus !== undefined) {
+                                        if (data.showStatus) {
+                                            statusOverlay.classList.add('active');
+                                        } else {
+                                            statusOverlay.classList.remove('active');
+                                        }
+                                    }
+                                    
+                                    if (data.showPlayButton !== undefined) {
+                                        if (data.showPlayButton) {
+                                            playButton.classList.add('active');
+                                        } else {
+                                            playButton.classList.remove('active');
+                                        }
+                                    }
+                                    
+                                    // 根据类型更新结果区域
+                                    if (data.type === 'start' || data.type === 'progress') {
+                                        resultContent.innerHTML = `<div class="loading">${data.statusText || '正在分析...'}</div>`;
+                                    } else if (data.type === 'complete') {
+                                        receivedComplete = true;
+                                        finalData = data.data;
+                                        console.log('✅ 收到complete消息，数据:', finalData ? '有数据' : '无数据');
+                                        if (finalData) {
+                                            console.log('📊 数据内容:', {
+                                                success: finalData.success,
+                                                insights_count: finalData.insights?.length || 0,
+                                                integrated_insights_count: finalData.integrated_insights?.length || 0,
+                                                recommendations_count: finalData.recommendations?.length || 0
+                                            });
+                                        }
+                                    } else if (data.type === 'error') {
+                                        receivedError = true;
+                                        console.error('❌ 收到error消息:', data.error);
+                                        throw new Error(data.error || '分析失败');
+                                    }
+                                } catch (e) {
+                                    console.error('❌ 解析 SSE 数据失败:', e, '原始数据:', line);
+                                    // 如果是JSON解析错误，继续处理下一行
+                                    if (e instanceof SyntaxError) {
+                                        continue;
+                                    }
+                                    // 如果是业务错误（error类型），抛出异常
+                                    throw e;
+                                }
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('❌ SSE流处理错误:', error);
+                    // 隐藏所有覆盖层
+                    gridOverlay.classList.remove('active');
+                    statusOverlay.classList.remove('active');
+                    playButton.classList.remove('active');
+                    resultContent.innerHTML = `<div class="error">分析失败: ${error.message}</div>`;
+                    return;
+                }
+
+                // 处理最终结果
+                if (receivedError) {
+                    // 如果收到错误，已经在catch中处理了
+                    return;
+                } else if (receivedComplete && finalData) {
+                    console.log('✅ 显示分析结果');
+                    displayResult(finalData);
+                } else if (receivedComplete && !finalData) {
+                    console.error('⚠️  收到complete消息但data为空');
+                    resultContent.innerHTML = '<div class="error">分析完成，但数据为空。请检查后端日志。</div>';
+                } else {
+                    console.error('⚠️  未收到complete消息，最后收到的数据:', lastReceivedData);
+                    resultContent.innerHTML = `<div class="error">分析完成，但未收到完整数据。最后状态: ${lastReceivedData?.statusText || '未知'}</div>`;
+                }
+            } catch (error) {
+                console.error('分析错误:', error);
+                // 隐藏所有覆盖层
+                gridOverlay.classList.remove('active');
+                statusOverlay.classList.remove('active');
+                playButton.classList.remove('active');
+                
+                let errorMsg = error.message || '未知错误';
+                
+                if (errorMsg === 'Failed to fetch' || errorMsg.includes('fetch')) {
+                    errorMsg = '网络请求失败，请检查：1) 服务是否运行 2) 网络连接 3) 浏览器控制台错误';
+                }
+                
+                resultContent.innerHTML = `<div class="error">分析失败：${errorMsg}</div>`;
+            } finally {
+                analyzeBtn.disabled = false;
+                analyzeBtn.textContent = '开始分析';
+            }
+        }
+
+        // 显示结果
+        function displayResult(data) {
+            const resultContent = document.getElementById('resultContent');
+            let html = '';
+
+            // 特征信息
+            if (data.features) {
+                html += '<h3>面相特征</h3>';
+                if (data.features.san_ting_ratio) {
+                    html += '<p><strong>三停比例：</strong></p><ul>';
+                    html += `<li>上停：${(data.features.san_ting_ratio.upper * 100).toFixed(1)}%</li>`;
+                    html += `<li>中停：${(data.features.san_ting_ratio.middle * 100).toFixed(1)}%</li>`;
+                    html += `<li>下停：${(data.features.san_ting_ratio.lower * 100).toFixed(1)}%</li>`;
+                    html += '</ul>';
+                }
+            }
+
+            // 按分类组织分析洞察（已去重，只使用insights，因为integrated_insights已包含在insights中）
+            const allInsights = [];
+            if (data.insights && data.insights.length > 0) {
+                allInsights.push(...data.insights);
+            }
+            // 注意：integrated_insights已经包含在insights中，不需要重复添加
+            // 如果后端返回的insights没有包含integrated_insights，则添加
+            if (data.integrated_insights && data.integrated_insights.length > 0) {
+                // 检查是否有重复，只添加不重复的内容
+                const existingContents = new Set(allInsights.map(i => i.content || ''));
+                data.integrated_insights.forEach(insight => {
+                    const content = insight.content || '';
+                    // 提取核心内容（去除括号内的详细说明）用于去重
+                    const coreContent = content.split(/[（(]/)[0].trim();
+                    if (!existingContents.has(coreContent)) {
+                        allInsights.push(insight);
+                        existingContents.add(coreContent);
+                    }
+                });
+            }
+            
+            if (allInsights.length > 0) {
+                // 按分类分组（前端再次去重，确保没有重复）
+                const categorizedInsights = {
+                    '性格': [],
+                    '健康': [],
+                    '智慧': [],
+                    '学习': [],
+                    '感情': [],
+                    '事业': [],
+                    '财运': [],
+                    '天赋': [],
+                    '运势': [],
+                    '特殊': [],
+                    '综合': []
+                };
+                
+                // 使用Set记录已添加的核心内容，避免重复
+                const seenCoreContents = new Set();
+                
+                allInsights.forEach(insight => {
+                    const content = insight.content || '';
+                    // 提取核心内容（去除括号内的详细说明）用于去重
+                    const coreContent = content.split(/[（(]/)[0].trim();
+                    
+                    // 如果核心内容已存在，跳过
+                    if (seenCoreContents.has(coreContent)) {
+                        return;
+                    }
+                    seenCoreContents.add(coreContent);
+                    
+                    const category = insight.category || '综合';
+                    if (categorizedInsights[category]) {
+                        categorizedInsights[category].push(insight);
+                    } else {
+                        categorizedInsights['综合'].push(insight);
+                    }
+                });
+                
+                // 按分类显示
+                html += '<h3>分析洞察</h3>';
+                const categoryNames = {
+                    '性格': '性格特点',
+                    '健康': '健康状况',
+                    '智慧': '智慧能力',
+                    '学习': '学习能力',
+                    '感情': '感情婚姻',
+                    '事业': '事业发展',
+                    '财运': '财运分析',
+                    '天赋': '天赋才能',
+                    '运势': '运势分析',
+                    '特殊': '特殊特征',
+                    '综合': '综合分析'
+                };
+                
+                const categoryOrder = ['性格', '健康', '智慧', '学习', '感情', '事业', '财运', '天赋', '运势', '特殊', '综合'];
+                
+                categoryOrder.forEach(category => {
+                    if (categorizedInsights[category] && categorizedInsights[category].length > 0) {
+                        html += `<div class="category-section">
+                            <h4 class="category-title">${categoryNames[category] || category}</h4>
+                            <div class="category-insights">`;
+                        categorizedInsights[category].forEach(insight => {
+                            html += `<div class="insight-item">
+                                ${insight.content}
+                            </div>`;
+                        });
+                        html += `</div></div>`;
+                    }
+                });
+            }
+
+            // 建议
+            if (data.recommendations && data.recommendations.length > 0) {
+                html += '<h3>建议</h3>';
+                data.recommendations.forEach(rec => {
+                    html += `<div class="recommendation-item">${rec}</div>`;
+                });
+            }
+
+            // 置信度
+            if (data.confidence) {
+                html += `<p style="margin-top: 20px; color: #666;">
+                    <strong>分析置信度：</strong>${(data.confidence * 100).toFixed(1)}%
+                </p>`;
+            }
+
+            resultContent.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
+

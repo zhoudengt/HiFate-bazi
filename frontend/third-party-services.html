@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第三方服务集成测试 - HiFate</title>
+    
+    <!-- Google Analytics 4 -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-XXXXXXXXXX', {
+            'send_page_view': true
+        });
+    </script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .service-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .service-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .service-icon {
+            font-size: 2.5em;
+            margin-right: 15px;
+        }
+
+        .service-title h2 {
+            color: #333;
+            font-size: 1.5em;
+            margin-bottom: 5px;
+        }
+
+        .service-title p {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 0.9em;
+            display: none;
+        }
+
+        .result.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .result.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-indicator.on {
+            background: #28a745;
+        }
+
+        .status-indicator.off {
+            background: #dc3545;
+        }
+
+        .providers-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .provider-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+
+        .provider-name {
+            font-weight: 500;
+        }
+
+        .provider-regions {
+            font-size: 0.85em;
+            color: #666;
+        }
+
+        @media (max-width: 768px) {
+            .services-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 第三方服务集成测试</h1>
+            <p>统一支付服务</p>
+        </div>
+
+        <div class="services-grid">
+            <!-- 统一支付服务 -->
+            <div class="service-card">
+                <div class="service-header">
+                    <div class="service-icon">💳</div>
+                    <div class="service-title">
+                        <h2>统一支付</h2>
+                        <p>Stripe · PayPal · 支付宝 · 微信</p>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>支付渠道</label>
+                    <select id="paymentProvider">
+                        <option value="stripe">Stripe (全球)</option>
+                        <option value="paypal">PayPal (全球)</option>
+                        <option value="alipay">支付宝国际版</option>
+                        <option value="wechat">微信支付</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>金额</label>
+                    <input type="text" id="paymentAmount" value="19.90" placeholder="19.90">
+                </div>
+
+                <div class="form-group">
+                    <label>货币</label>
+                    <select id="paymentCurrency">
+                        <option value="USD">USD (美元)</option>
+                        <option value="HKD">HKD (港币)</option>
+                        <option value="EUR">EUR (欧元)</option>
+                        <option value="CNY">CNY (人民币)</option>
+                        <option value="PHP">PHP (菲律宾比索)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>产品名称</label>
+                    <input type="text" id="productName" value="月订阅会员" placeholder="月订阅会员">
+                </div>
+
+                <div class="form-group">
+                    <label>客户邮箱 (Stripe)</label>
+                    <input type="email" id="customerEmail" placeholder="user@example.com">
+                </div>
+
+                <button class="btn" onclick="testPayment()">创建支付</button>
+                <button class="btn" onclick="getProviders()" style="margin-top: 10px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">查看可用渠道</button>
+
+                <div id="paymentResult" class="result"></div>
+            </div>
+
+        </div>
+
+        <!-- 服务状态面板 -->
+        <div class="service-card" style="margin-top: 20px;">
+            <div class="service-header">
+                <div class="service-icon">⚙️</div>
+                <div class="service-title">
+                    <h2>服务状态</h2>
+                    <p>查看所有第三方服务的配置状态</p>
+                </div>
+            </div>
+            <button class="btn" onclick="checkAllServices()" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">检查所有服务</button>
+            <div id="servicesStatus" class="result" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:8001/api/v1';
+
+        // 支付测试
+        async function testPayment() {
+            const provider = document.getElementById('paymentProvider').value;
+            const amount = document.getElementById('paymentAmount').value;
+            const currency = document.getElementById('paymentCurrency').value;
+            const productName = document.getElementById('productName').value;
+            const customerEmail = document.getElementById('customerEmail').value;
+
+            const result = document.getElementById('paymentResult');
+            result.textContent = '创建支付中...';
+            result.className = 'result';
+
+            try {
+                const payload = {
+                    provider: provider,
+                    amount: amount,
+                    currency: currency,
+                    product_name: productName
+                };
+
+                if (provider === 'stripe' && customerEmail) {
+                    payload.customer_email = customerEmail;
+                }
+
+                const response = await fetch(`${API_BASE}/payment/unified/create`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    result.className = 'result success';
+                    let message = `✓ 支付创建成功！\n渠道: ${provider.toUpperCase()}`;
+                    if (data.checkout_url) message += `\n支付链接: ${data.checkout_url}`;
+                    if (data.approval_url) message += `\n支付链接: ${data.approval_url}`;
+                    if (data.payment_url) message += `\n支付链接: ${data.payment_url}`;
+                    if (data.code_url) message += `\n二维码URL: ${data.code_url}`;
+                    result.textContent = message;
+
+                    // GA4追踪
+                    gtag('event', 'payment_created', {
+                        'provider': provider,
+                        'amount': amount,
+                        'currency': currency
+                    });
+                } else {
+                    result.className = 'result error';
+                    result.textContent = `✗ ${data.message || '支付创建失败'}`;
+                }
+            } catch (error) {
+                result.className = 'result error';
+                result.textContent = `✗ 请求失败: ${error.message}`;
+            }
+        }
+
+        async function getProviders() {
+            const result = document.getElementById('paymentResult');
+            result.textContent = '查询中...';
+            result.className = 'result';
+
+            try {
+                const response = await fetch(`${API_BASE}/payment/providers`);
+                const data = await response.json();
+
+                if (data.success) {
+                    result.className = 'result success';
+                    let html = '<div class="providers-list">';
+                    data.providers.forEach(p => {
+                        const status = p.enabled ? 'on' : 'off';
+                        html += `
+                            <div class="provider-item">
+                                <div>
+                                    <span class="status-indicator ${status}"></span>
+                                    <span class="provider-name">${p.name}</span>
+                                </div>
+                                <div class="provider-regions">${p.regions.join(', ')}</div>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    result.innerHTML = html;
+                    result.style.display = 'block';
+                }
+            } catch (error) {
+                result.className = 'result error';
+                result.textContent = `✗ 查询失败: ${error.message}`;
+            }
+        }
+
+
+        // 检查所有服务状态
+        async function checkAllServices() {
+            const result = document.getElementById('servicesStatus');
+            result.textContent = '检查中...';
+            result.className = 'result';
+            result.style.display = 'block';
+
+            try {
+                const payment = await fetch(`${API_BASE}/payment/providers`).then(r => r.json());
+
+                let html = '<h3>服务状态</h3><br>';
+                
+                // 支付服务
+                html += '<strong>💳 支付服务:</strong><br>';
+                if (payment.success) {
+                    payment.providers.forEach(p => {
+                        const status = p.enabled ? 'on' : 'off';
+                        html += `<span class="status-indicator ${status}"></span> ${p.name}: ${p.enabled ? '已配置' : '未配置'}<br>`;
+                    });
+                }
+
+                result.className = 'result success';
+                result.innerHTML = html;
+            } catch (error) {
+                result.className = 'result error';
+                result.textContent = `✗ 检查失败: ${error.message}`;
+            }
+        }
+
+        // 页面加载时追踪
+        gtag('event', 'page_view', {
+            'page_title': '第三方服务集成测试',
+            'page_location': window.location.href
+        });
+    </script>
+</body>
+</html>
+

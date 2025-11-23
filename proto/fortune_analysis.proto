@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package fortune.analysis;
+
+// 面相手相命理分析服务
+
+// 图像数据
+message ImageData {
+  bytes image_bytes = 1;  // 图像字节数据
+  string image_format = 2;  // 图像格式 (jpg, png, etc.)
+  string filename = 3;  // 文件名
+}
+
+// 八字信息（可选）
+message BaziInfo {
+  string solar_date = 1;  // 阳历日期 YYYY-MM-DD
+  string solar_time = 2;  // 出生时间 HH:MM
+  string gender = 3;  // 性别 male/female
+  bool use_bazi = 4;  // 是否使用八字信息
+}
+
+// 手相分析请求
+message HandAnalysisRequest {
+  ImageData image = 1;  // 手掌照片
+  BaziInfo bazi_info = 2;  // 八字信息（可选）
+}
+
+// 面相分析请求
+message FaceAnalysisRequest {
+  ImageData image = 1;  // 头部面相照片
+  BaziInfo bazi_info = 2;  // 八字信息（可选）
+}
+
+// 手部特征
+message HandFeatures {
+  string hand_shape = 1;  // 手型（方形/圆形/尖形/长方形）
+  map<string, string> finger_lengths = 2;  // 指长信息
+  map<string, string> palm_lines = 3;  // 掌纹信息（生命线、智慧线、感情线）
+  map<string, float> measurements = 4;  // 测量数据（手掌宽高比等）
+  repeated string landmarks = 5;  // 关键点坐标（JSON格式）
+}
+
+// 面部特征
+message FaceFeatures {
+  map<string, float> san_ting_ratio = 1;  // 三停比例（上停、中停、下停）
+  map<string, string> facial_attributes = 2;  // 面部属性（年龄、性别、情绪等）
+  map<string, float> feature_measurements = 3;  // 五官测量数据
+  repeated string special_features = 4;  // 特殊特征（痣、疤痕等）
+  repeated string landmarks = 5;  // 关键点坐标（JSON格式）
+}
+
+// 分析洞察
+message AnalysisInsight {
+  string category = 1;  // 类别（健康/事业/财运/感情等）
+  string content = 2;  // 内容
+  float confidence = 3;  // 置信度 0-1
+  string source = 4;  // 来源（hand/face/bazi/integrated）
+}
+
+// 八字数据（从八字服务获取）
+message BaziData {
+  map<string, string> basic_info = 1;  // 基本信息
+  map<string, string> bazi_pillars = 2;  // 四柱信息
+  map<string, string> five_elements = 3;  // 五行信息
+  map<string, int32> element_counts = 4;  // 五行计数
+  map<string, string> ten_gods = 5;  // 十神信息
+  string metadata_json = 6;  // 元数据（JSON字符串）
+}
+
+// 手相分析响应
+message HandAnalysisResponse {
+  bool success = 1;  // 是否成功
+  string error_message = 2;  // 错误信息
+  HandFeatures features = 3;  // 手部特征
+  repeated AnalysisInsight insights = 4;  // 分析洞察
+  BaziData bazi_data = 5;  // 八字数据（如果提供）
+  repeated AnalysisInsight integrated_insights = 6;  // 融合分析洞察
+  repeated string recommendations = 7;  // 建议
+  float confidence = 8;  // 整体置信度
+  string report_json = 9;  // 完整报告（JSON字符串）
+}
+
+// 面相分析响应
+message FaceAnalysisResponse {
+  bool success = 1;  // 是否成功
+  string error_message = 2;  // 错误信息
+  FaceFeatures features = 3;  // 面部特征
+  repeated AnalysisInsight insights = 4;  // 分析洞察
+  BaziData bazi_data = 5;  // 八字数据（如果提供）
+  repeated AnalysisInsight integrated_insights = 6;  // 融合分析洞察
+  repeated string recommendations = 7;  // 建议
+  float confidence = 8;  // 整体置信度
+  string report_json = 9;  // 完整报告（JSON字符串）
+}
+
+// 健康检查请求
+message HealthCheckRequest {}
+
+// 健康检查响应
+message HealthCheckResponse {
+  string status = 1;
+}
+
+// 面相手相分析服务定义
+service FortuneAnalysisService {
+  // 手相分析
+  rpc AnalyzeHand(HandAnalysisRequest) returns (HandAnalysisResponse);
+  
+  // 面相分析
+  rpc AnalyzeFace(FaceAnalysisRequest) returns (FaceAnalysisResponse);
+  
+  // 健康检查
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+

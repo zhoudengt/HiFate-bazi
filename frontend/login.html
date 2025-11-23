@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - HiFate</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="login-box">
+            <h1>HiFate系统</h1>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label>用户名</label>
+                    <input type="text" id="username" value="admin" required>
+                </div>
+                <div class="form-group">
+                    <label>密码</label>
+                    <input type="password" id="password" value="admin123" required>
+                </div>
+                <button type="submit" class="btn btn-primary">登录</button>
+            </form>
+            <div id="errorMsg" class="error-msg"></div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorMsg = document.getElementById('errorMsg');
+            
+            try {
+                errorMsg.textContent = '';
+                await Auth.login(username, password);
+                window.location.href = 'index.html';
+            } catch (error) {
+                errorMsg.textContent = error.message || '登录失败';
+            }
+        });
+    </script>
+</body>
+</html>
+

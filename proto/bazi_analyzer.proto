@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package bazi.analyzer;
+
+// Bazi Analyzer Service - 八字分析服务
+
+// 请求消息
+message BaziAnalyzerRequest {
+  string solar_date = 1;              // 阳历日期，格式 YYYY-MM-DD
+  string solar_time = 2;              // 阳历时间，格式 HH:MM
+  string gender = 3;                  // 性别，male/female 或 男/女
+  repeated string analysis_types = 4;  // 需要执行的分析类型列表
+}
+
+// 响应消息
+message BaziAnalyzerResponse {
+  string results_json = 1;      // 分析结果（JSON 字符串）
+  string metadata_json = 2;     // 元数据（JSON 字符串）
+}
+
+// 健康检查请求
+message HealthCheckRequest {}
+
+// 健康检查响应
+message HealthCheckResponse {
+  string status = 1;
+}
+
+// Bazi Analyzer 服务定义
+service BaziAnalyzerService {
+  // 执行分析
+  rpc RunAnalyzers(BaziAnalyzerRequest) returns (BaziAnalyzerResponse);
+  
+  // 健康检查
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+

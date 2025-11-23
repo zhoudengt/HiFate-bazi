@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package bazi.rule;
+
+// Bazi Rule Service - 规则匹配服务
+
+// 请求消息
+message BaziRuleMatchRequest {
+  string solar_date = 1;              // 阳历日期，格式 YYYY-MM-DD
+  string solar_time = 2;              // 阳历时间，格式 HH:MM
+  string gender = 3;                  // 性别，male/female 或 男/女
+  repeated string rule_types = 4;     // 需要匹配的规则类型列表（可选）
+  bool use_cache = 5;                 // 是否使用规则服务缓存
+}
+
+// 响应消息
+message BaziRuleMatchResponse {
+  string matched_json = 1;        // 匹配的规则列表（JSON 字符串）
+  string unmatched_json = 2;      // 未匹配的规则列表（JSON 字符串）
+  string context_json = 3;         // 上下文信息（JSON 字符串）
+  string metadata_json = 4;       // 元数据（JSON 字符串）
+}
+
+// 健康检查请求
+message HealthCheckRequest {}
+
+// 健康检查响应
+message HealthCheckResponse {
+  string status = 1;
+}
+
+// Bazi Rule 服务定义
+service BaziRuleService {
+  // 匹配规则
+  rpc MatchRules(BaziRuleMatchRequest) returns (BaziRuleMatchResponse);
+  
+  // 健康检查
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+

@@ -1,0 +1,8 @@
+{
+  "devDependencies": {
+    "@modelcontextprotocol/server-puppeteer": "^2025.5.12"
+  },
+  "dependencies": {
+    "mysql2": "^3.15.3"
+  }
+}

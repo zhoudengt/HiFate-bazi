@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>清除缓存并重定向</title>
+</head>
+<body>
+    <h1>正在清除缓存...</h1>
+    <script>
+    (async function() {
+        // 1. 清除 Service Worker
+        if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (let registration of registrations) {
+                await registration.unregister();
+            }
+            console.log('✓ Service Worker 已清除');
+        }
+        
+        // 2. 清除所有缓存
+        if ('caches' in window) {
+            const cacheNames = await caches.keys();
+            for (let name of cacheNames) {
+                await caches.delete(name);
+            }
+            console.log('✓ Cache Storage 已清除');
+        }
+        
+        // 3. 清除 localStorage 和 sessionStorage
+        localStorage.clear();
+        sessionStorage.clear();
+        console.log('✓ Storage 已清除');
+        
+        // 4. 添加随机参数强制刷新
+        const timestamp = new Date().getTime();
+        
+        alert('缓存已清除！点击确定后将重定向到排盘页面。');
+        
+        // 5. 重定向
+        window.location.href = `/frontend/pan.html?nocache=${timestamp}`;
+    })();
+    </script>
+</body>
+</html>
+

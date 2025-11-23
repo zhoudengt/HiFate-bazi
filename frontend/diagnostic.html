@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端显示问题诊断</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-section h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.pending {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 前端显示问题诊断工具</h1>
+    
+    <div class="test-section">
+        <h2>1. JavaScript文件加载检查</h2>
+        <div id="js-check" class="status pending">检查中...</div>
+    </div>
+    
+    <div class="test-section">
+        <h2>2. CSS文件加载检查</h2>
+        <div id="css-check" class="status pending">检查中...</div>
+    </div>
+    
+    <div class="test-section">
+        <h2>3. API连接测试</h2>
+        <button onclick="testAPI()">测试API连接</button>
+        <div id="api-result" class="status pending" style="margin-top: 10px;">点击按钮测试</div>
+        <pre id="api-response" style="display: none;"></pre>
+    </div>
+    
+    <div class="test-section">
+        <h2>4. localStorage检查</h2>
+        <div id="storage-check" class="status pending">检查中...</div>
+        <button onclick="clearStorage()">清除localStorage</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>5. 控制台日志</h2>
+        <div id="console-logs" style="max-height: 300px; overflow-y: auto;"></div>
+    </div>
+    
+    <script>
+        // 捕获控制台日志
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        const logs = [];
+        
+        function addLog(type, ...args) {
+            logs.push({ type, message: args.join(' '), time: new Date().toLocaleTimeString() });
+            updateConsoleLogs();
+        }
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addLog('log', ...args);
+        };
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addLog('error', ...args);
+        };
+        
+        console.warn = function(...args) {
+            originalWarn.apply(console, args);
+            addLog('warn', ...args);
+        };
+        
+        function updateConsoleLogs() {
+            const container = document.getElementById('console-logs');
+            container.innerHTML = logs.map(log => 
+                `<div style="padding: 5px; border-bottom: 1px solid #eee; color: ${
+                    log.type === 'error' ? 'red' : log.type === 'warn' ? 'orange' : 'black'
+                }">
+                    <strong>[${log.time}]</strong> ${log.message}
+                </div>`
+            ).join('');
+        }
+        
+        // 检查JS文件
+        function checkJSFiles() {
+            const jsFiles = [
+                'config.js',
+                'js/api.js',
+                'js/auth.js',
+                'js/fortune.js',
+                'js/fortune-timeline.js',
+                'js/sidebar.js'
+            ];
+            
+            let allLoaded = true;
+            jsFiles.forEach(file => {
+                const script = document.querySelector(`script[src*="${file}"]`);
+                if (!script) {
+                    console.error(`❌ 未找到script标签: ${file}`);
+                    allLoaded = false;
+                }
+            });
+            
+            // 检查关键函数是否存在
+            const functions = [
+                'selectDayun',
+                'selectLiunian',
+                'renderDayunTimeline',
+                'renderLiunianTimeline'
+            ];
+            
+            functions.forEach(fn => {
+                if (typeof window[fn] === 'function') {
+                    console.log(`✅ 函数存在: ${fn}`);
+                } else {
+                    console.error(`❌ 函数不存在: ${fn}`);
+                    allLoaded = false;
+                }
+            });
+            
+            const el = document.getElementById('js-check');
+            if (allLoaded) {
+                el.className = 'status success';
+                el.textContent = '✅ 所有JS文件加载成功';
+            } else {
+                el.className = 'status error';
+                el.textContent = '❌ 部分JS文件加载失败，请查看控制台';
+            }
+        }
+        
+        // 检查CSS文件
+        function checkCSSFiles() {
+            const cssFiles = [
+                'css/style.css',
+                'css/fatetell-layout.css'
+            ];
+            
+            let allLoaded = true;
+            cssFiles.forEach(file => {
+                const link = document.querySelector(`link[href*="${file}"]`);
+                if (!link) {
+                    console.error(`❌ 未找到link标签: ${file}`);
+                    allLoaded = false;
+                }
+            });
+            
+            const el = document.getElementById('css-check');
+            if (allLoaded) {
+                el.className = 'status success';
+                el.textContent = '✅ 所有CSS文件引用正确';
+            } else {
+                el.className = 'status error';
+                el.textContent = '❌ 部分CSS文件引用缺失';
+            }
+        }
+        
+        // 测试API
+        async function testAPI() {
+            const resultEl = document.getElementById('api-result');
+            const responseEl = document.getElementById('api-response');
+            
+            resultEl.className = 'status pending';
+            resultEl.textContent = '测试中...';
+            responseEl.style.display = 'none';
+            
+            try {
+                const response = await fetch('http://127.0.0.1:8001/api/v1/bazi/fortune/display', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        solar_date: '1990-01-01',
+                        solar_time: '12:00',
+                        gender: 'male',
+                        current_time: new Date().toISOString().slice(0, 16).replace('T', ' ')
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    resultEl.className = 'status success';
+                    resultEl.textContent = `✅ API连接正常 (状态码: ${response.status})`;
+                    responseEl.textContent = JSON.stringify(data, null, 2);
+                    responseEl.style.display = 'block';
+                } else {
+                    resultEl.className = 'status error';
+                    resultEl.textContent = `❌ API返回错误 (状态码: ${response.status})`;
+                    responseEl.textContent = JSON.stringify(data, null, 2);
+                    responseEl.style.display = 'block';
+                }
+            } catch (error) {
+                resultEl.className = 'status error';
+                resultEl.textContent = `❌ API连接失败: ${error.message}`;
+                console.error('API测试失败:', error);
+            }
+        }
+        
+        // 检查localStorage
+        function checkStorage() {
+            const el = document.getElementById('storage-check');
+            const items = {
+                'solar_date': localStorage.getItem('solar_date'),
+                'solar_time': localStorage.getItem('solar_time'),
+                'gender': localStorage.getItem('gender'),
+                'bazi_user_info': localStorage.getItem('bazi_user_info')
+            };
+            
+            const hasData = Object.values(items).some(v => v !== null);
+            
+            if (hasData) {
+                el.className = 'status success';
+                el.innerHTML = '✅ localStorage数据:<br>' + 
+                    Object.entries(items)
+                        .filter(([k, v]) => v !== null)
+                        .map(([k, v]) => `${k}: ${v}`)
+                        .join('<br>');
+            } else {
+                el.className = 'status pending';
+                el.textContent = '⚠️ localStorage无数据（首次访问正常）';
+            }
+        }
+        
+        function clearStorage() {
+            localStorage.clear();
+            checkStorage();
+            alert('localStorage已清除');
+        }
+        
+        // 页面加载完成后检查
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                checkJSFiles();
+                checkCSSFiles();
+                checkStorage();
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+from . import face_router, hand_router, fengshui_router, bazi_router
+
+__all__ = ["face_router", "hand_router", "fengshui_router", "bazi_router"]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>支付取消 - 魔方西元</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-style.css">
+    <style>
+        .cancel-container {
+            max-width: 600px;
+            margin: 80px auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .cancel-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 20px;
+            background: #ffc107;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            color: white;
+        }
+        
+        .cancel-title {
+            font-size: 28px;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .cancel-message {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 12px 30px;
+            border-radius: 5px;
+            font-size: 16px;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #f8f9fa;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+        
+        .btn-secondary:hover {
+            background: #e9ecef;
+        }
+    </style>
+</head>
+<body>
+    <div class="cancel-container">
+        <div class="cancel-icon">⚠</div>
+        <h1 class="cancel-title">支付已取消</h1>
+        <p class="cancel-message">
+            您已取消本次支付。如果您需要完成支付，请点击下方按钮返回支付页面。
+        </p>
+        
+        <div class="btn-group">
+            <a href="payment.html" class="btn btn-primary">重新支付</a>
+            <a href="index.html" class="btn btn-secondary">返回首页</a>
+        </div>
+    </div>
+</body>
+</html>
+

@@ -1,0 +1,492 @@
+# HiFate-bazi 八字系统 - AI 开发规范
+
+## ⚠️ 核心原则（必须遵守）
+
+### 1. 最小影响原则 【最重要】
+- **坚决不可改动与之无关的代码**
+- 修改会引起其他功能变化时，**必须先咨询用户**
+- 每次修改前明确影响范围（低/中/高）
+- 高影响修改必须用户确认
+
+### 2. 修改前检查清单
+```
+【修改分析】
+✓ 修改文件：[最小集合]
+✓ 影响范围：[低/中/高]
+✓ 影响功能：[列表]
+✓ 需要确认：[是/否]
+```
+
+### 3. 高影响变更模板
+```
+⚠️ 高影响变更，需要您确认：
+- 修改内容：...
+- 影响范围：...
+- 风险评估：...
+是否继续？
+```
+
+---
+
+## 📁 项目架构
+
+### 前端架构 `frontend/`
+```
+frontend/
+├── js/
+│   ├── fortune.js              # 数据逻辑和API调用（不可改UI）
+│   ├── fortune-timeline.js     # 渲染和UI展示（不可改逻辑）
+│   ├── bazi-monthly.js         # 月运展示
+│   ├── bazi-daily.js           # 日运展示
+│   └── config.js               # API地址配置
+├── css/                        # 样式文件
+└── *.html                      # 测试页面
+```
+
+**职责分明**：
+- `fortune.js` → 数据获取、状态管理
+- `fortune-timeline.js` → DOM渲染、用户交互
+- 不可跨界修改
+
+### 后端架构 `server/`
+```
+server/
+├── api/                # API层：请求处理、参数验证
+│   ├── bazi_api.py    # 八字接口
+│   ├── fortune_api.py # 运势接口
+│   └── ...
+├── services/           # Service层：业务逻辑
+│   ├── rule_service.py         # 规则匹配
+│   ├── formula_rule_service.py # 算法公式
+│   └── ...
+├── engines/            # 规则引擎
+│   ├── rule_engine.py          # 核心引擎
+│   └── rule_condition.py       # 条件匹配
+├── db/                 # 数据库连接
+└── main.py             # 路由注册
+```
+
+**核心层 `src/`**：
+```
+src/
+├── bazi_calculator.py  # 核心八字计算
+├── bazi_*.py          # 各种八字相关计算
+└── ...
+```
+
+**微服务 `services/`**：
+```
+services/
+├── bazi_analyzer_service.py    # 八字分析服务
+├── fortune_analysis_service.py # 运势分析服务
+├── rule_service_grpc.py        # 规则服务
+└── payment_service.py          # 支付服务
+```
+
+**分层原则**：
+- 只修改必要的层
+- 不跨层修改
+- API → Service → Core 单向依赖
+
+---
+
+## 🔒 核心文件（修改前必须咨询）
+
+| 文件 | 作用 | 风险 |
+|------|------|------|
+| `server/main.py` | 路由注册 | 高 |
+| `src/bazi_calculator.py` | 核心计算逻辑 | 极高 |
+| `frontend/js/fortune.js` | 前端主逻辑 | 高 |
+| `server/db/mysql_connector.py` | 数据库连接 | 高 |
+| `server/engines/*.py` | 规则引擎 | 高 |
+| `server/config/mysql_config.py` | MySQL配置 | 高 |
+| `proto/*.proto` | gRPC协议定义 | 高 |
+
+---
+
+## 🔧 开发规范
+
+### 字符编码（重要）
+- **数据库**：`utf8mb4`（支持中文、emoji）
+- **Python**：UTF-8（文件头 `# -*- coding: utf-8 -*-`）
+- **JSON**：`json.dumps(..., ensure_ascii=False)`
+- **MySQL连接**：
+  ```python
+  'charset': 'utf8mb4',
+  'use_unicode': True
+  ```
+
+### 规则系统
+**存储**：
+- 表：`bazi_rules`
+- 字段：
+  - `rule_code`：规则编码（如 `FORMULA_HEALTH_70012`）
+  - `rule_type`：规则类型（如 `FORMULA_HEALTH`）
+  - `conditions`：JSON格式条件
+  - `description`：JSON格式描述
+
+**条件格式**：
+```json
+{
+  "pillar_in": {"pillar": "day", "part": "stem", "values": ["甲", "乙"]},
+  "element_count": {"element": "木", "operator": ">=", "value": 3},
+  "gender": "male"
+}
+```
+
+**缓存机制**：
+- Redis缓存规则
+- 修改规则后**必须清理缓存**：
+  ```bash
+  redis-cli DEL "rules:FORMULA_HEALTH"
+  ```
+
+### 数据库操作
+**字符编码处理**：
+```python
+# 读取时（修复 pymysql 的 latin1 问题）
+conditions = rule['conditions']
+if isinstance(conditions, str):
+    try:
+        conditions = conditions.encode('latin1').decode('utf-8')
+    except:
+        pass
+    conditions = json.loads(conditions)
+
+# 写入时
+sql = f"UPDATE bazi_rules SET conditions = '{json.dumps(data, ensure_ascii=False)}' WHERE ..."
+```
+
+**执行SQL**：
+```bash
+# 使用 utf8mb4 字符集
+mysql -h 127.0.0.1 -P 13306 -u root -p --default-character-set=utf8mb4 bazi_system < script.sql
+```
+
+### API设计
+**请求参数**：
+```python
+# 必需参数验证
+if not year or not month:
+    return jsonify({'error': '缺少参数'}), 400
+
+# 类型转换
+year = int(year)
+hour = int(hour) if hour else 12
+```
+
+**响应格式**：
+```python
+{
+    'success': True,
+    'data': {...},
+    'error': None
+}
+```
+
+**错误处理**：
+```python
+try:
+    result = service.analyze(...)
+    return jsonify({'success': True, 'data': result})
+except Exception as e:
+    logger.error(f"Error: {e}")
+    return jsonify({'success': False, 'error': str(e)}), 500
+```
+
+### 数据结构兼容
+- **只添加新字段**，不修改/删除现有字段
+- **保持向后兼容**
+- API接口变更 → **必须咨询用户**
+- 数据库 schema 变更 → **必须咨询用户**
+
+---
+
+## 🐛 调试和测试
+
+### 日志查看
+```bash
+# 主服务日志
+tail -f logs/server.log
+
+# 微服务日志
+tail -f logs/bazi_analyzer.log
+tail -f logs/fortune_analysis.log
+
+# 错误日志
+grep "ERROR" logs/*.log
+```
+
+### 测试流程
+1. **后端测试**：
+   ```bash
+   # API测试
+   curl http://localhost:8000/api/bazi/analyze?year=1990&month=1&day=1&hour=12&gender=male
+   ```
+
+2. **前端测试**：
+   - 打开 `frontend/formula-analysis.html`
+   - 输入测试数据
+   - 打开浏览器控制台（F12）
+   - 检查 Network 和 Console
+
+3. **规则匹配测试**：
+   - 检查规则条件是否正确
+   - 检查日志中的规则匹配过程
+   - 使用 `frontend/shishen-debug.html` 调试
+
+### 常见问题排查
+
+**问题1：规则不匹配**
+```bash
+# 1. 检查数据库规则条件
+SELECT rule_code, conditions FROM bazi_rules WHERE rule_code='FORMULA_HEALTH_70012';
+
+# 2. 检查字符编码
+# 看到 'ç"²' → 编码错误，应该是 '甲'
+
+# 3. 清理缓存
+redis-cli DEL "rules:FORMULA_HEALTH"
+
+# 4. 重启服务
+./restart_server.sh
+```
+
+**问题2：前端不显示**
+```
+1. 检查浏览器控制台错误
+2. 检查 Network 请求是否成功
+3. 检查 API 返回的数据结构
+4. 检查前端 JS 是否有语法错误
+```
+
+**问题3：服务启动失败**
+```bash
+# 检查端口占用
+lsof -i :8000
+
+# 检查日志
+tail -f logs/server.log
+
+# 检查配置文件
+cat config/services.env
+```
+
+---
+
+## 🚀 服务管理
+
+### 基本命令
+```bash
+# 启动所有服务
+./start_all_services.sh
+
+# 停止所有服务
+./stop_all_services.sh
+
+# 检查服务状态
+./check_services.sh
+
+# 重启主服务
+./restart_server.sh
+
+# 清理日志
+rm logs/*.log
+```
+
+### 服务列表
+| 服务 | 端口 | 日志 |
+|------|------|------|
+| 主服务 | 8000 | `logs/server.log` |
+| 八字分析 | 50051 | `logs/bazi_analyzer.log` |
+| 运势分析 | 50052 | `logs/fortune_analysis.log` |
+| 规则服务 | 50053 | `logs/rule_service.log` |
+| 支付服务 | 50055 | `logs/payment_service.log` |
+| MySQL | 13306 | - |
+| Redis | 16379 | - |
+
+---
+
+## 📝 代码规范
+
+### 命名规范
+```python
+# 类名：大驼峰
+class BaziCalculator:
+    pass
+
+# 函数名：小写下划线
+def calculate_bazi(year, month, day):
+    pass
+
+# 常量：大写下划线
+MAX_RETRY_COUNT = 3
+
+# 私有方法：单下划线前缀
+def _internal_method(self):
+    pass
+```
+
+### 注释规范
+```python
+def analyze_fortune(bazi_info: dict) -> dict:
+    """
+    分析运势
+    
+    Args:
+        bazi_info: 八字信息，包含四柱、十神等
+    
+    Returns:
+        运势分析结果
+    
+    Raises:
+        ValueError: 参数错误
+    """
+    pass
+```
+
+### 错误处理
+```python
+# 使用 try-except 包裹
+try:
+    result = risky_operation()
+except SpecificException as e:
+    logger.error(f"Operation failed: {e}")
+    raise
+finally:
+    cleanup()
+```
+
+---
+
+## 📦 Git 提交规范
+
+### Commit Message 格式
+```
+[类型] 简短描述（不超过50字）
+
+详细说明（如有必要）
+- 修改的文件和原因
+- 影响范围
+- 测试情况
+```
+
+**类型**：
+- `[修复]` - Bug修复
+- `[新增]` - 新功能
+- `[优化]` - 性能优化
+- `[重构]` - 代码重构
+- `[文档]` - 文档更新
+- `[测试]` - 测试相关
+
+**示例**：
+```
+[修复] 身体类规则字符编码问题
+
+- 修改文件：server/db/mysql_connector.py
+- 问题：pymysql读取UTF-8数据时使用latin1编码
+- 解决：添加charset='utf8mb4'和use_unicode=True
+- 影响范围：低（仅影响数据库连接配置）
+- 测试：身体规则匹配正常
+```
+
+### 提交前检查
+```bash
+# 1. 查看修改
+git status
+git diff
+
+# 2. 只提交必要文件
+git add [specific files]
+
+# 3. 不提交
+- logs/*.log
+- *.pyc, __pycache__/
+- config/*.env（敏感配置）
+- .DS_Store
+```
+
+---
+
+## 📚 快速参考
+
+### 常用文档
+- 开发规范：`docs/DEVELOPMENT_GUIDELINES.md`
+- 快速启动：`docs/quick_start.md`
+- API文档：`docs/bazi_api_structure.json`
+- 规则系统：`docs/rule_system_architecture.md`
+
+### 常用脚本
+```bash
+# 数据库迁移
+scripts/migrate_formula_rules_to_db.py
+
+# 规则批量更新
+scripts/batch_update_rules.py
+
+# 服务健康检查
+tests/scripts/check_services.sh
+```
+
+### 测试页面
+- 算法公式：`frontend/formula-analysis.html`
+- 十神调试：`frontend/shishen-debug.html`
+- 运势分析：`frontend/fortune.html`
+- 月运：`frontend/bazi-monthly-fortune.html`
+- 日运：`frontend/bazi-daily-fortune.html`
+
+---
+
+## 💡 开发原则
+
+1. **先咨询，后修改**：不确定时询问用户
+2. **小步快跑**：每次修改一个功能点
+3. **及时测试**：修改后立即测试
+4. **清晰记录**：修改过程记录到文档
+5. **保持简洁**：避免过度设计
+6. **注重性能**：考虑缓存和优化
+7. **用户体验**：前端交互流畅、错误提示清晰
+
+---
+
+## ⚙️ Cursor 配置优化
+
+当前配置位于：`~/Library/Application Support/Cursor/User/settings.json`
+
+**推荐配置**：
+```json
+{
+  "cursor.aiProvider": "anthropic",
+  "cursor.model": "claude-sonnet-4-20250514",
+  "cursor.anthropicApiKey": "your-key",
+  "cursor.anthropicApiBaseUrl": "https://cc.zhihuiapi.top",
+  "cursor.useCustomApi": true,
+  "cursor.bypassRegionCheck": true,
+  "cursor.disableRegionCheck": true
+}
+```
+
+**不要使用**：
+- `http.proxy`（双重代理会很慢）
+- `http.version: "1.1"`（强制HTTP/1.1会更慢）
+- `cursor.general.disableHttp2`（禁用HTTP/2会更慢）
+
+---
+
+## 🎯 响应流程
+
+每次收到用户请求：
+
+1. **理解需求** → 明确要做什么
+2. **评估影响** → 列出影响文件和范围
+3. **高影响咨询** → 风险高时先确认
+4. **执行修改** → 只改必要的代码
+5. **测试验证** → 确保功能正常
+6. **记录文档** → 重要修改记录到 `docs/`
+
+---
+
+**记住**：
+- 宁可多问，不要擅自决定
+- 最小影响原则永远第一
+- 保持代码整洁和可维护性

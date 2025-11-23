@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+八字AI分析API接口
+"""
+
+import sys
+import os
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field, validator
+from typing import Optional
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
+
+# 添加项目根目录到路径
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+sys.path.insert(0, project_root)
+
+from server.services.bazi_ai_service import BaziAIService
+
+router = APIRouter()
+
+# 根据CPU核心数动态调整线程池大小（优化高并发性能）
+import os
+cpu_count = os.cpu_count() or 4
+# 线程池大小 = CPU核心数 * 2，但不超过100
+max_workers = min(cpu_count * 2, 100)
+executor = ThreadPoolExecutor(max_workers=max_workers)
+
+
+class BaziAIRequest(BaseModel):
+    """八字AI分析请求模型"""
+    solar_date: str = Field(..., description="阳历日期，格式：YYYY-MM-DD", example="1990-05-15")
+    solar_time: str = Field(..., description="出生时间，格式：HH:MM", example="14:30")
+    gender: str = Field(..., description="性别：male(男) 或 female(女)", example="male")
+    user_question: Optional[str] = Field(None, description="用户的问题或分析需求", example="请分析我的财运和事业")
+    access_token: Optional[str] = Field(None, description="Coze Access Token，如果不提供则使用环境变量 COZE_ACCESS_TOKEN", example="pat_...")
+    bot_id: Optional[str] = Field(None, description="Coze Bot ID，如果不提供则使用环境变量 COZE_BOT_ID", example="1234567890")
+    api_base: Optional[str] = Field(None, description="Coze API 基础URL，默认 https://api.coze.cn/v1", example="https://api.coze.cn/v1")
+    include_rizhu_analysis: Optional[bool] = Field(True, description="是否包含日柱性别分析结果", example=True)
+    
+    @validator('solar_date')
+    def validate_date(cls, v):
+        """验证日期格式"""
+        try:
+            from datetime import datetime
+            datetime.strptime(v, '%Y-%m-%d')
+        except ValueError:
+            raise ValueError('日期格式错误，应为 YYYY-MM-DD')
+        return v
+    
+    @validator('solar_time')
+    def validate_time(cls, v):
+        """验证时间格式"""
+        try:
+            from datetime import datetime
+            datetime.strptime(v, '%H:%M')
+        except ValueError:
+            raise ValueError('时间格式错误，应为 HH:MM')
+        return v
+    
+    @validator('gender')
+    def validate_gender(cls, v):
+        """验证性别"""
+        if v not in ['male', 'female']:
+            raise ValueError('性别必须为 male 或 female')
+        return v
+
+
+class BaziAIResponse(BaseModel):
+    """八字AI分析响应模型"""
+    success: bool
+    bazi_data: Optional[dict] = None
+    ai_analysis: Optional[dict] = None
+    rizhu_analysis: Optional[str] = None
+    polished_rules: Optional[str] = Field(None, description="大模型润色后的规则内容")
+    polished_rules_info: Optional[dict] = Field(None, description="润色前后的对比信息，包含原始内容、润色后内容和修改列表")
+    error: Optional[str] = None
+
+
+@router.post("/bazi/ai-analyze", response_model=BaziAIResponse, summary="Coze AI分析八字")
+async def analyze_bazi_with_ai(request: BaziAIRequest):
+    """
+    调用八字接口获取数据，然后使用Coze AI进行分析
+    
+    - **solar_date**: 阳历日期 (YYYY-MM-DD)
+    - **solar_time**: 出生时间 (HH:MM)
+    - **gender**: 性别 (male/female)
+    - **user_question**: 用户的问题或分析需求（可选）
+    - **access_token**: Coze Access Token（可选，不提供则使用环境变量 COZE_ACCESS_TOKEN）
+    - **bot_id**: Coze Bot ID（可选，不提供则使用环境变量 COZE_BOT_ID）
+    - **api_base**: Coze API 基础URL（可选，默认 https://api.coze.cn/v1）
+    - **include_rizhu_analysis**: 是否包含日柱性别分析结果（可选，默认 True）
+    
+    返回八字数据和Coze AI分析结果
+    """
+    try:
+        # 在线程池中执行CPU密集型计算
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            executor,
+            BaziAIService.analyze_bazi_with_ai,
+            request.solar_date,
+            request.solar_time,
+            request.gender,
+            request.user_question,
+            request.access_token,
+            request.bot_id,
+            request.api_base,
+            request.include_rizhu_analysis
+        )
+        
+        return BaziAIResponse(
+            success=result.get('success', False),
+            bazi_data=result.get('bazi_data'),
+            ai_analysis=result.get('ai_analysis'),
+            rizhu_analysis=result.get('rizhu_analysis'),
+            polished_rules=result.get('polished_rules'),
+            polished_rules_info=result.get('polished_rules_info'),
+            error=result.get('error')
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI分析失败: {str(e)}")
+

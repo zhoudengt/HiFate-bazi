@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端集成验证</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .check-item {
+            padding: 10px;
+            margin: 5px 0;
+            border-left: 4px solid #007bff;
+            background: #f8f9fa;
+        }
+        .check-item.success {
+            border-left-color: #28a745;
+            background: #d4edda;
+        }
+        .check-item.error {
+            border-left-color: #dc3545;
+            background: #f8d7da;
+        }
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <h1>前端集成验证</h1>
+    <div id="checks"></div>
+    
+    <script>
+        const checks = [
+            {
+                name: '旺衰分析卡片HTML',
+                check: () => {
+                    // 检查pan.js是否包含旺衰卡片
+                    return fetch('/frontend/js/pan.js')
+                        .then(r => r.text())
+                        .then(text => text.includes('expandable-card-wangshuai'));
+                }
+            },
+            {
+                name: 'loadWangshuaiAnalysis函数',
+                check: () => {
+                    return fetch('/frontend/js/pan.js')
+                        .then(r => r.text())
+                        .then(text => text.includes('function loadWangshuaiAnalysis'));
+                }
+            },
+            {
+                name: 'CSS样式文件',
+                check: () => {
+                    return fetch('/frontend/css/fatetell-layout.css')
+                        .then(r => r.text())
+                        .then(text => text.includes('wangshuai-content'));
+                }
+            },
+            {
+                name: 'API路由可用',
+                check: () => {
+                    return fetch('/api/v1/bazi/wangshuai', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            solar_date: '1987-01-07',
+                            solar_time: '09:55',
+                            gender: 'male'
+                        })
+                    })
+                    .then(r => r.status !== 404);
+                }
+            }
+        ];
+        
+        async function runChecks() {
+            const container = document.getElementById('checks');
+            
+            for (const item of checks) {
+                const div = document.createElement('div');
+                div.className = 'check-item';
+                div.innerHTML = `检查中: ${item.name}...`;
+                container.appendChild(div);
+                
+                try {
+                    const result = await item.check();
+                    div.className = `check-item ${result ? 'success' : 'error'}`;
+                    div.innerHTML = `${result ? '✅' : '❌'} ${item.name}: ${result ? '通过' : '失败'}`;
+                } catch (error) {
+                    div.className = 'check-item error';
+                    div.innerHTML = `❌ ${item.name}: 错误 - ${error.message}`;
+                }
+            }
+        }
+        
+        runChecks();
+    </script>
+</body>
+</html>
+

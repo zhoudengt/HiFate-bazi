@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>十神命格匹配调试 - HiFate</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .info-section {
+            margin-top: 30px;
+        }
+
+        .info-title {
+            font-size: 1.3em;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .bazi-display {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .bazi-pillar {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .bazi-pillar .label {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+
+        .bazi-pillar .value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .shishen-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .shishen-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        .shishen-item .label {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+
+        .shishen-item .value {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .shishen-item .sub-values {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .rule-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+
+        .rule-card.matched {
+            border-color: #52c41a;
+            background: #f6ffed;
+        }
+
+        .rule-card.not-matched {
+            opacity: 0.6;
+        }
+
+        .rule-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .rule-id {
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .match-badge {
+            padding: 5px 15px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+
+        .match-badge.matched {
+            background: #52c41a;
+            color: white;
+        }
+
+        .match-badge.not-matched {
+            background: #d9d9d9;
+            color: #666;
+        }
+
+        .rule-content {
+            margin-bottom: 15px;
+        }
+
+        .rule-shishen {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .priority-checks {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .priority-item {
+            margin-bottom: 10px;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+            border-left: 4px solid #d9d9d9;
+        }
+
+        .priority-item.matched {
+            border-left-color: #52c41a;
+            background: #f6ffed;
+        }
+
+        .priority-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .priority-details {
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .error-message {
+            background: #fff2f0;
+            border: 1px solid #ffccc7;
+            border-radius: 8px;
+            padding: 15px;
+            color: #cf1322;
+            margin-top: 20px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #667eea;
+            font-size: 1.2em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔮 十神命格匹配调试工具</h1>
+            <p>用于验证十神命格规则的匹配逻辑</p>
+        </div>
+
+        <div class="card">
+            <form id="debugForm">
+                <div class="form-group">
+                    <label>📅 出生日期（公历）</label>
+                    <input type="date" id="birthDate" required value="1990-01-01">
+                </div>
+
+                <div class="form-group">
+                    <label>🕐 出生时间</label>
+                    <input type="time" id="birthTime" required value="12:00">
+                </div>
+
+                <div class="form-group">
+                    <label>👤 性别</label>
+                    <select id="gender" required>
+                        <option value="male">男</option>
+                        <option value="female">女</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn" id="debugBtn">
+                    🔍 开始调试
+                </button>
+            </form>
+        </div>
+
+        <div id="resultSection" style="display: none;">
+            <!-- 八字信息 -->
+            <div class="card">
+                <div class="info-title">📊 八字信息</div>
+                <div class="bazi-display" id="baziInfo"></div>
+            </div>
+
+            <!-- 十神信息 -->
+            <div class="card">
+                <div class="info-title">🔮 十神信息</div>
+                <div class="shishen-grid" id="shishenInfo"></div>
+            </div>
+
+            <!-- 规则匹配详情 -->
+            <div class="card">
+                <div class="info-title">🎯 规则匹配详情</div>
+                <div id="matchingResults"></div>
+            </div>
+        </div>
+
+        <div id="errorSection" style="display: none;">
+            <div class="card">
+                <div class="error-message" id="errorMessage"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:8001/api/v1';
+
+        document.getElementById('debugForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await debugShishen();
+        });
+
+        async function debugShishen() {
+            const birthDate = document.getElementById('birthDate').value;
+            const birthTime = document.getElementById('birthTime').value;
+            const gender = document.getElementById('gender').value;
+
+            const debugBtn = document.getElementById('debugBtn');
+            debugBtn.disabled = true;
+            debugBtn.textContent = '🔄 分析中...';
+
+            document.getElementById('resultSection').style.display = 'none';
+            document.getElementById('errorSection').style.display = 'none';
+
+            try {
+                const response = await fetch(`${API_BASE}/shishen/debug`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        solar_date: birthDate,
+                        solar_time: birthTime,
+                        gender: gender
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    displayResults(result.data);
+                } else {
+                    showError(result.error || '调试失败');
+                }
+            } catch (error) {
+                showError('网络请求失败：' + error.message);
+            } finally {
+                debugBtn.disabled = false;
+                debugBtn.textContent = '🔍 开始调试';
+            }
+        }
+
+        function displayResults(data) {
+            document.getElementById('resultSection').style.display = 'block';
+
+            // 显示八字信息
+            const baziInfo = data.bazi_info;
+            document.getElementById('baziInfo').innerHTML = `
+                <div class="bazi-pillar">
+                    <div class="label">年柱</div>
+                    <div class="value">${baziInfo.year}</div>
+                </div>
+                <div class="bazi-pillar">
+                    <div class="label">月柱</div>
+                    <div class="value">${baziInfo.month}</div>
+                </div>
+                <div class="bazi-pillar">
+                    <div class="label">日柱</div>
+                    <div class="value">${baziInfo.day}</div>
+                </div>
+                <div class="bazi-pillar">
+                    <div class="label">时柱</div>
+                    <div class="value">${baziInfo.hour}</div>
+                </div>
+            `;
+
+            // 显示十神信息
+            const shishenInfo = data.shishen_info;
+            document.getElementById('shishenInfo').innerHTML = `
+                <div class="shishen-item">
+                    <div class="label">年柱主星</div>
+                    <div class="value">${shishenInfo.year_stem_shishen || '无'}</div>
+                    <div class="sub-values">副星: ${formatHidden(shishenInfo.year_branch_hidden)}</div>
+                </div>
+                <div class="shishen-item">
+                    <div class="label">月柱主星</div>
+                    <div class="value">${shishenInfo.month_stem_shishen || '无'}</div>
+                    <div class="sub-values">副星: ${formatHidden(shishenInfo.month_branch_hidden)}</div>
+                </div>
+                <div class="shishen-item">
+                    <div class="label">日柱主星</div>
+                    <div class="value">${shishenInfo.day_stem_shishen || '日主'}</div>
+                    <div class="sub-values">副星: ${formatHidden(shishenInfo.day_branch_hidden)}</div>
+                </div>
+                <div class="shishen-item">
+                    <div class="label">时柱主星</div>
+                    <div class="value">${shishenInfo.hour_stem_shishen || '无'}</div>
+                    <div class="sub-values">副星: ${formatHidden(shishenInfo.hour_branch_hidden)}</div>
+                </div>
+            `;
+
+            // 显示匹配结果
+            const matchingResults = data.matching_results;
+            const resultsHtml = matchingResults.map(rule => {
+                const matchedClass = rule.is_matched ? 'matched' : 'not-matched';
+                const badgeClass = rule.is_matched ? 'matched' : 'not-matched';
+                const badgeText = rule.is_matched ? '✅ 匹配' : '❌ 不匹配';
+
+                const priorityChecksHtml = rule.conditions_checked.map(cond => {
+                    const priorityClass = cond.matched ? 'matched' : '';
+                    return `
+                        <div class="priority-item ${priorityClass}">
+                            <div class="priority-title">
+                                ${cond.matched ? '✅' : '❌'} 优先级 ${cond.priority}
+                            </div>
+                            <div class="priority-details">
+                                ${cond.description}
+                                <br>
+                                ${JSON.stringify(cond, null, 2).split('\n').slice(2, -1).join('<br>')}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                return `
+                    <div class="rule-card ${matchedClass}">
+                        <div class="rule-header">
+                            <span class="rule-id">规则 ID: ${rule.rule_id}</span>
+                            <span class="match-badge ${badgeClass}">${badgeText}</span>
+                        </div>
+                        <div class="rule-content">
+                            <div class="rule-shishen">
+                                🔮 ${rule.shishen_name}格
+                            </div>
+                            <div style="color: #666; margin-bottom: 10px;">
+                                ${rule.result_preview}
+                            </div>
+                        </div>
+                        <div class="priority-checks">
+                            <div style="font-weight: bold; margin-bottom: 10px;">条件检查详情:</div>
+                            ${priorityChecksHtml}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('matchingResults').innerHTML = resultsHtml;
+
+            // 滚动到结果
+            document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function formatHidden(hidden) {
+            if (!hidden || typeof hidden !== 'object') return '无';
+            const values = Object.values(hidden).filter(v => v);
+            return values.join(', ') || '无';
+        }
+
+        function showError(message) {
+            document.getElementById('errorSection').style.display = 'block';
+            document.getElementById('errorMessage').textContent = message;
+        }
+    </script>
+</body>
+</html>
+

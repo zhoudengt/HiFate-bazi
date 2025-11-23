@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>算法公式规则分析 - HiFate</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .input-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .result-section {
+            display: none;
+        }
+
+        .result-section.active {
+            display: block;
+        }
+
+        .bazi-info {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .bazi-info h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .bazi-pillars {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .pillar {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .pillar .label {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 8px;
+        }
+
+        .pillar .ganzhi {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .statistics {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            color: white;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .statistics h3 {
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .stat-item {
+            background: rgba(255,255,255,0.2);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-item .count {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-item .label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .tab:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        .tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: transparent;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .rule-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .rule-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.15);
+        }
+
+        .rule-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .rule-id {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+
+        .rule-type {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .rule-condition {
+            color: #555;
+            margin-bottom: 12px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            font-size: 0.95em;
+        }
+
+        .rule-result {
+            color: #333;
+            line-height: 1.8;
+            font-size: 1.05em;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: white;
+        }
+
+        .empty-state .icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+            opacity: 0.8;
+        }
+
+        .empty-state h3 {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+        }
+
+        .empty-state p {
+            opacity: 0.8;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: white;
+            font-size: 1.2em;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .bazi-pillars {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .header h1 {
+                font-size: 1.8em;
+            }
+
+            .rule-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📋 算法公式规则分析</h1>
+            <p>基于868条专业规则，为您提供全面的八字分析</p>
+        </div>
+
+        <div class="input-card">
+            <form id="baziForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="birthDate">出生日期</label>
+                        <input type="date" id="birthDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="birthTime">出生时间</label>
+                        <input type="time" id="birthTime" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="gender">性别</label>
+                        <select id="gender" required>
+                            <option value="male">男</option>
+                            <option value="female">女</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="btn" id="analyzeBtn">🔍 开始分析</button>
+            </form>
+        </div>
+
+        <div id="resultSection" class="result-section">
+            <div id="errorMessage" class="error" style="display: none;"></div>
+
+            <div class="bazi-info">
+                <h3>📅 八字信息</h3>
+                <div id="baziInfo"></div>
+            </div>
+
+            <div class="statistics">
+                <h3>📊 匹配统计</h3>
+                <div class="stat-grid" id="statistics"></div>
+            </div>
+
+            <div class="tabs" id="tabs"></div>
+            
+            <div id="tabContents"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:8001/api/v1';
+
+        const typeLabels = {
+            'wealth': { name: '💰 财富', color: '#f39c12' },
+            'marriage': { name: '💑 婚配', color: '#e74c3c' },
+            'character': { name: '🎭 性格', color: '#9b59b6' },
+            'summary': { name: '📜 总评', color: '#3498db' },
+            'health': { name: '🏥 身体', color: '#2ecc71' },
+            'shishen': { name: '🔮 十神命格', color: '#16a085' }
+        };
+
+        let currentData = null;
+
+        document.getElementById('baziForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await analyzeBazi();
+        });
+
+        async function analyzeBazi() {
+            const birthDate = document.getElementById('birthDate').value;
+            const birthTime = document.getElementById('birthTime').value;
+            const gender = document.getElementById('gender').value;
+
+            if (!birthDate || !birthTime) {
+                showError('请填写完整的出生日期和时间');
+                return;
+            }
+
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            analyzeBtn.disabled = true;
+            analyzeBtn.textContent = '🔄 分析中...';
+
+            hideError();
+
+            try {
+                const response = await fetch(`${API_BASE}/bazi/formula-analysis`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        solar_date: birthDate,
+                        solar_time: birthTime,
+                        gender: gender
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    currentData = result.data;
+                    displayResults(result.data);
+                } else {
+                    showError(result.error || '分析失败，请稍后重试');
+                }
+            } catch (error) {
+                showError('网络请求失败：' + error.message);
+            } finally {
+                analyzeBtn.disabled = false;
+                analyzeBtn.textContent = '🔍 开始分析';
+            }
+        }
+
+        function displayResults(data) {
+            // 显示结果区域
+            document.getElementById('resultSection').classList.add('active');
+
+            // 显示八字信息
+            displayBaziInfo(data.bazi_info);
+
+            // 显示统计信息
+            displayStatistics(data.statistics);
+
+            // 显示标签页
+            displayTabs(data.matched_rules, data.rule_details);
+
+            // 滚动到结果区域
+            document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function displayBaziInfo(baziInfo) {
+            const pillars = baziInfo.bazi_pillars;
+            const html = `
+                <div class="bazi-pillars">
+                    <div class="pillar">
+                        <div class="label">年柱</div>
+                        <div class="ganzhi">${pillars.year.stem}${pillars.year.branch}</div>
+                    </div>
+                    <div class="pillar">
+                        <div class="label">月柱</div>
+                        <div class="ganzhi">${pillars.month.stem}${pillars.month.branch}</div>
+                    </div>
+                    <div class="pillar">
+                        <div class="label">日柱</div>
+                        <div class="ganzhi">${pillars.day.stem}${pillars.day.branch}</div>
+                    </div>
+                    <div class="pillar">
+                        <div class="label">时柱</div>
+                        <div class="ganzhi">${pillars.hour.stem}${pillars.hour.branch}</div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('baziInfo').innerHTML = html;
+        }
+
+        function displayStatistics(stats) {
+            const html = `
+                <div class="stat-item">
+                    <div class="count">${stats.total_matched}</div>
+                    <div class="label">总计匹配</div>
+                </div>
+                <div class="stat-item">
+                    <div class="count">${stats.wealth_count}</div>
+                    <div class="label">财富</div>
+                </div>
+                <div class="stat-item">
+                    <div class="count">${stats.marriage_count}</div>
+                    <div class="label">婚配</div>
+                </div>
+                <div class="stat-item">
+                    <div class="count">${stats.character_count}</div>
+                    <div class="label">性格</div>
+                </div>
+                <div class="stat-item">
+                    <div class="count">${stats.summary_count}</div>
+                    <div class="label">总评</div>
+                </div>
+                <div class="stat-item">
+                    <div class="count">${stats.health_count}</div>
+                    <div class="label">身体</div>
+                </div>
+                <div class="stat-item">
+                    <div class="count">${stats.shishen_count || 0}</div>
+                    <div class="label">十神命格</div>
+                </div>
+            `;
+            document.getElementById('statistics').innerHTML = html;
+        }
+
+        function displayTabs(matchedRules, ruleDetails) {
+            const tabsHtml = Object.keys(typeLabels).map(type => {
+                const count = matchedRules[type].length;
+                const label = typeLabels[type];
+                return `
+                    <div class="tab" data-type="${type}" onclick="switchTab('${type}')">
+                        ${label.name} (${count})
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('tabs').innerHTML = tabsHtml;
+
+            const contentsHtml = Object.keys(typeLabels).map(type => {
+                const ruleIds = matchedRules[type];
+                const rulesHtml = ruleIds.length > 0 
+                    ? ruleIds.map(id => createRuleCard(ruleDetails[id])).join('')
+                    : '<div class="empty-state"><div class="icon">📭</div><h3>暂无匹配规则</h3><p>该类别下没有匹配到相关规则</p></div>';
+
+                return `
+                    <div id="tab-${type}" class="tab-content">
+                        ${rulesHtml}
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('tabContents').innerHTML = contentsHtml;
+
+            // 默认显示第一个有数据的标签
+            const firstType = Object.keys(typeLabels).find(type => matchedRules[type].length > 0) || 'wealth';
+            switchTab(firstType);
+        }
+
+        function switchTab(type) {
+            // 更新标签样式
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelector(`.tab[data-type="${type}"]`).classList.add('active');
+
+            // 更新内容显示
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(`tab-${type}`).classList.add('active');
+        }
+
+        function createRuleCard(rule) {
+            // 添加安全检查，处理中英文字段名（后端返回中文字段，前端期望英文字段）
+            const ruleId = rule.id || rule.ID || rule['ID'] || '未知';
+            const ruleType = rule.type || rule.类型 || rule['类型'] || '未知';
+            const ruleGender = rule.gender || rule.性别 || rule['性别'] || '未知';
+            const condition1 = rule.condition1 || rule['筛选条件1'] || '';
+            const condition2 = rule.condition2 || rule['筛选条件2'] || '';
+            // 关键修复：添加安全检查，处理undefined/null情况
+            const ruleResult = rule.result || rule.结果 || rule['结果'] || '暂无内容';
+            
+            return `
+                <div class="rule-card">
+                    <div class="rule-header">
+                        <span class="rule-id">ID: ${ruleId}</span>
+                        <span class="rule-type">${ruleType} · ${ruleGender}</span>
+                    </div>
+                    <div class="rule-condition">
+                        <strong>条件：</strong>${condition2 || condition1 || '无'}
+                    </div>
+                    <div class="rule-result">
+                        ${String(ruleResult).replace(/\n/g, '<br>')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            errorDiv.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function hideError() {
+            document.getElementById('errorMessage').style.display = 'none';
+        }
+
+        // 设置默认日期为今天
+        document.getElementById('birthDate').valueAsDate = new Date();
+        document.getElementById('birthTime').value = '12:00';
+    </script>
+</body>
+</html>

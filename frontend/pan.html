@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>八字排盘 - HiFate</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-layout.css">
+    <script src="js/sidebar.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <div class="main-content">
+            <div class="content-header">
+                <div class="header-left">
+                    <button class="back-btn" onclick="history.back()">←</button>
+                    <h1 class="header-title">基础八字排盘</h1>
+                </div>
+                <div class="header-user">
+                    <span id="userName">用户</span>
+                    <span>·</span>
+                    <span id="userGender">男</span>
+                </div>
+            </div>
+
+            <div class="content-body">
+                <div class="form-section" id="formSection">
+                    <div id="userInfoDisplay" style="display: none;">
+                        <div class="user-info-card">
+                            <div class="user-info-content">
+                                <div class="user-info-item">
+                                    <span class="user-info-label">出生日期</span>
+                                    <span class="user-info-value" id="display_date"></span>
+                                </div>
+                                <div class="user-info-item">
+                                    <span class="user-info-label">出生时间</span>
+                                    <span class="user-info-value" id="display_time"></span>
+                                </div>
+                                <div class="user-info-item">
+                                    <span class="user-info-label">性别</span>
+                                    <span class="user-info-value" id="display_gender"></span>
+                                </div>
+                            </div>
+                            <button type="button" id="editBtn" class="btn btn-secondary">编辑</button>
+                        </div>
+                    </div>
+                    <form id="panForm" class="form-card" style="display: none;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>出生日期</label>
+                                <input type="date" id="solar_date" value="1990-05-15" required>
+                            </div>
+                            <div class="form-group">
+                                <label>出生时间</label>
+                                <input type="time" id="solar_time" value="14:30" required>
+                            </div>
+                            <div class="form-group">
+                                <label>性别</label>
+                                <select id="gender" required>
+                                    <option value="male">男</option>
+                                    <option value="female">女</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">查询排盘</button>
+                    </form>
+                </div>
+
+                <div id="result"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/pan.js"></script>
+    <script>
+        Auth.checkAuth();
+    </script>
+</body>
+</html>
+

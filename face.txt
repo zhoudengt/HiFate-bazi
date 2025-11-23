@@ -1,0 +1,336 @@
+ps aux | grep python
+
+
+
+# 启动  start
+
+#计算基本八字信息
+
+
+curl -X POST http://127.0.0.1:8001/api/v1/bazi/calculate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "solar_date": "1990-05-15",
+    "solar_time": "14:30",
+    "gender": "male"
+  }'
+
+
+# -- 生成界面展示信息（命宫、身宫等）
+
+curl -X POST http://127.0.0.1:8001/api/v1/bazi/interface \
+  -H "Content-Type: application/json" \
+  -d '{
+    "solar_date": "1990-05-15",
+    "solar_time": "14:30",
+    "gender": "male",
+    "name": "张三",
+    "location": "北京"
+  }'
+
+
+
+
+# 计算详细八字（含大运流年序列）
+
+curl -X POST http://127.0.0.1:8001/api/v1/bazi/detail \
+  -H "Content-Type: application/json" \
+  -d '{
+    "solar_date": "1990-05-15",
+    "solar_time": "14:30",
+    "gender": "male"
+  }'
+
+
+
+#-- ai接口
+
+  curl -X POST http://127.0.0.1:8001/api/v1/bazi/ai-analyze \
+    -H "Content-Type: application/json" \
+    -d '{
+      "solar_date": "1990-05-15",
+      "solar_time": "14:30",
+      "gender": "male",
+      "user_question": "请分析我的财运和事业"
+    }'
+
+
+
+
+#查看健康检查：
+curl http://127.0.0.1:8001/health
+
+#测试缓存：
+#相同参数的请求第二次会更快（从缓存返回）
+
+# 检查服务状态
+
+brew services list | grep mysql
+
+
+        self.connection_config = {
+            'host': os.getenv('MYSQL_HOST', 'localhost'),  # Docker用'mysql'，本地默认'localhost'
+            'port': int(os.getenv('MYSQL_PORT', 3306)),    # Docker和本地默认都是3306（本地若改了端口需手动改）
+            'user': os.getenv('MYSQL_USER', 'root'),
+            'password': os.getenv('MYSQL_PASSWORD', '123456'),  # 本地MySQL密码若不同，这里直接改
+            'database': os.getenv('MYSQL_DATABASE', 'testdb'),
+            'charset': 'utf8mb4'
+        }
+
+
+#规则
+
+curl -X POST http://127.0.0.1:8001/api/v1/bazi/rules/match \
+  -H "Content-Type: application/json" \
+  -d '{
+    "solar_date": "1990-05-15",
+    "solar_time": "14:30",
+    "gender": "male",
+    "rule_types": ["rizhu_gender_dynamic"]
+  }'
+
+
+# 任务
+
+调用 基于langchain  coze
+
+规则引擎与数据库
+
+充值 商城
+
+? 男女一样   资料相差不大
+? 什么年  什么月  需要转换
+？增加互联网
+
+
+# 明日计划  打通 ai 效果 ，串联起来 。
+# 明日任务  解决调用ai  反应慢的问题
+
+
+
+
+--  星宿  人员司令分野
+
+
+阴阳  天干地支
+
+面相 八卦 易经 奇门
+
+
+存什么
+微服务
+商城体系  通信体系  缓存 消息  增提处理
+api
+
+数据边界  数据安全 流转   我们说了算
+逻辑边界  数据 大模型算法
+中间层  api 统一网管      如何和三方对接  我们包装  证书定期续签
+
+审核  会员中心  点击按钮   商城  技术方案
+封装接口 加密  参数   ，
+
+相同的参数 一次生效 多次调用不生效
+
+用户  后期收回
+
+埋点
+
+上线后都有收回
+
+
+使用 od 联合开发的流程与方法论
+
+
+
+面相 大运流年  根据后端计算出来追加上去  ，手相 办公室  一样的套路  
+面相 手相 八字 办公室分水 整合的命理分析   命里缺木  需要在办公桌上面放个花
+
+星座运势  有相应的插件  
+
+
+
+
+
+
+[3 tools called]
+
+现在 `bazi_calculator_detail.py` 已经完全依赖我们拆出来的 `bazi_fortune` 微服务来生成大运、流年等详细数据。如果没有先启动这项服务并配置环境变量，就只会看到提示信息而不会继续输出分析。处理步骤如下：
+
+---
+
+### 1. 启动大运流年微服务
+
+在项目根目录打开一个终端窗口，执行：
+
+```bash
+cd /Users/zhoudt/Downloads/project/HiFate-bazi
+
+# 启动 bazi_fortune 微服务
+.venv/bin/python -m uvicorn services.bazi_fortune.main:app --host 0.0.0.0 --port 9002
+```
+
+看到类似日志即表示服务已启动：
+```
+INFO:     Uvicorn running on http://0.0.0.0:9002 (Press CTRL+C to quit)
+```
+
+可选：访问浏览器 `http://127.0.0.1:9002/healthz`，应该返回 `{"status":"ok"}`。
+
+---
+
+### 2. 设置环境变量并运行 CLI
+
+在另一个终端窗口执行：
+
+```bash
+cd /Users/zhoudt/Downloads/project/HiFate-bazi
+export BAZI_FORTUNE_SERVICE_URL="http://127.0.0.1:9002"
+
+.venv/bin/python src/bazi_calculator_detail.py \
+  --date 1988-09-16 \
+  --time 12:30 \
+  --gender male \
+  --current-time "2025-11-12 09:30"
+```
+
+也可以只运行默认参数：
+
+```bash
+export BAZI_FORTUNE_SERVICE_URL="http://127.0.0.1:9002"
+.venv/bin/python src/bazi_calculator_detail.py
+```
+
+这样脚本就会调用微服务并打印完整的详细分析。若要同时测试规则和核心服务，也可以启动：
+
+```bash
+.venv/bin/python -m uvicorn services.bazi_core.main:app --host 0.0.0.0 --port 9001
+.venv/bin/python -m uvicorn services.bazi_rule.main:app --host 0.0.0.0 --port 9003
+export BAZI_CORE_SERVICE_URL="http://127.0.0.1:9001"
+export BAZI_RULE_SERVICE_URL="http://127.0.0.1:9003"
+```
+
+---
+
+当前 CLI 的逻辑就是设计为“有微服务才输出详细结果”。如果必须在没有微服务的情况下跑一版离线逻辑，我们需要再做额外的回退实现；目前尚未保留旧的本地大运流年函数，所以请先按上述方式启动微服务即可看到完整输出。
+
+
+
+
+
+
+
+以下方案分成“数据准备与规则导入”、“微服务拆分规划”、“高并发 / 高可用架构”三个层面，覆盖后续婚姻/财运/爱情等 2000+ 规则的扩展需求。
+
+---
+
+## 1. 数据准备与规则导入
+
+1. **JSON 清洗与拆分**  
+   - 将 `docs/婚姻规则合并.json` 解析为结构化数据（每条记录含 ID、类型、条件、结果、附加字段）。  
+   - 在解析脚本中（例如 `scripts/import_rules.py`）补齐：  
+     - 条件映射表（天干/地支/十神/五行/节气等）  
+     - 规则分类（婚姻、财运、爱情等）  
+     - 优先级、版本号、启用状态  
+   - 拆成多个文件或内存结构：婚姻、财运、爱情分别保存，以便按服务导入。
+
+2. **校验与预处理**  
+   - 编写单元测试或验证脚本，确保解析后的条件合法：  
+     - 条件字段在枚举范围内（如 `ten_gods`, `element_relation`）  
+     - 结果字段非空  
+     - ID 唯一，不重叠  
+   - 支持“增量导入”：比较最新 JSON 与数据库现存数据，生成 diff（新增、更新、禁用）。
+
+3. **导入脚本改造**  
+   - 在 `scripts/import_marriage_rules.py` 基础上扩展：  
+     - 允许传入分类（婚姻/财运/爱情），按分类落库。  
+     - 支持追加模式（`--append`）与覆盖模式（`--replace`）。  
+     - 导入成功后更新 `rule_version` / `content_version` 两个字段，供规则服务热加载。  
+   - 日志中输出失败原因与规则 ID，方便手工补录。
+
+4. **数据库结构**  
+   - `bazi_rules`：增加 `category`、`tags`、`priority`、`enabled`、`metadata` 等字段。  
+   - `rule_version` 表记录最新版本号。  
+   - 如果后续需要动态配置条件权重或 ABTest，可以新增 `rule_configs` 表存放 JSON 配置。
+
+---
+
+## 2. 微服务拆分规划
+
+当前已有 `bazi-rule-service`，建议按业务域拆分/扩展：
+
+| 服务 | 职责 | 核心接口 | 数据依赖 |
+|------|------|----------|----------|
+| `rule-mgmt-service` | 规则导入、校验、版本发布 | `POST /rules/import`, `GET /rules/version`, `POST /rules/publish` | MySQL |
+| `rule-matcher-service`（现有的 `bazi-rule-service` 演进） | 规则匹配 & 命中结果返回 | `POST /rules/match` | Redis（缓存规则），MySQL（回源） |
+| `rule-analytics-service`（可选） | 规则命中统计、命中日志查询 | `POST /rules/hit`, `GET /rules/stats` | Kafka / ClickHouse 等 |
+| `rule-service-marriage` | 婚姻规则匹配（规则子集） | `POST /marriage/match` | 从 matcher 读取婚姻分类规则 |
+| `rule-service-wealth` / `rule-service-love` ... | 其他领域规则匹配 | 同上 | 同上 |
+
+拆分策略：
+1. **逻辑分层**：导入（写）与匹配（读）分离，避免相互影响；匹配服务按领域划分，保证每个服务只加载自己需要的规则集。
+2. **共用基础库**：条件解析、命中算法、缓存机制抽离到公共模块（如 `src/rules/core`），各服务引用同一套逻辑，避免代码重复。
+3. **热加载与多版本**：  
+   - matcher 服务启动时从缓存（Redis）加载规则；  
+   - 导入成功后通过消息队列或版本号通知各 matcher 重新加载；  
+   - 支持灰度：版本号参数供调用方指定（如 `?rule_version=20241112`）。
+
+---
+
+## 3. 高并发 / 高可用架构
+
+1. **服务部署**  
+   - 每个微服务容器化（Docker），部署在 Kubernetes 或类似平台上，设置 HPA（自动扩缩容）。  
+   - 使用 Service Mesh 或 API Gateway 统一网关，控制限流、熔断、鉴权。
+
+2. **缓存策略**  
+   - 规则匹配是纯读场景：  
+     - 规则先写入 MySQL，再同步到 Redis（Hash / JSON 缓存），matcher 服务从 Redis 加载；  
+     - 启动时若 Redis 未命中，则回源 MySQL；  
+     - 重建缓存时采用双写加版本号，确保一致性。  
+   - 规则结果缓存：对热点用户请求，可短期缓存匹配结果（如 5 分钟），大幅减少计算。
+
+3. **并发处理**  
+   - matcher 服务内部使用协程/线程池，批量处理条件评估；  
+   - 对复杂规则可启用预编译/索引（如将条件拆成树结构、BitMap 快速筛选）；  
+   - 需要时考虑引入 CEP（复杂事件处理）或规则引擎（Drools/RedisJson 等），但要评估性能与可控度。
+
+4. **高可用与容灾**  
+   - 服务多实例部署，使用负载均衡；  
+   - MySQL 主从 / 读写分离，启用慢查询监控；  
+   - Redis 高可用（哨兵或集群），必要时加持久化（RDB/AOF）；  
+   - 规则导入操作提供事务保证与回滚策略（增量导入时先写临时表，验证成功后切换）。
+
+5. **监控与告警**  
+   - 接入 Prometheus + Grafana 监控 QPS、延迟、错误率；  
+   - 日志打点规则命中情况，上传到 ELK/ClickHouse；  
+   - 导入服务对比版本差异报表，方便确认生效结果。
+
+---
+
+## 实施路线建议
+
+1. **第一阶段**：整理 JSON → 校验脚本 → 导入脚本更新 → MySQL 结构补齐。  
+2. **第二阶段**：拆分 `rule-matcher` 与 `rule-mgmt`，建立 Redis 缓存与版本通知；先覆盖婚姻规则，确保微服务模式跑通。  
+3. **第三阶段**：按领域复制 matcher 服务，推出财运/爱情规则导入与匹配；补上分析日志、监控报警。  
+4. **第四阶段（持续优化）**：针对高并发场景调优（索引、缓存、集群扩容），并逐步实现滚动发布、多版本灰度。
+
+---
+
+这样可以保证：  
+- **导入**：自动化、可追溯；  
+- **匹配**：读写隔离、多服务分担、缓存友好；  
+- **扩展**：新类型规则追加只需加配置和新 matcher 服务；  
+- **高并发**：依靠缓存、多实例、自动扩缩容 + 监控体系保持稳定。
+
+
+
+   .venv/bin/python scripts/import_marriage_rules.py --append --json-path docs/婚姻规则合并.json
+
+
+
+
+
+
+     curl -X POST http://127.0.0.1:9002/fortune/dayun-liunian \
+          -H "Content-Type: application/json" \
+          -d '{"solar_date":"1992-05-15","solar_time":"14:30","gender":"male","current_time":"2025-11-13T12:00"}'

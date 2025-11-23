@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>支付成功 - 魔方西元</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-style.css">
+    <style>
+        .success-container {
+            max-width: 600px;
+            margin: 80px auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .success-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 20px;
+            background: #28a745;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            color: white;
+        }
+        
+        .success-title {
+            font-size: 28px;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .success-message {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .payment-details {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 30px 0;
+            text-align: left;
+        }
+        
+        .payment-detail-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .payment-detail-item:last-child {
+            border-bottom: none;
+        }
+        
+        .payment-detail-label {
+            color: #666;
+        }
+        
+        .payment-detail-value {
+            color: #333;
+            font-weight: 500;
+        }
+        
+        .btn-back {
+            display: inline-block;
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+        
+        .btn-back:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="success-container">
+        <div id="loading" class="loading">
+            <p>正在验证支付状态...</p>
+        </div>
+        
+        <div id="successContent" style="display: none;">
+            <div class="success-icon">✓</div>
+            <h1 class="success-title">支付成功！</h1>
+            <p class="success-message">感谢您的购买，您的订阅已激活</p>
+            
+            <div class="payment-details">
+                <div class="payment-detail-item">
+                    <span class="payment-detail-label">订单号</span>
+                    <span class="payment-detail-value" id="sessionId">-</span>
+                </div>
+                <div class="payment-detail-item">
+                    <span class="payment-detail-label">支付金额</span>
+                    <span class="payment-detail-value" id="amount">-</span>
+                </div>
+                <div class="payment-detail-item">
+                    <span class="payment-detail-label">支付状态</span>
+                    <span class="payment-detail-value" id="status">-</span>
+                </div>
+                <div class="payment-detail-item">
+                    <span class="payment-detail-label">支付时间</span>
+                    <span class="payment-detail-value" id="createdAt">-</span>
+                </div>
+            </div>
+            
+            <a href="index.html" class="btn-back">返回首页</a>
+        </div>
+        
+        <div id="errorContent" style="display: none;">
+            <div class="success-icon" style="background: #dc3545;">✗</div>
+            <h1 class="success-title">支付验证失败</h1>
+            <p class="success-message" id="errorMessage">无法验证支付状态，请稍后重试</p>
+            <a href="payment.html" class="btn-back">返回支付页面</a>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="js/api.js"></script>
+    <script>
+        const API_CONFIG = window.API_CONFIG || {
+            baseURL: 'http://127.0.0.1:8001/api/v1',
+            timeout: 30000
+        };
+        
+        const api = new ApiClient(API_CONFIG.baseURL);
+        
+        // 从URL参数获取session_id
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+        
+        if (!sessionId) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('errorContent').style.display = 'block';
+            document.getElementById('errorMessage').textContent = '缺少支付会话ID';
+            return;
+        }
+        
+        // 验证支付状态
+        async function verifyPayment() {
+            try {
+                const response = await api.post('/payment/verify', {
+                    session_id: sessionId
+                });
+                
+                if (response.success) {
+                    // 显示成功信息
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('successContent').style.display = 'block';
+                    
+                    document.getElementById('sessionId').textContent = sessionId.substring(0, 20) + '...';
+                    document.getElementById('amount').textContent = response.currency + response.amount;
+                    document.getElementById('status').textContent = response.status === 'success' ? '已支付' : response.status;
+                    
+                    if (response.created_at) {
+                        const date = new Date(response.created_at * 1000);
+                        document.getElementById('createdAt').textContent = date.toLocaleString('zh-CN');
+                    }
+                } else {
+                    throw new Error(response.message || '支付验证失败');
+                }
+            } catch (error) {
+                console.error('Verify payment error:', error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('errorContent').style.display = 'block';
+                document.getElementById('errorMessage').textContent = error.message || '支付验证失败，请稍后重试';
+            }
+        }
+        
+        // 页面加载后验证支付
+        verifyPayment();
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>测试 onclick 联动</title>
+</head>
+<body>
+    <h1>测试大运流年点击事件</h1>
+    
+    <div id="test-area">
+        <p>点击下面的按钮测试：</p>
+        <button onclick="selectDayunByIndex(1)">测试大运1</button>
+        <button onclick="selectDayunByIndex(2)">测试大运2</button>
+        <button onclick="selectLiunianByYear(2024)">测试流年2024</button>
+    </div>
+    
+    <div id="result" style="margin-top: 20px; padding: 10px; border: 1px solid #ccc;">
+        结果显示区域
+    </div>
+    
+    <script>
+        console.log('测试页面开始加载');
+        
+        // 模拟 selectDayun 函数
+        function selectDayun(index) {
+            console.log('selectDayun 被调用，索引:', index);
+            document.getElementById('result').innerHTML = `<p>选中大运索引: ${index}</p>`;
+        }
+        
+        // 模拟 selectLiunian 函数
+        function selectLiunian(year) {
+            console.log('selectLiunian 被调用，年份:', year);
+            document.getElementById('result').innerHTML = `<p>选中流年: ${year}</p>`;
+        }
+        
+        // 暴露到全局
+        window.selectDayun = selectDayun;
+        window.selectLiunian = selectLiunian;
+        
+        // 定义 onclick 调用的函数
+        function selectDayunByIndex(index) {
+            console.log('selectDayunByIndex 被调用，索引:', index);
+            if (typeof window.selectDayun === 'function') {
+                window.selectDayun(index);
+            } else {
+                console.error('window.selectDayun 不存在');
+            }
+        }
+        
+        function selectLiunianByYear(year) {
+            console.log('selectLiunianByYear 被调用，年份:', year);
+            if (typeof window.selectLiunian === 'function') {
+                window.selectLiunian(year);
+            } else {
+                console.error('window.selectLiunian 不存在');
+            }
+        }
+        
+        // 暴露到全局
+        window.selectDayunByIndex = selectDayunByIndex;
+        window.selectLiunianByYear = selectLiunianByYear;
+        
+        console.log('函数已暴露:', {
+            selectDayun: typeof window.selectDayun,
+            selectLiunian: typeof window.selectLiunian,
+            selectDayunByIndex: typeof window.selectDayunByIndex,
+            selectLiunianByYear: typeof window.selectLiunianByYear
+        });
+    </script>
+</body>
+</html>
+

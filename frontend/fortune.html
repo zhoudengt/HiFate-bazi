@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大运流年流月 - HiFate系统</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-layout.css">
+    <script src="js/sidebar.js"></script>
+    <style>
+        .fortune-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .fortune-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        @media (max-width: 1200px) {
+            .fortune-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .fortune-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .fortune-section h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        
+        .fortune-list {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .fortune-item {
+            padding: 12px;
+            margin: 8px 0;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .fortune-item:hover {
+            border-color: #007bff;
+            background: #f0f7ff;
+            transform: translateX(5px);
+        }
+        
+        .fortune-item.active {
+            border-color: #28a745;
+            background: #f0fff4;
+            font-weight: bold;
+        }
+        
+        .fortune-item.current {
+            border-color: #ffc107;
+            background: #fffbf0;
+        }
+        
+        .fortune-item.current.active {
+            border-color: #28a745;
+            background: #f0fff4;
+        }
+        
+        .dayun-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .dayun-info {
+            flex: 1;
+        }
+        
+        .dayun-ganzhi {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #007bff;
+        }
+        
+        .dayun-age {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 4px;
+        }
+        
+        .liunian-item {
+            text-align: center;
+        }
+        
+        .liunian-year {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #007bff;
+        }
+        
+        .liunian-ganzhi {
+            font-size: 1.1em;
+            margin-top: 4px;
+        }
+        
+        .liunian-age {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 4px;
+        }
+        
+        .liuyue-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .liuyue-month {
+            font-weight: bold;
+            color: #007bff;
+        }
+        
+        .liuyue-ganzhi {
+            font-size: 1.1em;
+        }
+        
+        .liuyue-term {
+            font-size: 0.85em;
+            color: #666;
+        }
+        
+        .current-badge {
+            display: inline-block;
+            background: #ffc107;
+            color: #333;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            margin-left: 8px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        
+        .error {
+            color: #dc3545;
+            padding: 10px;
+            background: #f8d7da;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        
+        .user-info-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .user-info-card h3 {
+            margin-top: 0;
+        }
+        
+        .user-info-row {
+            display: flex;
+            gap: 20px;
+            margin: 10px 0;
+        }
+        
+        .user-info-item {
+            flex: 1;
+        }
+        
+        .user-info-item strong {
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="main-content">
+            <div class="content-header">
+                <div class="header-left">
+                    <button class="back-btn" onclick="history.back()">←</button>
+                    <h1 class="header-title">大运流年流月</h1>
+                </div>
+                <div class="header-user">
+                    <span id="userName">用户</span>
+                    <span>·</span>
+                    <span id="userGender">男</span>
+                </div>
+            </div>
+            
+            <div class="content-body">
+            <!-- 用户信息卡片 -->
+            <div class="user-info-card" id="userInfoCard" style="display: none;">
+                <h3>用户信息</h3>
+                <div class="user-info-row">
+                    <div class="user-info-item">
+                        <strong>出生日期：</strong><span id="infoDate"></span>
+                    </div>
+                    <div class="user-info-item">
+                        <strong>出生时间：</strong><span id="infoTime"></span>
+                    </div>
+                    <div class="user-info-item">
+                        <strong>性别：</strong><span id="infoGender"></span>
+                    </div>
+                </div>
+                <button onclick="showForm()" class="btn btn-primary">修改信息</button>
+            </div>
+            
+            <!-- 输入表单 -->
+            <form id="fortuneForm" class="form-card">
+                <h2>输入信息</h2>
+                <div class="form-group">
+                    <label for="solar_date">出生日期：</label>
+                    <input type="date" id="solar_date" name="solar_date" required>
+                </div>
+                <div class="form-group">
+                    <label for="solar_time">出生时间：</label>
+                    <input type="time" id="solar_time" name="solar_time" required>
+                </div>
+                <div class="form-group">
+                    <label for="gender">性别：</label>
+                    <select id="gender" name="gender" required>
+                        <option value="male">男</option>
+                        <option value="female">女</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary">查询</button>
+            </form>
+            
+            <!-- 结果区域 -->
+            <div id="result" style="display: none;">
+                <!-- 细盘表格 -->
+                <div class="card" id="xipanCard">
+                    <div class="card-header">
+                        <h2 class="card-title">细盘</h2>
+                    </div>
+                    <div class="timeline-container">
+                        <table class="timeline-table" id="xipanTable">
+                            <!-- 动态生成 -->
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- 起运和交运信息 -->
+                <div class="card" id="qiyunInfoCard" style="display: none;">
+                    <div class="card-header">
+                        <h2 class="card-title">起运与交运</h2>
+                    </div>
+                    <div class="card-body">
+                        <div id="qiyunInfo" style="display: flex; gap: 30px; padding: 15px;">
+                            <div>
+                                <strong>起运：</strong>
+                                <span id="qiyunDate"></span>
+                                <span id="qiyunAge"></span>
+                            </div>
+                            <div>
+                                <strong>交运：</strong>
+                                <span id="jiaoyunDate"></span>
+                                <span id="jiaoyunAge"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 大运时间轴表格 -->
+                <div class="card" id="dayunCard">
+                    <div class="card-header">
+                        <h2 class="card-title">大运</h2>
+                    </div>
+                    <div class="timeline-container">
+                        <table class="timeline-table" id="dayunTable">
+                            <!-- 动态生成 -->
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- 流年时间轴表格 -->
+                <div class="card" id="liunianCard">
+                    <div class="card-header">
+                        <h2 class="card-title">流年</h2>
+                    </div>
+                    <div class="timeline-container">
+                        <table class="timeline-table" id="liunianTable">
+                            <!-- 动态生成 -->
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- 流月时间轴表格 -->
+                <div class="card" id="liuyueCard">
+                    <div class="card-header">
+                        <h2 class="card-title">流月</h2>
+                    </div>
+                    <div class="timeline-container">
+                        <table class="timeline-table" id="liuyueTable">
+                            <!-- 动态生成 -->
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/fortune-timeline.js"></script>
+    <script src="js/fortune.js"></script>
+</body>
+</html>
+

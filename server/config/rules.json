@@ -1,0 +1,28 @@
+{
+  "rules": [
+    {
+      "rule_id": "DYNAMIC_RIZHU_GENDER",
+      "rule_name": "日柱性别动态查询",
+      "rule_type": "rizhu_gender_dynamic",
+      "priority": 100,
+      "enabled": true,
+      "conditions": {
+        "all": [
+          {"day_pillar": "*"},
+          {"gender": "*"}
+        ]
+      },
+      "content": {
+        "type": "dynamic",
+        "query_adapter": "RizhuGenderAnalyzer",
+        "query_method": "analyze_rizhu_gender",
+        "default_content": {
+          "type": "description",
+          "text": "暂无分析数据"
+        }
+      },
+      "description": "根据日柱和性别动态查询命理分析（使用RizhuGenderAnalyzer适配器）"
+    }
+  ]
+}
+

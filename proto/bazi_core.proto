@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package bazi.core;
+
+// Bazi Core Service - 八字排盘核心计算服务
+
+// 请求消息
+message BaziCoreRequest {
+  string solar_date = 1;  // 阳历日期，格式 YYYY-MM-DD
+  string solar_time = 2;  // 阳历时间，格式 HH:MM
+  string gender = 3;       // 性别，male/female
+}
+
+// 四柱信息
+message Pillar {
+  string stem = 1;    // 天干
+  string branch = 2;  // 地支
+}
+
+// 四柱详情
+message PillarDetail {
+  string main_star = 1;           // 主星
+  string nayin = 2;               // 纳音
+  string kongwang = 3;            // 空亡
+  repeated string deities = 4;    // 神煞列表
+}
+
+// 响应消息
+message BaziCoreResponse {
+  // 基本信息
+  map<string, string> basic_info = 1;
+  
+  // 四柱信息
+  Pillar year_pillar = 2;
+  Pillar month_pillar = 3;
+  Pillar day_pillar = 4;
+  Pillar hour_pillar = 5;
+  
+  // 四柱详情
+  map<string, PillarDetail> details = 6;
+  
+  // 十神统计
+  map<string, string> ten_gods_stats = 7;
+  
+  // 五行信息
+  map<string, string> elements = 8;
+  
+  // 五行计数
+  map<string, int32> element_counts = 9;
+  
+  // 关系信息
+  map<string, string> relationships = 10;
+  
+  // 元数据（JSON 字符串，用于复杂嵌套结构）
+  string metadata_json = 11;
+}
+
+// 健康检查请求
+message HealthCheckRequest {}
+
+// 健康检查响应
+message HealthCheckResponse {
+  string status = 1;
+}
+
+// Bazi Core 服务定义
+service BaziCoreService {
+  // 计算八字排盘
+  rpc CalculateBazi(BaziCoreRequest) returns (BaziCoreResponse);
+  
+  // 健康检查
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+

@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>支付 - 魔方西元</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-style.css">
+    <style>
+        .payment-container {
+            max-width: 800px;
+            margin: 40px auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+        }
+        
+        .payment-header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .payment-header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .payment-header .subtitle {
+            color: #666;
+            font-size: 16px;
+        }
+        
+        .payment-summary {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .payment-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .payment-item:last-child {
+            border-bottom: none;
+        }
+        
+        .payment-item-label {
+            font-size: 16px;
+            color: #333;
+        }
+        
+        .payment-item-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .payment-total {
+            font-size: 24px;
+            color: #333;
+            margin-top: 10px;
+        }
+        
+        .payment-form {
+            margin-top: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .payment-info {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #856404;
+        }
+        
+        .btn-pay {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 20px;
+        }
+        
+        .btn-pay:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-pay:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .error-msg {
+            color: #dc3545;
+            margin-top: 10px;
+            font-size: 14px;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 5px;
+            padding: 12px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="payment-container">
+        <div class="payment-header">
+            <h1>订阅会员</h1>
+            <div class="subtitle">安全支付，支持多种支付方式</div>
+        </div>
+        
+        <form id="paymentForm" class="payment-form">
+            <div class="form-group">
+                <label for="productName">产品名称 *</label>
+                <input type="text" id="productName" required placeholder="请输入产品名称，如：月订阅会员" value="">
+            </div>
+            
+            <div class="form-group">
+                <label for="amount">支付金额 *</label>
+                <input type="number" id="amount" step="0.01" min="0.01" required placeholder="请输入金额，如：19.90" value="">
+            </div>
+            
+            <div class="form-group">
+                <label for="currency">货币</label>
+                <select id="currency" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
+                    <option value="USD">USD (美元)</option>
+                    <option value="CNY">CNY (人民币)</option>
+                    <option value="HKD">HKD (港币)</option>
+                    <option value="EUR">EUR (欧元)</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="customerEmail">邮箱 *</label>
+                <input type="email" id="customerEmail" required placeholder="请输入您的邮箱地址，如：user@example.com" value="">
+            </div>
+            
+            <div class="payment-summary" id="paymentSummary" style="display: none;">
+                <div class="payment-item">
+                    <span class="payment-item-label" id="productLabel">产品</span>
+                    <span class="payment-item-value" id="productPrice">-</span>
+                </div>
+                <div class="payment-item">
+                    <span class="payment-item-label">小计</span>
+                    <span class="payment-item-value" id="subtotal">-</span>
+                </div>
+                <div class="payment-item payment-total">
+                    <span>应付合计</span>
+                    <span id="total">-</span>
+                </div>
+            </div>
+            
+            <div class="payment-info">
+                <strong>支付说明：</strong><br>
+                1. 填写产品信息和邮箱后，点击"立即支付"按钮<br>
+                2. 系统将跳转到Stripe安全支付页面<br>
+                3. 在Stripe支付页面输入您的银行卡信息（卡号、有效期、CVC等）<br>
+                4. 完成支付后，系统会自动跳转回支付成功页面<br>
+                <br>
+                支付若遇到问题，请联系小助手（Wechat ID: FateMate_2024）咨询。我们支持银联、Visa、Mastercard等主流支付方式。
+            </div>
+            
+            <button type="submit" class="btn-pay" id="payButton">
+                立即支付
+            </button>
+            
+            <div class="loading" id="loading">
+                <p>正在创建支付会话，请稍候...</p>
+            </div>
+            
+            <div class="error-msg" id="errorMsg"></div>
+        </form>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="js/api.js"></script>
+    <script>
+        const API_CONFIG = window.API_CONFIG || {
+            baseURL: 'http://127.0.0.1:8001/api/v1',
+            timeout: 30000
+        };
+        
+        const api = new ApiClient(API_CONFIG.baseURL);
+        
+        // 从URL参数获取支付信息（用于预填充）
+        const urlParams = new URLSearchParams(window.location.search);
+        const prefillAmount = urlParams.get('amount');
+        const prefillProduct = urlParams.get('product');
+        const prefillCurrency = urlParams.get('currency');
+        const prefillEmail = urlParams.get('email');
+        
+        // 预填充表单
+        if (prefillAmount) {
+            document.getElementById('amount').value = prefillAmount;
+        }
+        if (prefillProduct) {
+            document.getElementById('productName').value = prefillProduct;
+        }
+        if (prefillCurrency) {
+            document.getElementById('currency').value = prefillCurrency;
+        }
+        if (prefillEmail) {
+            document.getElementById('customerEmail').value = prefillEmail;
+        }
+        
+        // 更新支付摘要显示
+        function updatePaymentSummary() {
+            const amount = document.getElementById('amount').value;
+            const productName = document.getElementById('productName').value;
+            const currency = document.getElementById('currency').value;
+            const summaryDiv = document.getElementById('paymentSummary');
+            
+            if (amount && parseFloat(amount) > 0 && productName) {
+                const currencySymbol = getCurrencySymbol(currency);
+                const formattedAmount = parseFloat(amount).toFixed(2);
+                
+                document.getElementById('productLabel').textContent = productName;
+                document.getElementById('productPrice').textContent = `${currencySymbol}${formattedAmount}`;
+                document.getElementById('subtotal').textContent = `${currencySymbol}${formattedAmount}`;
+                document.getElementById('total').textContent = `${currencySymbol}${formattedAmount}`;
+                summaryDiv.style.display = 'block';
+            } else {
+                summaryDiv.style.display = 'none';
+            }
+        }
+        
+        // 获取货币符号
+        function getCurrencySymbol(currency) {
+            const symbols = {
+                'USD': 'US$',
+                'CNY': '¥',
+                'HKD': 'HK$',
+                'EUR': '€'
+            };
+            return symbols[currency] || currency;
+        }
+        
+        // 监听输入变化，实时更新摘要
+        document.getElementById('amount').addEventListener('input', updatePaymentSummary);
+        document.getElementById('productName').addEventListener('input', updatePaymentSummary);
+        document.getElementById('currency').addEventListener('change', updatePaymentSummary);
+        
+        // 初始化时更新一次
+        updatePaymentSummary();
+        
+        // 邮箱验证函数
+        function validateEmail(email) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            return emailRegex.test(email);
+        }
+        
+        // 保存表单数据，防止页面刷新丢失
+        function saveFormData() {
+            const formData = {
+                productName: document.getElementById('productName').value,
+                amount: document.getElementById('amount').value,
+                currency: document.getElementById('currency').value,
+                email: document.getElementById('customerEmail').value
+            };
+            sessionStorage.setItem('paymentFormData', JSON.stringify(formData));
+        }
+        
+        // 恢复表单数据
+        function restoreFormData() {
+            const savedData = sessionStorage.getItem('paymentFormData');
+            if (savedData) {
+                try {
+                    const formData = JSON.parse(savedData);
+                    if (formData.productName) document.getElementById('productName').value = formData.productName;
+                    if (formData.amount) document.getElementById('amount').value = formData.amount;
+                    if (formData.currency) document.getElementById('currency').value = formData.currency;
+                    if (formData.email) document.getElementById('customerEmail').value = formData.email;
+                    updatePaymentSummary();
+                } catch (e) {
+                    console.error('Failed to restore form data:', e);
+                }
+            }
+        }
+        
+        // 页面加载时恢复数据
+        restoreFormData();
+        
+        // 监听输入变化，实时保存
+        document.getElementById('productName').addEventListener('input', () => {
+            saveFormData();
+            updatePaymentSummary();
+        });
+        document.getElementById('amount').addEventListener('input', () => {
+            saveFormData();
+            updatePaymentSummary();
+        });
+        document.getElementById('currency').addEventListener('change', () => {
+            saveFormData();
+            updatePaymentSummary();
+        });
+        document.getElementById('customerEmail').addEventListener('input', saveFormData);
+        
+        // 处理表单提交
+        document.getElementById('paymentForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // 保存当前表单数据
+            saveFormData();
+            
+            const amount = document.getElementById('amount').value;
+            const productName = document.getElementById('productName').value;
+            const currency = document.getElementById('currency').value;
+            const email = document.getElementById('customerEmail').value.trim();
+            const payButton = document.getElementById('payButton');
+            const loading = document.getElementById('loading');
+            const errorMsg = document.getElementById('errorMsg');
+            
+            // 验证所有必填字段
+            if (!productName || productName.trim() === '') {
+                errorMsg.textContent = '请输入产品名称';
+                errorMsg.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                return;
+            }
+            
+            if (!amount || parseFloat(amount) <= 0 || isNaN(parseFloat(amount))) {
+                errorMsg.textContent = '请输入有效的支付金额（必须大于0）';
+                errorMsg.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                return;
+            }
+            
+            if (!email || email.trim() === '') {
+                errorMsg.textContent = '请输入邮箱地址';
+                errorMsg.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                return;
+            }
+            
+            // 验证邮箱格式
+            if (!validateEmail(email)) {
+                errorMsg.textContent = '请输入有效的邮箱地址（格式：user@example.com）';
+                errorMsg.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                return;
+            }
+            
+            // 禁用按钮，显示加载状态
+            payButton.disabled = true;
+            payButton.textContent = '正在创建支付会话...';
+            loading.classList.add('show');
+            errorMsg.textContent = '';
+            
+            try {
+                // 创建支付会话
+                const response = await api.post('/payment/create-session', {
+                    amount: parseFloat(amount).toFixed(2),
+                    currency: currency,
+                    product_name: productName.trim(),
+                    customer_email: email,
+                    metadata: {
+                        source: 'mofang_xiyuan',
+                        product: productName.trim()
+                    }
+                });
+                
+                if (response.success && response.checkout_url) {
+                    // 清除保存的表单数据（因为即将跳转）
+                    sessionStorage.removeItem('paymentFormData');
+                    // 跳转到Stripe支付页面
+                    window.location.href = response.checkout_url;
+                } else {
+                    throw new Error(response.message || '创建支付会话失败');
+                }
+            } catch (error) {
+                console.error('Payment error:', error);
+                
+                // 提取错误信息
+                let errorMessage = '创建支付会话失败，请稍后重试';
+                if (error && error.message) {
+                    errorMessage = error.message;
+                    // 如果是网络错误，提供更友好的提示
+                    if (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch')) {
+                        errorMessage = '网络连接失败，请检查：\n1. 后端服务是否已启动（端口8001）\n2. 网络连接是否正常\n3. 查看浏览器控制台获取详细错误信息';
+                    }
+                } else if (typeof error === 'string') {
+                    errorMessage = error;
+                }
+                
+                // 显示错误信息
+                errorMsg.innerHTML = errorMessage.replace(/\n/g, '<br>');
+                errorMsg.style.display = 'block';
+                errorMsg.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                
+                // 恢复按钮状态
+                payButton.disabled = false;
+                payButton.textContent = '立即支付';
+                loading.classList.remove('show');
+                
+                // 确保表单数据还在（防止清空）
+                restoreFormData();
+            }
+        });
+    </script>
+</body>
+</html>
+

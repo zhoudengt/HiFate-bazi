@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package payment;
+
+// Payment Service - 支付服务（魔方西元）
+
+// 创建支付会话请求
+message CreatePaymentSessionRequest {
+  string amount = 1;              // 金额，格式：19.90
+  string currency = 2;            // 货币代码，默认：USD
+  string product_name = 3;        // 产品名称，如：月订阅会员
+  string customer_email = 4;      // 客户邮箱
+  map<string, string> metadata = 5; // 元数据（可选）
+}
+
+// 创建支付会话响应
+message CreatePaymentSessionResponse {
+  string session_id = 1;          // Stripe Session ID
+  string checkout_url = 2;        // 支付页面URL
+  string status = 3;              // 状态：created/success/failed
+  string message = 4;             // 消息
+}
+
+// 验证支付状态请求
+message VerifyPaymentRequest {
+  string session_id = 1;          // Stripe Session ID
+}
+
+// 验证支付状态响应
+message VerifyPaymentResponse {
+  string status = 1;              // 支付状态：pending/success/failed/canceled
+  string payment_intent_id = 2;   // Payment Intent ID
+  string amount = 3;              // 支付金额
+  string currency = 4;            // 货币
+  string customer_email = 5;      // 客户邮箱
+  int64 created_at = 6;           // 创建时间戳
+  map<string, string> metadata = 7; // 元数据
+}
+
+// 健康检查请求
+message HealthCheckRequest {}
+
+// 健康检查响应
+message HealthCheckResponse {
+  string status = 1;
+}
+
+// Payment 服务定义
+service PaymentService {
+  // 创建支付会话
+  rpc CreatePaymentSession(CreatePaymentSessionRequest) returns (CreatePaymentSessionResponse);
+  
+  // 验证支付状态
+  rpc VerifyPayment(VerifyPaymentRequest) returns (VerifyPaymentResponse);
+  
+  // 健康检查
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+

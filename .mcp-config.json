@@ -1,0 +1,70 @@
+{
+  "mcpServers": {
+    "puppeteer": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-puppeteer"
+      ],
+      "env": {
+        "PUPPETEER_HEADLESS": "false",
+        "PUPPETEER_EXECUTABLE_PATH": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+      },
+      "description": "浏览器自动化测试 - 用于前端页面测试、截图、调试"
+    },
+    "mysql-bazi": {
+      "command": "node",
+      "args": [
+        "/Users/zhoudt/Downloads/project/HiFate-bazi/scripts/mcp-mysql-server.js"
+      ],
+      "env": {
+        "MYSQL_HOST": "127.0.0.1",
+        "MYSQL_PORT": "13306",
+        "MYSQL_USER": "root",
+        "MYSQL_PASSWORD": "root",
+        "MYSQL_DATABASE": "bazi_system",
+        "CHARSET": "utf8mb4"
+      },
+      "description": "MySQL 数据库操作 - 用于规则查询、条件修改、数据分析"
+    }
+  },
+  "usage": {
+    "browser": {
+      "scenarios": [
+        "前端页面自动化测试",
+        "截图和视觉验证",
+        "控制台错误检查",
+        "网络请求监控",
+        "性能和可访问性审计"
+      ],
+      "examples": [
+        "打开 http://localhost:8000/frontend/formula-analysis.html 并测试",
+        "检查算法公式页面是否有 JavaScript 错误",
+        "截图当前页面并分析布局问题"
+      ]
+    },
+    "database": {
+      "scenarios": [
+        "规则条件查询",
+        "批量修改规则内容",
+        "字符编码问题检查",
+        "规则匹配统计分析"
+      ],
+      "examples": [
+        "查询所有 FORMULA_HEALTH 类型的规则",
+        "修改规则 70012 的 conditions",
+        "检查规则条件中是否有乱码字符"
+      ]
+    }
+  },
+  "installation": {
+    "puppeteer": "npm install -g @modelcontextprotocol/server-puppeteer",
+    "mysql": "使用项目自定义脚本 scripts/mcp-mysql-server.js"
+  },
+  "config_file": "~/Library/Application Support/Cursor/User/settings.json",
+  "quick_test": {
+    "browser": "在 Cursor 中问：请访问 localhost:8000 并截图",
+    "database": "在 Cursor 中问：查询 bazi_rules 表的前 5 条记录"
+  }
+}
+
