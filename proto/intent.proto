@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package intent;
+
+// 意图识别服务
+service IntentService {
+  // 分类用户问题
+  rpc Classify (ClassifyRequest) returns (ClassifyResponse);
+  
+  // 批量分类（用于测试）
+  rpc BatchClassify (BatchClassifyRequest) returns (BatchClassifyResponse);
+  
+  // 健康检查
+  rpc HealthCheck (HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// 分类请求
+message ClassifyRequest {
+  string question = 1;                    // 用户问题
+  string user_id = 2;                     // 用户ID（可选）
+  map<string, string> context = 3;        // 上下文（可选）
+  bool use_cache = 4;                     // 是否使用缓存（默认true）
+  string prompt_version = 5;              // 指定Prompt版本（可选）
+}
+
+// 时间意图（新增）
+message TimeIntent {
+  string type = 1;                        // 时间类型（today, this_year, future_years等）
+  repeated int32 target_years = 2;        // 目标年份列表
+  string description = 3;                 // 时间描述
+  bool is_explicit = 4;                   // 是否明确指定时间
+}
+
+// 分类响应
+message ClassifyResponse {
+  repeated string intents = 1;            // 识别到的意图（事项维度）
+  float confidence = 2;                   // 置信度
+  repeated string rule_types = 3;         // 对应的规则类型
+  repeated string keywords = 4;           // 匹配的关键词
+  string reasoning = 5;                   // 推理过程
+  bool is_ambiguous = 6;                  // 是否模糊
+  string prompt_version = 7;              // 使用的Prompt版本
+  int64 response_time_ms = 8;             // 响应时间（毫秒）
+  TimeIntent time_intent = 9;             // 时间意图
+  bool is_fortune_related = 10;           // 是否命理相关
+  string reject_message = 11;             // 婉拒消息（非命理问题时使用）
+}
+
+// 批量分类请求
+message BatchClassifyRequest {
+  repeated ClassifyRequest requests = 1;
+}
+
+// 批量分类响应
+message BatchClassifyResponse {
+  repeated ClassifyResponse responses = 1;
+}
+
+// 健康检查请求
+message HealthCheckRequest {}
+
+// 健康检查响应
+message HealthCheckResponse {
+  string status = 1;                      // healthy/unhealthy
+  string version = 2;                     // 服务版本
+  string prompt_version = 3;              // 当前Prompt版本
+}
+
