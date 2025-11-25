@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能运势分析 - AI意图识别</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+            font-size: 0.95em;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+            font-family: inherit;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .example-questions {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .example-questions h3 {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .example-tag {
+            display: inline-block;
+            padding: 6px 12px;
+            margin: 4px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 15px;
+            font-size: 0.85em;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .example-tag:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .result-card {
+            display: none;
+            animation: slideIn 0.5s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .intent-badge {
+            display: inline-block;
+            padding: 8px 15px;
+            margin: 5px;
+            background: #667eea;
+            color: white;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 500;
+        }
+
+        .confidence-bar {
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            transition: width 1s ease;
+        }
+
+        .bazi-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+
+        .bazi-pillars {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .pillar {
+            text-align: center;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+        }
+
+        .pillar-label {
+            font-size: 0.8em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .pillar-content {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .response-text {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: #fee;
+            color: #c00;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #c00;
+            display: none;
+        }
+
+        .section-title {
+            font-size: 1.3em;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .info-label {
+            font-weight: 600;
+            color: #666;
+        }
+
+        .info-value {
+            color: #333;
+        }
+
+        .keyword-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .keyword {
+            background: #f0f0f0;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.9em;
+        }
+
+        @media (max-width: 600px) {
+            .header h1 {
+                font-size: 1.8em;
+            }
+            
+            .card {
+                padding: 20px;
+            }
+
+            .bazi-pillars {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔮 智能运势分析</h1>
+            <p>基于AI的问题意图识别 · 准确率95%+</p>
+        </div>
+
+        <!-- 输入表单 -->
+        <div class="card">
+            <form id="fortuneForm">
+                <div class="form-group">
+                    <label>💬 您的问题</label>
+                    <textarea 
+                        id="question" 
+                        placeholder="例如：我的事业运势怎么样？今年能发财吗？什么时候会结婚？"
+                        required
+                    ></textarea>
+                </div>
+
+                <div class="example-questions">
+                    <h3>💡 示例问题（点击填入）</h3>
+                    <span class="example-tag" onclick="setQuestion('我的事业运势怎么样？')">事业运势</span>
+                    <span class="example-tag" onclick="setQuestion('我今年能发财吗？')">财富运势</span>
+                    <span class="example-tag" onclick="setQuestion('我什么时候会结婚？')">婚姻感情</span>
+                    <span class="example-tag" onclick="setQuestion('我的身体健康吗？')">健康运势</span>
+                    <span class="example-tag" onclick="setQuestion('我是什么性格？')">性格特点</span>
+                    <span class="example-tag" onclick="setQuestion('我今年能赚到钱吗？会不会升职？')">复合问题</span>
+                    <span class="example-tag" onclick="setQuestion('我的食神旺不旺？')">专业术语</span>
+                </div>
+
+                <div class="section-title" style="margin-top: 20px;">📅 您的出生信息</div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>出生年份</label>
+                        <input type="number" id="year" placeholder="1990" min="1900" max="2100" value="1990" required>
+                    </div>
+                    <div class="form-group">
+                        <label>出生月份</label>
+                        <input type="number" id="month" placeholder="1-12" min="1" max="12" value="1" required>
+                    </div>
+                    <div class="form-group">
+                        <label>出生日期</label>
+                        <input type="number" id="day" placeholder="1-31" min="1" max="31" value="1" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>出生时辰</label>
+                        <input type="number" id="hour" placeholder="0-23点" min="0" max="23" value="12">
+                    </div>
+                    <div class="form-group">
+                        <label>性别</label>
+                        <select id="gender" required>
+                            <option value="male">男</option>
+                            <option value="female">女</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 15px;">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" id="includeFortune" checked style="width: auto; margin-right: 8px;">
+                        <span>🌟 包含流年大运分析（自动对比最近两年）</span>
+                    </label>
+                    <p style="font-size: 0.85em; color: #666; margin-top: 5px; margin-left: 26px;">
+                        启用后将显示流年、大运信息。不指定时间→最近两年；说"过去"→过去两年；说"今年"→只看今年
+                    </p>
+                </div>
+
+                <button type="submit" class="btn" id="submitBtn">
+                    🚀 开始智能分析
+                </button>
+            </form>
+        </div>
+
+        <!-- 加载中 -->
+        <div class="card loading" id="loadingCard" style="display: none;">
+            <div class="spinner"></div>
+            <p style="margin-top: 20px; color: #666;">正在分析中，请稍候...</p>
+        </div>
+
+        <!-- 错误提示 -->
+        <div class="error-message" id="errorMessage"></div>
+
+        <!-- 结果展示 -->
+        <div class="card result-card" id="resultCard">
+            <div class="section-title">🎯 意图识别结果</div>
+            
+            <div class="info-row">
+                <span class="info-label">识别意图：</span>
+                <span id="intentsDisplay"></span>
+            </div>
+
+            <div class="info-row">
+                <span class="info-label">置信度：</span>
+                <span id="confidenceText"></span>
+            </div>
+
+            <div class="confidence-bar">
+                <div class="confidence-fill" id="confidenceFill" style="width: 0%;">
+                    <span id="confidencePercent">0%</span>
+                </div>
+            </div>
+
+            <div class="info-row">
+                <span class="info-label">关键词：</span>
+                <div class="keyword-list" id="keywordsList"></div>
+            </div>
+
+            <div class="info-row">
+                <span class="info-label">是否模糊：</span>
+                <span id="ambiguousStatus"></span>
+            </div>
+
+            <div class="section-title" style="margin-top: 30px;">📊 八字信息</div>
+            
+            <div class="bazi-info">
+                <div class="info-row">
+                    <span class="info-label">日主：</span>
+                    <span id="rizhu"></span>
+                </div>
+                <div class="bazi-pillars" id="baziPillars"></div>
+            </div>
+
+            <div class="section-title" style="margin-top: 30px;">💬 智能分析结果</div>
+            
+            <div class="response-text" id="responseText"></div>
+
+            <div class="info-row" style="margin-top: 20px; font-size: 0.9em; color: #999;">
+                <span>匹配规则数：<strong id="rulesCount">0</strong></span>
+                <span>响应时间：<strong id="responseTime">0ms</strong></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:8001';
+
+        // 设置示例问题
+        function setQuestion(text) {
+            document.getElementById('question').value = text;
+        }
+
+        // 表单提交
+        document.getElementById('fortuneForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const question = document.getElementById('question').value.trim();
+            const year = parseInt(document.getElementById('year').value);
+            const month = parseInt(document.getElementById('month').value);
+            const day = parseInt(document.getElementById('day').value);
+            const hour = parseInt(document.getElementById('hour').value) || 12;
+            const gender = document.getElementById('gender').value;
+
+            if (!question) {
+                showError('请输入您的问题');
+                return;
+            }
+
+            // 显示加载状态
+            document.getElementById('loadingCard').style.display = 'block';
+            document.getElementById('resultCard').style.display = 'none';
+            document.getElementById('errorMessage').style.display = 'none';
+            document.getElementById('submitBtn').disabled = true;
+
+            const startTime = Date.now();
+
+            try {
+                // 获取流年大运开关状态
+                const includeFortune = document.getElementById('includeFortune').checked;
+                
+                // 调用智能分析API
+                const url = `${API_BASE_URL}/api/v1/smart-analyze?` +
+                    `question=${encodeURIComponent(question)}` +
+                    `&year=${year}` +
+                    `&month=${month}` +
+                    `&day=${day}` +
+                    `&hour=${hour}` +
+                    `&gender=${gender}` +
+                    `&include_fortune_context=${includeFortune}`;
+
+                console.log('🔗 API请求URL:', url);
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                const endTime = Date.now();
+                const responseTime = endTime - startTime;
+
+                if (data.success) {
+                    displayResult(data, responseTime);
+                } else {
+                    showError(data.message || '分析失败，请重试');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showError('网络请求失败，请检查服务是否启动');
+            } finally {
+                document.getElementById('loadingCard').style.display = 'none';
+                document.getElementById('submitBtn').disabled = false;
+            }
+        });
+
+        // 显示结果
+        function displayResult(data, responseTime) {
+            const intentResult = data.intent_result;
+            const baziInfo = data.bazi_info;
+
+            // 意图展示
+            const intentsHtml = intentResult.intents.map(intent => {
+                const intentNames = {
+                    'career': '事业运势',
+                    'wealth': '财富运势',
+                    'marriage': '婚姻感情',
+                    'health': '健康运势',
+                    'personality': '性格特点',
+                    'wangshui': '命局旺衰',
+                    'yongji': '喜忌用神',
+                    'shishen': '十神分析',
+                    'nayin': '纳音分析',
+                    'general': '综合分析'
+                };
+                return `<span class="intent-badge">${intentNames[intent] || intent}</span>`;
+            }).join('');
+            document.getElementById('intentsDisplay').innerHTML = intentsHtml;
+
+            // 置信度
+            const confidence = intentResult.confidence;
+            const confidencePercent = Math.round(confidence * 100);
+            document.getElementById('confidenceText').textContent = confidencePercent + '%';
+            
+            setTimeout(() => {
+                document.getElementById('confidenceFill').style.width = confidencePercent + '%';
+                document.getElementById('confidencePercent').textContent = confidencePercent + '%';
+            }, 100);
+
+            // 关键词
+            if (intentResult.keywords && intentResult.keywords.length > 0) {
+                const keywordsHtml = intentResult.keywords.map(kw => 
+                    `<span class="keyword">${kw}</span>`
+                ).join('');
+                document.getElementById('keywordsList').innerHTML = keywordsHtml;
+            } else {
+                document.getElementById('keywordsList').innerHTML = '<span class="keyword">无</span>';
+            }
+
+            // 是否模糊
+            const isAmbiguous = intentResult.is_ambiguous;
+            document.getElementById('ambiguousStatus').innerHTML = isAmbiguous 
+                ? '<span style="color: #ff9800;">是（建议更具体地描述）</span>' 
+                : '<span style="color: #4caf50;">否</span>';
+
+            // 八字信息
+            if (baziInfo && baziInfo['四柱']) {
+                const pillars = baziInfo['四柱'];
+                const rizhu = pillars['日柱'];
+                document.getElementById('rizhu').textContent = rizhu ? 
+                    `${rizhu['天干']}${rizhu['地支']}` : '未知';
+
+                // 四柱展示
+                const pillarsHtml = ['年柱', '月柱', '日柱', '时柱'].map(name => {
+                    const pillar = pillars[name];
+                    if (pillar) {
+                        return `
+                            <div class="pillar">
+                                <div class="pillar-label">${name}</div>
+                                <div class="pillar-content">${pillar['天干']}<br>${pillar['地支']}</div>
+                            </div>
+                        `;
+                    }
+                    return '';
+                }).join('');
+                document.getElementById('baziPillars').innerHTML = pillarsHtml;
+            }
+
+            // 分析结果
+            document.getElementById('responseText').textContent = data.response;
+
+            // 统计信息
+            document.getElementById('rulesCount').textContent = data.matched_rules_count || 0;
+            document.getElementById('responseTime').textContent = responseTime + 'ms';
+
+            // 显示结果卡片
+            document.getElementById('resultCard').style.display = 'block';
+
+            // 滚动到结果
+            setTimeout(() => {
+                document.getElementById('resultCard').scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'start' 
+                });
+            }, 200);
+        }
+
+        // 显示错误
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = '❌ ' + message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        // 页面加载时的提示
+        console.log('%c🔮 智能运势分析系统', 'color: #667eea; font-size: 20px; font-weight: bold;');
+        console.log('%c基于AI的问题意图识别，准确率95%+', 'color: #666; font-size: 12px;');
+        console.log('%cAPI地址：' + API_BASE_URL, 'color: #999; font-size: 12px;');
+    </script>
+</body>
+</html>
+

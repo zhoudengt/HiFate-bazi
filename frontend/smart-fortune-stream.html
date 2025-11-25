@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能运势分析 - 流式版（体验优化）</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .header .badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .analyze-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .analyze-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .analyze-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 进度条样式 */
+        .progress-container {
+            display: none;
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .progress-container.active {
+            display: block;
+        }
+
+        .progress-stage {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .progress-stage.current {
+            border-left: 4px solid #667eea;
+            background: #f0f4ff;
+        }
+
+        .progress-stage.completed {
+            opacity: 0.6;
+        }
+
+        .progress-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            font-size: 1.2em;
+        }
+
+        .progress-icon.loading {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            animation: spin 1s linear infinite;
+        }
+
+        .progress-icon.completed {
+            background: #4caf50;
+            color: white;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* 结果展示样式 */
+        .result-container {
+            display: none;
+        }
+
+        .result-container.active {
+            display: block;
+        }
+
+        .result-section {
+            margin-bottom: 25px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .result-section h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .bazi-pillars {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .pillar {
+            text-align: center;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .pillar-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .pillar-chars {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        /* LLM深度分析样式 */
+        .llm-analysis {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            min-height: 100px;
+            line-height: 1.8;
+            font-size: 1.05em;
+            color: #333;
+        }
+
+        .llm-analysis.streaming {
+            border-left: 4px solid #4caf50;
+        }
+
+        .llm-analysis .streaming-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1.2em;
+            background: #4caf50;
+            animation: blink 1s infinite;
+            margin-left: 2px;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        .llm-loading {
+            text-align: center;
+            color: #999;
+            padding: 40px;
+            font-style: italic;
+        }
+
+        /* 加载动画 */
+        .loading-dots {
+            display: inline-block;
+        }
+
+        .loading-dots span {
+            animation: blink 1.4s infinite;
+            animation-fill-mode: both;
+        }
+
+        .loading-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .loading-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        /* 错误提示 */
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border-left: 4px solid #c62828;
+        }
+
+        /* 示例问题 */
+        .example-questions {
+            background: #f0f4ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .example-tag {
+            display: inline-block;
+            background: white;
+            padding: 6px 12px;
+            border-radius: 15px;
+            margin: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s;
+            border: 1px solid #e0e0e0;
+        }
+
+        .example-tag:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔮 智能运势分析</h1>
+            <div class="badge">⚡ 流式输出版 - 秒级响应</div>
+            <p>基于AI意图识别 + LLM深度解读</p>
+        </div>
+
+        <!-- 输入表单 -->
+        <div class="card">
+            <div class="form-group">
+                <label>❓ 您想了解什么？</label>
+                <textarea id="question" placeholder="例如：我明年的财运怎么样？"></textarea>
+            </div>
+
+            <div class="example-questions">
+                <strong>💡 示例问题：</strong>
+                <span class="example-tag" onclick="fillExample('我明年的财运怎么样？')">明年财运</span>
+                <span class="example-tag" onclick="fillExample('后年的事业发展如何？')">后年事业</span>
+                <span class="example-tag" onclick="fillExample('今年适合投资吗？')">今年投资</span>
+                <span class="example-tag" onclick="fillExample('最近的健康状况')">最近健康</span>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>📅 出生年份</label>
+                    <input type="number" id="year" value="1990" min="1900" max="2100">
+                </div>
+                <div class="form-group">
+                    <label>📅 出生月份</label>
+                    <input type="number" id="month" value="5" min="1" max="12">
+                </div>
+                <div class="form-group">
+                    <label>📅 出生日期</label>
+                    <input type="number" id="day" value="15" min="1" max="31">
+                </div>
+                <div class="form-group">
+                    <label>⏰ 出生时辰</label>
+                    <input type="number" id="hour" value="14" min="0" max="23">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>👤 性别</label>
+                <select id="gender">
+                    <option value="male">男</option>
+                    <option value="female">女</option>
+                </select>
+            </div>
+
+            <button class="analyze-btn" onclick="startAnalysis()">
+                🚀 开始分析
+            </button>
+        </div>
+
+        <!-- 进度显示 -->
+        <div class="card progress-container" id="progressContainer">
+            <h3 style="margin-bottom: 20px;">📊 分析进度</h3>
+            <div id="progressStages"></div>
+        </div>
+
+        <!-- 结果展示 -->
+        <div class="card result-container" id="resultContainer">
+            <!-- 基础分析 -->
+            <div class="result-section" id="basicAnalysisSection" style="display:none;">
+                <h3>📋 基础分析</h3>
+                <div id="basicAnalysisContent"></div>
+            </div>
+
+            <!-- LLM深度解读 -->
+            <div class="result-section" id="llmAnalysisSection" style="display:none;">
+                <h3>🤖 AI深度解读</h3>
+                <div class="llm-analysis streaming" id="llmAnalysisContent">
+                    <div class="llm-loading">
+                        正在生成深度分析<span class="loading-dots"><span>.</span><span>.</span><span>.</span></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let eventSource = null;
+
+        function fillExample(question) {
+            document.getElementById('question').value = question;
+        }
+
+        function startAnalysis() {
+            // 关闭之前的连接
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            // 获取输入
+            const question = document.getElementById('question').value.trim();
+            const year = document.getElementById('year').value;
+            const month = document.getElementById('month').value;
+            const day = document.getElementById('day').value;
+            const hour = document.getElementById('hour').value;
+            const gender = document.getElementById('gender').value;
+
+            if (!question) {
+                alert('请输入您的问题');
+                return;
+            }
+
+            // 禁用按钮
+            const btn = document.querySelector('.analyze-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ 分析中...';
+
+            // 显示进度容器
+            const progressContainer = document.getElementById('progressContainer');
+            progressContainer.classList.add('active');
+
+            // 隐藏结果容器
+            const resultContainer = document.getElementById('resultContainer');
+            resultContainer.classList.remove('active');
+            document.getElementById('basicAnalysisSection').style.display = 'none';
+            document.getElementById('llmAnalysisSection').style.display = 'none';
+
+            // 构建API URL
+            const apiUrl = `http://localhost:8000/api/v1/smart-fortune/smart-analyze-stream?` +
+                `question=${encodeURIComponent(question)}` +
+                `&year=${year}&month=${month}&day=${day}&hour=${hour}&gender=${gender}`;
+
+            // 创建EventSource连接
+            eventSource = new EventSource(apiUrl);
+
+            // 监听不同类型的事件
+            eventSource.addEventListener('status', function(e) {
+                const data = JSON.parse(e.data);
+                updateProgress(data.stage, data.message);
+            });
+
+            eventSource.addEventListener('basic_analysis', function(e) {
+                const data = JSON.parse(e.data);
+                displayBasicAnalysis(data);
+                resultContainer.classList.add('active');
+            });
+
+            eventSource.addEventListener('llm_start', function(e) {
+                displayLLMStart();
+            });
+
+            eventSource.addEventListener('llm_chunk', function(e) {
+                const data = JSON.parse(e.data);
+                appendLLMChunk(data.content);
+            });
+
+            eventSource.addEventListener('llm_end', function(e) {
+                finishLLMAnalysis();
+            });
+
+            eventSource.addEventListener('llm_error', function(e) {
+                const data = JSON.parse(e.data);
+                displayLLMError(data.message);
+            });
+
+            eventSource.addEventListener('error', function(e) {
+                const data = JSON.parse(e.data);
+                displayError(data.message);
+                eventSource.close();
+                enableButton();
+            });
+
+            eventSource.addEventListener('end', function(e) {
+                eventSource.close();
+                enableButton();
+            });
+
+            // 错误处理
+            eventSource.onerror = function() {
+                console.error('EventSource connection error');
+                eventSource.close();
+                displayError('连接断开，请重试');
+                enableButton();
+            };
+        }
+
+        function updateProgress(stage, message) {
+            const stages = {
+                'intent': {icon: '🎯', text: '意图识别'},
+                'bazi': {icon: '📅', text: '八字计算'},
+                'rules': {icon: '📚', text: '规则匹配'},
+                'fortune': {icon: '🌟', text: '流年大运'},
+                'llm': {icon: '🤖', text: 'AI深度解读'}
+            };
+
+            let html = '';
+            for (const [key, info] of Object.entries(stages)) {
+                const isCurrent = key === stage;
+                const isCompleted = Object.keys(stages).indexOf(key) < Object.keys(stages).indexOf(stage);
+                
+                html += `
+                    <div class="progress-stage ${isCurrent ? 'current' : ''} ${isCompleted ? 'completed' : ''}">
+                        <div class="progress-icon ${isCurrent ? 'loading' : ''} ${isCompleted ? 'completed' : ''}">
+                            ${isCompleted ? '✓' : info.icon}
+                        </div>
+                        <div>
+                            <strong>${info.text}</strong>
+                            ${isCurrent ? `<div style="font-size:0.9em;color:#666;">${message}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }
+
+            document.getElementById('progressStages').innerHTML = html;
+        }
+
+        function displayBasicAnalysis(data) {
+            const section = document.getElementById('basicAnalysisSection');
+            const content = document.getElementById('basicAnalysisContent');
+
+            let html = '';
+
+            // 显示八字信息
+            if (data.bazi_info && data.bazi_info['四柱']) {
+                html += '<h4>🎴 四柱八字</h4>';
+                html += '<div class="bazi-pillars">';
+                for (const [pillarName, pillarData] of Object.entries(data.bazi_info['四柱'])) {
+                    html += `
+                        <div class="pillar">
+                            <div class="pillar-label">${pillarName}</div>
+                            <div class="pillar-chars">${pillarData['天干']}<br>${pillarData['地支']}</div>
+                        </div>
+                    `;
+                }
+                html += '</div>';
+            }
+
+            // 显示意图识别结果
+            if (data.intent) {
+                html += '<p style="margin-top:15px;"><strong>🎯 识别意图：</strong>' +
+                    data.intent.intents.join(', ') +
+                    ` (置信度: ${(data.intent.confidence * 100).toFixed(1)}%)</p>`;
+            }
+
+            content.innerHTML = html;
+            section.style.display = 'block';
+        }
+
+        function displayLLMStart() {
+            const section = document.getElementById('llmAnalysisSection');
+            const content = document.getElementById('llmAnalysisContent');
+            
+            content.innerHTML = '<span class="streaming-cursor"></span>';
+            content.classList.add('streaming');
+            section.style.display = 'block';
+
+            // 平滑滚动到LLM分析区域
+            section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function appendLLMChunk(text) {
+            const content = document.getElementById('llmAnalysisContent');
+            
+            // 移除光标
+            const cursor = content.querySelector('.streaming-cursor');
+            if (cursor) {
+                cursor.remove();
+            }
+
+            // 追加文本
+            content.innerHTML += text;
+
+            // 重新添加光标
+            content.innerHTML += '<span class="streaming-cursor"></span>';
+
+            // 自动滚动到底部
+            content.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+
+        function finishLLMAnalysis() {
+            const content = document.getElementById('llmAnalysisContent');
+            
+            // 移除光标
+            const cursor = content.querySelector('.streaming-cursor');
+            if (cursor) {
+                cursor.remove();
+            }
+
+            content.classList.remove('streaming');
+        }
+
+        function displayLLMError(message) {
+            const content = document.getElementById('llmAnalysisContent');
+            content.innerHTML = `
+                <div class="error-message">
+                    ⚠️ LLM分析失败：${message}
+                </div>
+            `;
+            content.classList.remove('streaming');
+        }
+
+        function displayError(message) {
+            const resultContainer = document.getElementById('resultContainer');
+            resultContainer.classList.add('active');
+            resultContainer.innerHTML = `
+                <div class="error-message">
+                    ❌ 错误：${message}
+                </div>
+            `;
+        }
+
+        function enableButton() {
+            const btn = document.querySelector('.analyze-btn');
+            btn.disabled = false;
+            btn.textContent = '🚀 开始分析';
+        }
+    </script>
+</body>
+</html>
+
