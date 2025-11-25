@@ -1,0 +1,110 @@
+syntax = "proto3";
+
+package optimizer;
+
+// Prompt优化服务
+service PromptOptimizerService {
+  // 收集反馈
+  rpc CollectFeedback (FeedbackRequest) returns (FeedbackResponse);
+  
+  // 获取周报
+  rpc GetWeeklyReport (WeeklyReportRequest) returns (WeeklyReportResponse);
+  
+  // 生成优化建议
+  rpc GenerateImprovement (ImprovementRequest) returns (ImprovementResponse);
+  
+  // 评估新Prompt
+  rpc EvaluatePrompt (EvaluateRequest) returns (EvaluateResponse);
+  
+  // 审核通过，部署新Prompt
+  rpc DeployPrompt (DeployRequest) returns (DeployResponse);
+}
+
+// 反馈请求
+message FeedbackRequest {
+  string question = 1;
+  repeated string predicted_intents = 2;
+  float confidence = 3;
+  repeated string correct_intents = 4;      // 用户纠正
+  bool satisfied = 5;                       // 用户是否满意
+  string comment = 6;                       // 用户评论
+  string user_id = 7;
+  int64 timestamp = 8;
+}
+
+// 反馈响应
+message FeedbackResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// 周报请求
+message WeeklyReportRequest {
+  string week = 1;  // 格式: 2025-W47
+}
+
+// 周报响应
+message WeeklyReportResponse {
+  int32 total_requests = 1;
+  float accuracy = 2;
+  repeated CommonError common_errors = 3;
+  map<string, float> accuracy_by_intent = 4;
+}
+
+// 常见错误
+message CommonError {
+  string pattern = 1;           // 错误模式
+  int32 count = 2;              // 出现次数
+  string should_be = 3;         // 应该识别为
+  repeated string examples = 4; // 示例问题
+}
+
+// 优化建议请求
+message ImprovementRequest {
+  string current_prompt_version = 1;
+}
+
+// 优化建议响应
+message ImprovementResponse {
+  string new_prompt_version = 1;
+  string new_prompt_text = 2;
+  repeated string suggested_additions = 3;
+  repeated string suggested_removals = 4;
+  string reasoning = 5;
+}
+
+// 评估请求
+message EvaluateRequest {
+  string old_prompt_version = 1;
+  string new_prompt_text = 2;
+}
+
+// 评估响应
+message EvaluateResponse {
+  float old_accuracy = 1;
+  float new_accuracy = 2;
+  float improvement = 3;
+  repeated TestCase degraded_cases = 4;
+  repeated TestCase improved_cases = 5;
+}
+
+// 测试案例
+message TestCase {
+  string question = 1;
+  repeated string expected = 2;
+  repeated string predicted = 3;
+}
+
+// 部署请求
+message DeployRequest {
+  string prompt_version = 1;
+  float traffic_percentage = 2;  // 灰度流量百分比
+}
+
+// 部署响应
+message DeployResponse {
+  bool success = 1;
+  string deployment_id = 2;
+  string message = 3;
+}
+
