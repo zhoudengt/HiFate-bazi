@@ -94,6 +94,39 @@ class WangShuaiAnalyzer:
         logger.info(f"   喜神五行: {xi_ji_elements['xi_shen']}")
         logger.info(f"   忌神五行: {xi_ji_elements['ji_shen']}")
         
+        # 8. 计算调候信息
+        logger.info("📊 步骤8: 计算调候信息")
+        tiaohou_info = self.calculate_tiaohou(bazi['month_branch'])
+        logger.info(f"   调候五行: {tiaohou_info.get('tiaohou_element')}, "
+                   f"季节: {tiaohou_info.get('season')}")
+        
+        # 9. 综合判断调候与喜忌（使用TiaohouXijiAnalyzer）
+        logger.info("📊 步骤9: 综合判断调候与喜忌")
+        from src.analyzers.tiaohou_xiji_analyzer import TiaohouXijiAnalyzer
+        
+        # 准备旺衰结果
+        wangshuai_result = {
+            'wangshuai': wangshuai,
+            'xi_ji': xi_ji,
+            'xi_ji_elements': xi_ji_elements
+        }
+        
+        # 准备八字五行信息（从calculator获取）
+        calculator = BaziCalculator(solar_date, solar_time, gender)
+        full_result = calculator.calculate()
+        bazi_elements = {
+            'element_counts': full_result.get('element_counts', {})
+        }
+        
+        # 综合判断
+        final_xi_ji = TiaohouXijiAnalyzer.determine_final_xi_ji(
+            wangshuai_result, tiaohou_info, bazi_elements
+        )
+        
+        logger.info(f"   最终喜神: {final_xi_ji.get('final_xi_shen')}")
+        logger.info(f"   第一喜神: {final_xi_ji.get('first_xi_shen')}")
+        logger.info(f"   调候优先级: {final_xi_ji.get('tiaohou_priority')}")
+        
         result = {
             'wangshuai': wangshuai,
             'total_score': total_score,
@@ -102,17 +135,23 @@ class WangShuaiAnalyzer:
                 'de_di': de_di_score,
                 'de_shi': de_shi_score
             },
+            # 保留原始喜忌（向后兼容）
             'xi_shen': xi_ji['xi_shen'],
             'ji_shen': xi_ji['ji_shen'],
             'xi_shen_elements': xi_ji_elements['xi_shen'],
             'ji_shen_elements': xi_ji_elements['ji_shen'],
+            # 新增调候信息
+            'tiaohou': tiaohou_info,
+            # 新增最终喜忌（综合调候）
+            'final_xi_ji': final_xi_ji,
+            'xi_ji': xi_ji,  # 原始喜忌（仅基于旺衰）
             'bazi_info': {
                 'day_stem': bazi['day_stem'],
                 'month_branch': bazi['month_branch']
             }
         }
         
-        logger.info("✅ 旺衰分析完成")
+        logger.info("✅ 旺衰分析完成（含调候综合判断）")
         return result
     
     def _calculate_bazi(self, solar_date: str, solar_time: str, gender: str) -> Dict:

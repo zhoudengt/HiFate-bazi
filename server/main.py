@@ -441,6 +441,14 @@ try:
 except ImportError as e:
     logger.warning(f"十神命格调试路由导入失败: {e}")
 
+# 注册智能运势分析路由（Intent Service）
+try:
+    from server.api.v1.smart_fortune import router as smart_fortune_router
+    app.include_router(smart_fortune_router, prefix="/api/v1", tags=["智能运势分析"])
+    logger.info("✓ 智能运势分析路由已注册")
+except ImportError as e:
+    logger.warning(f"智能运势分析路由导入失败: {e}")
+
 # 挂载静态文件目录（前端文件）
 frontend_dir = os.path.join(project_root, "frontend")
 if os.path.exists(frontend_dir):

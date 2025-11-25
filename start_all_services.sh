@@ -237,6 +237,8 @@ start_grpc_service "bazi_rule"     "services/bazi_rule/grpc_server.py"     9004
 start_grpc_service "fortune_analysis" "services/fortune_analysis/grpc_server.py" 9005
 start_grpc_service "payment_service" "services/payment_service/grpc_server.py" 9006
 start_grpc_service "fortune_rule" "services/fortune_rule/grpc_server.py" 9007
+start_python_service "intent_service" "services/intent_service/grpc_server.py" 9008
+start_python_service "prompt_optimizer" "services/prompt_optimizer/grpc_server.py" 9009
 
 start_python_service "web_app" "server/start.py" 8001
 

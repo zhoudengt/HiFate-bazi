@@ -57,6 +57,10 @@ stop_service() {
       pid="$(find_pid_by_name "services/fortune_rule/grpc_server.py")"
     elif [[ "${name}" == "payment_service" ]]; then
       pid="$(find_pid_by_name "services/payment_service/grpc_server.py")"
+    elif [[ "${name}" == "intent_service" ]]; then
+      pid="$(find_pid_by_name "services/intent_service/grpc_server.py")"
+    elif [[ "${name}" == "prompt_optimizer" ]]; then
+      pid="$(find_pid_by_name "services/prompt_optimizer/grpc_server.py")"
     else
       pid="$(find_pid_by_name "services.${name}.main")"
     fi
@@ -98,6 +102,8 @@ stop_service() {
 }
 
 stop_service "web_app" 8001
+stop_service "prompt_optimizer" 9009
+stop_service "intent_service" 9008
 stop_service "fortune_analysis" 9005
 stop_service "fortune_rule" 9007
 stop_service "payment_service" 9006
