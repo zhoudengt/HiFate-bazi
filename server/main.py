@@ -147,8 +147,15 @@ try:
     YIGUA_ROUTER_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"一事一卦路由导入失败（可选功能）: {e}")
-    yigua_router = None
-    YIGUA_ROUTER_AVAILABLE = False
+
+# 新增：面相分析V2路由（独立系统）
+try:
+    from server.api.v2.face_analysis import router as face_analysis_v2_router
+    FACE_ANALYSIS_V2_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"面相分析V2路由导入失败（可选功能）: {e}")
+    face_analysis_v2_router = None
+    FACE_ANALYSIS_V2_ROUTER_AVAILABLE = False
 
 # 新增：今日运势分析路由（类似 FateTell 的日运日签）
 try:
@@ -444,10 +451,23 @@ except ImportError as e:
 # 注册智能运势分析路由（Intent Service）
 try:
     from server.api.v1.smart_fortune import router as smart_fortune_router
-    app.include_router(smart_fortune_router, prefix="/api/v1", tags=["智能运势分析"])
+    app.include_router(smart_fortune_router, prefix="/api/v1/smart-fortune", tags=["智能运势分析"])
     logger.info("✓ 智能运势分析路由已注册")
 except ImportError as e:
     logger.warning(f"智能运势分析路由导入失败: {e}")
+
+# 注册面相分析V2路由（独立系统）
+if FACE_ANALYSIS_V2_ROUTER_AVAILABLE and face_analysis_v2_router:
+    app.include_router(face_analysis_v2_router, tags=["面相分析V2"])
+    logger.info("✓ 面相分析V2路由已注册")
+
+# 注册办公桌风水分析路由
+try:
+    from server.api.v2.desk_fengshui_api import router as desk_fengshui_router
+    app.include_router(desk_fengshui_router, tags=["办公桌风水"])
+    logger.info("✓ 办公桌风水分析路由已注册")
+except ImportError as e:
+    logger.warning(f"办公桌风水分析路由导入失败: {e}")
 
 # 挂载静态文件目录（前端文件）
 frontend_dir = os.path.join(project_root, "frontend")

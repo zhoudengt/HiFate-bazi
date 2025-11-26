@@ -1,0 +1,22 @@
+# Office Desk Fengshui Service Dependencies
+
+# Core dependencies
+grpcio>=1.70.0
+grpcio-tools>=1.70.0
+protobuf>=5.29.0,<6.0
+
+# Image processing
+opencv-python>=4.8.0
+Pillow>=10.0.0
+numpy>=1.26.0
+
+# YOLO for object detection
+ultralytics>=8.0.0  # YOLOv8
+
+# Database
+PyMySQL>=1.1.0
+redis>=7.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+

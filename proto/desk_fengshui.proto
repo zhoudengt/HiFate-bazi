@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package desk.fengshui;
+
+// 办公桌风水分析服务
+
+service DeskFengshuiService {
+  // 分析办公桌风水
+  rpc AnalyzeDesk(DeskAnalysisRequest) returns (DeskAnalysisResponse);
+  
+  // 健康检查
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// 分析请求
+message DeskAnalysisRequest {
+  bytes image_data = 1;           // 办公桌照片
+  string solar_date = 2;          // 用户出生日期
+  string solar_time = 3;          // 用户出生时间
+  string gender = 4;              // 性别 male/female
+  bool use_bazi = 5;              // 是否结合八字分析
+}
+
+// 检测到的物品
+message DetectedItem {
+  string name = 1;                // 物品英文名
+  string label = 2;               // 物品中文名
+  double confidence = 3;          // 置信度
+  repeated double bbox = 4;       // 边界框 [x1, y1, x2, y2]
+  string relative_position = 5;   // 相对位置：left/right/center/front/back
+  string bagua_direction = 6;     // 八卦方位：east/west/south/north等
+}
+
+// 建议项
+message Suggestion {
+  string item = 1;                // 物品名称
+  string item_label = 2;          // 物品中文名
+  string current_position = 3;    // 当前位置
+  string ideal_position = 4;      // 理想位置
+  string reason = 5;              // 原因说明
+  string priority = 6;            // 优先级：high/medium/low
+  string action = 7;              // 操作：move/add/remove
+  string element = 8;             // 关联五行
+}
+
+// 分析响应
+message DeskAnalysisResponse {
+  bool success = 1;                         // 是否成功
+  repeated DetectedItem items = 2;          // 检测到的物品
+  repeated Suggestion adjustments = 3;      // 调整建议
+  repeated Suggestion additions = 4;        // 增加建议
+  repeated Suggestion removals = 5;         // 删除建议
+  int32 score = 6;                          // 综合评分 0-100
+  string summary = 7;                       // 总结
+  string error = 8;                         // 错误信息
+  string xishen = 9;                        // 喜神（如果use_bazi=true）
+  string jishen = 10;                       // 忌神（如果use_bazi=true）
+}
+
+// 健康检查请求
+message HealthCheckRequest {}
+
+// 健康检查响应
+message HealthCheckResponse {
+  string status = 1;
+}
+

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>办公桌风水分析 - HiFate命理</title>
+    <link rel="stylesheet" href="css/desk-fengshui.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🪴 办公桌风水分析</h1>
+            <p class="subtitle">上传您的办公桌照片，AI为您分析风水布局并提供调整建议</p>
+        </header>
+
+        <main>
+            <!-- 步骤1: 上传照片 -->
+            <section class="upload-section">
+                <h2>📸 上传办公桌照片</h2>
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="imageInput" accept="image/*" style="display: none;">
+                    <div class="upload-prompt">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p>点击上传或拖拽照片到这里</p>
+                        <span class="hint">支持 JPG、PNG、WEBP 格式</span>
+                    </div>
+                    <div class="preview" id="preview" style="display: none;">
+                        <img id="previewImage" src="" alt="预览">
+                        <button class="btn-remove" id="btnRemove">✕</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 步骤2: 填写八字信息（可选） -->
+            <section class="bazi-section">
+                <h2>🔮 八字信息（可选）</h2>
+                <p class="info-text">提供八字信息后，系统将结合您的喜神忌神给出更个性化的建议</p>
+                
+                <div class="form-toggle">
+                    <label class="switch">
+                        <input type="checkbox" id="useBazi" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span>使用八字分析</span>
+                </div>
+
+                <div class="bazi-form" id="baziForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="solarDate">出生日期</label>
+                            <input type="date" id="solarDate" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label for="solarTime">出生时间</label>
+                            <input type="time" id="solarTime" class="form-control">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="gender">性别</label>
+                            <select id="gender" class="form-control">
+                                <option value="male">男</option>
+                                <option value="female">女</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 提交按钮 -->
+            <section class="action-section">
+                <button class="btn-analyze" id="btnAnalyze" disabled>
+                    <span class="btn-text">开始分析</span>
+                    <span class="btn-loading" style="display: none;">
+                        <span class="spinner"></span>
+                        分析中...
+                    </span>
+                </button>
+            </section>
+
+            <!-- 分析结果 -->
+            <section class="result-section" id="resultSection" style="display: none;">
+                <h2>📊 分析结果</h2>
+                
+                <!-- 综合评分 -->
+                <div class="score-card">
+                    <div class="score-circle">
+                        <svg width="150" height="150">
+                            <circle cx="75" cy="75" r="65" class="score-bg"></circle>
+                            <circle cx="75" cy="75" r="65" class="score-fill" id="scoreCircle"></circle>
+                        </svg>
+                        <div class="score-text">
+                            <span class="score-value" id="scoreValue">0</span>
+                            <span class="score-label">分</span>
+                        </div>
+                    </div>
+                    <div class="score-info">
+                        <h3 id="scoreSummary">办公桌风水布局</h3>
+                        <p id="scoreDescription"></p>
+                        <div class="bazi-info" id="baziInfo" style="display: none;">
+                            <span class="badge badge-xishen">喜神: <span id="xishen">-</span></span>
+                            <span class="badge badge-jishen">忌神: <span id="jishen">-</span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 检测到的物品 -->
+                <div class="items-card">
+                    <h3>🔍 检测到的物品</h3>
+                    <div class="items-grid" id="itemsGrid"></div>
+                </div>
+
+                <!-- 调整建议 -->
+                <div class="suggestions-card" id="adjustmentsCard" style="display: none;">
+                    <h3>🔄 位置调整建议</h3>
+                    <div class="suggestions-list" id="adjustmentsList"></div>
+                </div>
+
+                <!-- 增加建议 -->
+                <div class="suggestions-card" id="additionsCard" style="display: none;">
+                    <h3>➕ 物品增加建议</h3>
+                    <div class="suggestions-list" id="additionsList"></div>
+                </div>
+
+                <!-- 删除建议 -->
+                <div class="suggestions-card" id="removalsCard" style="display: none;">
+                    <h3>🗑️ 物品移除建议</h3>
+                    <div class="suggestions-list" id="removalsList"></div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>© 2025 HiFate命理 - 办公桌风水分析系统</p>
+        </footer>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="js/desk-fengshui.js"></script>
+</body>
+</html>
+
