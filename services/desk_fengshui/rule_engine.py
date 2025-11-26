@@ -248,8 +248,16 @@ class DeskFengshuiEngine:
             cursor.execute(sql)
             rules = cursor.fetchall()
             
-            # 解析JSON字段
+            # 解析JSON字段并修复编码
             for rule in rules:
+                # 修复文本字段的编码
+                if rule.get('reason'):
+                    rule['reason'] = self._safe_decode(rule['reason'])
+                if rule.get('suggestion'):
+                    rule['suggestion'] = self._safe_decode(rule['suggestion'])
+                if rule.get('item_label'):
+                    rule['item_label'] = self._safe_decode(rule['item_label'])
+                
                 if rule.get('ideal_position') and isinstance(rule['ideal_position'], str):
                     try:
                         rule['ideal_position'] = json.loads(rule['ideal_position'])
@@ -371,8 +379,8 @@ class DeskFengshuiEngine:
                         'item_label': item_label,
                         'current_position': current_position.get('relative_name', current_relative),
                         'ideal_position': self._get_direction_name(ideal_directions[0] if ideal_directions else 'left'),
-                        'reason': rule.get('reason', ''),
-                        'suggestion': rule.get('suggestion', ''),
+                        'reason': self._safe_decode(rule.get('reason', '')),
+                        'suggestion': self._safe_decode(rule.get('suggestion', '')),
                         'priority': 'high' if rule.get('priority', 5) >= 90 else 'medium',
                         'action': 'move',
                         'element': rule.get('related_element', '')
@@ -385,8 +393,8 @@ class DeskFengshuiEngine:
                         'item_label': item_label,
                         'current_position': current_position.get('relative_name', current_relative),
                         'ideal_position': self._get_direction_name(ideal_directions[0]),
-                        'reason': rule.get('reason', ''),
-                        'suggestion': rule.get('suggestion', ''),
+                        'reason': self._safe_decode(rule.get('reason', '')),
+                        'suggestion': self._safe_decode(rule.get('suggestion', '')),
                         'priority': 'high' if rule.get('priority', 5) >= 90 else 'medium',
                         'action': 'move',
                         'element': rule.get('related_element', '')
@@ -742,6 +750,33 @@ class DeskFengshuiEngine:
                 }
         
         return None
+    
+    @staticmethod
+    def _safe_decode(self, text: str) -> str:
+        """安全解码字符串，处理可能的编码问题"""
+        if not text:
+            return text
+        if isinstance(text, bytes):
+            try:
+                return text.decode('utf-8')
+            except:
+                try:
+                    return text.decode('latin1').encode('latin1').decode('utf-8')
+                except:
+                    return str(text)
+        if isinstance(text, str):
+            # 检查是否有乱码（常见的中文乱码模式）
+            try:
+                # 尝试重新编码解码
+                text.encode('utf-8').decode('utf-8')
+                return text
+            except:
+                # 如果有问题，尝试修复
+                try:
+                    return text.encode('latin1').decode('utf-8')
+                except:
+                    return text
+        return str(text)
     
     @staticmethod
     def _get_direction_name(direction: str) -> str:

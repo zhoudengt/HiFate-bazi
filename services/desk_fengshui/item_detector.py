@@ -48,7 +48,7 @@ class DeskItemDetector:
         'mirror': '镜子'
     }
     
-    def __init__(self, model_path: str = 'yolov8n.pt', confidence_threshold: float = 0.25):
+    def __init__(self, model_path: str = 'yolov8n.pt', confidence_threshold: float = 0.20):
         """
         初始化检测器
         
@@ -95,11 +95,26 @@ class DeskItemDetector:
                 logger.warning("   建议执行: ./scripts/install_yolo.sh")
                 items = self._detect_with_opencv(img)
             
-            # 3. 过滤相关物品
+            # 3. 过滤相关物品（放宽过滤条件，包含更多办公桌常见物品）
+            # 允许的物品类别（COCO数据集中的常见办公桌物品）
+            allowed_items = set(self.ITEM_MAP.keys()) | set(self.SPECIAL_ITEMS.keys())
+            # 添加更多可能的物品类别
+            additional_items = ['cell phone', 'remote', 'pen', 'book', 'vase', 'bowl', 'scissors', 'clock']
+            allowed_items.update(additional_items)
+            
             filtered_items = [
                 item for item in items 
-                if item['name'] in self.ITEM_MAP or item['name'] in self.SPECIAL_ITEMS
+                if item['name'] in allowed_items
             ]
+            
+            # 如果过滤后物品太少，放宽条件（保留置信度较高的物品）
+            if len(filtered_items) < 3:
+                # 保留置信度>0.3的所有物品
+                filtered_items = [
+                    item for item in items 
+                    if item.get('confidence', 0) > 0.3
+                ]
+                logger.info(f"放宽过滤条件，保留 {len(filtered_items)} 个高置信度物品")
             
             # 4. 去重：相同物品且位置相近的合并为一个
             if len(filtered_items) > 1:
@@ -175,6 +190,10 @@ class DeskItemDetector:
                     bbox = box.xyxy[0].cpu().numpy().tolist()  # [x1, y1, x2, y2]
                     
                     if confidence >= self.confidence_threshold:
+                        # 特殊处理：laptop需要更高的置信度（因为容易误识别显示器为laptop）
+                        if class_name == 'laptop' and confidence < 0.4:
+                            continue
+                        
                         label = self.ITEM_MAP.get(class_name, class_name)
                         
                         items.append({
