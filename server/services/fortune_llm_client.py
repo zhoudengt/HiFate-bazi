@@ -167,6 +167,7 @@ class FortuneLLMClient:
         question: str,
         bazi_data: Dict[str, Any],
         fortune_context: Dict[str, Any],
+        matched_rules: List[Dict[str, Any]] = None,
         stream: bool = False,
         use_cache: bool = True
     ) -> Dict[str, Any]:
@@ -174,10 +175,11 @@ class FortuneLLMClient:
         调用命理分析Bot，生成深度解读（支持缓存）
         
         Args:
-            intent: 用户意图（wealth/health/career/marriage）
+            intent: 用户意图（wealth/health/career/marriage/character）
             question: 用户原始问题
             bazi_data: 八字原局数据
             fortune_context: 流年大运上下文（包含balance_analysis, relation_analysis等）
+            matched_rules: 匹配到的规则列表（可选）
             stream: 是否使用流式输出（默认False）
             use_cache: 是否使用缓存（默认True）
         
@@ -195,12 +197,13 @@ class FortuneLLMClient:
             注意：流式输出不支持缓存
         """
         try:
-            # 构建输入数据
+            # 构建输入数据（包含规则内容）
             input_data = self._build_input_data(
                 intent=intent,
                 question=question,
                 bazi_data=bazi_data,
-                fortune_context=fortune_context
+                fortune_context=fortune_context,
+                matched_rules=matched_rules
             )
             
             logger.info(f"📊 准备调用命理分析Bot，意图: {intent}，问题: {question}，流式: {stream}，缓存: {use_cache}")
@@ -259,7 +262,8 @@ class FortuneLLMClient:
         intent: str,
         question: str,
         bazi_data: Dict[str, Any],
-        fortune_context: Dict[str, Any]
+        fortune_context: Dict[str, Any],
+        matched_rules: List[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         构建发送给Bot的输入数据
@@ -274,11 +278,56 @@ class FortuneLLMClient:
         - relation_analysis: 关系分析
         - xi_ji: 喜忌神
         - wangshuai: 旺衰
+        - matched_rules: 匹配到的规则（按意图分类）
         """
-        # 提取流年数据（假设分析单个流年）
+        # ⚠️ 防御性检查：fortune_context可能为None
+        if not fortune_context:
+            fortune_context = {}
+        
+        # 提取流年数据（智能匹配用户问题中的年份）
         time_analysis = fortune_context.get('time_analysis', {})
         liunian_list = time_analysis.get('liunian_list', [])
-        liunian = liunian_list[0] if liunian_list else {}
+        
+        # ⚠️ 修复：从用户问题中提取年份，匹配对应的流年数据
+        liunian = {}
+        target_year_from_question = None
+        
+        if liunian_list:
+            # 尝试从问题中提取年份
+            import re
+            year_match = re.search(r'(\d{4})年?', question)
+            if year_match:
+                target_year_from_question = int(year_match.group(1))
+                # 从liunian_list中找到对应年份的数据
+                liunian = next(
+                    (ln for ln in liunian_list if ln.get('year') == target_year_from_question), 
+                    liunian_list[-1]  # 如果没找到，取最后一个（最新的年份）
+                )
+                logger.debug(f"用户问题包含年份{target_year_from_question}，匹配到流年：{liunian.get('year')}")
+            else:
+                # 没有明确年份，取最后一个（最新的年份）
+                liunian = liunian_list[-1]
+                logger.debug(f"用户问题无明确年份，取最新流年：{liunian.get('year')}")
+        else:
+            # ⚠️ 防御：如果liunian_list为空，从问题中提取年份，构造基础数据
+            import re
+            year_match = re.search(r'(\d{4})年?', question)
+            if year_match:
+                target_year_from_question = int(year_match.group(1))
+                logger.debug(f"liunian_list为空，从问题提取年份：{target_year_from_question}，构造占位数据")
+                liunian = {
+                    'year': target_year_from_question,
+                    'stem': '',  # 天干未知
+                    'branch': '',  # 地支未知
+                    'stem_element': '',
+                    'branch_element': '',
+                    'stem_shishen': '',
+                    'branch_shishen': '',
+                    'balance_analysis': {},
+                    'relation_analysis': {}
+                }
+            else:
+                logger.debug(f"liunian_list为空且问题中无年份，使用空数据")
         
         # 提取大运数据
         dayun = time_analysis.get('dayun', {})
@@ -289,50 +338,75 @@ class FortuneLLMClient:
         # 提取旺衰
         wangshuai = fortune_context.get('wangshuai', '')
         
-        # 构建完整输入
+        # 构建精简输入（只保留LLM分析必需的核心数据）
+        # 提取摘要而非完整对象，大幅减少token消耗
+        balance_analysis = liunian.get('balance_analysis', {}) if liunian else {}
+        balance_summary = balance_analysis.get('analysis', {}).get('summary', '')[:300] if balance_analysis else ''  # 限制长度
+        
+        relation_analysis = liunian.get('relation_analysis', {}) if liunian else {}
+        relation_summary = relation_analysis.get('summary', '')[:300] if relation_analysis else ''  # 限制长度
+        
+        # ⭐ 新增：处理规则内容（按用户意图过滤和分类）
+        rules_data = {}
+        if matched_rules:
+            from server.services.rule_classifier import build_rules_for_llm
+            
+            # 只传递当前意图相关的规则（减少 token 消耗）
+            target_intents = [intent] if intent != 'general' else None
+            
+            rules_data = build_rules_for_llm(
+                matched_rules=matched_rules,
+                target_intents=target_intents,
+                max_rules_per_intent=10  # 每个意图最多10条规则
+            )
+            
+            logger.debug(f"规则分类结果: {rules_data.get('rules_count', {})}")
+        
         input_data = {
             'intent': intent,
             'question': question,
             'bazi': {
                 'pillars': bazi_data.get('bazi_pillars', {}),
                 'day_stem': bazi_data.get('day_stem', ''),
-                'shishen': bazi_data.get('shishen', {}),
-                'wuxing': {
-                    'stems': bazi_data.get('stem_elements', {}),
-                    'branches': bazi_data.get('branch_elements', {})
-                }
+                # 删除详细 shishen 和 wuxing 字典，LLM不需要完整统计
             },
             'liunian': {
                 'year': liunian.get('year', ''),
-                'label': liunian.get('label', ''),
                 'stem': liunian.get('stem', ''),
                 'branch': liunian.get('branch', ''),
                 'stem_element': liunian.get('stem_element', ''),
                 'branch_element': liunian.get('branch_element', ''),
                 'stem_shishen': liunian.get('stem_shishen', ''),
-                'branch_shishen': liunian.get('branch_shishen', '')
+                'branch_shishen': liunian.get('branch_shishen', ''),
+                # 只传递摘要，不传完整分析对象
+                'balance_summary': balance_summary,
+                'relation_summary': relation_summary,
             },
             'dayun': {
                 'stem': dayun.get('stem', ''),
                 'branch': dayun.get('branch', ''),
-                'age_range': dayun.get('age_range', ''),
-                'stem_shishen': dayun.get('stem_shishen', ''),
-                'branch_shishen': dayun.get('branch_shishen', '')
+                # 删除 age_range、stem_shishen、branch_shishen（非必需）
             },
-            'balance_analysis': liunian.get('balance_analysis', {}).get('analysis', {}),
-            'relation_analysis': liunian.get('relation_analysis', {}),
             'xi_ji': {
-                'xi_shen': xi_ji.get('xi_shen', []),
-                'ji_shen': xi_ji.get('ji_shen', [])
+                # 只保留前5个，避免列表过长
+                'xi_shen': xi_ji.get('xi_shen', [])[:5],
+                'ji_shen': xi_ji.get('ji_shen', [])[:5]
             },
             'wangshuai': wangshuai,
-            # ⭐ 新增：调候信息
-            'tiaohou': fortune_context.get('tiaohou', {}),
-            # ⭐ 新增：最终喜忌（综合调候）
-            'final_xi_ji': fortune_context.get('final_xi_ji', {}),
-            # ⭐ 新增：八字内部关系（刑冲合害破）
-            'internal_relations': liunian.get('relation_analysis', {}).get('internal_relations', {})
+            # ⭐ 新增：按意图分类的规则内容
+            'matched_rules': rules_data.get('rules_by_intent', {}),
+            'rules_count': rules_data.get('rules_count', {}),
+            # 删除以下冗余字段（LLM可通过其他信息推断）：
+            # - data_completeness（元数据）
+            # - tiaohou（调候信息）
+            # - final_xi_ji（综合喜忌）
+            # - internal_relations（刑冲合害破详细数据）
         }
+        
+        # 精简日志：只在 DEBUG 级别输出关键信息
+        import json
+        data_size = len(json.dumps(input_data, ensure_ascii=False))
+        logger.debug(f"[STEP5] 发送给LLM的数据: intent={intent}, year={liunian.get('year', 'N/A')}, size={data_size}字符")
         
         return input_data
     
@@ -552,8 +626,14 @@ class FortuneLLMClient:
                 yield {'type': 'error', 'content': '', 'error': error_msg}
                 return
             
-            # 逐行读取SSE数据
-            for line in response.iter_lines(decode_unicode=True):
+            # 设置响应编码为 UTF-8
+            response.encoding = 'utf-8'
+            
+            # 发送开始事件
+            yield {'type': 'start', 'content': '', 'error': None}
+            
+            # 逐行读取SSE数据（使用更大的chunk避免UTF-8截断）
+            for line in response.iter_lines(decode_unicode=True, chunk_size=8192):
                 if not line:
                     continue
                 
@@ -568,11 +648,20 @@ class FortuneLLMClient:
                     
                     try:
                         data = json.loads(data_str)
-                        event_type = data.get('event', '')
                         
-                        # 处理不同类型的事件
+                        # 防御性检查：确保 data 是字典
+                        if not isinstance(data, dict):
+                            logger.warning(f"⚠️ SSE数据不是字典: {type(data)}, 数据: {data_str[:100]}")
+                            continue
+                        
+                        # Coze API 有两种格式：
+                        # 1. 带 event 字段的（新版）
+                        # 2. 直接消息对象的（当前版本）
+                        event_type = data.get('event', '')
+                        msg_type = data.get('type', '')
+                        
                         if event_type == 'conversation.message.delta':
-                            # 消息增量
+                            # 新版格式：消息增量
                             delta = data.get('delta', {})
                             content = delta.get('content', '')
                             if content:
@@ -580,14 +669,26 @@ class FortuneLLMClient:
                                 yield {'type': 'chunk', 'content': content, 'error': None}
                         
                         elif event_type == 'conversation.chat.completed':
-                            # 对话完成
+                            # 新版格式：对话完成
                             logger.info("✅ 对话完成")
                             yield {'type': 'end', 'content': '', 'error': None}
                             break
                         
-                        elif event_type == 'error':
+                        elif msg_type == 'answer':
+                            # 当前版本格式：直接返回answer消息
+                            content = data.get('content', '')
+                            if content:
+                                logger.debug(f"📝 收到answer: {content[:50]}...")
+                                yield {'type': 'chunk', 'content': content, 'error': None}
+                        
+                        elif msg_type == 'follow_up':
+                            # 后续问题，忽略
+                            logger.debug("⏭️ 跳过follow_up消息")
+                            continue
+                        
+                        elif event_type == 'error' or msg_type == 'error':
                             # 错误事件
-                            error_msg = data.get('message', '未知错误')
+                            error_msg = data.get('message', data.get('content', '未知错误'))
                             logger.error(f"❌ Bot返回错误: {error_msg}")
                             yield {'type': 'error', 'content': '', 'error': error_msg}
                             break
@@ -595,6 +696,10 @@ class FortuneLLMClient:
                     except json.JSONDecodeError as e:
                         logger.error(f"❌ 解析SSE数据失败: {e}, 原始数据: {data_str[:200]}")
                         continue
+            
+            # 流结束
+            logger.info("✅ SSE流结束")
+            yield {'type': 'end', 'content': '', 'error': None}
             
         except requests.exceptions.Timeout:
             error_msg = '流式请求超时（60秒）'

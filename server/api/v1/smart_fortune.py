@@ -8,6 +8,9 @@ from typing import Optional
 import sys
 import os
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 
@@ -178,12 +181,13 @@ async def smart_analyze(
                 # 提取意图（使用第一个意图，如果没有则为"general"）
                 main_intent = rule_types[0] if rule_types and rule_types[0] != "ALL" else "general"
                 
-                # 调用命理分析Bot
+                # 调用命理分析Bot（传递匹配到的规则）
                 llm_result = llm_client.analyze_fortune(
                     intent=main_intent,
                     question=question,
                     bazi_data=bazi_result,
-                    fortune_context=fortune_context
+                    fortune_context=fortune_context,
+                    matched_rules=matched_rules  # ⭐ 传递规则内容
                 )
                 
                 if llm_result.get("success"):
@@ -685,7 +689,12 @@ async def smart_analyze_stream(
             # 步骤1.5：获取时间意图（LLM已识别）
             time_intent = intent_result.get("time_intent", {})
             target_years = time_intent.get("target_years", [])
-            print(f"[smart_fortune_stream] 时间意图识别（LLM）: {time_intent.get('description', 'N/A')} -> {target_years}")
+            
+            # 精简日志：只在需要时输出关键信息
+            import json
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"[STEP1] Intent识别: question={question}, intents={intent_result.get('intents', [])}, target_years={target_years}")
             
             # 步骤2：计算八字
             yield _sse_message("status", {"stage": "bazi", "message": "正在计算八字..."})
@@ -699,6 +708,9 @@ async def smart_analyze_stream(
                 yield _sse_message("error", {"message": "八字计算失败"})
                 yield _sse_message("end", {})
                 return
+            
+            # 精简日志
+            logger.debug(f"[STEP2] 八字计算完成: {solar_date} {solar_time}, gender={gender}")
             
             # 步骤3：匹配规则
             yield _sse_message("status", {"stage": "rules", "message": "正在匹配规则..."})
@@ -725,18 +737,33 @@ async def smart_analyze_stream(
             # 步骤4：获取流年大运上下文
             yield _sse_message("status", {"stage": "fortune", "message": "正在分析流年大运..."})
             
-            try:
-                from server.services.fortune_context_service import FortuneContextService
-                fortune_context = FortuneContextService.get_fortune_context(
-                    solar_date=solar_date,
-                    solar_time=solar_time,
-                    gender=gender,
-                    intent_types=rule_types,
-                    target_years=target_years  # 使用LLM识别的年份列表
-                )
-            except Exception as e:
-                print(f"[smart_fortune_stream] Fortune context error: {e}")
-                fortune_context = None
+            # 步骤4：获取流年大运上下文
+            fortune_context = None
+            if target_years:
+                try:
+                    from server.services.fortune_context_service import FortuneContextService
+                    
+                    # 精简日志
+                    logger.debug(f"[STEP4] Fortune Context开始: target_years={target_years}, intent_types={rule_types}")
+                    
+                    fortune_context = FortuneContextService.get_fortune_context(
+                        solar_date=solar_date,
+                        solar_time=solar_time,
+                        gender=gender,
+                        intent_types=rule_types,
+                        target_years=target_years
+                    )
+                    
+                    # 精简日志
+                    if fortune_context:
+                        liunian_list = fortune_context.get('time_analysis', {}).get('liunian_list', [])
+                        logger.debug(f"[STEP4] Fortune Context完成: 流年数量={len(liunian_list)}")
+                    else:
+                        logger.debug(f"[STEP4] Fortune Context完成: 返回None")
+                except Exception as e:
+                    logger.error(f"Fortune context error: {e}", exc_info=True)
+            else:
+                logger.debug("无目标年份，跳过流年大运分析")
             
             # 步骤5：发送基础分析结果（立即显示）
             yield _sse_message("basic_analysis", {
@@ -751,37 +778,37 @@ async def smart_analyze_stream(
             })
             
             # 步骤6：流式输出LLM深度解读
-            if fortune_context:
-                yield _sse_message("status", {"stage": "llm", "message": "正在生成深度解读..."})
+            yield _sse_message("status", {"stage": "llm", "message": "正在生成深度解读..."})
+            
+            try:
+                llm_client = get_fortune_llm_client()
+                main_intent = rule_types[0] if rule_types and rule_types[0] != "ALL" else "general"
                 
-                try:
-                    llm_client = get_fortune_llm_client()
-                    main_intent = rule_types[0] if rule_types and rule_types[0] != "ALL" else "general"
+                # 调用流式API（传递匹配到的规则）
+                for chunk in llm_client.analyze_fortune(
+                    intent=main_intent,
+                    question=question,
+                    bazi_data=bazi_result,
+                    fortune_context=fortune_context,
+                    matched_rules=matched_rules,  # ⭐ 传递规则内容
+                    stream=True  # 启用流式输出
+                ):
+                    chunk_type = chunk.get('type')
                     
-                    # 调用流式API
-                    for chunk in llm_client.analyze_fortune(
-                        intent=main_intent,
-                        question=question,
-                        bazi_data=bazi_result,
-                        fortune_context=fortune_context,
-                        stream=True  # 启用流式输出
-                    ):
-                        chunk_type = chunk.get('type')
-                        
-                        if chunk_type == 'start':
-                            yield _sse_message("llm_start", {})
-                        elif chunk_type == 'chunk':
-                            content = chunk.get('content', '')
-                            yield _sse_message("llm_chunk", {"content": content})
-                        elif chunk_type == 'end':
-                            yield _sse_message("llm_end", {})
-                        elif chunk_type == 'error':
-                            error_msg = chunk.get('error', '未知错误')
-                            yield _sse_message("llm_error", {"message": error_msg})
-                
-                except Exception as e:
-                    print(f"[smart_fortune_stream] LLM streaming error: {e}")
-                    yield _sse_message("llm_error", {"message": str(e)})
+                    if chunk_type == 'start':
+                        yield _sse_message("llm_start", {})
+                    elif chunk_type == 'chunk':
+                        content = chunk.get('content', '')
+                        yield _sse_message("llm_chunk", {"content": content})
+                    elif chunk_type == 'end':
+                        yield _sse_message("llm_end", {})
+                    elif chunk_type == 'error':
+                        error_msg = chunk.get('error', '未知错误')
+                        yield _sse_message("llm_error", {"message": error_msg})
+            
+            except Exception as e:
+                print(f"[smart_fortune_stream] LLM streaming error: {e}")
+                yield _sse_message("llm_error", {"message": str(e)})
             
             # 结束
             yield _sse_message("end", {})

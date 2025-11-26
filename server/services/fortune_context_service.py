@@ -11,6 +11,9 @@ import os
 from typing import Dict, Any, List, Optional
 from datetime import datetime, date, timedelta
 import calendar
+import logging
+
+logger = logging.getLogger(__name__)
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -152,7 +155,7 @@ class FortuneContextService:
                     time_info["end_date"] = f"{end_year}-12-31"
                     time_info["has_time_keyword"] = True
                     
-                    print(f"[DEBUG] 识别到年份范围: {start_year}-{end_year}, 共{len(target_years)}年")
+                    logger.debug(f"识别到年份范围: {start_year}-{end_year}, 共{len(target_years)}年")
                     return time_info
         
         # 匹配单个年份：2025年、2025
@@ -174,7 +177,7 @@ class FortuneContextService:
                     time_info["end_date"] = f"{year}-12-31"
                     time_info["has_time_keyword"] = True
                     
-                    print(f"[DEBUG] 识别到单个年份: {year}")
+                    logger.debug(f"识别到单个年份: {year}")
                     return time_info
         
         # 2. 检测时间关键词（按长度排序，优先匹配长词，避免"大后年"被"后年"误匹配）
@@ -320,7 +323,7 @@ class FortuneContextService:
                 time_type = time_range.get("time_type")
             else:
                 # 都没有提供，返回 None
-                print("[DEBUG] ❌ 既没有 target_years 也没有 time_range，返回None")
+                logger.debug("既没有 target_years 也没有 time_range，返回None")
                 return None
             
             # 根据时间类型调用不同的服务
@@ -377,15 +380,15 @@ class FortuneContextService:
             else:
                 # 流年分析（支持单年或多年）
                 target_years = time_range.get("target_years", [])
-                print(f"[DEBUG] target_years from time_range = {target_years}")
+                logger.debug(f"target_years from time_range = {target_years}")
                 
                 if not target_years and time_range.get("start_date"):
                     # 兼容：如果没有target_years，从start_date提取
                     target_years = [int(time_range["start_date"][:4])]
-                    print(f"[DEBUG] 从start_date提取: target_years = {target_years}")
+                    logger.debug(f"从start_date提取: target_years = {target_years}")
                 
                 if not target_years:
-                    print(f"[DEBUG] ❌ target_years为空，返回None")
+                    logger.debug("target_years为空，返回None")
                     return None
                 
                 # 查询多个流年
@@ -444,30 +447,44 @@ class FortuneContextService:
                             liunian_list.append(current_liunian)
                         
                         # 大运信息（多年共享同一个大运）
+                        # ⚠️ 修复：根据target_year动态查找对应的大运（而不是用当前时间）
                         if not dayun_info:
-                            # 从 dayun_info.current_dayun 获取当前大运
-                            dayun_data = detail_result.get("dayun_info", {})
-                            dayun_info = dayun_data.get("current_dayun", {})
+                            # 方法1：从dayun_sequence查找对应年份的大运
+                            dayun_sequence = detail_result.get("dayun_sequence", [])
+                            for dayun in dayun_sequence:
+                                year_start = dayun.get("year_start", 0)
+                                year_end = dayun.get("year_end", 0)
+                                
+                                # 找到包含target_year的大运
+                                if year_start <= target_year <= year_end:
+                                    # 排除"小运"（stem为"小运"）
+                                    if dayun.get("stem") != "小运":
+                                        dayun_info = dayun
+                                        logger.debug(f"找到{target_year}年对应的大运: {dayun.get('stem')}{dayun.get('branch')} ({year_start}-{year_end})")
+                                        break
+                            
+                            # 如果没找到，fallback到current_dayun
+                            if not dayun_info:
+                                logger.debug(f"未找到{target_year}年对应的大运，使用current_dayun")
+                                dayun_data = detail_result.get("dayun_info", {})
+                                dayun_info = dayun_data.get("current_dayun", {})
                 
                 if liunian_list:
-                    print(f"[DEBUG] ✅ 获取到{len(liunian_list)}个流年")
+                    logger.debug(f"获取到{len(liunian_list)}个流年")
                     is_multi = time_range.get("is_multi_year", False)
                     
                     # ⭐ 新增：深度分析（喜忌神、五行平衡、关系分析）
                     try:
-                        print(f"[DEBUG] 开始深度分析...")
+                        logger.debug("开始深度分析...")
                         
                         # 1. 获取喜忌神分析
-                        print(f"[DEBUG] 1. 调用WangShuaiAnalyzer...")
                         wangshuai_analyzer = WangShuaiAnalyzer()
                         wangshuai_result = wangshuai_analyzer.analyze(solar_date, solar_time, gender)
                         xi_ji = wangshuai_result.get('xi_ji', {})
                         xi_ji_elements = wangshuai_result.get('xi_ji_elements', {})
-                        print(f"[DEBUG]   ✅ 喜神（十神）: {xi_ji.get('xi_shen', [])}")
-                        print(f"[DEBUG]   ✅ 喜神（五行）: {xi_ji_elements.get('xi_shen', [])}")
+                        logger.debug(f"喜神（十神）: {xi_ji.get('xi_shen', [])}, 喜神（五行）: {xi_ji_elements.get('xi_shen', [])}")
                         
                         # 2. 获取八字五行统计（从detail_result）
-                        print(f"[DEBUG] 2. 获取八字信息...")
                         first_detail = BaziDetailService.calculate_detail_full(
                             solar_date=solar_date,
                             solar_time=solar_time,
@@ -476,14 +493,12 @@ class FortuneContextService:
                         )
                         bazi_elements = first_detail.get("element_counts", {})
                         bazi_pillars = first_detail.get("bazi_pillars", {})
-                        print(f"[DEBUG]   ✅ 八字五行: {bazi_elements}")
                         
                         # 3. 为每个流年添加深度分析
-                        print(f"[DEBUG] 3. 为每个流年添加深度分析...")
                         shishen_stats = first_detail.get("ten_gods_stats", {})  # 获取十神统计
                         
                         for i, liunian in enumerate(liunian_list):
-                            print(f"[DEBUG]   流年{i+1}/{len(liunian_list)}: {liunian.get('year')}")
+                            logger.debug(f"流年{i+1}/{len(liunian_list)}: {liunian.get('year')}")
                             
                             # 五行平衡分析
                             balance_result = WuxingBalanceAnalyzer.analyze(
@@ -492,7 +507,6 @@ class FortuneContextService:
                                 dayun_info
                             )
                             liunian['balance_analysis'] = balance_result
-                            print(f"[DEBUG]     ✅ balance_analysis: {balance_result.get('analysis', {}).get('summary', 'N/A')}")
                             
                             # 流年大运关系分析
                             relation_result = FortuneRelationAnalyzer.analyze(
@@ -501,7 +515,6 @@ class FortuneContextService:
                                 dayun_info
                             )
                             liunian['relation_analysis'] = relation_result
-                            print(f"[DEBUG]     ✅ relation_analysis: {relation_result.get('summary', 'N/A')}")
                             
                             # ⭐ 新增：运势评分（预判断）
                             try:
@@ -514,18 +527,17 @@ class FortuneContextService:
                                     gender=gender
                                 )
                                 liunian['fortune_scores'] = fortune_scores
-                                print(f"[DEBUG]     ✅ fortune_scores: 财运{fortune_scores['wealth']['score']}分({fortune_scores['wealth']['level']})")
                             except Exception as score_error:
-                                print(f"[DEBUG]     ⚠️ 评分计算失败（不影响主流程）: {score_error}")
+                                logger.debug(f"评分计算失败（不影响主流程）: {score_error}")
                         
                         # 4. 添加喜忌神信息到结果
                         result["xi_ji"] = xi_ji
                         result["xi_ji_elements"] = xi_ji_elements
                         result["wangshuai"] = wangshuai_result.get('wangshuai', '')
-                        print(f"[DEBUG] 4. ✅ 深度分析完成，喜忌神已添加到result")
+                        logger.debug("深度分析完成，喜忌神已添加到result")
                         
                     except Exception as e:
-                        print(f"[FortuneContextService] ❌ 深度分析失败（不影响主流程）: {e}")
+                        logger.error(f"深度分析失败（不影响主流程）: {e}", exc_info=True)
                         import traceback
                         traceback.print_exc()
                     
@@ -551,17 +563,13 @@ class FortuneContextService:
                             )
             
             has_time_analysis = bool(result["time_analysis"])
-            print(f"[DEBUG] 准备返回结果: has_time_analysis={has_time_analysis}")
-            if has_time_analysis:
-                print(f"[DEBUG]   time_analysis type: {result['time_analysis'].get('type')}")
-                print(f"[DEBUG]   fortune_summary keys: {list(result.get('fortune_summary', {}).keys())}")
-                print(f"[DEBUG]   has xi_ji: {'xi_ji' in result}")
+            logger.debug(f"准备返回结果: has_time_analysis={has_time_analysis}, type={result.get('time_analysis', {}).get('type', 'N/A')}")
             
             return result if has_time_analysis else None
             
         except Exception as e:
             # 静默失败，不影响主流程
-            print(f"[FortuneContextService] ❌ Error: {e}")
+            logger.error(f"Error: {e}", exc_info=True)
             import traceback
             traceback.print_exc()
             return None
@@ -601,7 +609,7 @@ class FortuneContextService:
                     love_data = fortune_data.get("love", {})
                     return love_data.get("content", "") or love_data.get("summary", "暂无感情分析")
         except Exception as e:
-            print(f"[FortuneContextService] _extract_fortune_by_intent error: {e}")
+            logger.error(f"_extract_fortune_by_intent error: {e}", exc_info=True)
         
         return "暂无相关分析"
     
@@ -843,7 +851,7 @@ class FortuneContextService:
             
             return analysis
         except Exception as e:
-            print(f"[FortuneContextService] _extract_yearly_fortune_by_intent error: {e}")
+            logger.error(f"_extract_yearly_fortune_by_intent error: {e}", exc_info=True)
             return "流年大运分析暂时无法获取"
     
     @staticmethod
@@ -978,7 +986,7 @@ class FortuneContextService:
                     analysis += f" | 十神：{shishen_str}"
                 analysis += "\n"
                 
-                # ⭐ 新增：深度分析（五行平衡+关系分析）
+                # ⭐ 新增：深度分析（五行平衡+关系分析+刑冲合害）
                 balance_analysis = liunian.get('balance_analysis', {})
                 relation_analysis = liunian.get('relation_analysis', {})
                 
@@ -987,10 +995,32 @@ class FortuneContextService:
                     if balance_summary:
                         analysis += f"  📊 五行平衡：{balance_summary}\n"
                 
+                # 关系分析（包含流年vs大运/八字的关系）
                 if relation_analysis:
                     relation_summary = relation_analysis.get('summary', '')
                     if relation_summary and "无明显" not in relation_summary:
                         analysis += f"  🔗 关系分析：{relation_summary}\n"
+                    
+                    # ⚠️ 新增：刑冲合害详细展示
+                    internal_relations = relation_analysis.get('internal_relations', {})
+                    if internal_relations:
+                        # 优先展示冲、刑（不利因素）
+                        if internal_relations.get('chong_details'):
+                            chong_str = "、".join(internal_relations['chong_details'])
+                            analysis += f"  ⚠️ 冲：{chong_str}\n"
+                        if internal_relations.get('xing_details'):
+                            xing_str = "、".join(internal_relations['xing_details'])
+                            analysis += f"  ⚠️ 刑：{xing_str}\n"
+                        if internal_relations.get('hai_details'):
+                            hai_str = "、".join(internal_relations['hai_details'])
+                            analysis += f"  ⚠️ 害：{hai_str}\n"
+                        if internal_relations.get('po_details'):
+                            po_str = "、".join(internal_relations['po_details'])
+                            analysis += f"  ⚠️ 破：{po_str}\n"
+                        # 展示合（有利因素）
+                        if internal_relations.get('he_details'):
+                            he_str = "、".join(internal_relations['he_details'])
+                            analysis += f"  ✅ 合：{he_str}\n"
                 
                 # 根据意图和十神关系进行具体分析（带喜忌神判断）
                 if intent == "wealth":
@@ -1100,6 +1130,6 @@ class FortuneContextService:
             
             return analysis
         except Exception as e:
-            print(f"[FortuneContextService] _extract_multi_year_fortune error: {e}")
+            logger.error(f"_extract_multi_year_fortune error: {e}", exc_info=True)
             return "多年流年对比分析暂时无法获取"
 
