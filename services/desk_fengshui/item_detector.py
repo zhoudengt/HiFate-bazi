@@ -106,8 +106,15 @@ class DeskItemDetector:
                 unique_items = []
                 seen = set()
                 for item in filtered_items:
-                    # 使用物品名称+位置作为唯一标识
-                    item_key = f"{item['name']}_{item.get('bbox', {}).get('x', 0) // 50}_{item.get('bbox', {}).get('y', 0) // 50}"
+                    # bbox是列表 [x1, y1, x2, y2]
+                    bbox = item.get('bbox', [0, 0, 0, 0])
+                    if isinstance(bbox, list) and len(bbox) >= 2:
+                        # 使用物品名称+位置作为唯一标识（将坐标除以50取整，相近位置视为同一物品）
+                        item_key = f"{item['name']}_{bbox[0] // 50}_{bbox[1] // 50}"
+                    else:
+                        # 如果没有bbox，使用名称+置信度
+                        item_key = f"{item['name']}_{item.get('confidence', 0)}"
+                    
                     if item_key not in seen:
                         seen.add(item_key)
                         unique_items.append(item)
