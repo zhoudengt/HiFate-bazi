@@ -102,10 +102,17 @@ class DeskItemDetector:
             ]
             
             # 4. 记录检测结果
-            if len(filtered_items) == 0 and self.model is None:
-                logger.warning(f"❌ 未检测到物品（使用备用方案）")
-                logger.warning("   原因：YOLO模型未安装，OpenCV备用方案准确率较低")
-                logger.warning("   解决：请运行 ./scripts/install_yolo.sh 安装YOLO模型")
+            warning_msg = None
+            if self.model is None:
+                # 使用备用方案时
+                if len(filtered_items) == 0:
+                    logger.warning(f"❌ 未检测到物品（使用备用方案）")
+                    logger.warning("   原因：YOLO模型未安装，OpenCV备用方案准确率较低")
+                    logger.warning("   解决：请运行 ./scripts/install_yolo.sh 安装YOLO模型")
+                    warning_msg = '未安装YOLO模型，使用备用检测方案（准确率较低）'
+                else:
+                    logger.info(f"✅ 检测到 {len(filtered_items)} 个办公桌相关物品（使用备用方案）")
+                    # 即使检测到物品，也不显示警告，避免干扰用户体验
             else:
                 logger.info(f"✅ 检测到 {len(filtered_items)} 个办公桌相关物品")
             
@@ -115,7 +122,7 @@ class DeskItemDetector:
                 'image_shape': img.shape,
                 'total_detected': len(items),
                 'using_backup': self.model is None,  # 标记是否使用备用方案
-                'warning': '未安装YOLO模型，使用备用检测方案（准确率较低）' if self.model is None else None
+                'warning': warning_msg  # 只有真正检测失败时才返回警告
             }
             
         except Exception as e:

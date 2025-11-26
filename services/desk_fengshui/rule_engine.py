@@ -47,12 +47,158 @@ class DeskFengshuiEngine:
         except:
             return {
                 'host': os.getenv('MYSQL_HOST', '127.0.0.1'),
-                'port': int(os.getenv('MYSQL_PORT', 13306)),
+                'port': int(os.getenv('MYSQL_PORT', 3306)),
                 'user': os.getenv('MYSQL_USER', 'root'),
-                'password': os.getenv('MYSQL_PASSWORD', 'root123456'),
-                'database': os.getenv('MYSQL_DATABASE', 'bazi_system'),
+                'password': os.getenv('MYSQL_PASSWORD', '123456'),
+                'database': os.getenv('MYSQL_DATABASE', 'hifate_bazi'),
                 'charset': 'utf8mb4'
             }
+    
+    def _get_builtin_rules(self) -> List[Dict]:
+        """获取内置风水规则（MySQL不可用时的fallback）"""
+        return [
+            # 基础规则：青龙位（左侧）
+            {
+                'rule_code': 'BASIC_LEFT_01',
+                'rule_type': 'basic',
+                'description': '青龙位适合摆放"动"象物品',
+                'item_types': ['kettle', 'plant', 'phone'],
+                'ideal_position': {'directions': ['left', 'front_left', 'back_left']},
+                'suggestion': '建议在办公桌左侧（青龙位）摆放{item}，有助于提升贵人运和事业运',
+                'priority': 90
+            },
+            {
+                'rule_code': 'BASIC_LEFT_02',
+                'rule_type': 'basic',
+                'description': '青龙位物品应高于白虎位',
+                'item_types': ['file_holder', 'book', 'plant'],
+                'ideal_position': {'directions': ['left', 'front_left', 'back_left']},
+                'suggestion': '青龙位的{item}高度合适，符合"宁叫青龙高万丈"的原则',
+                'priority': 85
+            },
+            # 基础规则：白虎位（右侧）
+            {
+                'rule_code': 'BASIC_RIGHT_01',
+                'rule_type': 'basic',
+                'description': '白虎位宜简洁低矮',
+                'item_types': ['cup', 'mouse', 'small_item'],
+                'ideal_position': {'directions': ['right', 'front_right', 'back_right']},
+                'suggestion': '{item}放在右侧（白虎位）合适，白虎宜静不宜动',
+                'priority': 80
+            },
+            # 基础规则：朱雀位（前方）
+            {
+                'rule_code': 'BASIC_FRONT_01',
+                'rule_type': 'basic',
+                'description': '朱雀位宜开阔明亮',
+                'item_types': ['monitor', 'tv', 'laptop'],
+                'ideal_position': {'directions': ['center', 'front']},
+                'suggestion': '显示器放在前方中央位置（朱雀位）很好，有利于前途发展',
+                'priority': 95
+            },
+            # 禁忌规则
+            {
+                'rule_code': 'TABOO_RIGHT_01',
+                'rule_type': 'taboo',
+                'description': '白虎位不宜放动态物品',
+                'item_types': ['kettle', 'fan', 'phone'],
+                'ideal_position': {'directions': ['left', 'front_left', 'back_left']},
+                'suggestion': '⚠️ {item}在右侧（白虎位）不太合适，建议移至左侧（青龙位）',
+                'priority': 88
+            },
+            {
+                'rule_code': 'TABOO_SHARP_01',
+                'rule_type': 'taboo',
+                'description': '尖锐物品应收纳',
+                'item_types': ['scissors', 'knife'],
+                'ideal_position': None,
+                'suggestion': '⚠️ 检测到{item}，建议收纳在抽屉中，避免形成煞气',
+                'priority': 92
+            },
+            # 五行规则：木
+            {
+                'rule_code': 'ELEMENT_WOOD_01',
+                'rule_type': 'element',
+                'description': '喜神木应增加绿植',
+                'item_types': ['plant'],
+                'element': '木',
+                'ideal_position': {'directions': ['left', 'front_left']},
+                'suggestion': '⭐ 您的喜神为木，建议在左侧（青龙位）摆放绿植，可增强运势',
+                'priority': 100
+            },
+            # 五行规则：火
+            {
+                'rule_code': 'ELEMENT_FIRE_01',
+                'rule_type': 'element',
+                'description': '喜神火适合红色物品',
+                'item_types': ['red_item', 'lamp', 'laptop'],
+                'element': '火',
+                'ideal_position': {'directions': ['front', 'center']},
+                'suggestion': '⭐ 您的喜神为火，建议在前方摆放红色物品或台灯，有利运势',
+                'priority': 100
+            },
+            # 五行规则：土
+            {
+                'rule_code': 'ELEMENT_EARTH_01',
+                'rule_type': 'element',
+                'description': '喜神土适合黄色/陶瓷物品',
+                'item_types': ['ceramic', 'yellow_item'],
+                'element': '土',
+                'ideal_position': {'directions': ['center']},
+                'suggestion': '⭐ 您的喜神为土，建议在中央位置摆放陶瓷或黄色物品',
+                'priority': 100
+            },
+            # 五行规则：金
+            {
+                'rule_code': 'ELEMENT_METAL_01',
+                'rule_type': 'element',
+                'description': '喜神金适合金属物品',
+                'item_types': ['metal_item', 'clock'],
+                'element': '金',
+                'ideal_position': {'directions': ['right', 'back_right']},
+                'suggestion': '⭐ 您的喜神为金，建议在右后方摆放金属摆件或时钟',
+                'priority': 100
+            },
+            # 五行规则：水
+            {
+                'rule_code': 'ELEMENT_WATER_01',
+                'rule_type': 'element',
+                'description': '喜神水适合水相关物品',
+                'item_types': ['cup', 'bottle', 'water_feature'],
+                'element': '水',
+                'ideal_position': {'directions': ['front', 'front_right']},
+                'suggestion': '⭐ 您的喜神为水，建议在前方摆放水杯、水瓶或水培植物',
+                'priority': 100
+            },
+            # 通用建议
+            {
+                'rule_code': 'GENERAL_ADVICE_01',
+                'rule_type': 'general',
+                'description': '保持办公桌整洁',
+                'item_types': [],
+                'ideal_position': None,
+                'suggestion': '💡 建议保持办公桌整洁有序，避免杂物堆积，财不入乱门',
+                'priority': 50
+            },
+            {
+                'rule_code': 'GENERAL_ADVICE_02',
+                'rule_type': 'general',
+                'description': '绿植建议',
+                'item_types': [],
+                'ideal_position': None,
+                'suggestion': '💡 建议在左侧（青龙位）摆放一盆宽叶绿植，如发财树、富贵竹等',
+                'priority': 70
+            },
+            {
+                'rule_code': 'GENERAL_ADVICE_03',
+                'rule_type': 'general',
+                'description': '水杯位置建议',
+                'item_types': [],
+                'ideal_position': None,
+                'suggestion': '💡 水杯适合放在右侧（白虎位），但不宜在右侧烧水',
+                'priority': 65
+            }
+        ]
     
     def load_rules(self, force_reload: bool = False) -> List[Dict]:
         """
@@ -106,8 +252,10 @@ class DeskFengshuiEngine:
             return rules
             
         except Exception as e:
-            logger.error(f"加载规则失败: {e}", exc_info=True)
-            return []
+            logger.error(f"加载规则失败: {e}")
+            logger.warning("⚠️ 使用内置规则作为fallback")
+            # 使用内置规则作为fallback
+            return self._get_builtin_rules()
     
     def match_rules(self, detected_items: List[Dict], bazi_info: Optional[Dict] = None) -> Dict:
         """
