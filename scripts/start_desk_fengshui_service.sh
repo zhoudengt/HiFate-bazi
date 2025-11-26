@@ -30,7 +30,7 @@ fi
 
 # 启动服务
 echo "启动服务: ${SERVICE_NAME} (端口: ${SERVICE_PORT})"
-nohup python3 services/desk_fengshui/grpc_server.py --port $SERVICE_PORT \
+nohup python3.9 services/desk_fengshui/grpc_server.py --port $SERVICE_PORT \
     > "$LOG_FILE" 2>&1 &
 
 SERVICE_PID=$!
