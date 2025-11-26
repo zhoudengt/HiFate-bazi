@@ -48,7 +48,7 @@ class DeskItemDetector:
         'mirror': '镜子'
     }
     
-    def __init__(self, model_path: str = 'yolov8n.pt', confidence_threshold: float = 0.5):
+    def __init__(self, model_path: str = 'yolov8n.pt', confidence_threshold: float = 0.25):
         """
         初始化检测器
         
