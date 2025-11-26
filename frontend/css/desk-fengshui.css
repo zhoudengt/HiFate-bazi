@@ -333,8 +333,28 @@ input:checked + .slider:before {
 }
 
 .badge-xishen {
-    background: #e3f2fd;
-    color: #1976d2;
+    background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+    color: #8b4513;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(255, 215, 0, 0.4);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+.xishen-suggestion {
+    background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%);
+    border: 2px solid #ffd700 !important;
+    box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3) !important;
+}
+
+.xishen-suggestion .suggestion-reason {
+    font-weight: 600;
+    color: #8b4513;
+    font-size: 1.05em;
 }
 
 .badge-jishen {

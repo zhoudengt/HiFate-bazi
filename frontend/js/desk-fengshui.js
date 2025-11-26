@@ -369,17 +369,22 @@ class DeskFengshuiAnalyzer {
                     <div class="suggestion-reason">${sugg.reason}</div>
                 `;
             } else if (type === 'additions') {
+                // 检查是否是喜神建议
+                const isXishen = sugg.is_xishen || sugg.reason?.includes('喜神') || sugg.reason?.includes('🌟');
+                const xishenClass = isXishen ? 'xishen-suggestion' : '';
+                const badgeText = isXishen ? '🌟 喜神专属' : (sugg.element ? `五行：${sugg.element}` : '建议');
+                
                 content = `
-                    <div class="suggestion-header">
+                    <div class="suggestion-header ${xishenClass}">
                         <span class="suggestion-title">建议增加：${sugg.item_label || sugg.item}</span>
-                        <span class="suggestion-badge badge-${priority}">
-                            ${sugg.element ? `五行：${sugg.element}` : '建议'}
+                        <span class="suggestion-badge badge-${priority} ${isXishen ? 'badge-xishen' : ''}">
+                            ${badgeText}
                         </span>
                     </div>
                     <div class="suggestion-detail">
                         建议位置：${sugg.ideal_position || sugg.position}
                     </div>
-                    <div class="suggestion-reason">${sugg.reason}</div>
+                    <div class="suggestion-reason ${xishenClass}">${sugg.reason || sugg.suggestion || ''}</div>
                 `;
             } else {
                 content = `
