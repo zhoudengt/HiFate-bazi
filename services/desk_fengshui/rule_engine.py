@@ -460,17 +460,21 @@ class DeskFengshuiEngine:
             # 检查是否已有该物品
             has_item = rule_item_name in detected_item_names
             
-            # 如果是喜神相关规则，优先推荐
-            if rule.get('related_element') == xishen and not has_item:
+            # 如果是喜神相关规则，优先推荐（强制显示，即使已有类似物品）
+            if rule.get('related_element') == xishen:
                 ideal_pos = rule.get('ideal_position', {})
                 ideal_directions = ideal_pos.get('directions', [])
                 if isinstance(ideal_directions, str):
                     ideal_directions = [ideal_directions]
                 
                 position_name = self._get_direction_name(ideal_directions[0]) if ideal_directions else '合适位置'
-                suggestion = rule.get('suggestion', '')
-                if '⭐' not in suggestion:
-                    suggestion = f"⭐ {suggestion}"
+                suggestion = self._safe_decode(rule.get('suggestion', ''))
+                
+                # 强制添加⭐标记和强调
+                if '⭐' not in suggestion and '🌟' not in suggestion:
+                    suggestion = f"🌟【喜神{xishen}专属推荐】{suggestion}"
+                elif '⭐' in suggestion:
+                    suggestion = suggestion.replace('⭐', '🌟【喜神专属】')
                 
                 additions.append({
                     'item': rule_item_name,
@@ -480,7 +484,8 @@ class DeskFengshuiEngine:
                     'suggestion': suggestion,
                     'priority': 'high',
                     'action': 'add',
-                    'element': xishen
+                    'element': xishen,
+                    'is_xishen': True  # 标记为喜神建议
                 })
                 continue
             
@@ -536,9 +541,16 @@ class DeskFengshuiEngine:
             'element': '水'
         })
         
-        # 3. 按优先级排序，返回最多8条建议
-        additions.sort(key=lambda x: {'high': 3, 'medium': 2, 'low': 1}.get(x.get('priority', 'low'), 0), reverse=True)
-        return additions[:8]
+        # 3. 按优先级排序：喜神建议优先，然后按priority排序
+        def sort_key(x):
+            priority_score = {'high': 3, 'medium': 2, 'low': 1}.get(x.get('priority', 'low'), 0)
+            # 喜神建议额外加分
+            if x.get('is_xishen'):
+                priority_score += 10
+            return priority_score
+        
+        additions.sort(key=sort_key, reverse=True)
+        return additions[:10]  # 增加到10条，确保喜神建议显示
     
     def _calculate_score(self, detected_items: List[Dict], adjustments: List[Dict], 
                         additions: List[Dict], removals: List[Dict]) -> int:

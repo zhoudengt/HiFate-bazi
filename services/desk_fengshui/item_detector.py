@@ -48,7 +48,7 @@ class DeskItemDetector:
         'mirror': '镜子'
     }
     
-    def __init__(self, model_path: str = 'yolov8n.pt', confidence_threshold: float = 0.20):
+    def __init__(self, model_path: str = 'yolov8n.pt', confidence_threshold: float = 0.15):
         """
         初始化检测器
         
@@ -95,45 +95,71 @@ class DeskItemDetector:
                 logger.warning("   建议执行: ./scripts/install_yolo.sh")
                 items = self._detect_with_opencv(img)
             
-            # 3. 过滤相关物品（放宽过滤条件，包含更多办公桌常见物品）
+            # 3. 过滤相关物品（大幅放宽条件，尽量保留所有检测到的物品）
             # 允许的物品类别（COCO数据集中的常见办公桌物品）
             allowed_items = set(self.ITEM_MAP.keys()) | set(self.SPECIAL_ITEMS.keys())
             # 添加更多可能的物品类别
-            additional_items = ['cell phone', 'remote', 'pen', 'book', 'vase', 'bowl', 'scissors', 'clock']
+            additional_items = ['cell phone', 'remote', 'pen', 'book', 'vase', 'bowl', 'scissors', 'clock', 
+                              'calculator', 'tissue', 'container', 'box', 'bag', 'mug', 'cup', 'bottle']
             allowed_items.update(additional_items)
             
+            # 先过滤允许的物品
             filtered_items = [
                 item for item in items 
                 if item['name'] in allowed_items
             ]
             
-            # 如果过滤后物品太少，放宽条件（保留置信度较高的物品）
-            if len(filtered_items) < 3:
-                # 保留置信度>0.3的所有物品
+            # 如果过滤后物品太少，保留所有置信度>0.2的物品（不限制类别）
+            if len(filtered_items) < 5:
                 filtered_items = [
                     item for item in items 
-                    if item.get('confidence', 0) > 0.3
+                    if item.get('confidence', 0) > 0.2
                 ]
-                logger.info(f"放宽过滤条件，保留 {len(filtered_items)} 个高置信度物品")
+                logger.info(f"放宽过滤条件，保留 {len(filtered_items)} 个物品（置信度>0.2）")
             
-            # 4. 去重：相同物品且位置相近的合并为一个
+            # 4. 去重：相同物品且位置重叠的合并为一个（使用IOU计算重叠度）
             if len(filtered_items) > 1:
                 unique_items = []
-                seen = set()
-                for item in filtered_items:
-                    # bbox是列表 [x1, y1, x2, y2]
-                    bbox = item.get('bbox', [0, 0, 0, 0])
-                    if isinstance(bbox, list) and len(bbox) >= 2:
-                        # 使用物品名称+位置作为唯一标识（将坐标除以50取整，相近位置视为同一物品）
-                        item_key = f"{item['name']}_{bbox[0] // 50}_{bbox[1] // 50}"
-                    else:
-                        # 如果没有bbox，使用名称+置信度
-                        item_key = f"{item['name']}_{item.get('confidence', 0)}"
+                for i, item in enumerate(filtered_items):
+                    is_duplicate = False
+                    bbox1 = item.get('bbox', [0, 0, 0, 0])
                     
-                    if item_key not in seen:
-                        seen.add(item_key)
+                    if isinstance(bbox1, list) and len(bbox1) >= 4:
+                        x1_1, y1_1, x2_1, y2_1 = bbox1[0], bbox1[1], bbox1[2], bbox1[3]
+                        area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
+                        
+                        # 检查是否与已有物品重叠
+                        for existing_item in unique_items:
+                            if existing_item['name'] != item['name']:
+                                continue
+                            
+                            bbox2 = existing_item.get('bbox', [0, 0, 0, 0])
+                            if isinstance(bbox2, list) and len(bbox2) >= 4:
+                                x1_2, y1_2, x2_2, y2_2 = bbox2[0], bbox2[1], bbox2[2], bbox2[3]
+                                
+                                # 计算重叠区域
+                                overlap_x1 = max(x1_1, x1_2)
+                                overlap_y1 = max(y1_1, y1_2)
+                                overlap_x2 = min(x2_1, x2_2)
+                                overlap_y2 = min(y2_1, y2_2)
+                                
+                                if overlap_x2 > overlap_x1 and overlap_y2 > overlap_y1:
+                                    overlap_area = (overlap_x2 - overlap_x1) * (overlap_y2 - overlap_y1)
+                                    # 如果重叠面积超过较小物品的50%，视为重复
+                                    min_area = min(area1, (x2_2 - x1_2) * (y2_2 - y1_2))
+                                    if overlap_area / min_area > 0.5:
+                                        is_duplicate = True
+                                        # 保留置信度更高的
+                                        if item.get('confidence', 0) > existing_item.get('confidence', 0):
+                                            unique_items.remove(existing_item)
+                                            unique_items.append(item)
+                                        break
+                    
+                    if not is_duplicate:
                         unique_items.append(item)
+                
                 filtered_items = unique_items
+                logger.info(f"去重后保留 {len(filtered_items)} 个物品")
             
             # 4. 记录检测结果
             warning_msg = None
