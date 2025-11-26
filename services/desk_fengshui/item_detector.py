@@ -101,6 +101,18 @@ class DeskItemDetector:
                 if item['name'] in self.ITEM_MAP or item['name'] in self.SPECIAL_ITEMS
             ]
             
+            # 4. 去重：相同物品且位置相近的合并为一个
+            if len(filtered_items) > 1:
+                unique_items = []
+                seen = set()
+                for item in filtered_items:
+                    # 使用物品名称+位置作为唯一标识
+                    item_key = f"{item['name']}_{item.get('bbox', {}).get('x', 0) // 50}_{item.get('bbox', {}).get('y', 0) // 50}"
+                    if item_key not in seen:
+                        seen.add(item_key)
+                        unique_items.append(item)
+                filtered_items = unique_items
+            
             # 4. 记录检测结果
             warning_msg = None
             if self.model is None:

@@ -335,31 +335,63 @@ class DeskFengshuiEngine:
         
         for item in detected_items:
             item_name = item['name']
+            item_label = item.get('label', item_name)
             current_position = item.get('position', {})
             current_relative = current_position.get('relative', '')
+            current_direction = current_position.get('direction', '')
             
-            # 查找该物品的规则
+            # 查找该物品的规则（支持position和basic类型）
             for rule in rules:
-                if rule['rule_type'] != 'basic':
+                if rule['rule_type'] not in ['position', 'basic', 'taboo']:
                     continue
                 
-                if rule['item_name'] == item_name:
-                    ideal_pos = rule.get('ideal_position', {})
-                    ideal_direction = ideal_pos.get('direction', '')
-                    
-                    # 检查位置是否匹配
-                    if ideal_direction and current_relative != ideal_direction:
-                        adjustments.append({
-                            'item': item['label'],
-                            'item_label': item['label'],
-                            'current_position': current_position.get('relative_name', current_relative),
-                            'ideal_position': self._get_direction_name(ideal_direction),
-                            'reason': rule.get('reason', ''),
-                            'priority': 'high' if rule.get('priority', 5) >= 7 else 'medium',
-                            'action': 'move',
-                            'element': rule.get('related_element', '')
-                        })
-                        break
+                # 匹配物品名称
+                rule_item_name = rule.get('item_name', '')
+                if rule_item_name != item_name:
+                    continue
+                
+                # 获取理想位置
+                ideal_pos = rule.get('ideal_position', {})
+                if not ideal_pos:
+                    continue
+                
+                ideal_directions = ideal_pos.get('directions', [])
+                if isinstance(ideal_directions, str):
+                    ideal_directions = [ideal_directions]
+                
+                # 检查当前位置是否在理想位置列表中
+                is_in_ideal = False
+                if current_relative in ideal_directions or current_direction in ideal_directions:
+                    is_in_ideal = True
+                
+                # 如果是taboo规则且当前位置在禁止区域
+                if rule['rule_type'] == 'taboo' and not is_in_ideal:
+                    adjustments.append({
+                        'item': item_label,
+                        'item_label': item_label,
+                        'current_position': current_position.get('relative_name', current_relative),
+                        'ideal_position': self._get_direction_name(ideal_directions[0] if ideal_directions else 'left'),
+                        'reason': rule.get('reason', ''),
+                        'suggestion': rule.get('suggestion', ''),
+                        'priority': 'high' if rule.get('priority', 5) >= 90 else 'medium',
+                        'action': 'move',
+                        'element': rule.get('related_element', '')
+                    })
+                    break
+                # 如果是position规则且位置不匹配
+                elif rule['rule_type'] == 'position' and not is_in_ideal and ideal_directions:
+                    adjustments.append({
+                        'item': item_label,
+                        'item_label': item_label,
+                        'current_position': current_position.get('relative_name', current_relative),
+                        'ideal_position': self._get_direction_name(ideal_directions[0]),
+                        'reason': rule.get('reason', ''),
+                        'suggestion': rule.get('suggestion', ''),
+                        'priority': 'high' if rule.get('priority', 5) >= 90 else 'medium',
+                        'action': 'move',
+                        'element': rule.get('related_element', '')
+                    })
+                    break
         
         return adjustments
     
@@ -396,43 +428,109 @@ class DeskFengshuiEngine:
         return removals
     
     def _generate_additions(self, detected_items: List[Dict], bazi_info: Dict, rules: List[Dict]) -> List[Dict]:
-        """基于喜神生成增加建议"""
+        """基于规则和喜神生成增加建议"""
         additions = []
-        
-        # 1. 基于喜神的个性化建议
         xishen = bazi_info.get('xishen') if bazi_info else None
-        if xishen:
-            # 查找喜神对应的物品规则
-            for rule in rules:
-                if rule['rule_type'] != 'element_based':
-                    continue
+        
+        # 检查已检测到的物品类型
+        detected_item_names = {item['name'] for item in detected_items}
+        detected_left_items = [item for item in detected_items if item.get('position', {}).get('relative') in ['left', 'front_left', 'back_left']]
+        detected_right_items = [item for item in detected_items if item.get('position', {}).get('relative') in ['right', 'front_right', 'back_right']]
+        
+        # 1. 基于规则的增加建议（检查缺失的重要物品）
+        for rule in rules:
+            if rule['rule_type'] not in ['position', 'element', 'general']:
+                continue
+            
+            rule_item_name = rule.get('item_name', '')
+            rule_item_label = rule.get('item_label', '')
+            
+            # 跳过位置规则（不是物品）
+            if rule_item_name in ['left_items', 'right_items', 'front_area', 'back_area', 'desk', 'computer']:
+                continue
+            
+            # 检查是否已有该物品
+            has_item = rule_item_name in detected_item_names
+            
+            # 如果是喜神相关规则，优先推荐
+            if rule.get('related_element') == xishen and not has_item:
+                ideal_pos = rule.get('ideal_position', {})
+                ideal_directions = ideal_pos.get('directions', [])
+                if isinstance(ideal_directions, str):
+                    ideal_directions = [ideal_directions]
                 
-                if rule.get('related_element') == xishen:
-                    # 检查是否已经有相关物品
-                    item_name = rule['item_name']
-                    has_item = any(item['name'] == item_name for item in detected_items)
+                position_name = self._get_direction_name(ideal_directions[0]) if ideal_directions else '合适位置'
+                suggestion = rule.get('suggestion', '')
+                if '⭐' not in suggestion:
+                    suggestion = f"⭐ {suggestion}"
+                
+                additions.append({
+                    'item': rule_item_name,
+                    'item_label': rule_item_label,
+                    'position': position_name,
+                    'reason': suggestion,
+                    'suggestion': suggestion,
+                    'priority': 'high',
+                    'action': 'add',
+                    'element': xishen
+                })
+                continue
+            
+            # 通用物品建议（基于规则）
+            if rule['rule_type'] == 'position' and not has_item:
+                # 检查是否应该推荐（基于位置）
+                ideal_pos = rule.get('ideal_position', {})
+                ideal_directions = ideal_pos.get('directions', [])
+                if isinstance(ideal_directions, str):
+                    ideal_directions = [ideal_directions]
+                
+                # 如果理想位置在左侧，且左侧物品较少，推荐
+                if 'left' in str(ideal_directions) and len(detected_left_items) < 2:
+                    position_name = '左侧（青龙位）'
+                    suggestion = rule.get('suggestion', '')
+                    if not suggestion.startswith('✅') and not suggestion.startswith('💡'):
+                        suggestion = f"💡 {suggestion}"
                     
-                    if not has_item:
-                        ideal_pos = rule.get('ideal_position', {})
-                        ideal_direction = ideal_pos.get('direction', '')
-                        
-                        additions.append({
-                            'item': item_name,
-                            'item_label': rule['item_label'],
-                            'position': self._get_direction_name(ideal_direction),
-                            'reason': f"⭐ 重点推荐：{rule.get('reason', '')}（您的喜神为{xishen}，此物品特别适合您）",
-                            'priority': 'high',  # 喜神建议提升优先级
-                            'action': 'add',
-                            'element': xishen
-                        })
+                    additions.append({
+                        'item': rule_item_name,
+                        'item_label': rule_item_label,
+                        'position': position_name,
+                        'reason': suggestion,
+                        'suggestion': suggestion,
+                        'priority': 'medium',
+                        'action': 'add',
+                        'element': rule.get('related_element')
+                    })
         
-        # 2. 通用风水建议（无论是否检测到物品都给出）
-        general_suggestions = self._get_general_suggestions(detected_items, xishen)
-        additions.extend(general_suggestions)
+        # 2. 通用风水建议（基于四象布局）
+        # 青龙位建议
+        if len(detected_left_items) == 0:
+            additions.append({
+                'item': 'plant',
+                'item_label': '绿植/文件架',
+                'position': '左侧（青龙位）',
+                'reason': '💡 青龙位（左侧）建议摆放绿植（宽叶植物如发财树、富贵竹）或文件架，提升贵人运。青龙位必须高于右侧',
+                'suggestion': '💡 建议在左侧（青龙位）摆放绿植（宽叶植物如发财树、富贵竹）或文件架，提升贵人运',
+                'priority': 'high',
+                'action': 'add',
+                'element': '木'
+            })
         
-        # 按优先级排序，返回最多6条建议
+        # 玄武位建议
+        additions.append({
+            'item': 'back_support',
+            'item_label': '靠山',
+            'position': '后方（玄武位）',
+            'reason': '💡 玄武位（后方）最好背靠实墙，不要背靠门或落地窗。如无法调整，可在椅背后放褐色/咖啡色靠枕（山形或写着"靠山"）',
+            'suggestion': '💡 确保后方（玄武位）有靠山，可放褐色/咖啡色靠枕或挂衣服营造"虚拟靠山"',
+            'priority': 'high',
+            'action': 'add',
+            'element': '水'
+        })
+        
+        # 3. 按优先级排序，返回最多8条建议
         additions.sort(key=lambda x: {'high': 3, 'medium': 2, 'low': 1}.get(x.get('priority', 'low'), 0), reverse=True)
-        return additions[:6]
+        return additions[:8]
     
     def _calculate_score(self, detected_items: List[Dict], adjustments: List[Dict], 
                         additions: List[Dict], removals: List[Dict]) -> int:
@@ -514,7 +612,18 @@ class DeskFengshuiEngine:
                 summary += f"有{len(removals)}件物品不宜摆放。"
             
             if total_suggestions == 0:
-                summary = f"🎉 您的办公桌风水布局非常好！共检测到{total_items}件物品，所有物品摆放位置都很合理，评分{score}分。继续保持！"
+                # 即使位置都合理，也要给出优化建议
+                summary = f"🎉 您的办公桌风水布局非常好！共检测到{total_items}件物品，所有物品摆放位置都很合理，评分{score}分。"
+                # 添加通用优化建议
+                if not additions:
+                    summary += "\n\n💡 为进一步提升运势，建议：\n"
+                    summary += "1. 青龙位（左侧）可增加绿植或文件架，提升贵人运\n"
+                    summary += "2. 玄武位（后方）确保背靠实墙，增强靠山运\n"
+                    summary += "3. 保持办公桌整洁有序，财不入乱门"
+                else:
+                    summary += "\n\n💡 优化建议："
+                    for i, add in enumerate(additions[:3], 1):
+                        summary += f"\n{i}. {add.get('suggestion', add.get('reason', ''))}"
         
         # 添加风水要点提示
         summary += "\n\n💡 风水要点：左青龙（高、动）、右白虎（低、静）、前朱雀（开阔）、后玄武（有靠）。"
