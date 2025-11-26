@@ -91,6 +91,8 @@ class DeskItemDetector:
             if self.model is not None:
                 items = self._detect_with_yolo(img)
             else:
+                logger.warning("⚠️ YOLO模型未安装，使用备用方案（准确率较低）")
+                logger.warning("   建议执行: ./scripts/install_yolo.sh")
                 items = self._detect_with_opencv(img)
             
             # 3. 过滤相关物品
@@ -99,13 +101,21 @@ class DeskItemDetector:
                 if item['name'] in self.ITEM_MAP or item['name'] in self.SPECIAL_ITEMS
             ]
             
-            logger.info(f"检测到 {len(filtered_items)} 个办公桌相关物品")
+            # 4. 记录检测结果
+            if len(filtered_items) == 0 and self.model is None:
+                logger.warning(f"❌ 未检测到物品（使用备用方案）")
+                logger.warning("   原因：YOLO模型未安装，OpenCV备用方案准确率较低")
+                logger.warning("   解决：请运行 ./scripts/install_yolo.sh 安装YOLO模型")
+            else:
+                logger.info(f"✅ 检测到 {len(filtered_items)} 个办公桌相关物品")
             
             return {
                 'success': True,
                 'items': filtered_items,
                 'image_shape': img.shape,
-                'total_detected': len(items)
+                'total_detected': len(items),
+                'using_backup': self.model is None,  # 标记是否使用备用方案
+                'warning': '未安装YOLO模型，使用备用检测方案（准确率较低）' if self.model is None else None
             }
             
         except Exception as e:

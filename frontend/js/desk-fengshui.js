@@ -199,6 +199,11 @@ class DeskFengshuiAnalyzer {
             });
         }, 100);
         
+        // 显示警告信息（如果有）
+        if (data.warning) {
+            this.displayWarning(data.warning);
+        }
+        
         // 显示评分
         this.displayScore(data.score, data.summary);
         
@@ -222,6 +227,35 @@ class DeskFengshuiAnalyzer {
         
         // 显示删除建议
         this.displaySuggestions('removals', data.removals || []);
+    }
+    
+    displayWarning(warning) {
+        // 在结果区域顶部显示警告
+        const resultSection = document.getElementById('resultSection');
+        const existingWarning = resultSection.querySelector('.warning-banner');
+        if (existingWarning) {
+            existingWarning.remove();
+        }
+        
+        const warningDiv = document.createElement('div');
+        warningDiv.className = 'warning-banner';
+        warningDiv.innerHTML = `
+            <div style="background: #fff3cd; border: 2px solid #ffc107; border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 24px;">⚠️</span>
+                    <div>
+                        <strong style="color: #856404;">检测功能受限</strong>
+                        <p style="margin: 5px 0 0 0; color: #856404;">
+                            ${warning}<br>
+                            <small>建议联系管理员安装YOLO模型以获得更准确的物品检测。<br>
+                            当前系统仍会根据风水原理为您提供完整的布局建议。</small>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        resultSection.insertBefore(warningDiv, resultSection.firstChild);
     }
     
     displayScore(score, summary) {

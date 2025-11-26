@@ -105,6 +105,11 @@ class DeskFengshuiAnalyzer:
                 response['xishen'] = bazi_info.get('xishen', '')
                 response['jishen'] = bazi_info.get('jishen', '')
             
+            # 添加检测警告（如果有）
+            if detection_result.get('warning'):
+                response['warning'] = detection_result['warning']
+                logger.warning(f"⚠️ 检测警告: {response['warning']}")
+            
             logger.info(f"分析完成，耗时 {duration}ms，评分 {response['score']}分")
             
             return response
