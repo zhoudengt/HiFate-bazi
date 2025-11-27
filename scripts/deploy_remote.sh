@@ -54,7 +54,13 @@ if ! command -v docker &> /dev/null; then
     rm get-docker.sh
 fi
 
-if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+# 检查 Docker Compose（支持两种格式：docker-compose 和 docker compose）
+DOCKER_COMPOSE_CMD=""
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE_CMD="docker-compose"
+elif docker compose version &> /dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker compose"
+else
     echo -e "${RED}❌ Docker Compose 未安装${NC}"
     echo -e "${YELLOW}正在安装 Docker Compose...${NC}"
     if command -v apt-get &> /dev/null; then
@@ -63,7 +69,20 @@ if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/
     elif command -v yum &> /dev/null; then
         $SUDO_CMD yum install -y docker-compose-plugin
     fi
+    
+    # 重新检查
+    if command -v docker-compose &> /dev/null; then
+        DOCKER_COMPOSE_CMD="docker-compose"
+    elif docker compose version &> /dev/null 2>&1; then
+        DOCKER_COMPOSE_CMD="docker compose"
+    else
+        echo -e "${RED}❌ Docker Compose 安装失败${NC}"
+        echo -e "${YELLOW}请手动安装 Docker Compose${NC}"
+        exit 1
+    fi
 fi
+
+echo -e "${GREEN}✅ Docker Compose 已安装（使用：$DOCKER_COMPOSE_CMD）${NC}"
 
 echo -e "${GREEN}✅ Docker 环境检查通过${NC}"
 
@@ -188,18 +207,18 @@ fi
 
 # 步骤 6：停止旧容器
 echo -e "${BLUE}[6/8] 停止旧容器...${NC}"
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml down 2>/dev/null || true
+$DOCKER_COMPOSE_CMD -f docker-compose.yml -f docker-compose.prod.yml down 2>/dev/null || true
 echo -e "${GREEN}✅ 旧容器已停止${NC}"
 
 # 步骤 7：构建镜像
 echo -e "${BLUE}[7/8] 构建 Docker 镜像...${NC}"
 echo -e "${YELLOW}这可能需要几分钟，请耐心等待...${NC}"
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml build --no-cache
+$DOCKER_COMPOSE_CMD -f docker-compose.yml -f docker-compose.prod.yml build --no-cache
 echo -e "${GREEN}✅ 镜像构建完成${NC}"
 
 # 步骤 8：启动服务
 echo -e "${BLUE}[8/8] 启动服务...${NC}"
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+$DOCKER_COMPOSE_CMD -f docker-compose.yml -f docker-compose.prod.yml up -d
 echo -e "${GREEN}✅ 服务已启动${NC}"
 
 # 等待服务启动
@@ -223,7 +242,7 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
         else
             echo -e "${RED}❌ 健康检查失败${NC}"
             echo -e "${YELLOW}查看日志：${NC}"
-            docker-compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=50
+            $DOCKER_COMPOSE_CMD -f docker-compose.yml -f docker-compose.prod.yml logs --tail=50
             exit 1
         fi
     fi
@@ -240,7 +259,7 @@ echo ""
 SERVER_IP=$(hostname -I | awk '{print $1}')
 
 echo -e "服务状态："
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml ps
+$DOCKER_COMPOSE_CMD -f docker-compose.yml -f docker-compose.prod.yml ps
 echo ""
 echo -e "访问地址："
 echo -e "  - 主服务: ${GREEN}http://${SERVER_IP}:8001${NC}"
@@ -250,9 +269,9 @@ echo -e "  - 面相分析 V2: ${GREEN}http://${SERVER_IP}:8001/frontend/face-ana
 echo -e "  - 办公桌风水: ${GREEN}http://${SERVER_IP}:8001/frontend/desk-fengshui.html${NC}"
 echo ""
 echo -e "常用命令："
-echo -e "  查看日志: ${YELLOW}docker-compose -f docker-compose.yml -f docker-compose.prod.yml logs -f${NC}"
-echo -e "  查看状态: ${YELLOW}docker-compose -f docker-compose.yml -f docker-compose.prod.yml ps${NC}"
-echo -e "  重启服务: ${YELLOW}docker-compose -f docker-compose.yml -f docker-compose.prod.yml restart${NC}"
-echo -e "  停止服务: ${YELLOW}docker-compose -f docker-compose.yml -f docker-compose.prod.yml down${NC}"
+echo -e "  查看日志: ${YELLOW}$DOCKER_COMPOSE_CMD -f docker-compose.yml -f docker-compose.prod.yml logs -f${NC}"
+echo -e "  查看状态: ${YELLOW}$DOCKER_COMPOSE_CMD -f docker-compose.yml -f docker-compose.prod.yml ps${NC}"
+echo -e "  重启服务: ${YELLOW}$DOCKER_COMPOSE_CMD -f docker-compose.yml -f docker-compose.prod.yml restart${NC}"
+echo -e "  停止服务: ${YELLOW}$DOCKER_COMPOSE_CMD -f docker-compose.yml -f docker-compose.prod.yml down${NC}"
 echo ""
 
