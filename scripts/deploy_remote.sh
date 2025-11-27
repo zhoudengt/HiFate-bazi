@@ -16,15 +16,29 @@ echo -e "${GREEN}HiFate-bazi 远程服务器部署${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
-# 检查是否为 root 用户
+# 检查是否为 root 用户（允许 root，但给出提示）
 if [ "$EUID" -eq 0 ]; then 
-   echo -e "${RED}❌ 请不要使用 root 用户运行此脚本${NC}"
-   echo -e "${YELLOW}建议使用普通用户，脚本会自动处理权限问题${NC}"
-   exit 1
+   echo -e "${YELLOW}⚠️  检测到使用 root 用户${NC}"
+   echo -e "${YELLOW}使用 root 用户部署是允许的，但建议使用普通用户以提高安全性${NC}"
+   echo -e "${YELLOW}继续使用 root 用户部署...${NC}"
+   echo ""
 fi
 
 # 项目目录
 PROJECT_DIR="/opt/HiFate-bazi"
+
+# 判断是否为 root 用户
+IS_ROOT=false
+if [ "$EUID" -eq 0 ]; then 
+   IS_ROOT=true
+fi
+
+# 根据用户类型设置命令前缀
+if [ "$IS_ROOT" = true ]; then
+    SUDO_CMD=""  # root 用户不需要 sudo
+else
+    SUDO_CMD="sudo"  # 普通用户需要 sudo
+fi
 
 # 步骤 1：检查 Docker
 echo -e "${BLUE}[1/8] 检查 Docker 环境...${NC}"
@@ -32,17 +46,23 @@ if ! command -v docker &> /dev/null; then
     echo -e "${RED}❌ Docker 未安装${NC}"
     echo -e "${YELLOW}正在安装 Docker...${NC}"
     curl -fsSL https://get.docker.com -o get-docker.sh
-    sudo sh get-docker.sh
-    sudo usermod -aG docker $USER
-    echo -e "${YELLOW}⚠️  请重新登录以使 Docker 组权限生效${NC}"
+    $SUDO_CMD sh get-docker.sh
+    if [ "$IS_ROOT" = false ]; then
+        $SUDO_CMD usermod -aG docker $USER
+        echo -e "${YELLOW}⚠️  请重新登录以使 Docker 组权限生效${NC}"
+    fi
     rm get-docker.sh
 fi
 
 if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
     echo -e "${RED}❌ Docker Compose 未安装${NC}"
     echo -e "${YELLOW}正在安装 Docker Compose...${NC}"
-    sudo apt-get update
-    sudo apt-get install -y docker-compose-plugin
+    if command -v apt-get &> /dev/null; then
+        $SUDO_CMD apt-get update
+        $SUDO_CMD apt-get install -y docker-compose-plugin
+    elif command -v yum &> /dev/null; then
+        $SUDO_CMD yum install -y docker-compose-plugin
+    fi
 fi
 
 echo -e "${GREEN}✅ Docker 环境检查通过${NC}"
@@ -50,8 +70,10 @@ echo -e "${GREEN}✅ Docker 环境检查通过${NC}"
 # 步骤 2：创建项目目录
 echo -e "${BLUE}[2/8] 创建项目目录...${NC}"
 if [ ! -d "$PROJECT_DIR" ]; then
-    sudo mkdir -p "$PROJECT_DIR"
-    sudo chown $USER:$USER "$PROJECT_DIR"
+    $SUDO_CMD mkdir -p "$PROJECT_DIR"
+    if [ "$IS_ROOT" = false ]; then
+        $SUDO_CMD chown $USER:$USER "$PROJECT_DIR"
+    fi
     echo -e "${GREEN}✅ 项目目录已创建：$PROJECT_DIR${NC}"
 else
     echo -e "${YELLOW}⚠️  项目目录已存在：$PROJECT_DIR${NC}"
