@@ -76,25 +76,56 @@ if [ ! -d "$PROJECT_DIR" ]; then
     fi
     echo -e "${GREEN}✅ 项目目录已创建：$PROJECT_DIR${NC}"
 else
-    echo -e "${YELLOW}⚠️  项目目录已存在：$PROJECT_DIR${NC}"
+    echo -e "${GREEN}✅ 项目目录已存在：$PROJECT_DIR${NC}"
 fi
 
-cd "$PROJECT_DIR"
+# 进入项目目录
+cd "$PROJECT_DIR" || {
+    echo -e "${RED}❌ 无法进入项目目录${NC}"
+    exit 1
+}
 
 # 步骤 3：克隆或更新代码
 echo -e "${BLUE}[3/8] 更新代码...${NC}"
 if [ -d ".git" ]; then
-    echo -e "${YELLOW}拉取最新代码...${NC}"
+    echo -e "${YELLOW}检测到 Git 仓库，拉取最新代码...${NC}"
     git fetch origin
-    git checkout master
+    git checkout master 2>/dev/null || true
     git pull origin master
     echo -e "${GREEN}✅ 代码已更新${NC}"
 else
+    # 检查目录是否为空
+    if [ "$(ls -A . 2>/dev/null)" ]; then
+        echo -e "${YELLOW}⚠️  目录不为空，但未检测到 Git 仓库${NC}"
+        echo -e "${YELLOW}是否清空目录并重新克隆？(y/N): ${NC}"
+        read -p "" CLEAR_DIR
+        if [ "$CLEAR_DIR" == "y" ] || [ "$CLEAR_DIR" == "Y" ]; then
+            echo -e "${YELLOW}清空目录...${NC}"
+            rm -rf * .[^.]* 2>/dev/null || true
+        else
+            echo -e "${RED}❌ 目录不为空，无法克隆代码${NC}"
+            echo -e "${YELLOW}请手动清理目录或选择其他目录${NC}"
+            exit 1
+        fi
+    fi
+    
     echo -e "${YELLOW}首次部署，克隆代码...${NC}"
-    read -p "请输入 GitHub 仓库地址（默认：git@github.com:zhoudengt/HiFate-bazi.git）: " REPO_URL
-    REPO_URL=${REPO_URL:-git@github.com:zhoudengt/HiFate-bazi.git}
-    git clone "$REPO_URL" .
-    echo -e "${GREEN}✅ 代码已克隆${NC}"
+    echo -e "${YELLOW}使用默认仓库地址：https://github.com/zhoudengt/HiFate-bazi.git${NC}"
+    REPO_URL="https://github.com/zhoudengt/HiFate-bazi.git"
+    
+    # 尝试克隆
+    if git clone "$REPO_URL" .; then
+        echo -e "${GREEN}✅ 代码已克隆${NC}"
+    else
+        echo -e "${RED}❌ 克隆失败，尝试使用 SSH 方式...${NC}"
+        REPO_URL="git@github.com:zhoudengt/HiFate-bazi.git"
+        if git clone "$REPO_URL" .; then
+            echo -e "${GREEN}✅ 代码已克隆（SSH 方式）${NC}"
+        else
+            echo -e "${RED}❌ 克隆失败，请检查网络连接和仓库地址${NC}"
+            exit 1
+        fi
+    fi
 fi
 
 # 步骤 4：配置环境变量
