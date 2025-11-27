@@ -1,0 +1,236 @@
+{
+  "99特征点断语规则": [
+    {
+      "rule_type": "feature",
+      "position": "眉毛",
+      "position_code": "eyebrows",
+      "conditions": {
+        "features": ["眉型", "眉毛浓淡", "眉长", "眉尾"]
+      },
+      "interpretations": [
+        {
+          "feature": "眉毛浓黑顺长",
+          "interpretation": "性格刚毅，有主见，兄弟运佳，事业心强",
+          "category": "性格"
+        },
+        {
+          "feature": "眉毛稀疏淡薄",
+          "interpretation": "性格温和，但意志力较弱，需要鼓励",
+          "category": "性格"
+        },
+        {
+          "feature": "一字眉",
+          "interpretation": "性格直爽，不拐弯抹角，讲义气",
+          "category": "性格"
+        },
+        {
+          "feature": "柳叶眉",
+          "interpretation": "温柔贤淑，性格柔和，人缘好",
+          "category": "性格"
+        },
+        {
+          "feature": "剑眉",
+          "interpretation": "英气逼人，有魄力，适合领导岗位",
+          "category": "事业"
+        },
+        {
+          "feature": "八字眉",
+          "interpretation": "性格忧郁，容易想太多，需调整心态",
+          "category": "性格"
+        },
+        {
+          "feature": "眉尾上扬",
+          "interpretation": "性格积极向上，有进取心",
+          "category": "性格"
+        },
+        {
+          "feature": "眉尾下垂",
+          "interpretation": "性格较为消极，需要激励",
+          "category": "性格"
+        }
+      ],
+      "priority": 80
+    },
+    {
+      "rule_type": "feature",
+      "position": "眼睛",
+      "position_code": "eyes",
+      "conditions": {
+        "features": ["眼型", "眼睛大小", "眼神", "眼距"]
+      },
+      "interpretations": [
+        {
+          "feature": "眼睛大而有神",
+          "interpretation": "聪明伶俐，观察力强，有艺术天赋",
+          "category": "性格"
+        },
+        {
+          "feature": "眼睛小而精明",
+          "interpretation": "心思细腻，谨慎小心，理财有道",
+          "category": "性格"
+        },
+        {
+          "feature": "丹凤眼",
+          "interpretation": "智慧过人，有领导才能，桃花运旺",
+          "category": "性格"
+        },
+        {
+          "feature": "桃花眼",
+          "interpretation": "异性缘好，魅力十足，但需慎重感情",
+          "category": "婚姻"
+        },
+        {
+          "feature": "眼距宽",
+          "interpretation": "心胸开阔，性格大度，不计小事",
+          "category": "性格"
+        },
+        {
+          "feature": "眼距窄",
+          "interpretation": "做事专注，但容易钻牛角尖",
+          "category": "性格"
+        },
+        {
+          "feature": "眼神清澈",
+          "interpretation": "心地善良，为人正直，没有心机",
+          "category": "性格"
+        },
+        {
+          "feature": "眼神游移",
+          "interpretation": "心思不定，需培养专注力",
+          "category": "性格"
+        }
+      ],
+      "priority": 85
+    },
+    {
+      "rule_type": "feature",
+      "position": "鼻子",
+      "position_code": "nose",
+      "conditions": {
+        "features": ["鼻型", "鼻梁高低", "鼻头大小", "鼻翼"]
+      },
+      "interpretations": [
+        {
+          "feature": "鼻梁挺直",
+          "interpretation": "性格正直，有原则，事业运佳",
+          "category": "事业"
+        },
+        {
+          "feature": "鼻梁塌陷",
+          "interpretation": "性格随和，但缺乏主见，需培养自信",
+          "category": "性格"
+        },
+        {
+          "feature": "鹰钩鼻",
+          "interpretation": "精明能干，善于计算，但需注意人际关系",
+          "category": "性格"
+        },
+        {
+          "feature": "狮子鼻",
+          "interpretation": "财运亨通，有领导力，事业有成",
+          "category": "财运"
+        },
+        {
+          "feature": "鼻孔外露",
+          "interpretation": "花钱大手大脚，不善理财，需节制",
+          "category": "财运"
+        }
+      ],
+      "priority": 90
+    },
+    {
+      "rule_type": "feature",
+      "position": "嘴巴",
+      "position_code": "mouth",
+      "conditions": {
+        "features": ["嘴型", "唇厚薄", "嘴大小"]
+      },
+      "interpretations": [
+        {
+          "feature": "嘴大唇厚",
+          "interpretation": "口福好，性格豪爽，交际能力强",
+          "category": "性格"
+        },
+        {
+          "feature": "樱桃小口",
+          "interpretation": "说话谨慎，秀气端庄，但需加强表达",
+          "category": "性格"
+        },
+        {
+          "feature": "上唇厚",
+          "interpretation": "重感情，对人真诚",
+          "category": "性格"
+        },
+        {
+          "feature": "下唇厚",
+          "interpretation": "物欲较强，享受生活",
+          "category": "性格"
+        }
+      ],
+      "priority": 75
+    },
+    {
+      "rule_type": "feature",
+      "position": "耳朵",
+      "position_code": "ears",
+      "conditions": {
+        "features": ["耳型", "耳垂", "耳位高低"]
+      },
+      "interpretations": [
+        {
+          "feature": "耳垂厚大",
+          "interpretation": "福气深厚，晚年安康，有财运",
+          "category": "财运"
+        },
+        {
+          "feature": "耳位高于眉",
+          "interpretation": "智慧聪颖，学习能力强",
+          "category": "事业"
+        },
+        {
+          "feature": "招风耳",
+          "interpretation": "性格独立，有主见，但较固执",
+          "category": "性格"
+        }
+      ],
+      "priority": 70
+    },
+    {
+      "rule_type": "feature",
+      "position": "脸型",
+      "position_code": "face_shape",
+      "conditions": {
+        "features": ["脸型分类"]
+      },
+      "interpretations": [
+        {
+          "feature": "国字脸",
+          "interpretation": "性格稳重，有领导能力，事业运佳",
+          "category": "事业"
+        },
+        {
+          "feature": "瓜子脸",
+          "interpretation": "聪明伶俐，有艺术气质，人缘好",
+          "category": "性格"
+        },
+        {
+          "feature": "圆脸",
+          "interpretation": "性格随和，福气好，人际关系佳",
+          "category": "性格"
+        },
+        {
+          "feature": "长脸",
+          "interpretation": "思虑周密，有耐心，适合研究工作",
+          "category": "事业"
+        },
+        {
+          "feature": "倒三角脸",
+          "interpretation": "聪明但体力较弱，需注意健康",
+          "category": "健康"
+        }
+      ],
+      "priority": 80
+    }
+  ]
+}
+

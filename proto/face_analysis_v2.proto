@@ -1,0 +1,250 @@
+syntax = "proto3";
+
+package face_analysis_v2;
+
+// ========================================
+// 面相分析V2 gRPC服务定义
+// ========================================
+
+// 面相分析服务
+service FaceAnalysisService {
+    // 检测人脸关键点
+    rpc DetectFaceLandmarks(DetectRequest) returns (LandmarksResponse);
+    
+    // 宫位分析
+    rpc AnalyzeGongwei(AnalyzeRequest) returns (GongweiResponse);
+    
+    // 综合面相分析
+    rpc AnalyzeFaceFeatures(AnalyzeRequest) returns (FaceAnalysisResponse);
+    
+    // 流年运势查询
+    rpc GetFortuneByAge(FortuneRequest) returns (FortuneResponse);
+}
+
+// 面相知识库服务
+service FaceKnowledgeService {
+    // 查询规则
+    rpc QueryRules(RuleQueryRequest) returns (RuleQueryResponse);
+    
+    // 匹配规则
+    rpc MatchRules(RuleMatchRequest) returns (RuleMatchResponse);
+}
+
+// ========================================
+// 请求消息定义
+// ========================================
+
+// 检测请求
+message DetectRequest {
+    bytes image_data = 1;                    // 图片二进制数据
+    string image_format = 2;                 // 图片格式（jpg/png）
+    bool include_mesh = 3;                   // 是否包含完整mesh数据
+}
+
+// 分析请求
+message AnalyzeRequest {
+    bytes image_data = 1;                    // 图片二进制数据
+    string image_format = 2;                 // 图片格式
+    repeated string analysis_types = 3;      // 分析类型：gongwei/liuqin/shishen/features
+    BirthInfo birth_info = 4;                // 可选：生辰信息
+}
+
+// 流年运势请求
+message FortuneRequest {
+    repeated Landmark landmarks = 1;         // 关键点数据
+    int32 age = 2;                           // 年龄
+    string gender = 3;                       // 性别
+}
+
+// 规则查询请求
+message RuleQueryRequest {
+    string rule_type = 1;                    // 规则类型
+    string position = 2;                     // 位置
+}
+
+// 规则匹配请求
+message RuleMatchRequest {
+    string rule_type = 1;                    // 规则类型
+    map<string, string> features = 2;        // 特征字典
+}
+
+// ========================================
+// 响应消息定义
+// ========================================
+
+// 关键点响应
+message LandmarksResponse {
+    bool success = 1;
+    string message = 2;
+    repeated Landmark landmarks = 3;         // MediaPipe 468个关键点
+    repeated MappedFeature mapped_features = 4;  // 映射到的99个面相特征点
+    FaceBounds face_bounds = 5;              // 人脸边界框
+}
+
+// 宫位分析响应
+message GongweiResponse {
+    bool success = 1;
+    string message = 2;
+    repeated GongweiAnalysis gongwei_list = 3;  // 十三宫位分析
+    repeated LiuqinAnalysis liuqin_list = 4;    // 六亲分析
+    repeated ShishenAnalysis shishen_list = 5;  // 十神分析
+    repeated DizhiAnalysis dizhi_list = 6;      // 十二地支分析
+}
+
+// 综合面相分析响应
+message FaceAnalysisResponse {
+    bool success = 1;
+    string message = 2;
+    LandmarksResponse landmarks = 3;
+    GongweiResponse gongwei = 4;
+    SantingAnalysis santing = 5;             // 三停分析
+    WuyanAnalysis wuyan = 6;                 // 五眼分析
+    repeated FeatureAnalysis features = 7;   // 详细特征分析
+    string overall_summary = 8;              // 综合总结
+}
+
+// 流年运势响应
+message FortuneResponse {
+    bool success = 1;
+    string message = 2;
+    repeated LiunianAnalysis liunian_list = 3;
+}
+
+// 规则查询响应
+message RuleQueryResponse {
+    bool success = 1;
+    repeated Rule rules = 2;
+}
+
+// 规则匹配响应
+message RuleMatchResponse {
+    bool success = 1;
+    repeated MatchedRule matched_rules = 2;
+}
+
+// ========================================
+// 数据结构定义
+// ========================================
+
+// 关键点
+message Landmark {
+    int32 index = 1;                         // 点序号
+    float x = 2;                             // x坐标（归一化0-1）
+    float y = 3;                             // y坐标（归一化0-1）
+    float z = 4;                             // z坐标（深度）
+    float visibility = 5;                    // 可见度
+}
+
+// 映射特征点
+message MappedFeature {
+    int32 feature_id = 1;                    // 特征点ID（1-99）
+    string feature_name = 2;                 // 特征名称
+    float x = 3;
+    float y = 4;
+    string gongwei = 5;                      // 所属宫位
+    string position_type = 6;                // 位置类型
+}
+
+// 人脸边界框
+message FaceBounds {
+    float left = 1;
+    float top = 2;
+    float width = 3;
+    float height = 4;
+}
+
+// 生辰信息
+message BirthInfo {
+    int32 year = 1;
+    int32 month = 2;
+    int32 day = 3;
+    int32 hour = 4;
+    string gender = 5;
+}
+
+// 宫位分析
+message GongweiAnalysis {
+    string name = 1;                         // 宫位名称（如"天中"）
+    string position = 2;                     // 位置描述
+    repeated string features = 3;            // 识别的特征
+    repeated string interpretations = 4;     // 断语
+    string category = 5;                     // 分类（事业/财运等）
+    int32 priority = 6;                      // 优先级
+}
+
+// 六亲分析
+message LiuqinAnalysis {
+    string relation = 1;                     // 关系（父/母/兄弟等）
+    string position = 2;                     // 位置
+    repeated string features = 3;
+    repeated string interpretations = 4;
+}
+
+// 十神分析
+message ShishenAnalysis {
+    string shishen = 1;                      // 十神名称
+    string position = 2;
+    repeated string features = 3;
+    repeated string interpretations = 4;
+}
+
+// 十二地支分析
+message DizhiAnalysis {
+    string dizhi = 1;                        // 地支名称
+    string position = 2;
+    repeated string features = 3;
+    repeated string interpretations = 4;
+}
+
+// 三停分析
+message SantingAnalysis {
+    float upper_ratio = 1;                   // 上停比例
+    float middle_ratio = 2;                  // 中停比例
+    float lower_ratio = 3;                   // 下停比例
+    string evaluation = 4;                   // 评价
+    repeated string interpretations = 5;
+}
+
+// 五眼分析
+message WuyanAnalysis {
+    repeated float eye_widths = 1;           // 五个眼睛宽度
+    float face_width = 2;                    // 脸宽
+    string evaluation = 3;
+    repeated string interpretations = 4;
+}
+
+// 特征分析
+message FeatureAnalysis {
+    string feature_type = 1;                 // 特征类型（眉/眼/鼻/口等）
+    string feature_name = 2;                 // 特征名称
+    map<string, float> measurements = 3;     // 测量值
+    repeated string interpretations = 4;
+    string category = 5;
+}
+
+// 流年分析
+message LiunianAnalysis {
+    int32 age = 1;                           // 年龄
+    string position = 2;                     // 对应面部位置
+    repeated string features = 3;
+    repeated string interpretations = 4;
+}
+
+// 规则
+message Rule {
+    int32 id = 1;
+    string rule_type = 2;
+    string position = 3;
+    string conditions = 4;                   // JSON格式条件
+    string interpretation = 5;
+    string category = 6;
+    int32 priority = 7;
+}
+
+// 匹配的规则
+message MatchedRule {
+    Rule rule = 1;
+    float confidence = 2;                    // 匹配置信度
+    map<string, string> matched_features = 3;
+}
+

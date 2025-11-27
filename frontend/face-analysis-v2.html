@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>面相分析 V2 - AI智能面相分析系统</title>
+    <link rel="stylesheet" href="css/face-analysis-v2.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔮 AI智能面相分析系统 V2</h1>
+            <p class="subtitle">基于MediaPipe深度学习的专业面相分析</p>
+        </header>
+
+        <main>
+            <!-- 上传区域 -->
+            <section class="upload-section">
+                <div class="upload-box" id="uploadBox">
+                    <input type="file" id="imageInput" accept="image/*" hidden>
+                    <div class="upload-placeholder">
+                        <span class="upload-icon">📷</span>
+                        <p>点击上传面相照片</p>
+                        <p class="upload-hint">支持JPG、PNG格式，建议正面清晰照片</p>
+                    </div>
+                    <img id="previewImage" class="preview-image" style="display:none;">
+                </div>
+            </section>
+
+            <!-- 分析选项 -->
+            <section class="options-section">
+                <h3>分析类型</h3>
+                <div class="options-grid">
+                    <label class="option-item">
+                        <input type="checkbox" name="analysis" value="gongwei" checked>
+                        <span>十三宫位</span>
+                    </label>
+                    <label class="option-item">
+                        <input type="checkbox" name="analysis" value="liuqin" checked>
+                        <span>六亲宫位</span>
+                    </label>
+                    <label class="option-item">
+                        <input type="checkbox" name="analysis" value="shishen" checked>
+                        <span>十神定位</span>
+                    </label>
+                    <label class="option-item">
+                        <input type="checkbox" name="analysis" value="features">
+                        <span>详细特征</span>
+                    </label>
+                </div>
+
+                <h3>生辰信息（可选）</h3>
+                <div class="birth-info">
+                    <input type="number" id="birthYear" placeholder="年份" min="1900" max="2100">
+                    <input type="number" id="birthMonth" placeholder="月份" min="1" max="12">
+                    <input type="number" id="birthDay" placeholder="日期" min="1" max="31">
+                    <select id="gender">
+                        <option value="">性别</option>
+                        <option value="male">男</option>
+                        <option value="female">女</option>
+                    </select>
+                </div>
+
+                <button id="analyzeBtn" class="analyze-btn" disabled>开始分析</button>
+            </section>
+
+            <!-- 加载状态 -->
+            <div id="loadingSection" class="loading-section" style="display:none;">
+                <div class="loading-spinner"></div>
+                <p>正在分析中，请稍候...</p>
+            </div>
+
+            <!-- 结果展示 -->
+            <section id="resultSection" class="result-section" style="display:none;">
+                <h2>分析结果</h2>
+
+                <!-- 基础信息 -->
+                <div class="result-card">
+                    <h3>🎯 面部识别</h3>
+                    <div id="landmarksInfo"></div>
+                </div>
+
+                <!-- 三停五眼 -->
+                <div class="result-card">
+                    <h3>📏 三停五眼</h3>
+                    <div id="santingWuyan"></div>
+                </div>
+
+                <!-- 十三宫位 -->
+                <div class="result-card" id="gongweiCard" style="display:none;">
+                    <h3>🏛️ 十三宫位分析</h3>
+                    <div id="gongweiResult"></div>
+                </div>
+
+                <!-- 六亲宫位 -->
+                <div class="result-card" id="liuqinCard" style="display:none;">
+                    <h3>👨‍👩‍👧‍👦 六亲宫位分析</h3>
+                    <div id="liuqinResult"></div>
+                </div>
+
+                <!-- 十神定位 -->
+                <div class="result-card" id="shishenCard" style="display:none;">
+                    <h3>⚖️ 十神定位分析</h3>
+                    <div id="shishenResult"></div>
+                </div>
+
+                <!-- 综合总结 -->
+                <div class="result-card">
+                    <h3>📝 综合总结</h3>
+                    <div id="summaryResult"></div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>© 2024 HiFate八字系统 - 面相分析V2</p>
+        </footer>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/face-analysis-v2.js"></script>
+</body>
+</html>
+

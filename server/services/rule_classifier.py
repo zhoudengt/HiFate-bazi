@@ -181,6 +181,10 @@ class RuleClassifier:
         """
         提取规则摘要（用于传递给 LLM）
         
+        支持两种规则格式：
+        1. content（单数）：普通规则使用 {"content": {"text": "..."}}
+        2. contents（复数）：日柱规则使用 {"contents": [{"text": "..."}]}
+        
         Args:
             rules: 规则列表
             max_length: 每条规则的最大长度
@@ -192,13 +196,34 @@ class RuleClassifier:
         summaries = []
         
         for i, rule in enumerate(rules[:max_rules_per_intent]):
-            content = rule.get('content', {})
+            text = ''
+            rule_code = rule.get('rule_code', '')
+            rule_type = rule.get('rule_type', '')
             
-            # 提取文本内容
-            if isinstance(content, dict):
-                text = content.get('text', '')
-            else:
-                text = str(content) if content else ''
+            # ⭐ 修复：优先处理 contents（复数）- 日柱规则使用这种格式
+            contents = rule.get('contents', [])
+            if contents and isinstance(contents, list):
+                # 合并所有 contents 中的文本
+                text_parts = []
+                for item in contents:
+                    if isinstance(item, dict):
+                        item_text = item.get('text', '')
+                        if item_text:
+                            text_parts.append(item_text)
+                    elif isinstance(item, str):
+                        text_parts.append(item)
+                
+                if text_parts:
+                    text = ' '.join(text_parts)
+            
+            # 如果没有 contents，尝试 content（单数）- 普通规则使用这种格式
+            if not text:
+                content = rule.get('content', {})
+                if content:
+                    if isinstance(content, dict):
+                        text = content.get('text', '')
+                    else:
+                        text = str(content) if content else ''
             
             # 限制长度
             if len(text) > max_length:

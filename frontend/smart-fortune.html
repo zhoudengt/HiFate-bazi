@@ -302,6 +302,56 @@
             font-size: 0.9em;
         }
 
+        .progress-stage {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            margin: 10px 0;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #e0e0e0;
+            transition: all 0.3s;
+        }
+
+        .progress-stage.current {
+            background: #e7f3ff;
+            border-left-color: #667eea;
+        }
+
+        .progress-stage.completed {
+            background: #f0f9f0;
+            border-left-color: #4caf50;
+        }
+
+        .progress-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2em;
+            margin-right: 15px;
+            background: #e0e0e0;
+            transition: all 0.3s;
+        }
+
+        .progress-stage.current .progress-icon {
+            background: #667eea;
+            color: white;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .progress-stage.completed .progress-icon {
+            background: #4caf50;
+            color: white;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
         @media (max-width: 600px) {
             .header h1 {
                 font-size: 1.8em;
@@ -394,10 +444,10 @@
             </form>
         </div>
 
-        <!-- 加载中 -->
-        <div class="card loading" id="loadingCard" style="display: none;">
-            <div class="spinner"></div>
-            <p style="margin-top: 20px; color: #666;">正在分析中，请稍候...</p>
+        <!-- 进度显示 -->
+        <div class="card loading" id="progressCard" style="display: none;">
+            <h3 style="margin-bottom: 20px; color: #333;">📊 分析进度</h3>
+            <div id="progressStages"></div>
         </div>
 
         <!-- 错误提示 -->
@@ -455,12 +505,15 @@
     </div>
 
     <script>
-        const API_BASE_URL = 'http://localhost:8001';
-
         // 设置示例问题
         function setQuestion(text) {
             document.getElementById('question').value = text;
         }
+
+        let eventSource = null;
+        let startTime = null;
+        let basicAnalysisData = null;
+        let llmResponse = '';
 
         // 表单提交
         document.getElementById('fortuneForm').addEventListener('submit', async (e) => {
@@ -478,53 +531,136 @@
                 return;
             }
 
-            // 显示加载状态
-            document.getElementById('loadingCard').style.display = 'block';
+            // 关闭之前的连接
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            // 重置数据
+            basicAnalysisData = null;
+            llmResponse = '';
+
+            // 显示进度
+            document.getElementById('progressCard').style.display = 'block';
             document.getElementById('resultCard').style.display = 'none';
             document.getElementById('errorMessage').style.display = 'none';
             document.getElementById('submitBtn').disabled = true;
+            startTime = Date.now();
 
-            const startTime = Date.now();
+            // 构建流式API URL
+            const apiUrl = `http://localhost:8001/api/v1/smart-fortune/smart-analyze-stream?` +
+                `question=${encodeURIComponent(question)}` +
+                `&year=${year}&month=${month}&day=${day}&hour=${hour}&gender=${gender}`;
 
-            try {
-                // 获取流年大运开关状态
-                const includeFortune = document.getElementById('includeFortune').checked;
-                
-                // 调用智能分析API
-                const url = `${API_BASE_URL}/api/v1/smart-analyze?` +
-                    `question=${encodeURIComponent(question)}` +
-                    `&year=${year}` +
-                    `&month=${month}` +
-                    `&day=${day}` +
-                    `&hour=${hour}` +
-                    `&gender=${gender}` +
-                    `&include_fortune_context=${includeFortune}`;
+            // 创建EventSource连接
+            eventSource = new EventSource(apiUrl);
 
-                console.log('🔗 API请求URL:', url);
+            // 监听进度更新
+            eventSource.addEventListener('status', function(e) {
+                const data = JSON.parse(e.data);
+                updateProgress(data.stage, data.message);
+            });
 
-                const response = await fetch(url);
-                const data = await response.json();
+            // 监听基础分析完成
+            eventSource.addEventListener('basic_analysis', function(e) {
+                basicAnalysisData = JSON.parse(e.data);
+            });
 
+            // 监听LLM开始
+            eventSource.addEventListener('llm_start', function(e) {
+                llmResponse = '';
+            });
+
+            // 监听LLM流式输出
+            eventSource.addEventListener('llm_chunk', function(e) {
+                const data = JSON.parse(e.data);
+                llmResponse += data.content || '';
+            });
+
+            // 监听LLM结束
+            eventSource.addEventListener('llm_end', function(e) {
+                // LLM输出完成，准备显示结果
+            });
+
+            // 监听最终结果
+            eventSource.addEventListener('end', function(e) {
                 const endTime = Date.now();
                 const responseTime = endTime - startTime;
-
-                if (data.success) {
-                    displayResult(data, responseTime);
+                
+                // 组合最终数据
+                if (basicAnalysisData) {
+                    const finalData = {
+                        success: true,
+                        intent_result: basicAnalysisData.intent || basicAnalysisData.intent_result,
+                        bazi_info: basicAnalysisData.bazi_info,
+                        matched_rules_count: basicAnalysisData.matched_rules_count || 0,
+                        response: llmResponse || '分析完成'
+                    };
+                    displayResult(finalData, responseTime);
                 } else {
-                    showError(data.message || '分析失败，请重试');
+                    showError('分析失败：未收到基础分析数据');
                 }
-            } catch (error) {
-                console.error('Error:', error);
-                showError('网络请求失败，请检查服务是否启动');
-            } finally {
-                document.getElementById('loadingCard').style.display = 'none';
+                
+                eventSource.close();
+                document.getElementById('progressCard').style.display = 'none';
                 document.getElementById('submitBtn').disabled = false;
-            }
+            });
+
+            // 错误处理
+            eventSource.addEventListener('error', function(e) {
+                const data = JSON.parse(e.data);
+                showError(data.message || '分析失败');
+                eventSource.close();
+                document.getElementById('progressCard').style.display = 'none';
+                document.getElementById('submitBtn').disabled = false;
+            });
+
+            eventSource.onerror = function() {
+                console.error('EventSource connection error');
+                eventSource.close();
+                showError('连接断开，请重试');
+                document.getElementById('progressCard').style.display = 'none';
+                document.getElementById('submitBtn').disabled = false;
+            };
         });
+
+        // 更新进度
+        function updateProgress(stage, message) {
+            const stages = {
+                'intent': {icon: '🎯', text: '意图识别'},
+                'bazi': {icon: '📅', text: '八字计算'},
+                'rules': {icon: '📚', text: '规则匹配'},
+                'fortune': {icon: '🌟', text: '流年大运'},
+                'llm': {icon: '🤖', text: 'AI深度解读'}
+            };
+
+            let html = '';
+            for (const [key, info] of Object.entries(stages)) {
+                const isCurrent = key === stage;
+                const stageIndex = Object.keys(stages).indexOf(key);
+                const currentIndex = Object.keys(stages).indexOf(stage);
+                const isCompleted = stageIndex < currentIndex;
+                
+                html += `
+                    <div class="progress-stage ${isCurrent ? 'current' : ''} ${isCompleted ? 'completed' : ''}">
+                        <div class="progress-icon ${isCurrent ? 'loading' : ''} ${isCompleted ? 'completed' : ''}">
+                            ${isCompleted ? '✓' : info.icon}
+                        </div>
+                        <div>
+                            <strong>${info.text}</strong>
+                            ${isCurrent ? `<div style="font-size:0.9em;color:#666;margin-top:5px;">${message || '处理中...'}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }
+
+            document.getElementById('progressStages').innerHTML = html;
+        }
 
         // 显示结果
         function displayResult(data, responseTime) {
-            const intentResult = data.intent_result;
+            // 兼容不同的数据格式
+            const intentResult = data.intent_result || data.intent || {};
             const baziInfo = data.bazi_info;
 
             // 意图展示
@@ -626,7 +762,7 @@
         // 页面加载时的提示
         console.log('%c🔮 智能运势分析系统', 'color: #667eea; font-size: 20px; font-weight: bold;');
         console.log('%c基于AI的问题意图识别，准确率95%+', 'color: #666; font-size: 12px;');
-        console.log('%cAPI地址：' + API_BASE_URL, 'color: #999; font-size: 12px;');
+        console.log('%c使用 gRPC-Web 协议', 'color: #999; font-size: 12px;');
     </script>
 </body>
 </html>

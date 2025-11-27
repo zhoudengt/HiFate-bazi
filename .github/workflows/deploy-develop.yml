@@ -70,7 +70,7 @@ jobs:
             
             # 健康检查
             echo "🏥 健康检查..."
-            if curl -f http://localhost:8001/api/health; then
+            if curl -f http://localhost:8001/health; then
               echo "✅ 部署成功！服务运行正常"
             else
               echo "❌ 部署失败！服务未响应"

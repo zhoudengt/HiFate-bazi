@@ -11,6 +11,44 @@ import os
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
+# ✅ 加载环境变量（修复Token问题）
+try:
+    from dotenv import load_dotenv
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+    
+    # 1. 尝试加载 .env 文件
+    env_path = os.path.join(project_root, '.env')
+    if os.path.exists(env_path):
+        load_dotenv(env_path, override=True)
+        print(f"✓ Intent Service 已加载 .env: {env_path}")
+    else:
+        print(f"⚠ .env 文件不存在: {env_path}")
+    
+    # 2. ⭐ 同时加载 config/services.env（关键修复）
+    services_env_path = os.path.join(project_root, 'config/services.env')
+    if os.path.exists(services_env_path):
+        load_dotenv(services_env_path, override=True)
+        print(f"✓ Intent Service 已加载 services.env: {services_env_path}")
+    else:
+        print(f"⚠ services.env 文件不存在: {services_env_path}")
+    
+    # 3. 验证关键环境变量是否加载成功
+    intent_bot_id = os.getenv("INTENT_BOT_ID", "NOT_FOUND")
+    coze_token = os.getenv("COZE_ACCESS_TOKEN", "NOT_FOUND")
+    print(f"✓ INTENT_BOT_ID: {intent_bot_id}")
+    print(f"✓ COZE_ACCESS_TOKEN: {coze_token[:20]}..." if len(coze_token) > 20 else f"✗ COZE_ACCESS_TOKEN: {coze_token}")
+    
+    # 4. 如果关键变量缺失，给出警告
+    if intent_bot_id == "NOT_FOUND" or intent_bot_id == "PLACEHOLDER_INTENT_BOT_ID":
+        print(f"⚠️ 警告：INTENT_BOT_ID 未正确加载，将无法调用Coze API")
+    if coze_token == "NOT_FOUND" or coze_token == "":
+        print(f"⚠️ 警告：COZE_ACCESS_TOKEN 未正确加载，将无法调用Coze API")
+        
+except ImportError:
+    print("⚠ python-dotenv 未安装，将使用系统环境变量")
+except Exception as e:
+    print(f"⚠ 加载环境变量失败: {e}")
+
 from proto import intent_pb2, intent_pb2_grpc
 from services.intent_service.question_filter import QuestionFilter
 from services.intent_service.classifier import IntentClassifier

@@ -79,6 +79,7 @@ except ImportError as e:
     WANGSHUAI_ROUTER_AVAILABLE = False
 from server.api.v1.bazi_ai import router as bazi_ai_router
 from server.api.v1.auth import router as auth_router
+from server.api.grpc_gateway import router as grpc_gateway_router
 
 # 新增：支付路由（魔方西元）
 try:
@@ -329,6 +330,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.include_router(bazi_router, prefix="/api/v1", tags=["八字计算"])
 app.include_router(bazi_ai_router, prefix="/api/v1", tags=["AI分析"])
 app.include_router(auth_router, prefix="/api/v1", tags=["鉴权"])
+app.include_router(grpc_gateway_router, prefix="/api", tags=["gRPC-Web"])
 
 # 注册旺衰分析路由（新增，可选功能）
 if WANGSHUAI_ROUTER_AVAILABLE and wangshuai_router:

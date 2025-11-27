@@ -84,7 +84,7 @@ jobs:
             
             # 健康检查
             echo "🏥 健康检查..."
-            if curl -f http://localhost:8001/api/health; then
+            if curl -f http://localhost:8001/health; then
               echo "✅ 新版本运行正常，更新其他服务..."
               
               # 更新其他微服务
@@ -113,7 +113,7 @@ jobs:
             # 最终健康检查
             echo "🏥 最终健康检查..."
             sleep 10
-            if curl -f http://localhost:8001/api/health; then
+            if curl -f http://localhost:8001/health; then
               echo "✅ 部署成功！所有服务运行正常"
             else
               echo "❌ 部署后健康检查失败"

@@ -147,6 +147,24 @@ async def smart_analyze(
             rules = bazi_service._match_rules(bazi_result)
             matched_rules = rules
         
+        # ⭐ 详细日志：记录匹配到的规则信息（用于调试）
+        logger.info(f"规则匹配结果: 匹配到{len(matched_rules)}条规则，意图={rule_types}")
+        if matched_rules:
+            # 统计各类型规则数量
+            rule_type_counts = {}
+            for rule in matched_rules:
+                rt = rule.get('rule_type', 'unknown')
+                rule_type_counts[rt] = rule_type_counts.get(rt, 0) + 1
+            logger.info(f"规则类型统计: {rule_type_counts}")
+            
+            # 检查是否有日柱和十神命格规则
+            rizhu_count = sum(1 for r in matched_rules if 'rizhu' in r.get('rule_type', '').lower() or r.get('rule_code', '').startswith('RZ_'))
+            shishen_count = sum(1 for r in matched_rules if 'shishen' in r.get('rule_type', '').lower())
+            if rizhu_count > 0:
+                logger.info(f"✅ 匹配到{rizhu_count}条日柱规则")
+            if shishen_count > 0:
+                logger.info(f"✅ 匹配到{shishen_count}条十神命格规则")
+        
         # 步骤3.5：获取流年大运上下文（可选，默认关闭）
         fortune_context = None
         if include_fortune_context:  # ⭐ 移除 rule_types != ["ALL"] 限制
@@ -468,11 +486,30 @@ def _generate_response_with_fortune(
                 response += f"\n{type_name}\n"
                 
                 for rule in rules[:rules_to_show]:
-                    content = rule.get("content", {})
-                    if isinstance(content, dict):
-                        desc = content.get("text", "")
-                    else:
-                        desc = str(content) if content else ""
+                    # ⭐ 修复：同时支持 content（单数）和 contents（复数）
+                    desc = ""
+                    
+                    # 优先处理 contents（复数）- 日柱规则使用这种格式
+                    contents = rule.get("contents", [])
+                    if contents and isinstance(contents, list):
+                        text_parts = []
+                        for item in contents:
+                            if isinstance(item, dict):
+                                item_text = item.get("text", "")
+                                if item_text:
+                                    text_parts.append(item_text)
+                            elif isinstance(item, str):
+                                text_parts.append(item)
+                        if text_parts:
+                            desc = ' '.join(text_parts)
+                    
+                    # 如果没有 contents，尝试 content（单数）
+                    if not desc:
+                        content = rule.get("content", {})
+                        if isinstance(content, dict):
+                            desc = content.get("text", "")
+                        else:
+                            desc = str(content) if content else ""
                     
                     if desc:
                         desc = desc[:200] + "..." if len(desc) > 200 else desc
@@ -592,12 +629,30 @@ def _generate_response(
                 response += f"\n{type_name}\n"
                 
                 for rule in rules[:rules_to_show]:
-                    # 提取规则内容（content是字典格式）
-                    content = rule.get("content", {})
-                    if isinstance(content, dict):
-                        desc = content.get("text", "")
-                    else:
-                        desc = str(content) if content else ""
+                    # ⭐ 修复：同时支持 content（单数）和 contents（复数）
+                    desc = ""
+                    
+                    # 优先处理 contents（复数）- 日柱规则使用这种格式
+                    contents = rule.get("contents", [])
+                    if contents and isinstance(contents, list):
+                        text_parts = []
+                        for item in contents:
+                            if isinstance(item, dict):
+                                item_text = item.get("text", "")
+                                if item_text:
+                                    text_parts.append(item_text)
+                            elif isinstance(item, str):
+                                text_parts.append(item)
+                        if text_parts:
+                            desc = ' '.join(text_parts)
+                    
+                    # 如果没有 contents，尝试 content（单数）
+                    if not desc:
+                        content = rule.get("content", {})
+                        if isinstance(content, dict):
+                            desc = content.get("text", "")
+                        else:
+                            desc = str(content) if content else ""
                     
                     if desc:
                         # 限制每条规则的长度，避免过长

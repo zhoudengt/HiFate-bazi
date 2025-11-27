@@ -249,6 +249,95 @@
             51%, 100% { opacity: 0; }
         }
 
+        /* Markdown渲染样式优化 */
+        .llm-analysis h1, .llm-analysis h2, .llm-analysis h3, .llm-analysis h4 {
+            color: #667eea;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .llm-analysis h1 { font-size: 1.8em; border-bottom: 2px solid #667eea; padding-bottom: 8px; }
+        .llm-analysis h2 { font-size: 1.5em; }
+        .llm-analysis h3 { font-size: 1.3em; }
+        .llm-analysis h4 { font-size: 1.1em; }
+
+        .llm-analysis p {
+            margin: 12px 0;
+            text-align: justify;
+        }
+
+        .llm-analysis ul, .llm-analysis ol {
+            margin: 15px 0;
+            padding-left: 25px;
+        }
+
+        .llm-analysis li {
+            margin: 8px 0;
+            line-height: 1.8;
+        }
+
+        .llm-analysis strong {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .llm-analysis em {
+            color: #764ba2;
+            font-style: italic;
+        }
+
+        .llm-analysis blockquote {
+            border-left: 4px solid #667eea;
+            padding-left: 15px;
+            margin: 15px 0;
+            color: #666;
+            font-style: italic;
+        }
+
+        .llm-analysis code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .llm-analysis pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 15px 0;
+        }
+
+        .llm-analysis hr {
+            border: none;
+            border-top: 1px solid #e0e0e0;
+            margin: 20px 0;
+        }
+
+        /* 表情符号和特殊标记样式 */
+        .llm-analysis p:has(> strong:first-child) {
+            font-weight: 500;
+        }
+
+        /* 警告/提示框样式 */
+        .llm-analysis p:first-line {
+            line-height: 1.8;
+        }
+
+        /* 数字列表优化 */
+        .llm-analysis ol > li::marker {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        /* 项目符号优化 */
+        .llm-analysis ul > li::marker {
+            color: #764ba2;
+        }
+
         .llm-loading {
             text-align: center;
             color: #999;
@@ -392,8 +481,20 @@
         </div>
     </div>
 
+    <!-- Marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.0.0/marked.min.js"></script>
+    
     <script>
+        // 配置 Marked.js
+        marked.setOptions({
+            breaks: true,  // 支持GFM换行
+            gfm: true,     // GitHub Flavored Markdown
+            headerIds: false,
+            mangle: false
+        });
+
         let eventSource = null;
+        let llmBuffer = '';  // 缓存LLM输出用于Markdown解析
 
         function fillExample(question) {
             document.getElementById('question').value = question;
@@ -434,7 +535,7 @@
             document.getElementById('llmAnalysisSection').style.display = 'none';
 
             // 构建API URL
-            const apiUrl = `http://localhost:8000/api/v1/smart-fortune/smart-analyze-stream?` +
+            const apiUrl = `http://localhost:8001/api/v1/smart-fortune/smart-analyze-stream?` +
                 `question=${encodeURIComponent(question)}` +
                 `&year=${year}&month=${month}&day=${day}&hour=${hour}&gender=${gender}`;
 
@@ -558,7 +659,9 @@
             const section = document.getElementById('llmAnalysisSection');
             const content = document.getElementById('llmAnalysisContent');
             
-            content.innerHTML = '<span class="streaming-cursor"></span>';
+            llmBuffer = '';  // 清空缓存
+            // 清空之前的加载提示，只显示光标
+            content.innerHTML = '';
             content.classList.add('streaming');
             section.style.display = 'block';
 
@@ -569,17 +672,17 @@
         function appendLLMChunk(text) {
             const content = document.getElementById('llmAnalysisContent');
             
-            // 移除光标
-            const cursor = content.querySelector('.streaming-cursor');
-            if (cursor) {
-                cursor.remove();
+            // 累加到缓存
+            llmBuffer += text;
+            
+            // 解析Markdown并渲染（不包含光标）
+            try {
+                const html = marked.parse(llmBuffer);
+                content.innerHTML = html + '<span class="streaming-cursor"></span>';
+            } catch (e) {
+                // 如果解析失败，直接显示原文
+                content.innerHTML = llmBuffer.replace(/\n/g, '<br>') + '<span class="streaming-cursor"></span>';
             }
-
-            // 追加文本
-            content.innerHTML += text;
-
-            // 重新添加光标
-            content.innerHTML += '<span class="streaming-cursor"></span>';
 
             // 自动滚动到底部
             content.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -592,6 +695,14 @@
             const cursor = content.querySelector('.streaming-cursor');
             if (cursor) {
                 cursor.remove();
+            }
+
+            // 最终渲染Markdown
+            try {
+                const html = marked.parse(llmBuffer);
+                content.innerHTML = html;
+            } catch (e) {
+                content.innerHTML = llmBuffer.replace(/\n/g, '<br>');
             }
 
             content.classList.remove('streaming');

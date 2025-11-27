@@ -15,7 +15,7 @@ import os
 import json
 import requests
 import hashlib
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import logging
 
 logger = logging.getLogger(__name__)
@@ -360,7 +360,16 @@ class FortuneLLMClient:
                 max_rules_per_intent=10  # 每个意图最多10条规则
             )
             
-            logger.debug(f"规则分类结果: {rules_data.get('rules_count', {})}")
+            # ⭐ 详细日志：记录规则匹配和分类结果
+            rules_count = rules_data.get('rules_count', {})
+            rules_by_intent = rules_data.get('rules_by_intent', {})
+            logger.info(f"规则分类结果: 总规则数={len(matched_rules)}, 分类后={rules_count}")
+            
+            # 详细记录每个意图的规则摘要
+            for intent_name, rule_summaries in rules_by_intent.items():
+                logger.info(f"  {intent_name}意图: {len(rule_summaries)}条规则")
+                for summary in rule_summaries[:3]:  # 只记录前3条
+                    logger.debug(f"    - {summary[:80]}...")
         
         input_data = {
             'intent': intent,

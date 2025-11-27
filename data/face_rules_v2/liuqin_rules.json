@@ -1,0 +1,162 @@
+{
+  "六亲定位规则": [
+    {
+      "rule_type": "liuqin",
+      "position": "父母宫-父",
+      "position_code": "father",
+      "conditions": {
+        "region": "left_forehead_upper",
+        "features": ["气色", "饱满度", "纹路"]
+      },
+      "interpretations": [
+        {
+          "feature": "饱满明润",
+          "interpretation": "父亲健康长寿，家境殷实，父子关系和睦",
+          "category": "六亲"
+        },
+        {
+          "feature": "凹陷或有痣疤",
+          "interpretation": "与父亲缘薄，或父亲早年辛苦",
+          "category": "六亲"
+        }
+      ],
+      "priority": 70
+    },
+    {
+      "rule_type": "liuqin",
+      "position": "父母宫-母",
+      "position_code": "mother",
+      "conditions": {
+        "region": "right_forehead_upper",
+        "features": ["气色", "饱满度", "纹路"]
+      },
+      "interpretations": [
+        {
+          "feature": "饱满明润",
+          "interpretation": "母亲健康长寿，母子关系深厚",
+          "category": "六亲"
+        },
+        {
+          "feature": "凹陷或有痣疤",
+          "interpretation": "与母亲缘薄，或母亲早年辛苦",
+          "category": "六亲"
+        }
+      ],
+      "priority": 70
+    },
+    {
+      "rule_type": "liuqin",
+      "position": "兄弟宫",
+      "position_code": "siblings",
+      "conditions": {
+        "region": "eyebrows",
+        "features": ["眉毛浓淡", "眉型", "眉间距"]
+      },
+      "interpretations": [
+        {
+          "feature": "眉毛浓密顺长",
+          "interpretation": "兄弟姐妹情深，互相帮助，手足和睦",
+          "category": "六亲"
+        },
+        {
+          "feature": "眉毛稀疏散乱",
+          "interpretation": "兄弟缘薄，各自为政，少有往来",
+          "category": "六亲"
+        },
+        {
+          "feature": "眉间距宽",
+          "interpretation": "兄弟宫宽阔，性格开朗，与兄弟相处融洽",
+          "category": "性格"
+        }
+      ],
+      "priority": 75
+    },
+    {
+      "rule_type": "liuqin",
+      "position": "夫妻宫",
+      "position_code": "spouse",
+      "conditions": {
+        "region": "eye_corners",
+        "features": ["鱼尾纹", "光泽", "色泽"]
+      },
+      "interpretations": [
+        {
+          "feature": "光洁饱满无纹",
+          "interpretation": "婚姻美满，夫妻恩爱，感情稳定长久",
+          "category": "婚姻"
+        },
+        {
+          "feature": "鱼尾纹多且深",
+          "interpretation": "婚姻有波折，或晚婚较好，需经营感情",
+          "category": "婚姻"
+        },
+        {
+          "feature": "有痣或疤",
+          "interpretation": "感情路坎坷，易有桃花劫或感情纠纷",
+          "category": "婚姻"
+        },
+        {
+          "feature": "色泽暗淡",
+          "interpretation": "夫妻关系冷淡，需加强沟通",
+          "category": "婚姻"
+        }
+      ],
+      "priority": 90
+    },
+    {
+      "rule_type": "liuqin",
+      "position": "子女宫",
+      "position_code": "children",
+      "conditions": {
+        "region": "under_eyes",
+        "features": ["卧蚕", "眼袋", "色泽"]
+      },
+      "interpretations": [
+        {
+          "feature": "卧蚕饱满",
+          "interpretation": "子女运佳，儿孙满堂，子女孝顺有出息",
+          "category": "六亲"
+        },
+        {
+          "feature": "眼袋深重",
+          "interpretation": "子女缘薄，或子女不听话，操心较多",
+          "category": "六亲"
+        },
+        {
+          "feature": "色泽明润",
+          "interpretation": "子女健康聪明，有贵子相",
+          "category": "六亲"
+        },
+        {
+          "feature": "有痣或纹",
+          "interpretation": "子女健康需注意，或生育有波折",
+          "category": "健康"
+        }
+      ],
+      "priority": 85
+    },
+    {
+      "rule_type": "liuqin",
+      "position": "奴仆宫",
+      "position_code": "servants",
+      "conditions": {
+        "region": "lower_cheeks",
+        "features": ["饱满度", "色泽"]
+      },
+      "interpretations": [
+        {
+          "feature": "饱满有肉",
+          "interpretation": "下属得力，朋友真诚，人缘好，得人助",
+          "category": "事业"
+        },
+        {
+          "feature": "削瘦凹陷",
+          "interpretation": "下属不力，朋友少，需亲力亲为",
+          "category": "事业"
+        }
+      ],
+      "priority": 65
+    }
+  ]
+}
+

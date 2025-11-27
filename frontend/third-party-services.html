@@ -278,8 +278,9 @@
         </div>
     </div>
 
+    <script src="config.js"></script>
+    <script src="js/api.js"></script>
     <script>
-        const API_BASE = 'http://127.0.0.1:8001/api/v1';
 
         // 支付测试
         async function testPayment() {
@@ -305,13 +306,7 @@
                     payload.customer_email = customerEmail;
                 }
 
-                const response = await fetch(`${API_BASE}/payment/unified/create`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(payload)
-                });
-
-                const data = await response.json();
+                const data = await api.post('/payment/unified/create', payload);
 
                 if (data.success) {
                     result.className = 'result success';
@@ -344,8 +339,7 @@
             result.className = 'result';
 
             try {
-                const response = await fetch(`${API_BASE}/payment/providers`);
-                const data = await response.json();
+                const data = await api.post('/payment/providers', {});
 
                 if (data.success) {
                     result.className = 'result success';
@@ -381,7 +375,7 @@
             result.style.display = 'block';
 
             try {
-                const payment = await fetch(`${API_BASE}/payment/providers`).then(r => r.json());
+                const payment = await api.post('/payment/providers', {});
 
                 let html = '<h3>服务状态</h3><br>';
                 

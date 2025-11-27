@@ -1,0 +1,109 @@
+{
+  "流年运势规则": [
+    {
+      "rule_type": "liunian",
+      "age_range": "1-2",
+      "position": "天轮地轮",
+      "region": "ears",
+      "interpretations": [
+        {
+          "feature": "耳朵饱满色润",
+          "interpretation": "幼年健康，家境安定"
+        }
+      ],
+      "priority": 60
+    },
+    {
+      "rule_type": "liunian",
+      "age_range": "3-14",
+      "position": "额头",
+      "region": "forehead",
+      "interpretations": [
+        {
+          "feature": "额头饱满无疤",
+          "interpretation": "少年时期学业顺利，家庭和睦"
+        }
+      ],
+      "priority": 70
+    },
+    {
+      "rule_type": "liunian",
+      "age_range": "15-16",
+      "position": "天中",
+      "region": "tianchong",
+      "interpretations": [
+        {
+          "feature": "色泽明润",
+          "interpretation": "此年运势佳，学业进步"
+        }
+      ],
+      "priority": 75
+    },
+    {
+      "rule_type": "liunian",
+      "age_range": "28",
+      "position": "印堂",
+      "region": "yintang",
+      "interpretations": [
+        {
+          "feature": "印堂开阔明润",
+          "interpretation": "28岁运势极佳，事业爱情双丰收"
+        }
+      ],
+      "priority": 95
+    },
+    {
+      "rule_type": "liunian",
+      "age_range": "41",
+      "position": "山根",
+      "region": "shangen",
+      "interpretations": [
+        {
+          "feature": "山根高起无断",
+          "interpretation": "41岁运势平稳，身体健康"
+        }
+      ],
+      "priority": 80
+    },
+    {
+      "rule_type": "liunian",
+      "age_range": "48-50",
+      "position": "准头",
+      "region": "zhuntou",
+      "interpretations": [
+        {
+          "feature": "鼻头丰隆有肉",
+          "interpretation": "48-50岁财运极佳，事业高峰期"
+        }
+      ],
+      "priority": 90
+    },
+    {
+      "rule_type": "liunian",
+      "age_range": "51",
+      "position": "人中",
+      "region": "renzhong",
+      "interpretations": [
+        {
+          "feature": "人中深长",
+          "interpretation": "51岁运势佳，健康长寿"
+        }
+      ],
+      "priority": 75
+    },
+    {
+      "rule_type": "liunian",
+      "age_range": "60+",
+      "position": "地阁",
+      "region": "dige",
+      "interpretations": [
+        {
+          "feature": "地阁饱满",
+          "interpretation": "晚年运势好，福寿双全"
+        }
+      ],
+      "priority": 85
+    }
+  ]
+}
+

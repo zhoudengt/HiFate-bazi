@@ -97,6 +97,8 @@
         <div id="console-logs" style="max-height: 300px; overflow-y: auto;"></div>
     </div>
     
+    <script src="config.js"></script>
+    <script src="js/api.js"></script>
     <script>
         // 捕获控制台日志
         const originalLog = console.log;
@@ -218,35 +220,27 @@
             responseEl.style.display = 'none';
             
             try {
-                const response = await fetch('http://127.0.0.1:8001/api/v1/bazi/fortune/display', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        solar_date: '1990-01-01',
-                        solar_time: '12:00',
-                        gender: 'male',
-                        current_time: new Date().toISOString().slice(0, 16).replace('T', ' ')
-                    })
+                const data = await api.post('/bazi/fortune/display', {
+                    solar_date: '1990-01-01',
+                    solar_time: '12:00',
+                    gender: 'male',
+                    current_time: new Date().toISOString().slice(0, 16).replace('T', ' ')
                 });
                 
-                const data = await response.json();
-                
-                if (response.ok && data.success) {
+                if (data.success) {
                     resultEl.className = 'status success';
-                    resultEl.textContent = `✅ API连接正常 (状态码: ${response.status})`;
+                    resultEl.textContent = `✅ API连接正常 (gRPC-Web)`;
                     responseEl.textContent = JSON.stringify(data, null, 2);
                     responseEl.style.display = 'block';
                 } else {
                     resultEl.className = 'status error';
-                    resultEl.textContent = `❌ API返回错误 (状态码: ${response.status})`;
+                    resultEl.textContent = `❌ API返回错误`;
                     responseEl.textContent = JSON.stringify(data, null, 2);
                     responseEl.style.display = 'block';
                 }
             } catch (error) {
                 resultEl.className = 'status error';
-                resultEl.textContent = `❌ API连接失败: ${error.message}`;
+                resultEl.textContent = `❌ API连接失败: ${error.message || error}`;
                 console.error('API测试失败:', error);
             }
         }

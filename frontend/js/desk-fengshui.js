@@ -114,18 +114,26 @@ class DeskFengshuiAnalyzer {
         document.getElementById('resultSection').style.display = 'none';
     }
     
+    // 将文件转换为 base64
+    fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                // 返回 base64 字符串（包含 data:image/xxx;base64, 前缀）
+                resolve(reader.result);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    },
+    
     async analyze() {
         if (!this.selectedImage) {
             alert('请先上传照片');
             return;
         }
         
-        // 准备数据
-        const formData = new FormData();
-        formData.append('image', this.selectedImage);
-        
         const useBazi = document.getElementById('useBazi').checked;
-        formData.append('use_bazi', useBazi);
         
         if (useBazi) {
             const solarDate = document.getElementById('solarDate').value;
@@ -136,26 +144,33 @@ class DeskFengshuiAnalyzer {
                 alert('请填写完整的八字信息');
                 return;
             }
-            
-            formData.append('solar_date', solarDate);
-            formData.append('solar_time', solarTime);
-            formData.append('gender', gender);
         }
         
         // 显示加载状态
         this.setLoading(true);
         
         try {
-            const response = await fetch(`${this.apiBaseUrl}/api/v2/desk-fengshui/analyze`, {
-                method: 'POST',
-                body: formData
-            });
+            // 将文件转换为 base64
+            const imageBase64 = await this.fileToBase64(this.selectedImage);
             
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            // 构建请求数据
+            const requestData = {
+                image_base64: imageBase64,
+                filename: this.selectedImage.name,
+                content_type: this.selectedImage.type || 'image/jpeg',
+                use_bazi: useBazi
+            };
+            
+            if (useBazi) {
+                requestData.solar_date = document.getElementById('solarDate').value;
+                requestData.solar_time = document.getElementById('solarTime').value;
+                requestData.gender = document.getElementById('gender').value;
             }
             
-            const result = await response.json();
+            console.log('使用 gRPC-Web 调用办公桌风水分析接口');
+            
+            // 使用 gRPC-Web 调用
+            const result = await api.post('/api/v2/desk-fengshui/analyze', requestData);
             
             if (result.success) {
                 this.displayResult(result.data);

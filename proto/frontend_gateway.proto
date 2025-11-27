@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package frontend.gateway;
+
+// 通用前端网关请求
+message FrontendJsonRequest {
+  // 要调用的 REST 相对路径，例如 /bazi/fortune/display
+  string endpoint = 1;
+
+  // 请求体（JSON 字符串形式）
+  string payload_json = 2;
+
+  // 访问令牌（可选，供鉴权使用）
+  string auth_token = 3;
+}
+
+// 通用前端网关响应
+message FrontendJsonResponse {
+  // 调用是否成功（true 表示成功）
+  bool success = 1;
+
+  // 实际数据（JSON 字符串形式，与原 REST 接口一致）
+  string data_json = 2;
+
+  // 错误信息（可选）
+  string error = 3;
+
+  // 原始 HTTP 状态码，便于前端区分
+  int32 status_code = 4;
+}
+
+// 前端 gRPC 网关服务
+service FrontendGateway {
+  // 通用调用，封装原有 REST 端点
+  rpc Call(FrontendJsonRequest) returns (FrontendJsonResponse);
+}
+
