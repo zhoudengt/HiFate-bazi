@@ -67,41 +67,61 @@ fi
 
 echo -e "${GREEN}✅ Docker 环境检查通过${NC}"
 
-# 步骤 2：创建项目目录
-echo -e "${BLUE}[2/8] 创建项目目录...${NC}"
-if [ ! -d "$PROJECT_DIR" ]; then
-    $SUDO_CMD mkdir -p "$PROJECT_DIR"
-    if [ "$IS_ROOT" = false ]; then
-        $SUDO_CMD chown $USER:$USER "$PROJECT_DIR"
-    fi
-    echo -e "${GREEN}✅ 项目目录已创建：$PROJECT_DIR${NC}"
-else
-    echo -e "${GREEN}✅ 项目目录已存在：$PROJECT_DIR${NC}"
-fi
+# 步骤 2：检查当前目录状态
+echo -e "${BLUE}[2/8] 检查项目目录...${NC}"
 
-# 进入项目目录
-cd "$PROJECT_DIR" || {
-    echo -e "${RED}❌ 无法进入项目目录${NC}"
-    exit 1
-}
+# 检查是否已经在项目目录中（通过检查是否有 deploy_remote.sh）
+CURRENT_DIR=$(pwd)
+if [ -f "scripts/deploy_remote.sh" ] || [ -f "deploy_remote.sh" ]; then
+    echo -e "${GREEN}✅ 检测到已在项目目录中：$CURRENT_DIR${NC}"
+    PROJECT_DIR="$CURRENT_DIR"
+else
+    # 不在项目目录中，需要创建或进入项目目录
+    if [ ! -d "$PROJECT_DIR" ]; then
+        $SUDO_CMD mkdir -p "$PROJECT_DIR"
+        if [ "$IS_ROOT" = false ]; then
+            $SUDO_CMD chown $USER:$USER "$PROJECT_DIR"
+        fi
+        echo -e "${GREEN}✅ 项目目录已创建：$PROJECT_DIR${NC}"
+    else
+        echo -e "${GREEN}✅ 项目目录已存在：$PROJECT_DIR${NC}"
+    fi
+    
+    # 进入项目目录
+    cd "$PROJECT_DIR" || {
+        echo -e "${RED}❌ 无法进入项目目录${NC}"
+        exit 1
+    }
+fi
 
 # 步骤 3：克隆或更新代码
 echo -e "${BLUE}[3/8] 更新代码...${NC}"
 if [ -d ".git" ]; then
-    echo -e "${YELLOW}检测到 Git 仓库，拉取最新代码...${NC}"
+    echo -e "${GREEN}✅ 检测到 Git 仓库，拉取最新代码...${NC}"
     git fetch origin
     git checkout master 2>/dev/null || true
     git pull origin master
     echo -e "${GREEN}✅ 代码已更新${NC}"
 else
-    # 检查目录是否为空
-    if [ "$(ls -A . 2>/dev/null)" ]; then
-        echo -e "${YELLOW}⚠️  目录不为空，但未检测到 Git 仓库${NC}"
+    echo -e "${YELLOW}⚠️  未检测到 Git 仓库${NC}"
+    
+    # 检查目录是否为空（排除隐藏文件）
+    if [ "$(ls -A . 2>/dev/null | grep -v '^\.git$')" ]; then
+        echo -e "${YELLOW}目录不为空，但未检测到 Git 仓库${NC}"
+        echo -e "${YELLOW}当前目录内容：${NC}"
+        ls -la | head -10
+        echo ""
         echo -e "${YELLOW}是否清空目录并重新克隆？(y/N): ${NC}"
         read -p "" CLEAR_DIR
         if [ "$CLEAR_DIR" == "y" ] || [ "$CLEAR_DIR" == "Y" ]; then
             echo -e "${YELLOW}清空目录...${NC}"
-            rm -rf * .[^.]* 2>/dev/null || true
+            # 备份 .env 文件（如果有）
+            if [ -f ".env" ]; then
+                cp .env /tmp/.env.backup
+                echo -e "${YELLOW}已备份 .env 文件${NC}"
+            fi
+            # 清空目录（保留隐藏的 .git 相关文件）
+            find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} + 2>/dev/null || true
         else
             echo -e "${RED}❌ 目录不为空，无法克隆代码${NC}"
             echo -e "${YELLOW}请手动清理目录或选择其他目录${NC}"
@@ -116,11 +136,23 @@ else
     # 尝试克隆
     if git clone "$REPO_URL" .; then
         echo -e "${GREEN}✅ 代码已克隆${NC}"
+        # 恢复 .env 文件（如果有备份）
+        if [ -f "/tmp/.env.backup" ]; then
+            cp /tmp/.env.backup .env
+            chmod 600 .env
+            echo -e "${GREEN}✅ 已恢复 .env 文件${NC}"
+        fi
     else
         echo -e "${RED}❌ 克隆失败，尝试使用 SSH 方式...${NC}"
         REPO_URL="git@github.com:zhoudengt/HiFate-bazi.git"
         if git clone "$REPO_URL" .; then
             echo -e "${GREEN}✅ 代码已克隆（SSH 方式）${NC}"
+            # 恢复 .env 文件（如果有备份）
+            if [ -f "/tmp/.env.backup" ]; then
+                cp /tmp/.env.backup .env
+                chmod 600 .env
+                echo -e "${GREEN}✅ 已恢复 .env 文件${NC}"
+            fi
         else
             echo -e "${RED}❌ 克隆失败，请检查网络连接和仓库地址${NC}"
             exit 1
