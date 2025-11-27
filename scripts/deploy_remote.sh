@@ -94,85 +94,54 @@ else
     }
 fi
 
-# 步骤 3：克隆或更新代码
-echo -e "${BLUE}[3/8] 更新代码...${NC}"
-if [ -d ".git" ]; then
-    echo -e "${GREEN}✅ 检测到 Git 仓库${NC}"
+# 步骤 3：检查代码
+echo -e "${BLUE}[3/8] 检查代码...${NC}"
+
+# 优先检查代码是否已存在（通过检查关键文件）
+if [ -f "scripts/deploy_remote.sh" ] || [ -f "docker-compose.yml" ] || [ -f "server/main.py" ]; then
+    echo -e "${GREEN}✅ 检测到代码已存在${NC}"
     
-    # 检查是否需要更新（可选，如果网络有问题可以跳过）
-    echo -e "${YELLOW}是否更新代码？(Y/n): ${NC}"
-    read -t 5 -p "" UPDATE_CODE || UPDATE_CODE="Y"
-    
-    if [ "$UPDATE_CODE" != "n" ] && [ "$UPDATE_CODE" != "N" ]; then
-        echo -e "${YELLOW}拉取最新代码...${NC}"
-        # 设置超时，避免卡住
-        timeout 30 git fetch origin 2>/dev/null || {
-            echo -e "${YELLOW}⚠️  网络连接超时，跳过代码更新${NC}"
-            echo -e "${YELLOW}继续使用当前代码进行部署...${NC}"
-        }
-        git checkout master 2>/dev/null || true
-        timeout 60 git pull origin master 2>/dev/null || {
-            echo -e "${YELLOW}⚠️  代码拉取失败，使用当前代码继续部署${NC}"
-        }
-        echo -e "${GREEN}✅ 代码检查完成${NC}"
+    # 如果有 .git，尝试更新（可选）
+    if [ -d ".git" ]; then
+        echo -e "${GREEN}✅ 检测到 Git 仓库，可以更新代码${NC}"
+        echo -e "${YELLOW}是否更新代码？(Y/n): ${NC}"
+        read -t 5 -p "" UPDATE_CODE || UPDATE_CODE="n"
+        
+        if [ "$UPDATE_CODE" != "n" ] && [ "$UPDATE_CODE" != "N" ]; then
+            echo -e "${YELLOW}拉取最新代码...${NC}"
+            timeout 30 git fetch origin 2>/dev/null || {
+                echo -e "${YELLOW}⚠️  网络连接超时，跳过代码更新${NC}"
+            }
+            git checkout master 2>/dev/null || true
+            timeout 60 git pull origin master 2>/dev/null || {
+                echo -e "${YELLOW}⚠️  代码拉取失败，使用当前代码继续部署${NC}"
+            }
+            echo -e "${GREEN}✅ 代码检查完成${NC}"
+        else
+            echo -e "${GREEN}✅ 跳过代码更新，使用当前代码${NC}"
+        fi
     else
-        echo -e "${GREEN}✅ 跳过代码更新，使用当前代码${NC}"
+        echo -e "${GREEN}✅ 代码已存在（ZIP 下载方式），直接使用当前代码${NC}"
+        echo -e "${YELLOW}提示：如需更新代码，请重新下载 ZIP 包${NC}"
     fi
 else
-    echo -e "${YELLOW}⚠️  未检测到 Git 仓库${NC}"
+    # 代码不存在，需要克隆或下载
+    echo -e "${YELLOW}⚠️  代码不存在，需要下载代码${NC}"
     
-    # 检查目录是否为空（排除隐藏文件）
-    if [ "$(ls -A . 2>/dev/null | grep -v '^\.git$')" ]; then
-        echo -e "${YELLOW}目录不为空，但未检测到 Git 仓库${NC}"
-        echo -e "${YELLOW}当前目录内容：${NC}"
-        ls -la | head -10
-        echo ""
-        echo -e "${YELLOW}是否清空目录并重新克隆？(y/N): ${NC}"
-        read -p "" CLEAR_DIR
-        if [ "$CLEAR_DIR" == "y" ] || [ "$CLEAR_DIR" == "Y" ]; then
-            echo -e "${YELLOW}清空目录...${NC}"
-            # 备份 .env 文件（如果有）
-            if [ -f ".env" ]; then
-                cp .env /tmp/.env.backup
-                echo -e "${YELLOW}已备份 .env 文件${NC}"
-            fi
-            # 清空目录（保留隐藏的 .git 相关文件）
-            find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} + 2>/dev/null || true
-        else
-            echo -e "${RED}❌ 目录不为空，无法克隆代码${NC}"
-            echo -e "${YELLOW}请手动清理目录或选择其他目录${NC}"
+    # 检查是否有 .git（可能是空目录）
+    if [ -d ".git" ]; then
+        echo -e "${YELLOW}检测到 .git 目录，尝试拉取代码...${NC}"
+        git pull origin master 2>/dev/null || {
+            echo -e "${RED}❌ Git 拉取失败，请手动下载代码${NC}"
+            echo -e "${YELLOW}建议：使用 ZIP 包下载方式${NC}"
             exit 1
-        fi
-    fi
-    
-    echo -e "${YELLOW}首次部署，克隆代码...${NC}"
-    echo -e "${YELLOW}使用默认仓库地址：https://github.com/zhoudengt/HiFate-bazi.git${NC}"
-    REPO_URL="https://github.com/zhoudengt/HiFate-bazi.git"
-    
-    # 尝试克隆
-    if git clone "$REPO_URL" .; then
-        echo -e "${GREEN}✅ 代码已克隆${NC}"
-        # 恢复 .env 文件（如果有备份）
-        if [ -f "/tmp/.env.backup" ]; then
-            cp /tmp/.env.backup .env
-            chmod 600 .env
-            echo -e "${GREEN}✅ 已恢复 .env 文件${NC}"
-        fi
+        }
     else
-        echo -e "${RED}❌ 克隆失败，尝试使用 SSH 方式...${NC}"
-        REPO_URL="git@github.com:zhoudengt/HiFate-bazi.git"
-        if git clone "$REPO_URL" .; then
-            echo -e "${GREEN}✅ 代码已克隆（SSH 方式）${NC}"
-            # 恢复 .env 文件（如果有备份）
-            if [ -f "/tmp/.env.backup" ]; then
-                cp /tmp/.env.backup .env
-                chmod 600 .env
-                echo -e "${GREEN}✅ 已恢复 .env 文件${NC}"
-            fi
-        else
-            echo -e "${RED}❌ 克隆失败，请检查网络连接和仓库地址${NC}"
-            exit 1
-        fi
+        echo -e "${RED}❌ 代码不存在，请先下载代码${NC}"
+        echo -e "${YELLOW}下载方式：${NC}"
+        echo -e "  1. 使用 ZIP 包：wget https://github.com.cnpmjs.org/zhoudengt/HiFate-bazi/archive/refs/heads/master.zip"
+        echo -e "  2. 使用 Git：git clone https://github.com.cnpmjs.org/zhoudengt/HiFate-bazi.git ."
+        exit 1
     fi
 fi
 
