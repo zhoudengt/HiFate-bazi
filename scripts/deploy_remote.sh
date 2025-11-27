@@ -97,11 +97,27 @@ fi
 # 步骤 3：克隆或更新代码
 echo -e "${BLUE}[3/8] 更新代码...${NC}"
 if [ -d ".git" ]; then
-    echo -e "${GREEN}✅ 检测到 Git 仓库，拉取最新代码...${NC}"
-    git fetch origin
-    git checkout master 2>/dev/null || true
-    git pull origin master
-    echo -e "${GREEN}✅ 代码已更新${NC}"
+    echo -e "${GREEN}✅ 检测到 Git 仓库${NC}"
+    
+    # 检查是否需要更新（可选，如果网络有问题可以跳过）
+    echo -e "${YELLOW}是否更新代码？(Y/n): ${NC}"
+    read -t 5 -p "" UPDATE_CODE || UPDATE_CODE="Y"
+    
+    if [ "$UPDATE_CODE" != "n" ] && [ "$UPDATE_CODE" != "N" ]; then
+        echo -e "${YELLOW}拉取最新代码...${NC}"
+        # 设置超时，避免卡住
+        timeout 30 git fetch origin 2>/dev/null || {
+            echo -e "${YELLOW}⚠️  网络连接超时，跳过代码更新${NC}"
+            echo -e "${YELLOW}继续使用当前代码进行部署...${NC}"
+        }
+        git checkout master 2>/dev/null || true
+        timeout 60 git pull origin master 2>/dev/null || {
+            echo -e "${YELLOW}⚠️  代码拉取失败，使用当前代码继续部署${NC}"
+        }
+        echo -e "${GREEN}✅ 代码检查完成${NC}"
+    else
+        echo -e "${GREEN}✅ 跳过代码更新，使用当前代码${NC}"
+    fi
 else
     echo -e "${YELLOW}⚠️  未检测到 Git 仓库${NC}"
     
