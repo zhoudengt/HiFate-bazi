@@ -596,58 +596,189 @@ git add [specific files]
 
 ---
 
-## 🐳 Docker 自动化部署（方案5）
+## 🐳 Docker 生产部署
 
-### 📋 部署架构
+### 📋 生产环境信息
 
-```
-本地开发（Docker热更新）
-  ↓ git push to feature
-合并到 develop
-  ↓ 自动部署到开发环境
-测试通过，合并到 master
-  ↓ 自动部署到生产环境
-生产服务器（Docker零停机）
-```
+| 项目 | 值 |
+|------|-----|
+| **服务器** | 123.57.216.15（阿里云 ECS） |
+| **代码仓库** | https://gitee.com/zhoudengtang/hifate-prod.git |
+| **部署目录** | /opt/HiFate-bazi |
+| **访问地址** | http://123.57.216.15/ |
+| **SSH 用户** | root |
+| **SSH 端口** | 22 |
 
-### 🚀 本地开发环境
+### 🚀 一键部署流程
 
 ```bash
-# 启动本地 Docker 开发环境（支持热更新）
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+# 本地执行（推荐）
+./deploy.sh
 
-# 修改代码后自动重载，无需重启
-# 访问 http://localhost:8001 测试
+# 选择操作：
+# 1) 完整部署（推送 Gitee → 服务器 pull → Docker 重启）
+# 2) 仅推送到 Gitee
+# 3) 仅更新服务器
+# 7) 首次部署：初始化服务器
 ```
 
-### 📦 部署命令
+### 📦 部署架构
 
-**开发环境部署**（develop 分支）：
+```
+本地开发 → git push gitee master → 服务器 git pull → docker compose up
+                                                    ↓
+                                              Nginx 反向代理 (80)
+                                                    ↓
+                                              Docker Web 服务 (8001)
+                                                    ↓
+                                           MySQL + Redis 容器
+```
+
+### 🔧 Docker 镜像优化（重要）
+
+**1. 精简 requirements.txt**
+```
+# ❌ 禁止添加的大型依赖（会导致构建超慢）
+torch, torchvision     # 2GB+
+dlib, face-recognition # 编译需30分钟
+mediapipe, opencv      # 依赖复杂
+
+# ✅ 保持轻量依赖
+fastapi, uvicorn, pymysql, redis, lunar-python
+```
+
+**2. Dockerfile 优化**
+```dockerfile
+# 使用国内镜像源
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 利用 Docker 层缓存
+COPY requirements.txt .
+RUN pip install -r requirements.txt  # 依赖层（不常变）
+COPY . /app                          # 代码层（常变）
+```
+
+**3. .dockerignore 配置**
+```
+.git/
+logs/
+docs/
+node_modules/
+*.pyc
+__pycache__/
+*.pt
+*.pth
+```
+
+### ⚙️ 服务器环境变量
+
+文件：`/opt/HiFate-bazi/.env`
+
 ```bash
-# 推送到 develop 后自动触发
-git push origin develop
-# GitHub Actions 自动部署到开发服务器
+APP_ENV=production
+DEBUG=False
+MYSQL_HOST=mysql          # Docker 容器名，不是 localhost
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=your_password
+MYSQL_DATABASE=hifate_bazi
+REDIS_HOST=redis
+REDIS_PORT=6379
+WEB_PORT=8001
 ```
 
-**生产环境部署**（master 分支）：
+**⚠️ 关键点**：`MYSQL_HOST=mysql`（容器间通信用服务名）
+
+### 🌐 Nginx 反向代理
+
+配置文件：`/etc/nginx/conf.d/hifate.conf`
+
+```nginx
+server {
+    listen 80 default_server;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_connect_timeout 60s;
+        proxy_read_timeout 120s;
+    }
+}
+```
+
+### 🔒 阿里云安全组端口
+
+| 端口 | 用途 | 必须 |
+|------|------|------|
+| 22 | SSH | ✅ |
+| 80 | HTTP（Nginx） | ✅ |
+| 8001 | Docker Web | 可选 |
+| 13306 | MySQL（外部访问） | 可选 |
+
+### 🛠️ 常用运维命令
+
 ```bash
-# 推送到 master 后自动触发
-git push origin master
-# GitHub Actions 自动部署到生产服务器
+# SSH 登录服务器
+ssh root@123.57.216.15
+
+# 查看服务状态
+cd /opt/HiFate-bazi && docker compose ps
+
+# 查看日志
+docker compose logs web --tail=50
+docker compose logs mysql --tail=20
+
+# 重启服务（零停机）
+docker compose up -d --build web
+
+# 完全重启
+docker compose down && docker compose up -d
+
+# 清理无用镜像
+docker system prune -af
 ```
 
-### ⚙️ 配置文件
+### ❌ 常见问题排查
 
-项目已包含完整的 Docker 配置：
-- `docker-compose.yml` - 基础配置
-- `docker-compose.dev.yml` - 开发环境
-- `docker-compose.prod.yml` - 生产环境
-- `Dockerfile` - 生产镜像
-- `Dockerfile.dev` - 开发镜像
-- `.github/workflows/deploy-develop.yml` - 开发环境自动部署
-- `.github/workflows/deploy-production.yml` - 生产环境自动部署
+**问题1：ModuleNotFoundError**
+```bash
+# 缺少依赖，添加到 requirements.txt 后重新构建
+docker compose up -d --build web
+```
 
-详细文档：`docs/部署方案5-Docker自动化部署.md`
+**问题2：MySQL 连接失败**
+```bash
+# 检查 .env 中 MYSQL_HOST=mysql（不是 localhost）
+# 检查容器网络：docker network ls
+```
+
+**问题3：构建太慢**
+```bash
+# 1. 检查 .dockerignore 排除大文件
+# 2. 不要加 --no-cache（利用缓存）
+# 3. 精简 requirements.txt
+```
+
+**问题4：端口无法访问**
+```bash
+# 1. 检查阿里云安全组
+# 2. 检查服务器防火墙：firewall-cmd --list-ports
+# 3. 检查服务监听：netstat -tlnp | grep 80
+```
+
+### 📋 配置文件清单
+
+| 文件 | 用途 |
+|------|------|
+| `docker-compose.yml` | 基础配置 |
+| `docker-compose.prod.yml` | 生产环境覆盖 |
+| `Dockerfile` | 生产镜像构建 |
+| `.dockerignore` | 排除文件 |
+| `deploy.sh` | 一键部署脚本 |
+| `.env`（服务器） | 环境变量 |
 
 ---
 
@@ -771,51 +902,59 @@ git push origin [当前分支]
 
 ---
 
-## 📖 GitHub 使用规范
+## 📖 Gitee（码云）代码仓库
 
-### 🔑 GitHub 集成
+### 🔑 仓库信息
 
-**已配置**：
-- ✅ SSH 密钥认证
-- ✅ 远程仓库：git@github.com:zhoudengt/HiFate-bazi.git
-- ✅ GitHub Actions 自动部署
-- ✅ Cursor AI 集成（可查看提交历史）
+| 项目 | 值 |
+|------|-----|
+| **仓库地址** | https://gitee.com/zhoudengtang/hifate-prod.git |
+| **本地 remote** | gitee |
+| **默认分支** | master |
 
-### 🌐 常用 GitHub 操作
+### 🚀 代码提交流程
+
+```bash
+# 1. 查看修改
+git status
+
+# 2. 添加文件
+git add .
+
+# 3. 提交
+git commit -m "[类型] 描述"
+
+# 4. 推送到 Gitee
+git push gitee master
+```
+
+### 📦 部署到生产
+
+```bash
+# 方法1：使用部署脚本（推荐）
+./deploy.sh
+# 选择 1) 完整部署
+
+# 方法2：手动部署
+git push gitee master
+ssh root@123.57.216.15 'cd /opt/HiFate-bazi && git pull && docker compose up -d --build web'
+```
+
+### 🌐 常用操作
 
 **查看仓库**：
 ```
-https://github.com/zhoudengt/HiFate-bazi
+https://gitee.com/zhoudengtang/hifate-prod
 ```
 
 **查看提交历史**：
 ```bash
 git log --oneline -10
-git log --graph --all
 ```
 
-**创建 Pull Request**：
-1. 推送功能分支到 GitHub
-2. 访问仓库页面
-3. 点击 "Compare & pull request"
-4. 填写 PR 描述
-5. 请求代码审查
-
-**查看部署状态**：
-```
-https://github.com/zhoudengt/HiFate-bazi/actions
-```
-
-### 🔄 同步远程更新
-
+**同步远程更新**：
 ```bash
-# 更新本地 develop
-git checkout develop
-git pull origin develop
-
-# 更新本地 master
-git checkout master
-git pull origin master
+git pull gitee master
 ```
 
 ---
