@@ -21,7 +21,6 @@ RUN apt-get update \
         cmake \
         libopenblas-dev \
         liblapack-dev \
-        libatlas-base-dev \
         gfortran \
     && rm -rf /var/lib/apt/lists/*
 
