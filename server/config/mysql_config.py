@@ -12,13 +12,13 @@ import queue
 import threading
 import time
 
-# MySQL 连接配置
+# MySQL 连接配置（从环境变量读取）
 mysql_config = {
-    'host': 'localhost',
-    'port': 3306,
-    'user': 'root',
-    'password': '123456',
-    'database': 'hifate_bazi',
+    'host': os.getenv('MYSQL_HOST', 'localhost'),
+    'port': int(os.getenv('MYSQL_PORT', '3306')),
+    'user': os.getenv('MYSQL_USER', 'root'),
+    'password': os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', '123456')),
+    'database': os.getenv('MYSQL_DATABASE', 'bazi_system'),
     'charset': 'utf8mb4',
     'cursorclass': DictCursor,
     'autocommit': False,
