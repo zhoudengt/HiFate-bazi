@@ -50,11 +50,12 @@ pillow>=10.0.0
 # stripe>=7.0.0
 # alipay-sdk-python>=3.7.0
 
-# === 以下是重型依赖，首次部署可注释掉 ===
+# 图像处理（轻量版，用于面相/手相分析）
+opencv-python-headless>=4.8.0
+
+# === 以下是重型依赖，按需启用 ===
 # 面相分析（安装很慢，约5-10分钟）
 # mediapipe>=0.10.0
-# opencv-python>=4.12.0.88
-# pillow>=11.0.0
 # scikit-learn>=1.6.1
 # scipy>=1.13.1
 
