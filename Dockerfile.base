@@ -1,0 +1,43 @@
+# HiFate 基础镜像
+# 预装所有 Python 依赖，加速后续部署
+# 构建命令：docker build -f Dockerfile.base -t hifate-base:latest .
+# 仅在 requirements.txt 变更时需要重建
+
+FROM python:3.11-slim
+
+LABEL maintainer="HiFate Team"
+LABEL description="HiFate base image with pre-installed dependencies"
+
+# 设置工作目录
+WORKDIR /app
+
+# 使用国内镜像源加速
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
+
+# 安装系统依赖
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y \
+        curl \
+        gcc \
+        g++ \
+        libgl1-mesa-glx \
+        libglib2.0-0 \
+        libsm6 \
+        libxext6 \
+        libxrender-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# 配置 pip 使用国内源
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 复制并安装依赖（这是最耗时的步骤）
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 清理缓存
+RUN rm -rf /root/.cache/pip /tmp/*
+
+# 记录构建信息
+RUN echo "Base image built at: $(date)" > /app/.base_build_info
+

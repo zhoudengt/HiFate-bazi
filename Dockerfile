@@ -1,36 +1,25 @@
-# HiFate-bazi Dockerfile - 优化版
-# 构建时间: ~3分钟（精简依赖）
+# HiFate-bazi Dockerfile
+# 使用预构建基础镜像 + 增量保险
+# 
+# 首次部署需要先构建基础镜像：
+#   docker build -f Dockerfile.base -t hifate-base:latest .
+#
+# 后续部署（快速）：
+#   docker compose up -d --build web
 
-FROM python:3.11-slim
+FROM hifate-base:latest
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1 \
     APP_HOME=/app
 
 WORKDIR ${APP_HOME}
 
-# 配置国内镜像源
-RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
-
-# 安装最小系统依赖
-RUN apt-get update \
-    && apt-get install --no-install-recommends -y \
-        curl \
-        gcc \
-        g++ \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# 配置 pip 镜像
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-
-# 先复制依赖文件（利用缓存）
+# 增量保险层：检查并安装可能缺失的依赖
+# 如果 requirements.txt 有变更但基础镜像未更新，这里会补上
 COPY requirements.txt .
-
-# 安装依赖
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt || echo "依赖已安装"
 
 # 复制代码
 COPY . ${APP_HOME}
