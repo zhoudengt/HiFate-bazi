@@ -29,7 +29,7 @@ class FormulaAnalysisRequest(BaseModel):
     solar_date: str = Field(..., description="阳历日期，格式：YYYY-MM-DD")
     solar_time: str = Field(..., description="阳历时间，格式：HH:MM")
     gender: str = Field(..., description="性别：male/female")
-    rule_types: Optional[List[str]] = Field(None, description="规则类型列表，可选值：wealth/marriage/character/summary/health/shishen")
+    rule_types: Optional[List[str]] = Field(None, description="规则类型列表，可选值：wealth/marriage/career/children/character/summary/health/peach_blossom/shishen")
 
 
 class FormulaAnalysisResponse(BaseModel):
@@ -47,14 +47,15 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
     根据八字信息匹配相应的规则，返回匹配的规则详情
     
     规则类型:
-    - wealth: 财富规则（97条）
-    - marriage: 婚配规则（60条）
-    - character: 性格规则（60条）
-    - summary: 总评规则（533条）
-    - health: 身体规则（58条）
-    - shishen: 十神命格规则（8条）
-    
-    总计：816条规则
+    - wealth: 财富规则
+    - marriage: 婚配规则
+    - career: 事业规则
+    - children: 子女规则
+    - character: 性格规则
+    - summary: 总评规则
+    - health: 身体规则
+    - peach_blossom: 桃花规则
+    - shishen: 十神命格规则
     """
     try:
         # 1. 计算八字
@@ -86,7 +87,7 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
         }
         
         # 转换规则类型（前端传入的是英文，RuleService也使用英文）
-        rule_types = request.rule_types if request.rule_types else ['wealth', 'marriage', 'character', 'summary', 'health', 'shishen']
+        rule_types = request.rule_types if request.rule_types else ['wealth', 'marriage', 'career', 'children', 'character', 'summary', 'health', 'peach_blossom', 'shishen']
         
         # ⚠️ 十神命格特殊处理：使用FormulaRuleService的优先级匹配逻辑
         # RuleService不支持十神命格的复杂优先级逻辑，所以对于十神命格使用FormulaRuleService
@@ -141,11 +142,14 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
             'rule_details': matched_result['rule_details'],
             'statistics': {
                 'total_matched': matched_result['total_matched'],
-                'wealth_count': len(matched_result['matched_rules']['wealth']),
-                'marriage_count': len(matched_result['matched_rules']['marriage']),
-                'character_count': len(matched_result['matched_rules']['character']),
-                'summary_count': len(matched_result['matched_rules']['summary']),
-                'health_count': len(matched_result['matched_rules']['health']),
+                'wealth_count': len(matched_result['matched_rules'].get('wealth', [])),
+                'marriage_count': len(matched_result['matched_rules'].get('marriage', [])),
+                'career_count': len(matched_result['matched_rules'].get('career', [])),
+                'children_count': len(matched_result['matched_rules'].get('children', [])),
+                'character_count': len(matched_result['matched_rules'].get('character', [])),
+                'summary_count': len(matched_result['matched_rules'].get('summary', [])),
+                'health_count': len(matched_result['matched_rules'].get('health', [])),
+                'peach_blossom_count': len(matched_result['matched_rules'].get('peach_blossom', [])),
                 'shishen_count': len(matched_result['matched_rules'].get('shishen', []))
             }
         }
@@ -173,9 +177,12 @@ def _convert_rule_service_to_formula_format(migrated_rules: list, rule_types: Op
     matched_rules = {
         'wealth': [],
         'marriage': [],
+        'career': [],
+        'children': [],
         'character': [],
         'summary': [],
         'health': [],
+        'peach_blossom': [],
         'shishen': []
     }
     rule_details = {}
@@ -183,10 +190,13 @@ def _convert_rule_service_to_formula_format(migrated_rules: list, rule_types: Op
     # 规则类型中文映射
     type_cn_mapping = {
         'wealth': '财富',
-        'marriage': '婚配',
+        'marriage': '婚姻',
+        'career': '事业',
+        'children': '子女',
         'character': '性格',
         'summary': '总评',
         'health': '身体',
+        'peach_blossom': '桃花',
         'shishen': '十神命格'
     }
     
@@ -207,9 +217,22 @@ def _convert_rule_service_to_formula_format(migrated_rules: list, rule_types: Op
         else:
             continue
         
+        # 尝试从规则ID中提取数字部分（兼容 FORMULA_80001 和 FORMULA_事业_80001 两种格式）
+        try:
+            # 尝试直接转换为整数
+            numeric_id = int(original_id)
+        except ValueError:
+            # 如果失败，尝试从末尾提取数字（格式如: 事业_80001）
+            parts = original_id.rsplit('_', 1)
+            if len(parts) == 2 and parts[1].isdigit():
+                numeric_id = int(parts[1])
+            else:
+                # 使用规则ID的哈希值作为ID
+                numeric_id = hash(original_id) % 1000000
+        
         # 根据规则类型添加到对应列表
         if rule_type in matched_rules:
-            matched_rules[rule_type].append(int(original_id))
+            matched_rules[rule_type].append(numeric_id)
         
         # 构建规则详情（保持FormulaRuleService格式）
         content = rule.get('content', {})
@@ -318,9 +341,9 @@ def _convert_rule_service_to_formula_format(migrated_rules: list, rule_types: Op
                 gender = gender_map.get(conditions['gender'], '无论男女')
         
         # 构建规则详情（同时提供中英文字段名，兼容前端）
-        rule_details[int(original_id)] = {
-            'ID': int(original_id),
-            'id': int(original_id),  # 添加英文字段
+        rule_details[numeric_id] = {
+            'ID': numeric_id,
+            'id': numeric_id,  # 添加英文字段
             '类型': type_cn_mapping.get(rule_type, rule_type),
             'type': type_cn_mapping.get(rule_type, rule_type),  # 添加英文字段
             '性别': gender,
@@ -447,10 +470,13 @@ async def get_formula_rules_info():
         
         type_mapping = {
             'wealth': {'name': '财富', 'name_en': 'wealth'},
-            'marriage': {'name': '婚配', 'name_en': 'marriage'},
+            'marriage': {'name': '婚姻', 'name_en': 'marriage'},
+            'career': {'name': '事业', 'name_en': 'career'},
+            'children': {'name': '子女', 'name_en': 'children'},
             'character': {'name': '性格', 'name_en': 'character'},
             'summary': {'name': '总评', 'name_en': 'summary'},
             'health': {'name': '身体', 'name_en': 'health'},
+            'peach_blossom': {'name': '桃花', 'name_en': 'peach_blossom'},
             'shishen': {'name': '十神命格', 'name_en': 'shishen'}
         }
         

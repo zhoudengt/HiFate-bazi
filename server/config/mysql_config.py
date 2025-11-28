@@ -18,7 +18,7 @@ mysql_config = {
     'port': int(os.getenv('MYSQL_PORT', '3306')),
     'user': os.getenv('MYSQL_USER', 'root'),
     'password': os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', '123456')),
-    'database': os.getenv('MYSQL_DATABASE', 'bazi_system'),
+    'database': os.getenv('MYSQL_DATABASE', 'hifate_bazi'),
     'charset': 'utf8mb4',
     'cursorclass': DictCursor,
     'autocommit': False,

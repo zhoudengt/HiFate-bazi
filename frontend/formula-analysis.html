@@ -394,9 +394,12 @@
         const typeLabels = {
             'wealth': { name: '💰 财富', color: '#f39c12' },
             'marriage': { name: '💑 婚配', color: '#e74c3c' },
+            'career': { name: '💼 事业', color: '#1abc9c' },
+            'children': { name: '👶 子女', color: '#e67e22' },
             'character': { name: '🎭 性格', color: '#9b59b6' },
             'summary': { name: '📜 总评', color: '#3498db' },
             'health': { name: '🏥 身体', color: '#2ecc71' },
+            'peach_blossom': { name: '🌸 桃花', color: '#ff6b81' },
             'shishen': { name: '🔮 十神命格', color: '#16a085' }
         };
 
@@ -493,24 +496,36 @@
                     <div class="label">总计匹配</div>
                 </div>
                 <div class="stat-item">
-                    <div class="count">${stats.wealth_count}</div>
+                    <div class="count">${stats.wealth_count || 0}</div>
                     <div class="label">财富</div>
                 </div>
                 <div class="stat-item">
-                    <div class="count">${stats.marriage_count}</div>
+                    <div class="count">${stats.marriage_count || 0}</div>
                     <div class="label">婚配</div>
                 </div>
                 <div class="stat-item">
-                    <div class="count">${stats.character_count}</div>
+                    <div class="count">${stats.career_count || 0}</div>
+                    <div class="label">事业</div>
+                </div>
+                <div class="stat-item">
+                    <div class="count">${stats.children_count || 0}</div>
+                    <div class="label">子女</div>
+                </div>
+                <div class="stat-item">
+                    <div class="count">${stats.character_count || 0}</div>
                     <div class="label">性格</div>
                 </div>
                 <div class="stat-item">
-                    <div class="count">${stats.summary_count}</div>
+                    <div class="count">${stats.summary_count || 0}</div>
                     <div class="label">总评</div>
                 </div>
                 <div class="stat-item">
-                    <div class="count">${stats.health_count}</div>
+                    <div class="count">${stats.health_count || 0}</div>
                     <div class="label">身体</div>
+                </div>
+                <div class="stat-item">
+                    <div class="count">${stats.peach_blossom_count || 0}</div>
+                    <div class="label">桃花</div>
                 </div>
                 <div class="stat-item">
                     <div class="count">${stats.shishen_count || 0}</div>

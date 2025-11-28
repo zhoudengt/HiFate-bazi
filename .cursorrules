@@ -15,60 +15,573 @@
 | **配置更新** | ✅ 零停机 | 环境变量/Redis 热加载 |
 | **规则更新** | ✅ 零停机 | 数据库+清缓存，无需重启 |
 
-**实现要点**：
-```
-1. 代码层面
-   - Python 使用 --reload 模式
-   - 前端资源直接刷新生效
-   - 配置支持热加载
-
-2. 部署层面
-   - Docker 滚动更新（先启新容器，再停旧容器）
-   - rsync 增量同步（服务运行时更新文件）
-   - 健康检查确保新服务就绪
-
-3. 数据层面
-   - 数据库只增不删（向后兼容）
-   - Redis 缓存可随时清理刷新
-   - 规则存数据库，支持动态更新
-
-4. 禁止操作
-   ❌ 先停服务再部署
-   ❌ 删除/修改现有数据库字段
-   ❌ 破坏 API 向后兼容性
-   ❌ 需要停机的架构设计
-```
-
-**部署命令**：
-```bash
-./deploy.sh  # 选择 2: 打包上传 - 零停机
-```
-
----
-
 ### 1. 最小影响原则 【最重要】
 - **坚决不可改动与之无关的代码**
 - 修改会引起其他功能变化时，**必须先咨询用户**
 - 每次修改前明确影响范围（低/中/高）
 - 高影响修改必须用户确认
 
-### 2. 修改前检查清单
+### 2. gRPC 优先原则 【架构基础】
+- **所有服务间交互必须使用 gRPC**
+- **前端与后端交互通过 gRPC-Web 网关**
+- REST API 仅作为兼容层，新功能必须同时注册 gRPC 端点
+
+---
+
+## 🔌 gRPC 交互规范 【重要】
+
+### 架构概览
 ```
-【修改分析】
-✓ 修改文件：[最小集合]
-✓ 影响范围：[低/中/高]
-✓ 影响功能：[列表]
-✓ 需要确认：[是/否]
+┌─────────────┐    gRPC-Web     ┌─────────────────┐     gRPC      ┌─────────────┐
+│   前端      │ ───────────────→ │  Web 服务      │ ─────────────→ │  微服务     │
+│  (Browser)  │                 │  (Port 8001)   │               │ (9001-9010) │
+└─────────────┘                 └─────────────────┘               └─────────────┘
+      │                                │                                │
+      │                                ↓                                │
+      │                         ┌─────────────┐                         │
+      │                         │   MySQL     │←────────────────────────┘
+      │                         │   Redis     │
+      └─────────────────────────└─────────────┘
 ```
 
-### 3. 高影响变更模板
+### 前端调用规范
+```javascript
+// ✅ 正确：使用 gRPC-Web 网关
+const result = await api.post('/bazi/formula-analysis', {
+    solar_date: '2025-01-15',
+    solar_time: '12:00',
+    gender: 'male'
+});
+
+// ❌ 错误：直接使用 REST API
+const result = await fetch('/api/v1/bazi/formula-analysis', {...});
 ```
-⚠️ 高影响变更，需要您确认：
-- 修改内容：...
-- 影响范围：...
-- 风险评估：...
-是否继续？
+
+### 后端注册规范
+```python
+# 1. 在 server/api/v1/ 下创建 REST API
+@router.post("/bazi/new-feature")
+async def new_feature(request: NewFeatureRequest):
+    ...
+
+# 2. 在 server/api/grpc_gateway.py 注册 gRPC 端点（必须！）
+@_register("/bazi/new-feature")
+async def _handle_new_feature(payload: Dict[str, Any]):
+    request_model = NewFeatureRequest(**payload)
+    return await new_feature(request_model)
 ```
+
+### 服务间调用规范
+```python
+# ✅ 正确：使用 gRPC 客户端
+from src.clients.bazi_core_client_grpc import BaziCoreClientGrpc
+result = BaziCoreClientGrpc.calculate_bazi(...)
+
+# ❌ 错误：直接 HTTP 调用
+import requests
+result = requests.get('http://localhost:9001/api/...')
+```
+
+### gRPC 服务端口清单
+| 服务 | 端口 | 用途 |
+|------|------|------|
+| Web 服务 | 8001 | HTTP + gRPC-Web 网关 |
+| bazi-core | 9001 | 八字核心计算 |
+| bazi-fortune | 9002 | 运势计算 |
+| bazi-analyzer | 9003 | 八字分析 |
+| bazi-rule | 9004 | 规则匹配 |
+| fortune-analysis | 9005 | 运势分析 |
+| payment | 9006 | 支付服务 |
+| fortune-rule | 9007 | 运势规则 |
+| intent | 9008 | 意图识别 |
+| optimizer | 9009 | 提示优化 |
+| desk-fengshui | 9010 | 风水分析 |
+
+---
+
+## 📜 规则开发规范 【核心】
+
+### 规则开发完整流程
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           规则开发标准流程                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. 准备阶段                                                                │
+│     ├── 获取规则文档（Excel/JSON）                                           │
+│     ├── 分析规则结构（类型、条件、结果）                                       │
+│     └── 识别新条件类型（是否需要扩展规则引擎）                                  │
+│                                                                             │
+│  2. 条件类型检查                                                             │
+│     ├── 检查 rule_condition.py 是否支持所需条件                               │
+│     ├── 如不支持 → 先扩展规则引擎                                             │
+│     └── 扩展后编写单元测试验证                                                │
+│                                                                             │
+│  3. 编写导入脚本                                                             │
+│     ├── 位置：scripts/migration/import_xxx_rules.py                         │
+│     ├── 解析规则文档                                                         │
+│     ├── 转换为数据库格式                                                     │
+│     ├── 标记歧义规则待确认                                                   │
+│     └── 支持 --dry-run 预览                                                  │
+│                                                                             │
+│  4. 执行导入                                                                 │
+│     ├── 先 --dry-run 确认无误                                                │
+│     ├── 处理歧义规则（与用户确认）                                            │
+│     ├── 正式导入数据库                                                       │
+│     └── 验证规则数量和内容                                                   │
+│                                                                             │
+│  5. 前端适配                                                                 │
+│     ├── 检查 typeLabels 是否包含新类型                                       │
+│     ├── 检查 statistics 统计是否显示                                         │
+│     └── 测试前端页面展示                                                     │
+│                                                                             │
+│  6. 后端适配                                                                 │
+│     ├── 检查 formula_analysis.py 类型映射                                    │
+│     ├── 检查 matched_rules 初始化                                            │
+│     └── 检查 statistics 返回字段                                             │
+│                                                                             │
+│  7. 测试验证                                                                 │
+│     ├── API 测试：curl 验证返回数据                                          │
+│     ├── 前端测试：页面展示正常                                               │
+│     └── 规则匹配：抽样验证规则匹配准确性                                      │
+│                                                                             │
+│  8. 提交代码                                                                 │
+│     ├── 提交导入脚本                                                         │
+│     ├── 提交规则引擎扩展（如有）                                             │
+│     ├── 提交前后端适配代码                                                   │
+│     └── 同步生产数据库                                                       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 规则数据库结构
+
+**表：`bazi_rules`**
+```sql
+CREATE TABLE bazi_rules (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    rule_code VARCHAR(100) NOT NULL UNIQUE,    -- 规则编码：FORMULA_类型_编号
+    rule_name VARCHAR(200),                     -- 规则名称
+    rule_type VARCHAR(50) NOT NULL,             -- 规则类型（英文）
+    conditions JSON,                            -- 匹配条件（JSON格式）
+    content JSON,                               -- 规则内容/结果
+    description JSON,                           -- 原始描述信息
+    priority INT DEFAULT 100,                   -- 优先级
+    enabled TINYINT DEFAULT 1,                  -- 是否启用
+    version INT DEFAULT 1,                      -- 版本号
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### 规则编码规范
+
+| 格式 | 示例 | 说明 |
+|------|------|------|
+| `FORMULA_类型_编号` | `FORMULA_事业_80001` | 新版格式（推荐） |
+| `FORMULA_编号` | `FORMULA_10901` | 旧版格式（兼容） |
+
+**类型映射（中英文）：**
+| 中文 | 英文 | 说明 |
+|------|------|------|
+| 财富 | wealth | 财运相关 |
+| 婚姻 | marriage | 婚配相关 |
+| 事业 | career | 事业相关 |
+| 子女 | children | 子女相关 |
+| 性格 | character | 性格特征 |
+| 总评 | summary | 综合评价 |
+| 身体 | health | 健康相关 |
+| 桃花 | peach_blossom | 桃花运 |
+| 十神命格 | shishen | 十神分析 |
+
+### 规则条件类型清单
+
+#### 基础条件
+| 条件类型 | 格式 | 说明 |
+|---------|------|------|
+| `gender` | `"male"` / `"female"` / `"*"` | 性别条件 |
+| `wangshuai` | `["身旺"]` / `["身弱"]` | 旺衰条件 |
+
+#### 四柱条件
+| 条件类型 | 格式 | 说明 |
+|---------|------|------|
+| `pillar_in` | `{"pillar": "day", "part": "stem", "values": ["甲", "乙"]}` | 柱位匹配 |
+| `pillar_equals` | `{"pillar": "day", "values": ["庚辰"]}` | 完整柱匹配 |
+| `pillar_relation` | `{"pillar_a": "day", "pillar_b": "hour", "relation": "chong"}` | 柱间关系 |
+
+#### 十神条件
+| 条件类型 | 格式 | 说明 |
+|---------|------|------|
+| `ten_gods_main` | `{"names": ["正官", "七杀"], "min": 2}` | 主星数量 |
+| `ten_gods_sub` | `{"names": ["食神"], "pillars": ["day"], "min": 1}` | 副星数量 |
+| `ten_gods_total` | `{"names": ["比肩", "劫财"], "min": 3}` | 总十神数量 |
+| `main_star_in_day` | `"七杀"` | 日柱主星 |
+| `main_star_in_any_pillar` | `"食神"` | 任意柱主星 |
+| `ten_gods_main_chong_count` | `{"min": 2}` | 主星被冲次数 |
+
+#### 五行条件
+| 条件类型 | 格式 | 说明 |
+|---------|------|------|
+| `element_total` | `{"element": "木", "min": 3}` | 五行数量 |
+| `elements_count` | `{"木": {"min": 2}, "火": {"max": 1}}` | 多五行数量 |
+
+#### 神煞条件
+| 条件类型 | 格式 | 说明 |
+|---------|------|------|
+| `deities_in_any_pillar` | `"天乙贵人"` | 任意柱有神煞 |
+| `deities_in_year` | `"华盖"` | 年柱有神煞 |
+| `deities_in_month` | `"空亡"` | 月柱有神煞 |
+| `deities_in_day` | `"桃花"` | 日柱有神煞 |
+| `deities_in_hour` | `"驿马"` | 时柱有神煞 |
+| `deities_same_pillar` | `["华盖", "空亡"]` | 同柱多神煞 |
+
+#### 十二长生条件
+| 条件类型 | 格式 | 说明 |
+|---------|------|------|
+| `star_fortune_in_day` | `"帝旺"` / `["死", "绝"]` | 日支十二长生 |
+| `star_fortune_in_hour` | `"墓"` | 时支十二长生 |
+| `liunian_star_fortune` | `"绝"` | 流年十二长生 |
+
+#### 关系条件
+| 条件类型 | 格式 | 说明 |
+|---------|------|------|
+| `branch_sanxing` | `true` | 地支三刑 |
+| `stem_wuhe_pairs` | `{"min": 1}` | 天干五合对数 |
+| `pillar_branch_xing_chong` | `true` | 柱地支被刑冲 |
+| `multi_chong` | `{"min": 2}` | 多重冲 |
+
+#### 特殊条件
+| 条件类型 | 格式 | 说明 |
+|---------|------|------|
+| `xishen` | `"比肩"` | 喜用神匹配 |
+| `xishen_in` | `["食神", "伤官"]` | 喜用神在列表中 |
+| `taiyuan_shengong_minggong` | `{"taiyuan": "癸丑"}` | 胎元身宫命宫 |
+| `stems_branches_count` | `{"names": ["壬", "癸", "子"], "min": 3}` | 天干地支混合计数 |
+| `not` | `{...条件...}` | 否定条件 |
+
+#### 组合条件
+| 条件类型 | 格式 | 说明 |
+|---------|------|------|
+| `all` | `[条件1, 条件2, ...]` | 所有条件都满足（AND） |
+| `any` | `[条件1, 条件2, ...]` | 任一条件满足（OR） |
+
+### 规则导入脚本模板
+
+```python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+规则导入脚本：import_xxx_rules.py
+
+使用方法：
+  python scripts/migration/import_xxx_rules.py --dry-run  # 预览
+  python scripts/migration/import_xxx_rules.py            # 正式导入
+"""
+
+import sys
+import os
+import json
+import argparse
+from typing import Dict, Any, Tuple, Optional, List
+
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+
+
+class RuleConverter:
+    """规则转换器"""
+    
+    # 类型映射
+    TYPE_MAPPING = {
+        '财富': 'wealth',
+        '婚姻': 'marriage',
+        '事业': 'career',
+        '子女': 'children',
+        '性格': 'character',
+        '总评': 'summary',
+        '身体': 'health',
+        '桃花': 'peach_blossom',
+    }
+    
+    def convert(self, raw_rule: Dict) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        转换原始规则为数据库格式
+        
+        Returns:
+            (rule_dict, ambiguity_reason) - 如果有歧义返回原因
+        """
+        # 1. 提取字段
+        rule_id = raw_rule.get('ID')
+        rule_type_cn = raw_rule.get('类型', '')
+        condition1 = raw_rule.get('筛选条件1', '')
+        condition2 = raw_rule.get('筛选条件2', '')
+        result = raw_rule.get('结果', '')
+        gender = raw_rule.get('性别', '')
+        
+        # 2. 转换类型
+        rule_type = self.TYPE_MAPPING.get(rule_type_cn, rule_type_cn.lower())
+        
+        # 3. 解析条件
+        conditions, ambiguity = self._parse_conditions(condition1, condition2, gender)
+        if ambiguity:
+            return None, f"ID {rule_id}: {ambiguity}"
+        
+        # 4. 构建规则
+        rule = {
+            'rule_code': f'FORMULA_{rule_type_cn}_{rule_id}',
+            'rule_name': f'{rule_type_cn}规则-{rule_id}',
+            'rule_type': rule_type,
+            'conditions': conditions,
+            'content': {'text': result},
+            'description': {
+                '筛选条件1': condition1,
+                '筛选条件2': condition2,
+                '性别': gender
+            }
+        }
+        
+        return rule, None
+    
+    def _parse_conditions(self, cond1: str, cond2: str, gender: str) -> Tuple[Dict, Optional[str]]:
+        """解析条件文本为JSON格式"""
+        conditions = {}
+        
+        # 解析性别
+        if gender == '男':
+            conditions['gender'] = 'male'
+        elif gender == '女':
+            conditions['gender'] = 'female'
+        
+        # 解析具体条件（根据实际规则格式实现）
+        # ...
+        
+        return conditions, None
+
+
+def import_rules(rules: List[Dict], dry_run: bool = False) -> Tuple[int, int, List[str]]:
+    """
+    导入规则到数据库
+    
+    Returns:
+        (inserted, updated, ambiguous_rules)
+    """
+    inserted = 0
+    updated = 0
+    ambiguous = []
+    
+    if dry_run:
+        print("=== DRY RUN 模式，不会修改数据库 ===\n")
+    
+    conn = get_mysql_connection()
+    try:
+        with conn.cursor() as cursor:
+            for rule in rules:
+                if dry_run:
+                    print(f"将导入: {rule['rule_code']}")
+                    continue
+                
+                # 检查是否存在
+                cursor.execute(
+                    "SELECT id FROM bazi_rules WHERE rule_code = %s",
+                    (rule['rule_code'],)
+                )
+                existing = cursor.fetchone()
+                
+                if existing:
+                    # 更新
+                    cursor.execute("""
+                        UPDATE bazi_rules SET
+                            rule_name = %s,
+                            rule_type = %s,
+                            conditions = %s,
+                            content = %s,
+                            description = %s,
+                            version = version + 1
+                        WHERE rule_code = %s
+                    """, (
+                        rule['rule_name'],
+                        rule['rule_type'],
+                        json.dumps(rule['conditions'], ensure_ascii=False),
+                        json.dumps(rule['content'], ensure_ascii=False),
+                        json.dumps(rule['description'], ensure_ascii=False),
+                        rule['rule_code']
+                    ))
+                    updated += 1
+                else:
+                    # 插入
+                    cursor.execute("""
+                        INSERT INTO bazi_rules 
+                        (rule_code, rule_name, rule_type, conditions, content, description)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (
+                        rule['rule_code'],
+                        rule['rule_name'],
+                        rule['rule_type'],
+                        json.dumps(rule['conditions'], ensure_ascii=False),
+                        json.dumps(rule['content'], ensure_ascii=False),
+                        json.dumps(rule['description'], ensure_ascii=False)
+                    ))
+                    inserted += 1
+            
+            if not dry_run:
+                conn.commit()
+    finally:
+        return_mysql_connection(conn)
+    
+    return inserted, updated, ambiguous
+
+
+def main():
+    parser = argparse.ArgumentParser(description='规则导入脚本')
+    parser.add_argument('--dry-run', action='store_true', help='预览模式，不修改数据库')
+    args = parser.parse_args()
+    
+    # 加载规则数据
+    # ...
+    
+    # 导入规则
+    inserted, updated, ambiguous = import_rules(rules, args.dry_run)
+    
+    print(f"\n=== 导入结果 ===")
+    print(f"新增: {inserted} 条")
+    print(f"更新: {updated} 条")
+    print(f"歧义: {len(ambiguous)} 条")
+
+
+if __name__ == '__main__':
+    main()
+```
+
+---
+
+## 🚨 常见问题与解决方案
+
+### 问题1：数据库名配置错误
+
+**症状**：
+```
+Unknown database 'bazi_system'
+```
+
+**原因**：`server/config/mysql_config.py` 中默认数据库名不正确
+
+**解决**：
+```python
+# 修改 mysql_config.py
+'database': os.getenv('MYSQL_DATABASE', 'hifate_bazi'),  # 不是 bazi_system
+```
+
+**预防**：
+- 检查 `env.template` 中的 `MYSQL_DATABASE` 值
+- 确保默认值与实际数据库一致
+
+---
+
+### 问题2：规则ID包含中文导致解析失败
+
+**症状**：
+```
+invalid literal for int() with base 10: '财富_20106'
+```
+
+**原因**：规则ID格式不统一（`FORMULA_80001` vs `FORMULA_财富_20106`）
+
+**解决**：
+```python
+# 兼容两种格式
+try:
+    numeric_id = int(original_id)
+except ValueError:
+    parts = original_id.rsplit('_', 1)
+    if len(parts) == 2 and parts[1].isdigit():
+        numeric_id = int(parts[1])
+    else:
+        numeric_id = hash(original_id) % 1000000
+```
+
+**预防**：
+- 导入时统一使用 `FORMULA_类型_编号` 格式
+- 在数据库中保持 `rule_type` 字段为英文
+
+---
+
+### 问题3：规则类型不一致
+
+**症状**：前端显示不出新增的规则类型（如事业、子女）
+
+**原因**：数据库 `rule_type` 字段值不统一（`formula_career` vs `career`）
+
+**解决**：
+```sql
+-- 统一规则类型名称
+UPDATE bazi_rules SET rule_type = 'career' WHERE rule_type = 'formula_career';
+UPDATE bazi_rules SET rule_type = 'children' WHERE rule_type = 'formula_children';
+```
+
+**预防**：
+- 导入脚本中使用统一的英文类型名
+- 不要使用 `formula_` 前缀
+
+---
+
+### 问题4：前端类型标签缺失
+
+**症状**：前端页面没有显示新类型的标签页
+
+**原因**：`frontend/formula-analysis.html` 中 `typeLabels` 未定义新类型
+
+**解决**：
+```javascript
+const typeLabels = {
+    'wealth': { name: '💰 财富', color: '#f39c12' },
+    'marriage': { name: '💑 婚配', color: '#e74c3c' },
+    'career': { name: '💼 事业', color: '#1abc9c' },      // 新增
+    'children': { name: '👶 子女', color: '#e67e22' },    // 新增
+    // ...
+};
+```
+
+**预防**：
+- 新增规则类型时同步更新前端 `typeLabels`
+- 同步更新 `displayStatistics` 函数
+
+---
+
+### 问题5：新条件类型不支持
+
+**症状**：规则无法匹配，日志显示条件未处理
+
+**原因**：`rule_condition.py` 中未实现对应条件类型
+
+**解决**：在 `EnhancedRuleCondition.match` 中添加条件处理逻辑
+
+**预防**：
+- 导入前检查所有条件类型是否已支持
+- 不支持的条件先扩展规则引擎再导入
+
+---
+
+### 问题6：gRPC 端点未注册
+
+**症状**：前端调用 API 返回错误或无响应
+
+**原因**：`grpc_gateway.py` 中未注册对应端点
+
+**解决**：
+```python
+# 在 grpc_gateway.py 中注册
+@_register("/bazi/new-feature")
+async def _handle_new_feature(payload: Dict[str, Any]):
+    request_model = NewFeatureRequest(**payload)
+    return await new_feature(request_model)
+```
+
+**预防**：
+- 新增 API 时必须同时注册 gRPC 端点
+- 测试时验证 gRPC-Web 调用是否正常
 
 ---
 
@@ -78,59 +591,59 @@
 ```
 frontend/
 ├── js/
-│   ├── fortune.js              # 数据逻辑和API调用（不可改UI）
-│   ├── fortune-timeline.js     # 渲染和UI展示（不可改逻辑）
-│   ├── bazi-monthly.js         # 月运展示
-│   ├── bazi-daily.js           # 日运展示
-│   └── config.js               # API地址配置
+│   ├── api.js                  # gRPC-Web 客户端（核心）
+│   ├── config.js               # API 配置
+│   ├── fortune.js              # 运势数据逻辑
+│   ├── fortune-timeline.js     # 运势 UI 渲染
+│   └── ...
 ├── css/                        # 样式文件
-└── *.html                      # 测试页面
+└── *.html                      # 页面文件
 ```
-
-**职责分明**：
-- `fortune.js` → 数据获取、状态管理
-- `fortune-timeline.js` → DOM渲染、用户交互
-- 不可跨界修改
 
 ### 后端架构 `server/`
 ```
 server/
-├── api/                # API层：请求处理、参数验证
-│   ├── bazi_api.py    # 八字接口
-│   ├── fortune_api.py # 运势接口
+├── api/
+│   ├── grpc_gateway.py         # gRPC-Web 网关（核心）
+│   └── v1/                     # REST API
+│       ├── formula_analysis.py # 算法公式分析
+│       └── ...
+├── services/                   # 业务逻辑
+│   ├── rule_service.py         # 规则匹配服务
 │   └── ...
-├── services/           # Service层：业务逻辑
-│   ├── rule_service.py         # 规则匹配
-│   ├── formula_rule_service.py # 算法公式
-│   └── ...
-├── engines/            # 规则引擎
+├── engines/                    # 规则引擎
 │   ├── rule_engine.py          # 核心引擎
-│   └── rule_condition.py       # 条件匹配
-├── db/                 # 数据库连接
-└── main.py             # 路由注册
+│   └── rule_condition.py       # 条件匹配（扩展点）
+├── config/
+│   └── mysql_config.py         # MySQL 配置（注意默认值）
+└── db/                         # 数据库连接
 ```
 
-**核心层 `src/`**：
-```
-src/
-├── bazi_calculator.py  # 核心八字计算
-├── bazi_*.py          # 各种八字相关计算
-└── ...
-```
-
-**微服务 `services/`**：
+### 微服务架构 `services/`
 ```
 services/
-├── bazi_analyzer_service.py    # 八字分析服务
-├── fortune_analysis_service.py # 运势分析服务
-├── rule_service_grpc.py        # 规则服务
-└── payment_service.py          # 支付服务
+├── bazi_core/                  # 八字核心服务 (9001)
+├── bazi_fortune/               # 运势服务 (9002)
+├── bazi_analyzer/              # 分析服务 (9003)
+├── bazi_rule/                  # 规则服务 (9004)
+├── fortune_analysis/           # 运势分析 (9005)
+├── payment_service/            # 支付服务 (9006)
+├── fortune_rule/               # 运势规则 (9007)
+├── intent_service/             # 意图识别 (9008)
+├── prompt_optimizer/           # 提示优化 (9009)
+└── desk_fengshui/              # 风水分析 (9010)
 ```
 
-**分层原则**：
-- 只修改必要的层
-- 不跨层修改
-- API → Service → Core 单向依赖
+### 脚本目录 `scripts/`
+```
+scripts/
+├── migration/                  # 数据迁移脚本
+│   ├── import_2025_1128_rules.py   # 规则导入示例
+│   └── import_confirmed_rules.py   # 确认规则导入
+├── db/                         # 数据库脚本
+│   └── sync_db.sh              # 数据库同步
+└── ...
+```
 
 ---
 
@@ -138,405 +651,70 @@ services/
 
 | 文件 | 作用 | 风险 |
 |------|------|------|
-| `server/main.py` | 路由注册 | 高 |
-| `src/bazi_calculator.py` | 核心计算逻辑 | 极高 |
-| `frontend/js/fortune.js` | 前端主逻辑 | 高 |
-| `server/db/mysql_connector.py` | 数据库连接 | 高 |
-| `server/engines/*.py` | 规则引擎 | 高 |
-| `server/config/mysql_config.py` | MySQL配置 | 高 |
-| `proto/*.proto` | gRPC协议定义 | 高 |
+| `server/api/grpc_gateway.py` | gRPC-Web 网关 | 极高 |
+| `server/engines/rule_condition.py` | 规则条件匹配 | 高 |
+| `server/config/mysql_config.py` | MySQL 配置 | 高 |
+| `src/bazi_calculator.py` | 核心八字计算 | 极高 |
+| `frontend/js/api.js` | 前端 gRPC 客户端 | 高 |
+| `proto/*.proto` | gRPC 协议定义 | 高 |
 
 ---
 
-## 🔧 开发规范
+## 📝 代码规范
 
-### 字符编码（重要）
-- **数据库**：`utf8mb4`（支持中文、emoji）
-- **Python**：UTF-8（文件头 `# -*- coding: utf-8 -*-`）
-- **JSON**：`json.dumps(..., ensure_ascii=False)`
-- **MySQL连接**：
-  ```python
-  'charset': 'utf8mb4',
-  'use_unicode': True
-  ```
-
-### 规则系统
-**存储**：
-- 表：`bazi_rules`
-- 字段：
-  - `rule_code`：规则编码（如 `FORMULA_HEALTH_70012`）
-  - `rule_type`：规则类型（如 `FORMULA_HEALTH`）
-  - `conditions`：JSON格式条件
-  - `description`：JSON格式描述
-
-**条件格式**：
-```json
-{
-  "pillar_in": {"pillar": "day", "part": "stem", "values": ["甲", "乙"]},
-  "element_count": {"element": "木", "operator": ">=", "value": 3},
-  "gender": "male"
-}
-```
-
-**缓存机制**：
-- Redis缓存规则
-- 修改规则后**必须清理缓存**：
-  ```bash
-  redis-cli DEL "rules:FORMULA_HEALTH"
-  ```
-
-### 数据库操作
-**字符编码处理**：
+### 数据库配置默认值
 ```python
-# 读取时（修复 pymysql 的 latin1 问题）
-conditions = rule['conditions']
-if isinstance(conditions, str):
-    try:
-        conditions = conditions.encode('latin1').decode('utf-8')
-    except:
-        pass
-    conditions = json.loads(conditions)
+# ✅ 正确：使用实际的数据库名
+'database': os.getenv('MYSQL_DATABASE', 'hifate_bazi'),
 
-# 写入时
-sql = f"UPDATE bazi_rules SET conditions = '{json.dumps(data, ensure_ascii=False)}' WHERE ..."
+# ❌ 错误：使用过时的数据库名
+'database': os.getenv('MYSQL_DATABASE', 'bazi_system'),
 ```
 
-**执行SQL**：
-```bash
-# 使用 utf8mb4 字符集
-mysql -h 127.0.0.1 -P 13306 -u root -p --default-character-set=utf8mb4 bazi_system < script.sql
-```
-
-### API设计
-**请求参数**：
+### JSON 序列化
 ```python
-# 必需参数验证
-if not year or not month:
-    return jsonify({'error': '缺少参数'}), 400
+# ✅ 正确：支持中文
+json.dumps(data, ensure_ascii=False)
 
-# 类型转换
-year = int(year)
-hour = int(hour) if hour else 12
+# ❌ 错误：中文被转义
+json.dumps(data)  # 输出 \u4e2d\u6587
 ```
 
-**响应格式**：
+### 规则类型命名
 ```python
-{
-    'success': True,
-    'data': {...},
-    'error': None
-}
-```
+# ✅ 正确：使用英文小写
+rule_type = 'career'
+rule_type = 'children'
 
-**错误处理**：
-```python
-try:
-    result = service.analyze(...)
-    return jsonify({'success': True, 'data': result})
-except Exception as e:
-    logger.error(f"Error: {e}")
-    return jsonify({'success': False, 'error': str(e)}), 500
-```
-
-### 数据结构兼容
-- **只添加新字段**，不修改/删除现有字段
-- **保持向后兼容**
-- API接口变更 → **必须咨询用户**
-- 数据库 schema 变更 → **必须咨询用户**
-
----
-
-## 🐛 调试和测试
-
-### 日志查看
-```bash
-# 主服务日志
-tail -f logs/server.log
-
-# 微服务日志
-tail -f logs/bazi_analyzer.log
-tail -f logs/fortune_analysis.log
-
-# 错误日志
-grep "ERROR" logs/*.log
-```
-
-### 测试流程
-1. **后端测试**：
-   ```bash
-   # API测试
-   curl http://localhost:8000/api/bazi/analyze?year=1990&month=1&day=1&hour=12&gender=male
-   ```
-
-2. **前端测试**：
-   - 打开 `frontend/formula-analysis.html`
-   - 输入测试数据
-   - 打开浏览器控制台（F12）
-   - 检查 Network 和 Console
-
-3. **规则匹配测试**：
-   - 检查规则条件是否正确
-   - 检查日志中的规则匹配过程
-   - 使用 `frontend/shishen-debug.html` 调试
-
-### 常见问题排查
-
-**问题1：规则不匹配**
-```bash
-# 1. 检查数据库规则条件
-SELECT rule_code, conditions FROM bazi_rules WHERE rule_code='FORMULA_HEALTH_70012';
-
-# 2. 检查字符编码
-# 看到 'ç"²' → 编码错误，应该是 '甲'
-
-# 3. 清理缓存
-redis-cli DEL "rules:FORMULA_HEALTH"
-
-# 4. 重启服务
-./restart_server.sh
-```
-
-**问题2：前端不显示**
-```
-1. 检查浏览器控制台错误
-2. 检查 Network 请求是否成功
-3. 检查 API 返回的数据结构
-4. 检查前端 JS 是否有语法错误
-```
-
-**问题3：服务启动失败**
-```bash
-# 检查端口占用
-lsof -i :8000
-
-# 检查日志
-tail -f logs/server.log
-
-# 检查配置文件
-cat config/services.env
+# ❌ 错误：使用中文或带前缀
+rule_type = '事业'
+rule_type = 'formula_career'
 ```
 
 ---
 
 ## 🚀 服务管理
 
-### 基本命令
+### 启动服务
 ```bash
-# 启动所有服务
-./start_all_services.sh
+# 启动主服务
+python3 server/start.py
 
-# 停止所有服务
-./stop_all_services.sh
-
-# 检查服务状态
-./check_services.sh
-
-# 重启主服务
-./restart_server.sh
-
-# 清理日志
-rm logs/*.log
+# 或使用脚本
+./start.sh
 ```
 
-### 服务列表
-| 服务 | 端口 | 日志 |
-|------|------|------|
-| 主服务 | 8000 | `logs/server.log` |
-| 八字分析 | 50051 | `logs/bazi_analyzer.log` |
-| 运势分析 | 50052 | `logs/fortune_analysis.log` |
-| 规则服务 | 50053 | `logs/rule_service.log` |
-| 支付服务 | 50055 | `logs/payment_service.log` |
-| MySQL | 13306 | - |
-| Redis | 16379 | - |
-
----
-
-## 📝 代码规范
-
-### 命名规范
-```python
-# 类名：大驼峰
-class BaziCalculator:
-    pass
-
-# 函数名：小写下划线
-def calculate_bazi(year, month, day):
-    pass
-
-# 常量：大写下划线
-MAX_RETRY_COUNT = 3
-
-# 私有方法：单下划线前缀
-def _internal_method(self):
-    pass
-```
-
-### 注释规范
-```python
-def analyze_fortune(bazi_info: dict) -> dict:
-    """
-    分析运势
-    
-    Args:
-        bazi_info: 八字信息，包含四柱、十神等
-    
-    Returns:
-        运势分析结果
-    
-    Raises:
-        ValueError: 参数错误
-    """
-    pass
-```
-
-### 错误处理
-```python
-# 使用 try-except 包裹
-try:
-    result = risky_operation()
-except SpecificException as e:
-    logger.error(f"Operation failed: {e}")
-    raise
-finally:
-    cleanup()
-```
-
----
-
-## 📦 Git Flow 工作流（重要）
-
-### 🌳 分支管理策略
-
-**三环境分支模型**：
-```
-master (生产环境)     ← 线上用户访问
-  ↑ merge
-develop (开发环境)    ← 开发人员主分支
-  ↑ merge  
-feature/* (功能分支)  ← 具体功能开发
-```
-
-**分支说明**：
-- `master`：生产环境，只接受来自 develop 的合并，自动部署到生产服务器
-- `develop`：开发环境，开发人员的主要工作分支
-- `feature/*`：功能分支，从 develop 创建，完成后合并回 develop
-
-### 🔄 完整开发流程
-
-#### 步骤 1：创建功能分支
+### 测试 API
 ```bash
-# 从 develop 创建新功能分支
-git checkout develop
-git pull origin develop
-git checkout -b feature/新功能名称
+# 测试 gRPC-Web 网关
+curl -s -X POST 'http://127.0.0.1:8001/api/v1/bazi/formula-analysis' \
+  -H 'Content-Type: application/json' \
+  -d '{"solar_date": "1990-01-15", "solar_time": "12:00", "gender": "male"}'
 ```
 
-#### 步骤 2：本地开发和测试
+### 查看日志
 ```bash
-# 开发过程中
-vim some_file.py
-
-# 本地测试（必须）
-./start_all_services.sh
-# 访问 http://localhost:8001 测试功能
-
-# 确保测试通过后才能提交
-```
-
-#### 步骤 3：提交到功能分支
-```bash
-# 查看修改
-git status
-git diff
-
-# 添加文件
-git add .
-
-# 提交（使用规范格式）
-git commit -m "[新增] 功能描述
-
-- 修改文件：列出主要文件
-- 功能说明：详细说明
-- 测试情况：测试通过"
-
-# 推送功能分支
-git push origin feature/新功能名称
-```
-
-#### 步骤 4：合并到 develop（开发环境）
-```bash
-# 切换到 develop
-git checkout develop
-git pull origin develop
-
-# 合并功能分支
-git merge feature/新功能名称
-
-# 推送到 develop（触发开发环境部署）
-git push origin develop
-```
-
-#### 步骤 5：发布到生产环境
-```bash
-# 在 develop 测试通过后，合并到 master
-git checkout master
-git pull origin master
-
-# 合并 develop
-git merge develop
-
-# 推送到 master（触发生产环境部署）
-git push origin master
-```
-
----
-
-## ⚠️ 代码提交提醒机制
-
-### 🔔 何时提醒用户提交代码
-
-AI 助手会在以下情况**主动提醒**用户提交代码：
-
-1. **功能开发完成后**
-   ```
-   ✅ 功能已完成！请提交代码：
-   - 修改文件：[列出文件]
-   - 提交命令：[给出具体命令]
-   - 测试验证：[提醒测试]
-   ```
-
-2. **Bug 修复完成后**
-   ```
-   ✅ Bug 已修复！请提交代码：
-   - 问题：[描述问题]
-   - 解决方案：[说明修复]
-   - 提交命令：[给出命令]
-   ```
-
-3. **文档更新完成后**
-   ```
-   ✅ 文档已更新！请提交：
-   - 更新内容：[列出变更]
-   - 提交命令：[给出命令]
-   ```
-
-4. **配置修改完成后**
-   ```
-   ✅ 配置已修改！请提交：
-   - 配置项：[列出修改]
-   - 影响范围：[说明影响]
-   - 提交命令：[给出命令]
-   ```
-
-### 📋 提交检查清单（AI 必须确认）
-
-每次提醒提交前，AI 必须确认：
-```
-✓ 本地测试通过
-✓ 代码符合规范
-✓ 无调试代码残留
-✓ 敏感信息已移除
-✓ 提交信息清晰
+tail -f logs/server_8001.log
 ```
 
 ---
@@ -545,446 +723,24 @@ AI 助手会在以下情况**主动提醒**用户提交代码：
 
 ### Commit Message 格式
 ```
-[类型] 简短描述（不超过50字）
+[类型] 简短描述
 
-详细说明（如有必要）
-- 修改的文件和原因
-- 影响范围
-- 测试情况
+- 修改文件：列出文件
+- 功能说明：详细说明
+- 测试情况：测试结果
 ```
 
-**类型**：
+### 类型标签
+- `[新增]` - 新功能/新规则
 - `[修复]` - Bug修复
-- `[新增]` - 新功能
 - `[优化]` - 性能优化
 - `[重构]` - 代码重构
-- `[文档]` - 文档更新
-- `[测试]` - 测试相关
+- `[规则]` - 规则相关变更
 - `[配置]` - 配置修改
 
-**示例**：
-```
-[修复] 身体类规则字符编码问题
-
-- 修改文件：server/db/mysql_connector.py
-- 问题：pymysql读取UTF-8数据时使用latin1编码
-- 解决：添加charset='utf8mb4'和use_unicode=True
-- 影响范围：低（仅影响数据库连接配置）
-- 测试：身体规则匹配正常
-```
-
-### 提交前检查
-```bash
-# 1. 查看修改
-git status
-git diff
-
-# 2. 本地测试（必须）
-./start_all_services.sh
-# 访问测试页面验证功能
-
-# 3. 只提交必要文件
-git add [specific files]
-
-# 4. 不提交
-- logs/*.log
-- *.pyc, __pycache__/
-- config/*.env（敏感配置）
-- .DS_Store
-- node_modules/
-```
-
 ---
 
-## 🐳 Docker 生产部署
-
-### 📋 生产环境信息
-
-| 项目 | 值 |
-|------|-----|
-| **服务器** | 123.57.216.15（阿里云 ECS） |
-| **代码仓库** | https://gitee.com/zhoudengtang/hifate-prod.git |
-| **部署目录** | /opt/HiFate-bazi |
-| **访问地址** | http://123.57.216.15/ |
-| **SSH 用户** | root |
-| **SSH 端口** | 22 |
-
-### 🚀 一键部署流程
-
-```bash
-# 本地执行（推荐）
-./deploy.sh
-
-# 选择操作：
-# 1) 完整部署（推送 Gitee → 服务器 pull → Docker 重启）
-# 2) 仅推送到 Gitee
-# 3) 仅更新服务器
-# 7) 首次部署：初始化服务器
-```
-
-### 🔄 增量部署（零停机）
-
-**场景**：代码已推送到 Gitee，需要更新服务器
-
-```bash
-# 方法1：使用部署脚本
-./deploy.sh
-# 选择 3) 仅更新服务器
-
-# 方法2：手动执行
-ssh root@123.57.216.15 'cd /opt/HiFate-bazi && git pull && docker compose up -d --build web'
-```
-
-**增量部署原则**：
-- ✅ 仅代码修改 → `git pull` 后重建 web 容器即可
-- ✅ 前端修改 → `git pull` 后 Nginx 自动生效（无需重建）
-- ⚠️ 依赖修改 → 必须 `--build` 重建镜像
-- ⚠️ 数据库修改 → 需同步数据库（见数据库同步章节）
-
-**快捷命令**：
-```bash
-# 仅拉取代码（前端修改）
-ssh root@123.57.216.15 'cd /opt/HiFate-bazi && git pull'
-
-# 拉取 + 重建（后端/依赖修改）
-ssh root@123.57.216.15 'cd /opt/HiFate-bazi && git pull && docker compose up -d --build web'
-
-# 查看部署状态
-ssh root@123.57.216.15 'cd /opt/HiFate-bazi && docker compose ps && docker compose logs web --tail=10'
-```
-
-### 📦 部署架构
-
-```
-本地开发 → git push gitee master → 服务器 git pull → docker compose up
-                                                    ↓
-                                              Nginx 反向代理 (80)
-                                                    ↓
-                                              Docker Web 服务 (8001)
-                                                    ↓
-                                           MySQL + Redis 容器
-```
-
-### 🔧 Docker 镜像优化（重要）
-
-**1. 精简 requirements.txt**
-```
-# ❌ 禁止添加的大型依赖（会导致构建超慢）
-torch, torchvision     # 2GB+
-dlib, face-recognition # 编译需30分钟
-mediapipe, opencv      # 依赖复杂
-
-# ✅ 保持轻量依赖
-fastapi, uvicorn, pymysql, redis, lunar-python
-```
-
-**2. Dockerfile 优化**
-```dockerfile
-# 使用国内镜像源
-RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-
-# 利用 Docker 层缓存
-COPY requirements.txt .
-RUN pip install -r requirements.txt  # 依赖层（不常变）
-COPY . /app                          # 代码层（常变）
-```
-
-**3. .dockerignore 配置**
-```
-.git/
-logs/
-docs/
-node_modules/
-*.pyc
-__pycache__/
-*.pt
-*.pth
-```
-
-### ⚙️ 服务器环境变量
-
-文件：`/opt/HiFate-bazi/.env`
-
-```bash
-APP_ENV=production
-DEBUG=False
-MYSQL_HOST=mysql          # Docker 容器名，不是 localhost
-MYSQL_PORT=3306
-MYSQL_USER=root
-MYSQL_PASSWORD=your_password
-MYSQL_DATABASE=hifate_bazi
-REDIS_HOST=redis
-REDIS_PORT=6379
-WEB_PORT=8001
-```
-
-**⚠️ 关键点**：`MYSQL_HOST=mysql`（容器间通信用服务名）
-
-### 🗄️ 数据库同步（重要）
-
-**首次部署或规则更新后必须同步数据库：**
-
-```bash
-# 方法1：使用同步脚本（推荐）
-./scripts/db/sync_db.sh
-# 选择 3) 完整同步
-
-# 方法2：手动同步
-# 1. 导出本地数据
-mysqldump -h 127.0.0.1 -P 3306 -u root -p123456 hifate_bazi > scripts/db/init_data.sql
-
-# 2. 上传到服务器
-scp scripts/db/init_data.sql root@123.57.216.15:/tmp/
-
-# 3. 导入到 Docker MySQL
-ssh root@123.57.216.15 "docker exec -i hifate-mysql mysql -uroot -p'HiFate_Prod_2024!' hifate_bazi < /tmp/init_data.sql"
-```
-
-**何时需要同步：**
-- ✅ 首次部署
-- ✅ 规则表有更新（bazi_rules）
-- ✅ 新增数据表
-- ❌ 仅代码修改（不需要）
-
-### 🌐 Nginx 反向代理
-
-配置文件：`/etc/nginx/conf.d/hifate.conf`
-
-```nginx
-server {
-    listen 80 default_server;
-    server_name _;
-
-    location / {
-        proxy_pass http://127.0.0.1:8001;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_connect_timeout 60s;
-        proxy_read_timeout 120s;
-    }
-}
-```
-
-### 🔒 阿里云安全组端口
-
-| 端口 | 用途 | 必须 |
-|------|------|------|
-| 22 | SSH | ✅ |
-| 80 | HTTP（Nginx） | ✅ |
-| 8001 | Docker Web | 可选 |
-| 13306 | MySQL（外部访问） | 可选 |
-
-### 🛠️ 常用运维命令
-
-```bash
-# SSH 登录服务器
-ssh root@123.57.216.15
-
-# 查看服务状态
-cd /opt/HiFate-bazi && docker compose ps
-
-# 查看日志
-docker compose logs web --tail=50
-docker compose logs mysql --tail=20
-
-# 重启服务（零停机）
-docker compose up -d --build web
-
-# 完全重启
-docker compose down && docker compose up -d
-
-# 清理无用镜像
-docker system prune -af
-```
-
-### ❌ 常见问题排查
-
-**问题1：ModuleNotFoundError**
-```bash
-# 缺少依赖，添加到 requirements.txt 后重新构建
-docker compose up -d --build web
-```
-
-**问题2：MySQL 连接失败**
-```bash
-# 检查 .env 中 MYSQL_HOST=mysql（不是 localhost）
-# 检查容器网络：docker network ls
-```
-
-**问题3：构建太慢**
-```bash
-# 1. 检查 .dockerignore 排除大文件
-# 2. 不要加 --no-cache（利用缓存）
-# 3. 精简 requirements.txt
-```
-
-**问题4：端口无法访问**
-```bash
-# 1. 检查阿里云安全组
-# 2. 检查服务器防火墙：firewall-cmd --list-ports
-# 3. 检查服务监听：netstat -tlnp | grep 80
-```
-
-**问题5：面相/手相分析报错**
-```bash
-# 这些功能需要额外依赖（opencv, mediapipe）
-# 检查 requirements.txt 是否启用了以下依赖：
-# opencv-python-headless>=4.8.0  # 基础图像处理
-# mediapipe>=0.10.0              # 面部/手部检测（可选，体积大）
-# 启用后重新构建：docker compose up -d --build web
-```
-
-### 📊 功能与依赖对照表
-
-| 功能 | 核心依赖 | 状态 |
-|------|---------|------|
-| 八字排盘 | lunar_python | ✅ 可用 |
-| 大运流年 | lunar_python | ✅ 可用 |
-| 今日/当月运势 | lunar_python | ✅ 可用 |
-| 算法公式分析 | pymysql | ✅ 可用 |
-| 手相分析 | opencv, mediapipe | ✅ 可用 |
-| 面相分析 | opencv, mediapipe | ✅ 可用 |
-| AI面相V2 | opencv, mediapipe | ✅ 可用 |
-| 办公桌风水 | opencv | ✅ 可用 |
-| 智能运势流 | openai | ⚠️ 需 API Key |
-
-### 📋 配置文件清单
-
-| 文件 | 用途 |
-|------|------|
-| `docker-compose.yml` | 基础配置 |
-| `docker-compose.prod.yml` | 生产环境覆盖 |
-| `Dockerfile` | 生产镜像构建 |
-| `.dockerignore` | 排除文件 |
-| `deploy.sh` | 一键部署脚本 |
-| `.env`（服务器） | 环境变量 |
-
----
-
-## 📚 快速参考
-
-### 常用文档
-- 开发规范：`docs/DEVELOPMENT_GUIDELINES.md`
-- 快速启动：`docs/quick_start.md`
-- API文档：`docs/bazi_api_structure.json`
-- 规则系统：`docs/rule_system_architecture.md`
-
-### 常用脚本
-```bash
-# 数据库迁移
-scripts/migrate_formula_rules_to_db.py
-
-# 规则批量更新
-scripts/batch_update_rules.py
-
-# 服务健康检查
-tests/scripts/check_services.sh
-```
-
-### 测试页面
-- 算法公式：`frontend/formula-analysis.html`
-- 十神调试：`frontend/shishen-debug.html`
-- 运势分析：`frontend/fortune.html`
-- 月运：`frontend/bazi-monthly-fortune.html`
-- 日运：`frontend/bazi-daily-fortune.html`
-
----
-
-## 💡 开发原则
-
-1. **🔴 零停机优先**：所有设计必须支持不停机更新
-2. **先咨询，后修改**：不确定时询问用户
-3. **小步快跑**：每次修改一个功能点
-4. **向后兼容**：只加不删，保持兼容
-5. **及时测试**：修改后立即测试
-6. **清晰记录**：修改过程记录到文档
-7. **保持简洁**：避免过度设计
-8. **注重性能**：考虑缓存和优化
-
----
-
-## ⚙️ Cursor 配置优化
-
-当前配置位于：`~/Library/Application Support/Cursor/User/settings.json`
-
-**推荐配置**：
-```json
-{
-  "cursor.aiProvider": "anthropic",
-  "cursor.model": "claude-sonnet-4-20250514",
-  "cursor.anthropicApiKey": "your-key",
-  "cursor.anthropicApiBaseUrl": "https://cc.zhihuiapi.top",
-  "cursor.useCustomApi": true,
-  "cursor.bypassRegionCheck": true,
-  "cursor.disableRegionCheck": true
-}
-```
-
-**不要使用**：
-- `http.proxy`（双重代理会很慢）
-- `http.version: "1.1"`（强制HTTP/1.1会更慢）
-- `cursor.general.disableHttp2`（禁用HTTP/2会更慢）
-
----
-
-## 🎯 AI 助手响应流程
-
-每次收到用户请求：
-
-1. **理解需求** → 明确要做什么
-2. **评估影响** → 列出影响文件和范围
-3. **高影响咨询** → 风险高时先确认
-4. **执行修改** → 只改必要的代码
-5. **本地测试** → 验证功能正常
-6. **提醒提交** → 主动提醒用户提交代码 ⭐
-7. **记录文档** → 重要修改记录到 `docs/`
-
-### ✅ 完成任务后的标准输出
-
-```
-✅ 功能开发完成！
-
-【修改总结】
-- 修改文件：[列出所有文件]
-- 新增文件：[如有]
-- 功能说明：[简要说明]
-
-【本地测试】
-✓ 服务启动正常
-✓ 功能测试通过
-✓ 无报错日志
-
-【提交代码】
-建议执行以下命令：
-
-# 1. 查看修改
-git status
-
-# 2. 添加文件
-git add [具体文件列表]
-
-# 3. 提交代码
-git commit -m "[类型] 功能描述
-
-- 修改文件：...
-- 功能说明：...
-- 测试情况：已通过本地测试"
-
-# 4. 推送到远程
-git push origin [当前分支]
-
-【下一步】
-- 本地测试：访问 http://localhost:8001 验证
-- 合并到 develop：测试通过后合并
-- 生产发布：develop 测试后合并到 master
-```
-
----
-
-## 📖 Gitee（码云）代码仓库
-
-### 🔑 仓库信息
+## 📖 Gitee 仓库
 
 | 项目 | 值 |
 |------|-----|
@@ -992,80 +748,33 @@ git push origin [当前分支]
 | **本地 remote** | gitee |
 | **默认分支** | master |
 
-### 🚀 代码提交流程
-
+### 提交流程
 ```bash
-# 1. 查看修改
-git status
-
-# 2. 添加文件
 git add .
-
-# 3. 提交
 git commit -m "[类型] 描述"
-
-# 4. 推送到 Gitee
 git push gitee master
 ```
 
-### 📦 部署到生产
-
+### 部署到生产
 ```bash
-# 方法1：使用部署脚本（推荐）
-./deploy.sh
-# 选择 1) 完整部署
-
-# 方法2：手动部署
-git push gitee master
-ssh root@123.57.216.15 'cd /opt/HiFate-bazi && git pull && docker compose up -d --build web'
-```
-
-### 🌐 常用操作
-
-**查看仓库**：
-```
-https://gitee.com/zhoudengtang/hifate-prod
-```
-
-**查看提交历史**：
-```bash
-git log --oneline -10
-```
-
-**同步远程更新**：
-```bash
-git pull gitee master
+./deploy.sh  # 选择 1) 完整部署
 ```
 
 ---
 
-## 🚨 特别提醒
+## 💡 开发原则
 
-### 当用户说这些关键词时，立即提醒提交：
-
-- "完成了" / "好了" / "搞定了"
-- "没问题了" / "可以了" / "运行正常"
-- "测试通过" / "没有bug了"
-- "功能做好了"
-
-### 提醒格式：
-
-```
-✅ 太好了！功能已完成并测试通过。
-
-现在需要提交代码吗？我已经为你准备好了提交命令：
-
-git add [文件列表]
-git commit -m "[类型] 描述"
-git push origin [分支名]
-
-是否现在提交？
-```
+1. **🔴 零停机优先**：所有设计必须支持不停机更新
+2. **🔌 gRPC 优先**：服务间交互必须使用 gRPC
+3. **📜 规则数据库化**：规则存数据库，支持热更新
+4. **🔄 向后兼容**：只加不删，保持兼容
+5. **✅ 先测试后提交**：修改后立即测试
+6. **📝 规范命名**：类型用英文，ID 统一格式
 
 ---
 
 **记住**：
-- 宁可多问，不要擅自决定
-- 最小影响原则永远第一
-- 功能完成必须提醒提交代码 ⭐
-- 保持代码整洁和可维护性
+- 新增 API 必须同时注册 gRPC 端点
+- 新增规则类型必须同步更新前后端
+- 数据库配置使用 `hifate_bazi` 而非 `bazi_system`
+- 规则 `rule_type` 使用英文小写
