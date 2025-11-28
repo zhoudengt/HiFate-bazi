@@ -153,13 +153,21 @@ class RuleService:
             except Exception as e:
                 print(f"⚠ 从数据库加载规则失败: {e}")
             
-            # 如果数据库没有规则，从配置文件加载（兼容模式）
+            # ⚠️ 已废弃：从文件加载规则（仅用于兼容，新代码禁止使用）
+            # 所有规则必须存储在数据库中，禁止从文件读取！
             if not db_rules_loaded:
+                import warnings
+                warnings.warn(
+                    "⚠️  规则未从数据库加载，尝试从文件加载（已废弃）\n"
+                    "所有规则必须存储在数据库中，请检查数据库连接和规则数据。",
+                    DeprecationWarning,
+                    stacklevel=2
+                )
                 rules_file = os.path.join(project_root, 'server/config/rules.json')
                 if os.path.exists(rules_file):
                     try:
                         cls._engine.load_from_file(rules_file)
-                        print(f"✓ 从配置文件加载规则: {len(cls._engine.rules)} 条")
+                        print(f"⚠️  从配置文件加载规则（已废弃）: {len(cls._engine.rules)} 条")
                     except Exception as e:
                         print(f"⚠ 加载规则配置文件失败: {e}")
         

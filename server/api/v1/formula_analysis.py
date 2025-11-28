@@ -13,13 +13,7 @@ import json
 
 from server.services.bazi_service import BaziService
 from server.services.rule_service import RuleService
-# 保留导入以支持废弃的FormulaRuleService（向后兼容）
-try:
-    from server.services.formula_rule_service import FormulaRuleService
-    FORMULA_SERVICE_AVAILABLE = True
-except ImportError:
-    FORMULA_SERVICE_AVAILABLE = False
-    FormulaRuleService = None
+# ⚠️ FormulaRuleService 已完全废弃，所有规则匹配统一使用 RuleService
 
 router = APIRouter()
 
@@ -89,42 +83,17 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
         # 转换规则类型（前端传入的是英文，RuleService也使用英文）
         rule_types = request.rule_types if request.rule_types else ['wealth', 'marriage', 'career', 'children', 'character', 'summary', 'health', 'peach_blossom', 'shishen']
         
-        # ⚠️ 十神命格特殊处理：使用FormulaRuleService的优先级匹配逻辑
-        # RuleService不支持十神命格的复杂优先级逻辑，所以对于十神命格使用FormulaRuleService
+        # ✅ 统一使用RuleService匹配所有规则（包括十神命格）
+        # 十神命格规则已迁移到数据库，使用JSON条件格式，RuleService已支持
         migrated_rules = []
         
-        if 'shishen' in rule_types and FORMULA_SERVICE_AVAILABLE:
-            # 使用FormulaRuleService匹配十神命格（支持优先级逻辑）
-            try:
-                formula_result = FormulaRuleService.match_rules(rule_data, ['十神命格'])
-                # 转换为RuleService格式
-                for shishen_id in formula_result['matched_rules'].get('shishen', []):
-                    shishen_detail = formula_result['rule_details'].get(shishen_id)
-                    if shishen_detail:
-                        migrated_rules.append({
-                            'rule_id': f'FORMULA_{shishen_id}',
-                            'rule_type': 'shishen',
-                            'content': {'text': shishen_detail.get('result', '')},
-                            'conditions': {},  # FormulaRuleService已经完成匹配
-                            'priority': 100
-                        })
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"十神命格匹配失败: {e}")
-            
-            # 从rule_types中移除shishen，避免重复匹配
-            rule_types_without_shishen = [rt for rt in rule_types if rt != 'shishen']
-        else:
-            rule_types_without_shishen = rule_types
-        
-        # 使用RuleService匹配其他规则（只匹配迁移的FORMULA_规则）
-        if rule_types_without_shishen:
-            rule_matched = RuleService.match_rules(rule_data, rule_types=rule_types_without_shishen, use_cache=True)
-        # 筛选迁移的规则（FORMULA_前缀）
+        # 使用RuleService匹配所有规则（只匹配迁移的FORMULA_规则）
+        if rule_types:
+            rule_matched = RuleService.match_rules(rule_data, rule_types=rule_types, use_cache=True)
+            # 筛选迁移的规则（FORMULA_前缀）
             migrated_rules.extend([r for r in rule_matched if r.get('rule_id', '').startswith('FORMULA_')])
         
-        # 3. 转换为FormulaRuleService的响应格式（保持API兼容性）
+        # 3. 转换为前端期望的响应格式（保持API兼容性）
         matched_result = _convert_rule_service_to_formula_format(migrated_rules, rule_types)
         
         # 4. 格式化响应
@@ -164,14 +133,14 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
 
 def _convert_rule_service_to_formula_format(migrated_rules: list, rule_types: Optional[List[str]] = None) -> dict:
     """
-    将RuleService的返回格式转换为FormulaRuleService的格式（保持API兼容性）
+    将RuleService的返回格式转换为前端期望的格式（保持API兼容性）
     
     Args:
         migrated_rules: RuleService返回的规则列表
         rule_types: 规则类型列表
         
     Returns:
-        FormulaRuleService格式的匹配结果
+        前端期望格式的匹配结果
     """
     # 初始化匹配结果结构
     matched_rules = {
@@ -234,7 +203,7 @@ def _convert_rule_service_to_formula_format(migrated_rules: list, rule_types: Op
         if rule_type in matched_rules:
             matched_rules[rule_type].append(numeric_id)
         
-        # 构建规则详情（保持FormulaRuleService格式）
+        # 构建规则详情（保持前端期望格式）
         content = rule.get('content', {})
         if isinstance(content, dict):
             rule_text = content.get('text', '')

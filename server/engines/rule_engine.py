@@ -256,7 +256,21 @@ class EnhancedRuleEngine:
             self._build_advanced_index()
     
     def load_from_file(self, file_path: str):
-        """从JSON文件加载规则"""
+        """
+        从JSON文件加载规则
+        
+        ⚠️ 已废弃：此方法仅用于向后兼容
+        所有规则必须存储在数据库中，禁止从文件读取！
+        新代码请使用 RuleService，它会自动从数据库加载规则。
+        """
+        import warnings
+        warnings.warn(
+            f"⚠️  load_from_file() 已废弃，规则应从数据库加载\n"
+            f"文件路径: {file_path}\n"
+            f"请使用 RuleService.match_rules() 替代",
+            DeprecationWarning,
+            stacklevel=2
+        )
         with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
             self.rules = data.get('rules', [])

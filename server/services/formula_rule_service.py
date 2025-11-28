@@ -28,7 +28,19 @@ logger = logging.getLogger(__name__)
 
 
 class FormulaRuleService:
-    """算法公式规则匹配服务（已废弃，使用数据库规则）"""
+    """
+    算法公式规则匹配服务（已废弃，使用数据库规则）
+    
+    ⚠️ 已废弃：此服务已完全废弃，禁止在新代码中使用！
+    
+    所有规则匹配必须使用 RuleService：
+    ```python
+    from server.services.rule_service import RuleService
+    rules = RuleService.match_rules(bazi_data, rule_types=['wealth'])
+    ```
+    
+    此服务保留仅用于向后兼容，将在未来版本中移除。
+    """
     
     # 缓存规则数据
     _rules_cache = None

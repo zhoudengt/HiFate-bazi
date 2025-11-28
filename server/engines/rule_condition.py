@@ -273,8 +273,43 @@ class EnhancedRuleCondition:
                     hidden_stars = [hidden_stars] if hidden_stars else []
                 
                 if isinstance(value, list):
-                    # 检查是否包含任一指定的十神
-                    return any(star in hidden_stars for star in value)
+                    # 处理包含文本描述的情况（如"日柱副星有正财"）
+                    # 这种情况表示：当前柱有该十神 OR 其他柱有该十神
+                    import re
+                    for item in value:
+                        if isinstance(item, str):
+                            # 如果是文本描述（包含"柱副星有"），解析出十神名称并检查对应柱
+                            if '柱副星有' in item or '副星有' in item:
+                                match = re.search(r'([正偏]?[财官印食伤比劫]+)', item)
+                                if match:
+                                    star_name = match.group(1)
+                                    # 检查对应的柱是否有该十神
+                                    if '日柱' in item or '日' in item:
+                                        day_stars = bazi_data.get('details', {}).get('day', {}).get('hidden_stars', [])
+                                        if isinstance(day_stars, list) and star_name in day_stars:
+                                            return True
+                                    elif '时柱' in item or '时' in item:
+                                        hour_stars = bazi_data.get('details', {}).get('hour', {}).get('hidden_stars', [])
+                                        if isinstance(hour_stars, list) and star_name in hour_stars:
+                                            return True
+                                    elif '年柱' in item or '年' in item:
+                                        year_stars = bazi_data.get('details', {}).get('year', {}).get('hidden_stars', [])
+                                        if isinstance(year_stars, list) and star_name in year_stars:
+                                            return True
+                                    elif '月柱' in item or '月' in item:
+                                        month_stars = bazi_data.get('details', {}).get('month', {}).get('hidden_stars', [])
+                                        if isinstance(month_stars, list) and star_name in month_stars:
+                                            return True
+                            else:
+                                # 直接是十神名称，检查当前柱
+                                if item in hidden_stars:
+                                    return True
+                        else:
+                            # 非字符串，直接检查当前柱
+                            if item in hidden_stars:
+                                return True
+                    # 如果所有条件都不满足，返回False
+                    return False
                 return value in hidden_stars
             
             # ========== 十神统计条件 ==========
