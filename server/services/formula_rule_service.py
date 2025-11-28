@@ -4,8 +4,8 @@
 ⚠️ 已废弃：规则已迁移到数据库，统一使用RuleService
 此服务保留仅用于向后兼容，新代码请使用RuleService
 
-原规则来源: docs/2025.11.20算法公式.json (816条规则)
-迁移状态: 已完成迁移到数据库 (rule_code: FORMULA_*)
+原规则来源: 数据库 bazi_rules 表 (rule_code: FORMULA_*)
+迁移状态: 已完成迁移到数据库
 
 规则类型:
 - 财富: 基于十神（主星/副星）
@@ -16,7 +16,7 @@
 """
 
 import json
-import os
+import logging
 import re
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -24,23 +24,102 @@ from datetime import datetime
 from server.services.bazi_service import BaziService
 from src.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
 
+logger = logging.getLogger(__name__)
+
 
 class FormulaRuleService:
-    """算法公式规则匹配服务"""
-    
-    # 规则文件路径
-    RULE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
-                             'docs', '2025.11.20算法公式.json')
+    """算法公式规则匹配服务（已废弃，使用数据库规则）"""
     
     # 缓存规则数据
     _rules_cache = None
     
     @classmethod
     def load_rules(cls) -> Dict[str, Any]:
-        """加载规则数据"""
+        """加载规则数据（从数据库获取）"""
         if cls._rules_cache is None:
-            with open(cls.RULE_FILE, 'r', encoding='utf-8') as f:
-                cls._rules_cache = json.load(f)
+            try:
+                # 尝试从数据库加载规则
+                from server.db.mysql_connector import MySQLConnector
+                connector = MySQLConnector()
+                
+                rules_data = {
+                    '财富': {'rows': []},
+                    '婚配': {'rows': []},
+                    '性格': {'rows': []},
+                    '总评': {'rows': []},
+                    '身体': {'rows': []},
+                    '十神命格': {'rows': []}
+                }
+                
+                type_mapping = {
+                    'FORMULA_WEALTH': '财富',
+                    'FORMULA_MARRIAGE': '婚配',
+                    'FORMULA_CHARACTER': '性格',
+                    'FORMULA_SUMMARY': '总评',
+                    'FORMULA_HEALTH': '身体',
+                    'FORMULA_SHISHEN': '十神命格'
+                }
+                
+                with connector.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute("""
+                            SELECT rule_code, rule_type, conditions, description 
+                            FROM bazi_rules 
+                            WHERE rule_code LIKE 'FORMULA_%'
+                        """)
+                        rows = cursor.fetchall()
+                        
+                        for row in rows:
+                            rule_code = row['rule_code']
+                            rule_type = row['rule_type']
+                            conditions = row['conditions']
+                            description = row['description']
+                            
+                            # 解析条件和描述
+                            if isinstance(conditions, str):
+                                try:
+                                    conditions = json.loads(conditions)
+                                except:
+                                    conditions = {}
+                            
+                            if isinstance(description, str):
+                                try:
+                                    description = json.loads(description)
+                                except:
+                                    description = {}
+                            
+                            # 提取规则ID
+                            rule_id = rule_code.split('_')[-1] if '_' in rule_code else rule_code
+                            
+                            # 构建规则数据
+                            rule_entry = {
+                                'ID': rule_id,
+                                '性别': conditions.get('gender', '无论男女'),
+                                '筛选条件1': conditions.get('condition1', ''),
+                                '筛选条件2': conditions.get('condition2', ''),
+                                '结果': description.get('text', '')
+                            }
+                            
+                            # 根据规则类型分类
+                            for prefix, sheet_name in type_mapping.items():
+                                if rule_code.startswith(prefix):
+                                    rules_data[sheet_name]['rows'].append(rule_entry)
+                                    break
+                
+                cls._rules_cache = rules_data
+                logger.info(f"✅ 从数据库加载算法公式规则完成")
+                
+            except Exception as e:
+                logger.warning(f"⚠️ 从数据库加载规则失败: {e}，使用空规则")
+                cls._rules_cache = {
+                    '财富': {'rows': []},
+                    '婚配': {'rows': []},
+                    '性格': {'rows': []},
+                    '总评': {'rows': []},
+                    '身体': {'rows': []},
+                    '十神命格': {'rows': []}
+                }
+        
         return cls._rules_cache
     
     @classmethod

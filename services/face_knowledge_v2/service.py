@@ -3,13 +3,14 @@
 面相知识库V2微服务
 """
 
-import json
-import os
+import logging
 from typing import List, Dict
 import pymysql
 from pathlib import Path
 from .rule_matcher import RuleMatcher
+from .face_rules_config import get_all_rules
 
+logger = logging.getLogger(__name__)
 project_root = Path(__file__).parent.parent.parent
 
 
@@ -19,29 +20,17 @@ class FaceKnowledgeService:
     def __init__(self):
         self.rules_cache = {}
         self.rule_matcher = RuleMatcher()
-        self._load_rules_from_json()
+        self._load_rules_from_config()
     
-    def _load_rules_from_json(self):
-        """从JSON文件加载规则（开发阶段）"""
-        data_dir = project_root / 'data' / 'face_rules_v2'
-        
-        rule_files = [
-            'gongwei_rules.json',
-            'liuqin_rules.json',
-            'shishen_rules.json',
-            'feature_rules.json',
-            'liunian_rules.json'
-        ]
-        
-        for filename in rule_files:
-            file_path = data_dir / filename
-            if file_path.exists():
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    # 合并规则
-                    for key, rules in data.items():
-                        if isinstance(rules, list):
-                            self.rules_cache[filename.replace('.json', '')] = rules
+    def _load_rules_from_config(self):
+        """从内置配置加载规则（不再读取外部文件）"""
+        try:
+            all_rules = get_all_rules()
+            self.rules_cache = all_rules
+            logger.info(f"✅ 面相规则加载完成（使用内置配置），共 {len(all_rules)} 类规则")
+        except Exception as e:
+            logger.error(f"❌ 加载面相规则失败: {e}")
+            self.rules_cache = {}
     
     def query_rules(self, rule_type: str, position: str = None) -> List[Dict]:
         """

@@ -549,7 +549,7 @@
 
             // 构建流式API URL
             const apiUrl = `http://localhost:8001/api/v1/smart-fortune/smart-analyze-stream?` +
-                `question=${encodeURIComponent(question)}` +
+                    `question=${encodeURIComponent(question)}` +
                 `&year=${year}&month=${month}&day=${day}&hour=${hour}&gender=${gender}`;
 
             // 创建EventSource连接
@@ -586,7 +586,7 @@
             eventSource.addEventListener('end', function(e) {
                 const endTime = Date.now();
                 const responseTime = endTime - startTime;
-                
+
                 // 组合最终数据
                 if (basicAnalysisData) {
                     const finalData = {

@@ -1,17 +1,73 @@
+# Git
 .git
 .gitignore
+.gitattributes
+
+# Python
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist/
+build/
+.eggs/
 venv/
 .venv/
+env/
+ENV/
+
+# 日志和临时文件
 *.log
+logs/
+*.tmp
+*.temp
+
+# 依赖和缓存
 node_modules/
 .mypy_cache/
 .pytest_cache/
+.pytest/
+.coverage
+htmlcov/
+
+# IDE
 .DS_Store
 *.swp
+*.swo
+*~
 .idea/
 .vscode/
+*.iml
+
+# 文档和测试
+docs/
+tests/
+*.md
+!README.md
+
+# 数据文件（如果不需要）
+data/
+*.xlsx
+*.xls
+
+# Docker 相关
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# 环境配置（敏感信息）
+.env
+.env.*
+*.env
+config/*.env
+
+# 其他
+*.spec
+yolov8n.pt
 
 
 

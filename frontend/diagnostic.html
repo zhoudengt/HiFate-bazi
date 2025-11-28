@@ -221,10 +221,10 @@
             
             try {
                 const data = await api.post('/bazi/fortune/display', {
-                    solar_date: '1990-01-01',
-                    solar_time: '12:00',
-                    gender: 'male',
-                    current_time: new Date().toISOString().slice(0, 16).replace('T', ' ')
+                        solar_date: '1990-01-01',
+                        solar_time: '12:00',
+                        gender: 'male',
+                        current_time: new Date().toISOString().slice(0, 16).replace('T', ' ')
                 });
                 
                 if (data.success) {

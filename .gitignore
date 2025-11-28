@@ -69,3 +69,25 @@ test_*.py
 debug_*.py
 temp/
 tmp/
+
+# 模型文件（大文件）
+*.pt
+*.pth
+*.onnx
+*.pb
+
+# 构建产物
+hifate_bazi.spec
+
+# 敏感配置（确保不提交）
+config/services.env
+tableplus_connections.json
+
+# 项目特定忽略
+verify_frontend_integration.html
+
+# Excel 文件（数据已转换为数据库/JSON，不需要提交源文件）
+*.xlsx
+*.xls
+*.docx
+*.doc

@@ -425,9 +425,9 @@
 
             try {
                 const result = await api.post('/bazi/formula-analysis', {
-                    solar_date: birthDate,
-                    solar_time: birthTime,
-                    gender: gender
+                        solar_date: birthDate,
+                        solar_time: birthTime,
+                        gender: gender
                 });
 
                 if (result.success) {

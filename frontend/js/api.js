@@ -43,7 +43,7 @@ class GrpcGatewayClient {
             const { messageBytes, trailers } = this._parseGrpcWebResponse(buffer);
             const parsed = this._decodeResponse(messageBytes);
             const trailerStatus = trailers['grpc-status'] ?? response.headers.get('grpc-status') ?? '0';
-
+        
             if (trailerStatus !== '0' || !parsed.success) {
                 const grpcMessage = parsed.error || trailers['grpc-message'] || 'gRPC 调用失败';
                 throw new Error(grpcMessage);
@@ -66,7 +66,7 @@ class GrpcGatewayClient {
             token || ''
         );
         return this._wrapFrame(0x00, message);
-    }
+        }
 
     _encodeRequest(endpoint, payloadJson, authToken) {
         const bytes = [];
@@ -204,7 +204,7 @@ class GrpcGatewayClient {
         }
 
         throw new Error('varint 解析失败');
-    }
+            }
 }
 
 const grpcGatewayClient = new GrpcGatewayClient(GRPC_CONFIG);

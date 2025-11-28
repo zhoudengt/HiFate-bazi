@@ -556,6 +556,13 @@ async def health_check():
         )
 
 
+# 健康检查别名（部署脚本使用）
+@app.get("/api/v1/health")
+async def health_check_api():
+    """健康检查 API 别名"""
+    return await health_check()
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(

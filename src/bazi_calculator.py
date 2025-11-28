@@ -1396,34 +1396,16 @@ class WenZhenBazi:
 
     @classmethod
     def _load_rule_filters(cls):
+        """加载规则筛选条件（已移除外部文件依赖，使用数据库规则）"""
         if cls._rule_filter_map is not None:
             return
+        # 不再从外部文件读取，规则筛选条件应该从数据库获取
+        # 如果需要此功能，请在数据库 bazi_rules 表中添加相应字段
         cls._rule_filter_map = {}
-        try:
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            doc_path = os.path.join(project_root, 'docs', '婚姻规则合并.json')
-            if os.path.exists(doc_path):
-                with open(doc_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                for sheet_rows in data.values():
-                    if not isinstance(sheet_rows, list):
-                        continue
-                    for row in sheet_rows:
-                        raw_id = row.get('ID')
-                        if not raw_id:
-                            continue
-                        rule_code = f"MARR-{str(raw_id).strip()}"
-                        cls._rule_filter_map[rule_code] = {
-                            'category': row.get('类型', ''),
-                            'gender': row.get('性别', ''),
-                            'condition1': row.get('筛选条件1', ''),
-                            'condition2': row.get('筛选条件2', ''),
-                        }
-        except Exception as exc:
-            print(f"⚠ 加载婚姻规则筛选条件失败: {exc}")
 
     @classmethod
     def _get_rule_filters(cls, rule_id: str):
+        """获取规则筛选条件（已移除外部文件依赖）"""
         cls._load_rule_filters()
         return cls._rule_filter_map.get(rule_id, {})
 
