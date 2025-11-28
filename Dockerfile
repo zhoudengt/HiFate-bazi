@@ -2,12 +2,12 @@
 # 使用预构建基础镜像 + 增量保险
 # 
 # 首次部署需要先构建基础镜像：
-#   docker build -f Dockerfile.base -t hifate-base:latest .
+#   ./scripts/docker/build_base.sh
 #
 # 后续部署（快速）：
 #   docker compose up -d --build web
 
-FROM hifate-base:latest
+FROM --platform=linux/amd64 hifate-base:latest
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -18,8 +18,11 @@ WORKDIR ${APP_HOME}
 
 # 增量保险层：检查并安装可能缺失的依赖
 # 如果 requirements.txt 有变更但基础镜像未更新，这里会补上
+# 使用 --upgrade 确保版本一致，--no-deps 避免重复安装已存在的依赖
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt || echo "依赖已安装"
+RUN pip install --no-cache-dir --upgrade -r requirements.txt || \
+    (echo "⚠️  部分依赖安装失败，检查基础镜像是否需要更新" && \
+     pip install --no-cache-dir -r requirements.txt)
 
 # 复制代码
 COPY . ${APP_HOME}

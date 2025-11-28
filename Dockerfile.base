@@ -1,9 +1,16 @@
 # HiFate 基础镜像
 # 预装所有 Python 依赖，加速后续部署
-# 构建命令：docker build -f Dockerfile.base -t hifate-base:latest .
+# 
+# 构建命令（跨平台兼容）：
+#   docker build --platform linux/amd64 -f Dockerfile.base -t hifate-base:latest .
+#
 # 仅在 requirements.txt 变更时需要重建
+# 
+# 安全说明：
+# - 使用 --platform linux/amd64 确保 Mac M1/Intel 都能构建出 Linux 镜像
+# - 应用层 Dockerfile 会再次执行 pip install 作为保险层
 
-FROM python:3.11-slim
+FROM --platform=linux/amd64 python:3.11-slim
 
 LABEL maintainer="HiFate Team"
 LABEL description="HiFate base image with pre-installed dependencies"
@@ -33,11 +40,16 @@ RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 复制并安装依赖（这是最耗时的步骤）
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    # 保存 requirements.txt 的哈希值用于后续检查
+    md5sum requirements.txt > /app/.requirements_hash 2>/dev/null || \
+    md5 -q requirements.txt > /app/.requirements_hash 2>/dev/null || \
+    echo "$(cat requirements.txt | md5sum | cut -d' ' -f1)" > /app/.requirements_hash
 
 # 清理缓存
 RUN rm -rf /root/.cache/pip /tmp/*
 
 # 记录构建信息
-RUN echo "Base image built at: $(date)" > /app/.base_build_info
+RUN echo "Base image built at: $(date)" > /app/.base_build_info && \
+    echo "Python version: $(python --version)" >> /app/.base_build_info
 
