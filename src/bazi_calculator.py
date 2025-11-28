@@ -188,13 +188,17 @@ class WenZhenBazi:
         return branch_gods
 
     def calculate(self):
-        """执行八字排盘计算（强制调用微服务，失败后回退本地计算）"""
-        service_result = self._calculate_via_core_service()
-        if service_result is not None:
-            return service_result
+        """执行八字排盘计算（优先微服务，无微服务时使用本地计算）"""
+        # 尝试使用微服务（如果配置了）
+        try:
+            service_result = self._calculate_via_core_service()
+            if service_result is not None:
+                return service_result
+        except Exception as e:
+            print(f"⚠️  微服务调用跳过: {e}", flush=True)
 
-        # 如果微服务调用失败，尝试本地计算作为最后回退
-        print("⚠️  bazi_calculator.py: 微服务调用失败，使用本地计算作为最后回退", flush=True)
+        # 使用本地计算
+        print("ℹ️  使用本地计算", flush=True)
         try:
             # 1. 使用lunar-python计算四柱和农历（包含子时处理）
             self._calculate_with_lunar()
@@ -425,14 +429,11 @@ class WenZhenBazi:
                     pillar_detail['self_sitting'] = self_sitting
 
     def _calculate_via_core_service(self):
-        """强制通过 bazi-core 微服务计算排盘（失败时回退本地计算）"""
+        """通过 bazi-core 微服务计算排盘（可选，未配置时返回 None）"""
         service_url = os.getenv("BAZI_CORE_SERVICE_URL", "").strip()
         if not service_url:
-            raise RuntimeError(
-                "❌ BAZI_CORE_SERVICE_URL 未设置！所有展示页面必须调用微服务。\n"
-                "请确保已启动微服务并设置环境变量。\n"
-                "启动方式: ./start_all_services.sh"
-            )
+            # 未配置微服务，返回 None 使用本地计算
+            return None
 
         # 移除 http:// 前缀（如果存在）
         if service_url.startswith("http://"):
