@@ -18,7 +18,7 @@ requests==2.31.0
 aiohttp==3.13.2
 
 # 数据处理
-pydantic==2.11.9
+pydantic[email]==2.11.9
 numpy==2.0.2
 PyYAML==6.0.2
 python-dotenv==1.1.1
