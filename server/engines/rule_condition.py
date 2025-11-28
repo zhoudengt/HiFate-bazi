@@ -1088,6 +1088,260 @@ class EnhancedRuleCondition:
                 gender = bazi_data.get('basic_info', {}).get('gender', '')
                 return gender == value or (gender == 'male' and value == '男') or (gender == 'female' and value == '女')
             
+            # ========== 同柱神煞条件 ==========
+            elif key == "deities_same_pillar":
+                """检查同一柱是否同时存在多个神煞
+                格式: {"deities_same_pillar": ["华盖", "空亡"]}
+                """
+                if not isinstance(value, list) or len(value) < 2:
+                    return False
+                
+                details = bazi_data.get('details', {})
+                for pillar in PILLAR_NAMES:
+                    pillar_deities = details.get(pillar, {}).get('deities', [])
+                    if not isinstance(pillar_deities, list):
+                        pillar_deities = [pillar_deities] if pillar_deities else []
+                    # 检查该柱是否包含所有指定的神煞
+                    if all(deity in pillar_deities for deity in value):
+                        return True
+                return False
+            
+            # ========== 地支三刑条件 ==========
+            elif key == "branch_sanxing":
+                """检查地支是否存在三刑关系
+                格式: {"branch_sanxing": true}
+                三刑组合：
+                - 寅巳申三刑
+                - 丑戌未三刑
+                - 子卯相刑（子刑卯、卯刑子）
+                - 辰辰自刑、午午自刑、酉酉自刑、亥亥自刑
+                """
+                if not value:
+                    return True
+                
+                bazi_pillars = bazi_data.get('bazi_pillars', {})
+                branches = [
+                    bazi_pillars.get('year', {}).get('branch', ''),
+                    bazi_pillars.get('month', {}).get('branch', ''),
+                    bazi_pillars.get('day', {}).get('branch', ''),
+                    bazi_pillars.get('hour', {}).get('branch', '')
+                ]
+                branch_set = set(branches)
+                
+                # 三刑组合检查
+                sanxing_groups = [
+                    {"寅", "巳", "申"},  # 寅巳申三刑
+                    {"丑", "戌", "未"},  # 丑戌未三刑
+                ]
+                for group in sanxing_groups:
+                    if branch_set.issuperset(group):
+                        return True
+                
+                # 子卯相刑
+                if "子" in branch_set and "卯" in branch_set:
+                    return True
+                
+                # 自刑（同一地支出现两次或以上）
+                self_xing_branches = {"辰", "午", "酉", "亥"}
+                branch_counts = Counter(branches)
+                for b, count in branch_counts.items():
+                    if b in self_xing_branches and count >= 2:
+                        return True
+                
+                return False
+            
+            # ========== 天干五合对数量 ==========
+            elif key == "stem_wuhe_pairs":
+                """检查天干五合对的数量
+                格式: {"stem_wuhe_pairs": {"min": 1}}
+                天干五合：甲己、乙庚、丙辛、丁壬、戊癸
+                """
+                spec = value if isinstance(value, dict) else {"min": 1}
+                min_pairs = spec.get('min', 1)
+                
+                bazi_pillars = bazi_data.get('bazi_pillars', {})
+                stems = [
+                    bazi_pillars.get('year', {}).get('stem', ''),
+                    bazi_pillars.get('month', {}).get('stem', ''),
+                    bazi_pillars.get('day', {}).get('stem', ''),
+                    bazi_pillars.get('hour', {}).get('stem', '')
+                ]
+                
+                wuhe_pairs = [
+                    ("甲", "己"), ("乙", "庚"), ("丙", "辛"), ("丁", "壬"), ("戊", "癸")
+                ]
+                
+                pair_count = 0
+                stem_set = set(stems)
+                for s1, s2 in wuhe_pairs:
+                    if s1 in stem_set and s2 in stem_set:
+                        pair_count += 1
+                
+                return pair_count >= min_pairs
+            
+            # ========== 主星被冲次数 ==========
+            elif key == "ten_gods_main_chong_count":
+                """检查主星被其他柱冲的次数
+                格式: {"ten_gods_main_chong_count": {"min": 2}}
+                """
+                spec = value if isinstance(value, dict) else {"min": 2}
+                min_count = spec.get('min', 2)
+                
+                details = bazi_data.get('details', {})
+                bazi_pillars = bazi_data.get('bazi_pillars', {})
+                
+                # 获取各柱的地支
+                branches = {
+                    pillar: bazi_pillars.get(pillar, {}).get('branch', '')
+                    for pillar in PILLAR_NAMES
+                }
+                
+                chong_count = 0
+                for pillar in PILLAR_NAMES:
+                    branch = branches[pillar]
+                    if not branch:
+                        continue
+                    # 检查是否被其他柱冲
+                    for other_pillar in PILLAR_NAMES:
+                        if other_pillar == pillar:
+                            continue
+                        other_branch = branches[other_pillar]
+                        if BRANCH_CHONG.get(branch) == other_branch:
+                            chong_count += 1
+                
+                # 冲是双向计算的，所以除以2
+                return (chong_count // 2) >= min_count
+            
+            # ========== 喜用神条件 ==========
+            elif key == "xishen":
+                """检查喜用神是否为指定十神
+                格式: {"xishen": "比肩"} 或 {"xishen": ["比肩", "劫财"]}
+                """
+                xishen = bazi_data.get('xishen', '') or bazi_data.get('analysis', {}).get('xishen', '')
+                if not xishen:
+                    return False
+                if isinstance(value, list):
+                    return xishen in value
+                return xishen == value
+            
+            elif key == "xishen_in":
+                """检查喜用神是否在指定列表中
+                格式: {"xishen_in": ["食神", "伤官"]}
+                """
+                xishen = bazi_data.get('xishen', '') or bazi_data.get('analysis', {}).get('xishen', '')
+                if not xishen:
+                    return False
+                if isinstance(value, list):
+                    return xishen in value
+                return xishen == value
+            
+            # ========== 胎元身宫命宫条件 ==========
+            elif key == "taiyuan_shengong_minggong":
+                """检查胎元、身宫、命宫
+                格式: {"taiyuan_shengong_minggong": {"taiyuan": "癸丑", "minggong": "甲寅"}}
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                # 从 bazi_data 中获取胎元、身宫、命宫
+                taiyuan = bazi_data.get('taiyuan', '') or bazi_data.get('details', {}).get('taiyuan', '')
+                shengong = bazi_data.get('shengong', '') or bazi_data.get('details', {}).get('shengong', '')
+                minggong = bazi_data.get('minggong', '') or bazi_data.get('details', {}).get('minggong', '')
+                
+                # 检查各项是否匹配
+                if 'taiyuan' in value and taiyuan != value['taiyuan']:
+                    return False
+                if 'shengong' in value and shengong != value['shengong']:
+                    return False
+                if 'minggong' in value and minggong != value['minggong']:
+                    return False
+                
+                return True
+            
+            # ========== 柱地支被刑冲 ==========
+            elif key == "pillar_branch_xing_chong":
+                """检查是否有柱的地支被其他柱刑或冲
+                格式: {"pillar_branch_xing_chong": true}
+                用于配合 deities_same_pillar，检查该柱是否被刑冲
+                """
+                if not value:
+                    return True
+                
+                bazi_pillars = bazi_data.get('bazi_pillars', {})
+                details = bazi_data.get('details', {})
+                
+                # 获取各柱地支
+                branches = {
+                    pillar: bazi_pillars.get(pillar, {}).get('branch', '')
+                    for pillar in PILLAR_NAMES
+                }
+                
+                for pillar in PILLAR_NAMES:
+                    branch = branches[pillar]
+                    if not branch:
+                        continue
+                    
+                    # 检查是否被刑或冲
+                    for other_pillar in PILLAR_NAMES:
+                        if other_pillar == pillar:
+                            continue
+                        other_branch = branches[other_pillar]
+                        
+                        # 检查冲
+                        if BRANCH_CHONG.get(branch) == other_branch:
+                            return True
+                        
+                        # 检查刑
+                        xing_targets = BRANCH_XING.get(branch, [])
+                        if other_branch in xing_targets:
+                            return True
+                
+                return False
+            
+            # ========== 天干地支混合计数 ==========
+            elif key == "stems_branches_count":
+                """检查天干和地支的总出现次数
+                格式: {"stems_branches_count": {"names": ["壬", "癸", "亥", "子", "丑", "寅"], "min": 3}}
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                names = value.get('names', [])
+                min_count = value.get('min', 1)
+                max_count = value.get('max')
+                eq_count = value.get('eq')
+                
+                bazi_pillars = bazi_data.get('bazi_pillars', {})
+                
+                # 收集所有天干和地支
+                all_chars = []
+                for pillar in PILLAR_NAMES:
+                    pillar_data = bazi_pillars.get(pillar, {})
+                    stem = pillar_data.get('stem', '')
+                    branch = pillar_data.get('branch', '')
+                    if stem:
+                        all_chars.append(stem)
+                    if branch:
+                        all_chars.append(branch)
+                
+                # 统计出现次数
+                count = sum(1 for char in all_chars if char in names)
+                
+                if eq_count is not None:
+                    return count == eq_count
+                if min_count is not None and count < min_count:
+                    return False
+                if max_count is not None and count > max_count:
+                    return False
+                return True
+            
+            # ========== 否定条件 ==========
+            elif key == "not":
+                """否定条件
+                格式: {"not": {...条件...}}
+                """
+                return not EnhancedRuleCondition.match(value, bazi_data)
+            
             # 可以继续扩展更多条件...
         
         return False
