@@ -622,6 +622,37 @@ git add [specific files]
 # 7) 首次部署：初始化服务器
 ```
 
+### 🔄 增量部署（零停机）
+
+**场景**：代码已推送到 Gitee，需要更新服务器
+
+```bash
+# 方法1：使用部署脚本
+./deploy.sh
+# 选择 3) 仅更新服务器
+
+# 方法2：手动执行
+ssh root@123.57.216.15 'cd /opt/HiFate-bazi && git pull && docker compose up -d --build web'
+```
+
+**增量部署原则**：
+- ✅ 仅代码修改 → `git pull` 后重建 web 容器即可
+- ✅ 前端修改 → `git pull` 后 Nginx 自动生效（无需重建）
+- ⚠️ 依赖修改 → 必须 `--build` 重建镜像
+- ⚠️ 数据库修改 → 需同步数据库（见数据库同步章节）
+
+**快捷命令**：
+```bash
+# 仅拉取代码（前端修改）
+ssh root@123.57.216.15 'cd /opt/HiFate-bazi && git pull'
+
+# 拉取 + 重建（后端/依赖修改）
+ssh root@123.57.216.15 'cd /opt/HiFate-bazi && git pull && docker compose up -d --build web'
+
+# 查看部署状态
+ssh root@123.57.216.15 'cd /opt/HiFate-bazi && docker compose ps && docker compose logs web --tail=10'
+```
+
 ### 📦 部署架构
 
 ```
@@ -794,6 +825,29 @@ docker compose up -d --build web
 # 2. 检查服务器防火墙：firewall-cmd --list-ports
 # 3. 检查服务监听：netstat -tlnp | grep 80
 ```
+
+**问题5：面相/手相分析报错**
+```bash
+# 这些功能需要额外依赖（opencv, mediapipe）
+# 检查 requirements.txt 是否启用了以下依赖：
+# opencv-python-headless>=4.8.0  # 基础图像处理
+# mediapipe>=0.10.0              # 面部/手部检测（可选，体积大）
+# 启用后重新构建：docker compose up -d --build web
+```
+
+### 📊 功能与依赖对照表
+
+| 功能 | 核心依赖 | 可选依赖 | 备注 |
+|------|---------|---------|------|
+| 八字排盘 | lunar_python | - | ✅ 默认可用 |
+| 大运流年 | lunar_python | - | ✅ 默认可用 |
+| 今日/当月运势 | lunar_python | - | ✅ 默认可用 |
+| 算法公式分析 | pymysql | - | ✅ 默认可用 |
+| 手相分析 | opencv-python-headless | mediapipe | ⚠️ 需启用依赖 |
+| 面相分析 | opencv-python-headless | mediapipe | ⚠️ 需启用依赖 |
+| AI面相V2 | opencv-python-headless | mediapipe | ⚠️ 需启用依赖 |
+| 办公桌风水 | opencv-python-headless | - | ⚠️ 需启用依赖 |
+| 智能运势流 | - | openai | ⚠️ 需 API Key |
 
 ### 📋 配置文件清单
 
