@@ -88,8 +88,9 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
         migrated_rules = []
         
         # 使用RuleService匹配所有规则（只匹配迁移的FORMULA_规则）
+        # ⚠️ 修复：禁用缓存，确保规则匹配结果是最新的
         if rule_types:
-            rule_matched = RuleService.match_rules(rule_data, rule_types=rule_types, use_cache=True)
+            rule_matched = RuleService.match_rules(rule_data, rule_types=rule_types, use_cache=False)
             # 筛选迁移的规则（FORMULA_前缀）
             migrated_rules.extend([r for r in rule_matched if r.get('rule_id', '').startswith('FORMULA_')])
         

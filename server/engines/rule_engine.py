@@ -135,15 +135,15 @@ class EnhancedRuleEngine:
             candidates_dict[rule_id] = rule
         
         # 根据规则类型筛选（如果指定了规则类型）- 优化：优先使用规则类型索引
+        # ⚠️ 修复：确保所有指定的规则类型都被正确索引和筛选
         if rule_types:
             rule_types_set = set(rule_types)  # 转换为 set 提高查找速度
             for rule_type in rule_types:
                 indexed_rules = self._index['by_rule_type'].get(rule_type, [])
-                
+                # 直接添加该类型的所有规则，不需要再次检查 rule_type（已经在索引中）
                 for rule in indexed_rules:
-                    if rule.get('rule_type') in rule_types_set:
-                        rule_id = rule.get('rule_id', id(rule))
-                        candidates_dict[rule_id] = rule
+                    rule_id = rule.get('rule_id', id(rule))
+                    candidates_dict[rule_id] = rule
         else:
             # 如果没有指定规则类型，从所有规则类型索引中获取
             for rule_type, rules in self._index['by_rule_type'].items():
@@ -172,36 +172,34 @@ class EnhancedRuleEngine:
         # 转换为列表
         candidates = list(candidates_dict.values())
         
-        # 如果指定了规则类型，进一步筛选（优化：使用 set 查找）
+        # ⚠️ 修复：如果指定了规则类型，进一步筛选（确保只包含指定类型的规则）
+        # 注意：这里需要再次筛选，因为候选规则可能来自多个索引（年柱、日柱、神煞等）
         if rule_types:
             rule_types_set = set(rule_types)
-            candidates = [r for r in candidates if r.get('rule_type') in rule_types_set]
+            candidates = [r for r in candidates if r.get('rule_type') in rule_types_set and r.get('enabled', True)]
+        else:
+            # 如果没有指定规则类型，也要过滤掉未启用的规则
+            candidates = [r for r in candidates if r.get('enabled', True)]
         
-        # 2. 对候选规则进行精确匹配（优化：使用并行处理）
+        # 调试：检查候选规则中的十神命格规则
+        if rule_types and 'shishen' in rule_types:
+            shishen_candidates = [r for r in candidates if r.get('rule_type') == 'shishen']
+            if shishen_candidates:
+                import logging
+                logging.debug(f"候选规则中的十神命格规则数: {len(shishen_candidates)}")
+        
+        # 2. 对候选规则进行精确匹配
+        # ⚠️ 修复：并行处理时超时导致规则被跳过，改为串行处理确保所有规则都能匹配
         matched_rules = []
         
-        if len(candidates) > 10:
-            # 如果候选规则较多，使用并行处理
-            cpu_count = os.cpu_count() or 4
-            max_workers = min(cpu_count * 2, 20)
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = []
-                for rule in candidates:
-                    future = executor.submit(self._match_single_rule, rule, bazi_data)
-                    futures.append((future, rule))
-                
-                for future, rule in futures:
-                    try:
-                        if future.result(timeout=1.0):  # 每个规则最多1秒超时
-                            matched_rules.append(rule)
-                    except Exception:
-                        # 如果匹配超时或出错，跳过该规则
-                        pass
-        else:
-            # 如果候选规则较少，直接串行处理
-            for rule in candidates:
+        for rule in candidates:
+            try:
                 if self._match_single_rule(rule, bazi_data):
                     matched_rules.append(rule)
+            except Exception as e:
+                # 如果匹配出错，记录日志但不跳过
+                import logging
+                logging.warning(f"规则匹配出错: {rule.get('rule_id')}: {e}")
         
         # 3. 按优先级排序
         matched_rules.sort(key=lambda r: r.get('priority', 100), reverse=True)
