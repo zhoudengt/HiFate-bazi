@@ -50,16 +50,17 @@ pillow>=10.0.0
 # stripe>=7.0.0
 # alipay-sdk-python>=3.7.0
 
-# 图像处理（轻量版，用于面相/手相分析）
+# 图像处理（面相/手相/风水分析必需）
 opencv-python-headless>=4.8.0
+mediapipe>=0.10.0
+scikit-learn>=1.6.1
+scipy>=1.13.1
 
-# === 以下是重型依赖，按需启用 ===
-# 面相分析（安装很慢，约5-10分钟）
-# mediapipe>=0.10.0
-# scikit-learn>=1.6.1
-# scipy>=1.13.1
+# 微信支付
+wechatpy>=1.8.0
 
-# 深度学习（非常大，约2GB）
+# === 以下是重型依赖，暂不启用 ===
+# 深度学习（非常大，约2GB，需要时再启用）
 # torch>=2.4.0
 # torchvision>=0.19.0
 # dlib>=19.24.0
