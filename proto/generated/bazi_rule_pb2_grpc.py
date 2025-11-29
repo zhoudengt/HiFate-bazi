@@ -5,7 +5,7 @@ import warnings
 
 import bazi_rule_pb2 as bazi__rule__pb2
 
-GRPC_GENERATED_VERSION = '1.70.0'
+GRPC_GENERATED_VERSION = '1.60.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
