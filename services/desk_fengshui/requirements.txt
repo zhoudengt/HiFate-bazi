@@ -1,16 +1,17 @@
 # Office Desk Fengshui Service Dependencies
+# 注意：版本需要与主 requirements.txt 兼容
 
-# Core dependencies
-grpcio>=1.70.0
-grpcio-tools>=1.70.0
-protobuf>=5.29.0,<6.0
+# Core dependencies（与主依赖保持一致）
+grpcio>=1.60.0
+grpcio-tools>=1.60.0
+protobuf>=4.25.3,<5  # 与主依赖保持一致
 
 # Image processing
 opencv-python>=4.8.0
 Pillow>=10.0.0
-numpy>=1.26.0
+numpy>=1.26.0,<2  # 与主依赖保持一致
 
-# YOLO for object detection
+# YOLO for object detection（依赖 torch，约900MB）
 ultralytics>=8.0.0  # YOLOv8
 
 # Database
