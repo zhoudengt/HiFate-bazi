@@ -40,6 +40,7 @@ tqdm==4.67.1
 PyJWT>=2.8.0
 cryptography>=41.0.0
 pillow>=10.0.0
+python-docx>=1.2.0  # API文档生成工具
 
 # AI/LLM（如需要）
 # openai==2.7.1

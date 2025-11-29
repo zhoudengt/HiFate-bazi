@@ -5,8 +5,8 @@ Intent Service 配置
 import os
 
 # 服务配置
-SERVICE_PORT = 9008
-SERVICE_HOST = "0.0.0.0"
+SERVICE_PORT = int(os.getenv("SERVICE_PORT", 9008))
+SERVICE_HOST = os.getenv("SERVICE_HOST", "0.0.0.0")
 
 # Coze API 配置
 COZE_ACCESS_TOKEN = os.getenv("COZE_ACCESS_TOKEN", "")
@@ -16,18 +16,18 @@ INTENT_BOT_ID = os.getenv("INTENT_BOT_ID", "PLACEHOLDER_INTENT_BOT_ID")
 PROMPT_VERSION = os.getenv("PROMPT_VERSION", "v1.0")
 
 # Redis 缓存配置
-REDIS_HOST = "127.0.0.1"
-REDIS_PORT = 16379
+REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 16379))
 REDIS_DB = 3  # 使用DB3专门存储意图识别缓存
 REDIS_CACHE_TTL = int(os.getenv("PROMPT_CACHE_TTL", "3600"))
 
 # MySQL 配置（用于存储Prompt版本历史）
 MYSQL_CONFIG = {
-    'host': '127.0.0.1',
-    'port': 13306,
-    'user': 'root',
-    'password': 'root123',
-    'database': 'bazi_system',
+    'host': os.getenv("MYSQL_HOST", "127.0.0.1"),
+    'port': int(os.getenv("MYSQL_PORT", 13306)),
+    'user': os.getenv("MYSQL_USER", "root"),
+    'password': os.getenv("MYSQL_PASSWORD", "root123"),
+    'database': os.getenv("MYSQL_DATABASE", "bazi_system"),
     'charset': 'utf8mb4',
     'use_unicode': True
 }

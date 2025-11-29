@@ -125,7 +125,7 @@ class DeskFengshuiAnalyzer {
             reader.onerror = reject;
             reader.readAsDataURL(file);
         });
-    },
+    }
     
     async analyze() {
         if (!this.selectedImage) {
@@ -168,19 +168,33 @@ class DeskFengshuiAnalyzer {
             }
             
             console.log('使用 gRPC-Web 调用办公桌风水分析接口');
+            console.log('请求数据:', { 
+                has_image: !!requestData.image_base64, 
+                filename: requestData.filename,
+                use_bazi: requestData.use_bazi 
+            });
             
             // 使用 gRPC-Web 调用
             const result = await api.post('/api/v2/desk-fengshui/analyze', requestData);
             
-            if (result.success) {
+            // 安全地打印结果（避免循环引用导致 Maximum call stack exceeded）
+            try {
+                console.log('分析结果:', JSON.parse(JSON.stringify(result)));
+            } catch (e) {
+                console.log('分析结果: success =', result?.success);
+            }
+            
+            if (result && result.success) {
                 this.displayResult(result.data);
             } else {
-                throw new Error(result.error || '分析失败');
+                throw new Error(result?.error || result?.detail || '分析失败');
             }
             
         } catch (error) {
             console.error('分析失败:', error);
-            alert(`分析失败: ${error.message}`);
+            console.error('错误堆栈:', error.stack);
+            const errorMsg = error.message || '未知错误';
+            alert(`分析失败: ${errorMsg}\n请检查浏览器控制台获取详细信息`);
         } finally {
             this.setLoading(false);
         }

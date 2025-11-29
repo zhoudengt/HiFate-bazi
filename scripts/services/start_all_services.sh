@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VENV_BIN="${PROJECT_ROOT}/.venv/bin"
 LOG_DIR="${PROJECT_ROOT}/logs"
 

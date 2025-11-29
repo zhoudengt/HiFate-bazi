@@ -39,6 +39,12 @@ class GrpcGatewayClient {
                 credentials: 'omit'
             });
 
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`gRPC-Web 调用失败: HTTP ${response.status}`, errorText);
+                throw new Error(`服务器错误: HTTP ${response.status} - ${errorText.substring(0, 200)}`);
+            }
+
             const buffer = new Uint8Array(await response.arrayBuffer());
             const { messageBytes, trailers } = this._parseGrpcWebResponse(buffer);
             const parsed = this._decodeResponse(messageBytes);
@@ -46,10 +52,12 @@ class GrpcGatewayClient {
         
             if (trailerStatus !== '0' || !parsed.success) {
                 const grpcMessage = parsed.error || trailers['grpc-message'] || 'gRPC 调用失败';
+                console.error('gRPC 错误:', { trailerStatus, grpcMessage, parsed });
                 throw new Error(grpcMessage);
             }
 
             if (!parsed.data_json) {
+                console.warn('gRPC 响应中没有 data_json');
                 return {};
             }
 
@@ -60,38 +68,115 @@ class GrpcGatewayClient {
     }
 
     _buildGrpcWebBody(endpoint, payload, token) {
+        // 安全地序列化 payload，避免 Maximum call stack exceeded
+        let payloadJson;
+        try {
+            // 直接尝试序列化
+            payloadJson = JSON.stringify(payload ?? {});
+        } catch (error) {
+            // 如果遇到循环引用或栈溢出，使用深度清理
+            if (error.message && (error.message.includes('Maximum call stack') || error.message.includes('circular'))) {
+                console.warn('检测到循环引用或栈溢出，使用安全序列化:', error.message);
+                const cleaned = this._deepCleanForSerialization(payload ?? {});
+                payloadJson = JSON.stringify(cleaned);
+            } else {
+                throw error;
+            }
+        }
+        
         const message = this._encodeRequest(
             endpoint,
-            JSON.stringify(payload ?? {}),
+            payloadJson,
             token || ''
         );
         return this._wrapFrame(0x00, message);
+    }
+    
+    _deepCleanForSerialization(obj, visited = new WeakSet()) {
+        // 检测循环引用
+        if (obj === null || typeof obj !== 'object') {
+            return obj;
         }
+        
+        // 处理基本类型
+        if (typeof obj === 'string' || typeof obj === 'number' || typeof obj === 'boolean') {
+            return obj;
+        }
+        
+        // 检测循环引用
+        if (visited.has(obj)) {
+            return '[循环引用]';
+        }
+        
+        visited.add(obj);
+        
+        try {
+            if (Array.isArray(obj)) {
+                return obj.map(item => this._deepCleanForSerialization(item, visited));
+            } else if (obj instanceof File || obj instanceof Blob) {
+                return `[File: ${obj.name || 'blob'}]`;
+            } else {
+                const cleaned = {};
+                for (const key in obj) {
+                    if (obj.hasOwnProperty(key)) {
+                        try {
+                            cleaned[key] = this._deepCleanForSerialization(obj[key], visited);
+                        } catch (e) {
+                            cleaned[key] = '[序列化失败]';
+                        }
+                    }
+                }
+                return cleaned;
+            }
+        } finally {
+            visited.delete(obj);
+        }
+    }
 
     _encodeRequest(endpoint, payloadJson, authToken) {
-        const bytes = [];
+        // 使用 Uint8Array 而不是数组，避免大数组展开导致栈溢出
+        const parts = [];
 
         if (endpoint) {
-            bytes.push(...this._encodeStringField(1, endpoint));
+            parts.push(this._encodeStringField(1, endpoint));
         }
         if (payloadJson) {
-            bytes.push(...this._encodeStringField(2, payloadJson));
+            parts.push(this._encodeStringField(2, payloadJson));
         }
         if (authToken) {
-            bytes.push(...this._encodeStringField(3, authToken));
+            parts.push(this._encodeStringField(3, authToken));
         }
 
-        return new Uint8Array(bytes);
+        // 计算总长度
+        let totalLength = 0;
+        for (const part of parts) {
+            totalLength += part.length;
+        }
+
+        // 合并所有部分
+        const result = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const part of parts) {
+            result.set(part, offset);
+            offset += part.length;
+        }
+
+        return result;
     }
 
     _encodeStringField(fieldNumber, value) {
         const header = (fieldNumber << 3) | 2;
         const valueBytes = this.textEncoder.encode(value);
-        return [
-            header,
-            ...this._encodeVarint(valueBytes.length),
-            ...valueBytes
-        ];
+        const varintArray = this._encodeVarint(valueBytes.length);
+        const varintBytes = new Uint8Array(varintArray);
+        
+        // 使用 Uint8Array 而不是数组，避免大数组展开导致栈溢出
+        const result = new Uint8Array(1 + varintBytes.length + valueBytes.length);
+        result[0] = header;
+        result.set(varintBytes, 1);
+        result.set(valueBytes, 1 + varintBytes.length);
+        
+        return result;
     }
 
     _encodeVarint(value) {
@@ -102,7 +187,7 @@ class GrpcGatewayClient {
             current >>>= 7;
         }
         chunks.push(current);
-        return chunks;
+        return chunks; // 返回数组，调用者需要转换为 Uint8Array
     }
 
     _wrapFrame(flag, payload) {

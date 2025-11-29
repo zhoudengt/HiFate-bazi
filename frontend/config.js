@@ -6,6 +6,7 @@
 // API 配置 - 自动识别环境
 const API_CONFIG = (function() {
     const hostname = window.location.hostname;
+    const port = window.location.port || '8001';
     
     // 生产环境域名/IP 列表
     const PRODUCTION_HOSTS = [
@@ -27,8 +28,9 @@ const API_CONFIG = (function() {
         };
     } else {
         // === 开发环境 ===
+        // 使用当前主机名，支持 localhost 和 127.0.0.1
         return {
-            baseURL: 'http://127.0.0.1:8001/api/v1',
+            baseURL: `http://${hostname}:${port}/api/v1`,
             timeout: 60000,
             fortuneApiKey: 'fortune_analysis_default_key_2024',
             env: 'development'
@@ -39,6 +41,7 @@ const API_CONFIG = (function() {
 // gRPC-Web 配置 - 自动识别环境
 const GRPC_CONFIG = (function() {
     const hostname = window.location.hostname;
+    const port = window.location.port || '8001';
     
     // 生产环境域名/IP 列表
     const PRODUCTION_HOSTS = [
@@ -46,7 +49,8 @@ const GRPC_CONFIG = (function() {
     ];
     
     const isProduction = PRODUCTION_HOSTS.includes(hostname);
-    const baseHost = isProduction ? `http://${hostname}:8001` : 'http://127.0.0.1:8001';
+    // 开发环境使用当前主机名（支持 localhost 和 127.0.0.1）
+    const baseHost = isProduction ? `http://${hostname}:8001` : `http://${hostname}:${port}`;
     
     return {
         enabled: true,

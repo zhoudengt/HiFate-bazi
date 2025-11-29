@@ -29,8 +29,14 @@ docker images hifate-base:latest --format "   大小: {{.Size}}"
 docker images hifate-base:latest --format "   创建: {{.CreatedAt}}"
 echo ""
 
-# 检查 requirements.txt 是否有变更
+# 检查 requirements.txt 是否有变更（包括微服务依赖）
 REQ_HASH=$(md5 -q requirements.txt 2>/dev/null || md5sum requirements.txt | cut -d' ' -f1)
+DESK_FENGSHUI_REQ_HASH=""
+if [ -f "services/desk_fengshui/requirements.txt" ]; then
+    DESK_FENGSHUI_REQ_HASH=$(md5 -q services/desk_fengshui/requirements.txt 2>/dev/null || md5sum services/desk_fengshui/requirements.txt | cut -d' ' -f1)
+fi
+COMBINED_HASH="${REQ_HASH}_${DESK_FENGSHUI_REQ_HASH}"
+
 BASE_REQ_HASH=$(docker run --rm hifate-base:latest cat /app/.requirements_hash 2>/dev/null | tr -d '\n\r' || echo "")
 
 if [ -z "$BASE_REQ_HASH" ]; then
@@ -44,6 +50,9 @@ if [ "$REQ_HASH" != "$BASE_REQ_HASH" ]; then
     echo "⚠️  requirements.txt 已变更，建议更新基础镜像"
     echo "   当前: $REQ_HASH"
     echo "   镜像: $BASE_REQ_HASH"
+    if [ -n "$DESK_FENGSHUI_REQ_HASH" ]; then
+        echo "   微服务依赖: $DESK_FENGSHUI_REQ_HASH"
+    fi
     echo ""
     echo "执行更新："
     echo "   ./scripts/docker/build_base.sh"
@@ -51,6 +60,9 @@ if [ "$REQ_HASH" != "$BASE_REQ_HASH" ]; then
     exit 1
 else
     echo "✅ requirements.txt 未变更，基础镜像可用"
+    if [ -n "$DESK_FENGSHUI_REQ_HASH" ]; then
+        echo "✅ 微服务依赖（风水模块）已包含"
+    fi
     echo ""
 fi
 

@@ -107,7 +107,12 @@ const FaceAnalysisV2 = {
             // 使用 gRPC-Web 调用
             const result = await api.post('/api/v2/face/analyze', requestData);
             
-            console.log('分析结果:', result);
+            // 安全地打印结果（避免循环引用导致 Maximum call stack exceeded）
+            try {
+                console.log('分析结果:', JSON.parse(JSON.stringify(result)));
+            } catch (e) {
+                console.log('分析结果: success =', result?.success);
+            }
             
             if (result.success) {
                 this.displayResult(result.data);

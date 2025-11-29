@@ -1,55 +1,100 @@
 # HiFate 基础镜像
-# 预装所有 Python 依赖，加速后续部署
+# 预装所有 Python 依赖和框架，加速后续部署
 # 
 # 构建命令（跨平台兼容）：
 #   docker build --platform linux/amd64 -f Dockerfile.base -t hifate-base:latest .
 #
 # 仅在 requirements.txt 变更时需要重建
 # 
-# 安全说明：
+# 优化说明：
 # - 使用 --platform linux/amd64 确保 Mac M1/Intel 都能构建出 Linux 镜像
+# - 预装所有依赖包和框架，实现快速部署（10-20秒）
 # - 应用层 Dockerfile 会再次执行 pip install 作为保险层
 
 FROM --platform=linux/amd64 python:3.11-slim
 
 LABEL maintainer="HiFate Team"
-LABEL description="HiFate base image with pre-installed dependencies"
+LABEL description="HiFate base image with pre-installed dependencies and frameworks"
 
 # 设置工作目录
 WORKDIR /app
 
-# 使用国内镜像源加速
+# 环境变量
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+# 使用国内镜像源加速（系统包）
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
 
-# 安装系统依赖（opencv/mediapipe 需要）
+# 安装系统依赖（opencv/mediapipe/YOLO 需要）
+# 包括 YOLOv8 所需的系统库
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
         curl \
+        wget \
         gcc \
         g++ \
+        make \
         libgl1 \
         libglib2.0-0 \
         libsm6 \
         libxext6 \
         libxrender1 \
+        libgomp1 \
+        libgthread-2.0-0 \
+        libgstreamer1.0-0 \
+        libgstreamer-plugins-base1.0-0 \
+        ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# 配置 pip 使用国内源
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+# 配置 pip 使用国内源（加速下载）
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
 
-# 复制并安装依赖（这是最耗时的步骤）
+# 复制并安装所有依赖（这是最耗时的步骤，约5-10分钟）
+# 所有 Python 包和框架都在这里安装
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt && \
+# 安装微服务依赖（风水模块需要 YOLOv8）
+# 注意：如果文件不存在，COPY 会失败，所以需要确保文件存在
+COPY services/desk_fengshui/requirements.txt /tmp/desk_fengshui_requirements.txt
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt && \
+    # 安装微服务依赖（合并到主依赖，避免重复）
+    pip install --no-cache-dir -r /tmp/desk_fengshui_requirements.txt && \
     # 保存 requirements.txt 的哈希值用于后续检查
-    md5sum requirements.txt > /app/.requirements_hash 2>/dev/null || \
-    md5 -q requirements.txt > /app/.requirements_hash 2>/dev/null || \
-    echo "$(cat requirements.txt | md5sum | cut -d' ' -f1)" > /app/.requirements_hash
+    (md5sum requirements.txt > /app/.requirements_hash 2>/dev/null || \
+     md5 -q requirements.txt > /app/.requirements_hash 2>/dev/null || \
+     echo "$(cat requirements.txt | md5sum | cut -d' ' -f1)" > /app/.requirements_hash) && \
+    rm -f /tmp/desk_fengshui_requirements.txt
 
-# 清理缓存
-RUN rm -rf /root/.cache/pip /tmp/*
+# 验证关键依赖安装（包括微服务依赖）
+RUN python -c "\
+import fastapi, uvicorn, pymysql, redis, grpc; \
+import numpy, cv2, mediapipe, sklearn; \
+try: \
+    from ultralytics import YOLO; \
+    print('✅ YOLOv8 可用'); \
+except ImportError: \
+    print('⚠️  YOLOv8 未安装（可选）'); \
+" && \
+    echo "✅ 核心框架验证通过" || \
+    (echo "❌ 核心框架验证失败" && exit 1)
+
+# 清理缓存和临时文件（减小镜像大小）
+RUN rm -rf /root/.cache/pip /tmp/* /var/tmp/* && \
+    find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.11 -name "*.pyc" -delete 2>/dev/null || true
 
 # 记录构建信息
 RUN echo "Base image built at: $(date)" > /app/.base_build_info && \
-    echo "Python version: $(python --version)" >> /app/.base_build_info
+    echo "Python version: $(python --version)" >> /app/.base_build_info && \
+    echo "Pip version: $(pip --version)" >> /app/.base_build_info && \
+    echo "Installed packages: $(pip list | wc -l)" >> /app/.base_build_info
+
+# 健康检查（验证基础镜像可用性）
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import sys; sys.exit(0)" || exit 1
 

@@ -977,7 +977,14 @@ class EnhancedRuleCondition:
 
             elif key == "element_total":
                 counts = bazi_data.get('element_counts', {})
-                return EnhancedRuleCondition._match_element_counts(counts, value)
+                result = EnhancedRuleCondition._match_element_counts(counts, value)
+                # 调试：记录70067-70088范围的规则匹配
+                if isinstance(value, dict) and value.get('names'):
+                    names = value.get('names', [])
+                    if names and names[0] in ['金', '木', '水', '火', '土']:
+                        import logging
+                        logging.debug(f"element_total: names={names}, counts={counts}, spec={value}, result={result}")
+                return result
 
             elif key == "element_relation":
                 return EnhancedRuleCondition._match_element_relation(bazi_data, value)
@@ -1342,7 +1349,7 @@ class EnhancedRuleCondition:
                     return False
                 
                 names = value.get('names', [])
-                min_count = value.get('min', 1)
+                min_count = value.get('min')  # ⚠️ 修复：不要设置默认值，只有当明确指定时才检查
                 max_count = value.get('max')
                 eq_count = value.get('eq')
                 
@@ -1361,6 +1368,11 @@ class EnhancedRuleCondition:
                 
                 # 统计出现次数
                 count = sum(1 for char in all_chars if char in names)
+                
+                # 调试：记录70067-70088范围的规则匹配
+                import logging
+                if names and names[0] in ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']:
+                    logging.debug(f"stems_branches_count: names={names}, count={count}, min={min_count}, max={max_count}, eq={eq_count}, all_chars={all_chars}")
                 
                 if eq_count is not None:
                     return count == eq_count

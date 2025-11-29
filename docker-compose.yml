@@ -99,7 +99,7 @@ services:
       dockerfile: Dockerfile
     container_name: hifate-bazi-analyzer
     ports:
-      - "50051:50051"
+      - "9003:9003"
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
@@ -108,9 +108,9 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      SERVICE_PORT: 50051
+      SERVICE_PORT: 9003
       TZ: Asia/Shanghai
-    command: python services/bazi_analyzer_service.py
+    command: python services/bazi_analyzer/grpc_server.py --port 9003
     depends_on:
       mysql:
         condition: service_healthy
@@ -127,7 +127,7 @@ services:
       dockerfile: Dockerfile
     container_name: hifate-fortune-analyzer
     ports:
-      - "50052:50052"
+      - "9005:9005"
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
@@ -136,9 +136,9 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      SERVICE_PORT: 50052
+      SERVICE_PORT: 9005
       TZ: Asia/Shanghai
-    command: python services/fortune_analysis_service.py
+    command: python services/fortune_analysis/grpc_server.py --port 9005
     depends_on:
       mysql:
         condition: service_healthy
@@ -155,7 +155,7 @@ services:
       dockerfile: Dockerfile
     container_name: hifate-rule-service
     ports:
-      - "50053:50053"
+      - "9004:9004"
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
@@ -164,9 +164,211 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      SERVICE_PORT: 50053
+      SERVICE_PORT: 9004
       TZ: Asia/Shanghai
-    command: python services/rule_service_grpc.py
+    command: python services/bazi_rule/grpc_server.py --port 9004
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hifate-network
+
+  # 八字核心服务
+  bazi-core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hifate-bazi-core
+    ports:
+      - "9001:9001"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVICE_PORT: 9001
+      TZ: Asia/Shanghai
+    command: python services/bazi_core/grpc_server.py --port 9001
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hifate-network
+
+  # 大运流年服务
+  bazi-fortune:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hifate-bazi-fortune
+    ports:
+      - "9002:9002"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVICE_PORT: 9002
+      TZ: Asia/Shanghai
+    command: python services/bazi_fortune/grpc_server.py --port 9002
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hifate-network
+
+  # 支付服务
+  payment-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hifate-payment-service
+    ports:
+      - "9006:9006"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVICE_PORT: 9006
+      TZ: Asia/Shanghai
+    command: python services/payment_service/grpc_server.py --port 9006
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hifate-network
+
+  # 运势规则服务
+  fortune-rule:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hifate-fortune-rule
+    ports:
+      - "9007:9007"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVICE_PORT: 9007
+      TZ: Asia/Shanghai
+    command: python services/fortune_rule/grpc_server.py --port 9007
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hifate-network
+
+  # 意图识别服务
+  intent-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hifate-intent-service
+    ports:
+      - "9008:9008"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVICE_PORT: 9008
+      SERVICE_HOST: 0.0.0.0
+      COZE_ACCESS_TOKEN: ${COZE_ACCESS_TOKEN:-}
+      INTENT_BOT_ID: ${INTENT_BOT_ID:-}
+      TZ: Asia/Shanghai
+    command: python services/intent_service/grpc_server.py
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hifate-network
+
+  # 提示优化服务
+  prompt-optimizer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hifate-prompt-optimizer
+    ports:
+      - "9009:9009"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVICE_PORT: 9009
+      SERVICE_HOST: 0.0.0.0
+      COZE_ACCESS_TOKEN: ${COZE_ACCESS_TOKEN:-}
+      COZE_BOT_ID: ${COZE_BOT_ID:-}
+      TZ: Asia/Shanghai
+    command: python services/prompt_optimizer/grpc_server.py
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hifate-network
+
+  # 办公桌风水服务
+  desk-fengshui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hifate-desk-fengshui
+    ports:
+      - "9010:9010"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVICE_PORT: 9010
+      TZ: Asia/Shanghai
+    command: python services/desk_fengshui/grpc_server.py --port 9010
     depends_on:
       mysql:
         condition: service_healthy

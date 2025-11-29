@@ -44,6 +44,14 @@ from server.api.v1.formula_analysis import (
     FormulaAnalysisRequest,
     analyze_formula_rules,
 )
+from server.api.v1.daily_fortune import (
+    DailyFortuneRequest,
+    get_daily_fortune,
+)
+from server.api.v1.monthly_fortune import (
+    MonthlyFortuneRequest,
+    calculate_monthly_fortune,
+)
 from server.api.v1.unified_payment import (
     CreatePaymentRequest,
     VerifyPaymentRequest,
@@ -170,6 +178,20 @@ async def _handle_formula_analysis(payload: Dict[str, Any]):
     return await analyze_formula_rules(request_model)
 
 
+@_register("/bazi/daily-fortune")
+async def _handle_daily_fortune(payload: Dict[str, Any]):
+    """处理今日运势分析请求"""
+    request_model = DailyFortuneRequest(**payload)
+    return await get_daily_fortune(request_model)
+
+
+@_register("/bazi/monthly-fortune")
+async def _handle_monthly_fortune(payload: Dict[str, Any]):
+    """处理当月运势分析请求"""
+    request_model = MonthlyFortuneRequest(**payload)
+    return await calculate_monthly_fortune(request_model)
+
+
 @_register("/payment/unified/create")
 async def _handle_unified_payment_create(payload: Dict[str, Any]):
     """处理统一支付创建请求"""
@@ -196,6 +218,7 @@ async def _handle_payment_providers(payload: Dict[str, Any]):
 async def _handle_face_analysis_v2(payload: Dict[str, Any]):
     """处理面相分析V2请求（支持文件上传）"""
     from server.api.v2.face_analysis import analyze_face
+    from fastapi.responses import JSONResponse
     
     # 处理 base64 编码的图片
     image_base64 = payload.get("image_base64", "")
@@ -219,7 +242,7 @@ async def _handle_face_analysis_v2(payload: Dict[str, Any]):
     )
     
     # 调用原始接口
-    return await analyze_face(
+    result = await analyze_face(
         image=image_file,
         analysis_types=payload.get("analysis_types", "gongwei,liuqin,shishen"),
         birth_year=payload.get("birth_year"),
@@ -228,12 +251,25 @@ async def _handle_face_analysis_v2(payload: Dict[str, Any]):
         birth_hour=payload.get("birth_hour"),
         gender=payload.get("gender")
     )
+    
+    # JSONResponse 对象需要提取 body 内容
+    if isinstance(result, JSONResponse):
+        body = result.body
+        if isinstance(body, bytes):
+            data = json.loads(body.decode('utf-8'))
+        else:
+            data = body
+        # 深度清理，确保可以序列化（修复 Maximum call stack exceeded）
+        return _deep_clean_for_serialization(data)
+    
+    return result
 
 
 @_register("/api/v2/desk-fengshui/analyze")
 async def _handle_desk_fengshui(payload: Dict[str, Any]):
     """处理办公桌风水分析请求（支持文件上传）"""
     from server.api.v2.desk_fengshui_api import analyze_desk_fengshui
+    from fastapi.responses import JSONResponse
     
     # 处理 base64 编码的图片
     image_base64 = payload.get("image_base64", "")
@@ -257,13 +293,71 @@ async def _handle_desk_fengshui(payload: Dict[str, Any]):
     )
     
     # 调用原始接口
-    return await analyze_desk_fengshui(
+    result = await analyze_desk_fengshui(
         image=image_file,
         solar_date=payload.get("solar_date"),
         solar_time=payload.get("solar_time"),
         gender=payload.get("gender"),
         use_bazi=payload.get("use_bazi", True)
     )
+    
+    # JSONResponse 对象需要提取 body 内容
+    if isinstance(result, JSONResponse):
+        body = result.body
+        if isinstance(body, bytes):
+            data = json.loads(body.decode('utf-8'))
+        else:
+            data = body
+        # 深度清理，确保可以序列化（修复 Maximum call stack exceeded）
+        return _deep_clean_for_serialization(data)
+    elif hasattr(result, 'model_dump'):
+        # Pydantic v2 模型
+        data = result.model_dump()
+        # 深度清理，确保可以序列化
+        return _deep_clean_for_serialization(data)
+    elif hasattr(result, 'dict'):
+        # Pydantic v1 模型
+        data = result.dict()
+        # 深度清理，确保可以序列化
+        return _deep_clean_for_serialization(data)
+    
+    return result
+
+
+def _deep_clean_for_serialization(obj: Any, visited: set = None) -> Any:
+    """深度清理对象，确保可以 JSON 序列化
+    
+    递归清理字典、列表和对象，将无法序列化的类型转换为字符串。
+    用于修复面相分析V2和办公桌风水的 Maximum call stack exceeded 错误。
+    
+    Args:
+        obj: 要清理的对象
+        visited: 已访问对象的ID集合，用于检测循环引用
+    """
+    if visited is None:
+        visited = set()
+    
+    # 检测循环引用
+    obj_id = id(obj)
+    if obj_id in visited:
+        return "[循环引用]"
+    visited.add(obj_id)
+    
+    try:
+        if isinstance(obj, dict):
+            return {k: _deep_clean_for_serialization(v, visited) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [_deep_clean_for_serialization(item, visited) for item in obj]
+        elif isinstance(obj, (str, int, float, bool, type(None))):
+            return obj
+        elif hasattr(obj, '__dict__'):
+            # 对象，转换为字典
+            return _deep_clean_for_serialization(obj.__dict__, visited)
+        else:
+            # 其他类型（如 numpy 数组、PIL 图片等），转换为字符串
+            return str(obj)
+    finally:
+        visited.discard(obj_id)
 
 
 def _grpc_cors_headers() -> Dict[str, str]:
@@ -298,8 +392,11 @@ async def grpc_web_gateway(request: Request):
         message_bytes = _extract_grpc_web_message(raw_body)
         frontend_request = _decode_frontend_request(message_bytes)
     except ValueError as exc:
-        logger.warning("gRPC-Web 请求解析失败: %s", exc)
+        logger.error("gRPC-Web 请求解析失败: %s", exc, exc_info=True)
         return _build_error_response(str(exc), http_status=400, grpc_status=3)
+    except Exception as exc:
+        logger.error("gRPC-Web 请求解析异常: %s", exc, exc_info=True)
+        return _build_error_response(f"请求解析异常: {str(exc)}", http_status=500, grpc_status=13)
 
     endpoint = frontend_request["endpoint"]
     payload_json = frontend_request["payload_json"]
@@ -318,13 +415,45 @@ async def grpc_web_gateway(request: Request):
 
     try:
         result = await handler(payload)
-        data = jsonable_encoder(result)
+        
+        # 如果 handler 已经处理了 JSONResponse，result 应该是字典
+        # 但为了安全，仍然检查 JSONResponse 对象
+        from fastapi.responses import JSONResponse
+        if isinstance(result, JSONResponse):
+            body = result.body
+            if isinstance(body, bytes):
+                data = json.loads(body.decode('utf-8'))
+            else:
+                data = body
+        else:
+            # 处理 Pydantic 模型和普通字典
+            try:
+                # 检查是否为 Pydantic BaseModel
+                if hasattr(result, 'model_dump'):
+                    # Pydantic v2
+                    data = result.model_dump()
+                elif hasattr(result, 'dict'):
+                    # Pydantic v1
+                    data = result.dict()
+                else:
+                    # 普通对象，尝试 JSON 序列化
+                    json_str = json.dumps(result, default=str, ensure_ascii=False)
+                    data = json.loads(json_str)
+            except (RecursionError, ValueError, TypeError) as json_err:
+                logger.error(f"JSON 序列化失败（可能是循环引用或数据过大）: {json_err}", exc_info=True)
+                # 降级方案：使用 jsonable_encoder
+                try:
+                    data = jsonable_encoder(result)
+                except Exception as encoder_err:
+                    logger.error(f"jsonable_encoder 也失败: {encoder_err}", exc_info=True)
+                    data = {"error": "数据序列化失败", "detail": str(json_err)}
+        
         status_code = 200
     except HTTPException as exc:
         status_code = exc.status_code
         data = {"detail": exc.detail}
     except Exception as exc:  # noqa: BLE001
-        logger.exception("gRPC-Web handler 执行失败 (%s)", endpoint)
+        logger.exception("gRPC-Web handler 执行失败 (%s): %s", endpoint, exc)
         status_code = 500
         data = {"detail": f"Internal error: {exc}"}
 

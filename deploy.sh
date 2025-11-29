@@ -105,6 +105,25 @@ ENDSSH
         $SSH_CMD << 'ENDSSH'
 cd /opt/HiFate-bazi
 
+# 检查并构建基础镜像（如果不存在）
+echo "   检查基础镜像..."
+if ! docker images hifate-base:latest --format "{{.Repository}}" | grep -q hifate-base; then
+    echo "   ⚠️  基础镜像不存在，开始构建（约5-10分钟）..."
+    echo "   正在构建基础镜像，请耐心等待..."
+    docker build \
+        --platform linux/amd64 \
+        -f Dockerfile.base \
+        -t hifate-base:latest \
+        -t hifate-base:$(date +%Y%m%d) \
+        . || {
+        echo "   ❌ 基础镜像构建失败，请检查错误信息"
+        exit 1
+    }
+    echo "   ✅ 基础镜像构建完成"
+else
+    echo "   ✅ 基础镜像已存在"
+fi
+
 # 使用 docker compose（新版命令）
 if command -v docker &> /dev/null; then
     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
@@ -171,6 +190,25 @@ echo "📂 拉取代码..."
 git stash --include-untracked 2>/dev/null || true
 git pull origin master
 git stash pop 2>/dev/null || true
+
+# 检查并构建基础镜像（如果不存在）
+echo "🐳 检查基础镜像..."
+if ! docker images hifate-base:latest --format "{{.Repository}}" | grep -q hifate-base; then
+    echo "   ⚠️  基础镜像不存在，开始构建（约5-10分钟）..."
+    echo "   正在构建基础镜像，请耐心等待..."
+    docker build \
+        --platform linux/amd64 \
+        -f Dockerfile.base \
+        -t hifate-base:latest \
+        -t hifate-base:$(date +%Y%m%d) \
+        . || {
+        echo "   ❌ 基础镜像构建失败，请检查错误信息"
+        exit 1
+    }
+    echo "   ✅ 基础镜像构建完成"
+else
+    echo "   ✅ 基础镜像已存在"
+fi
 
 echo "🐳 重启服务..."
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
@@ -341,6 +379,26 @@ echo "=========================================="
 echo "🚀 启动服务..."
 echo "=========================================="
 cd /opt/HiFate-bazi
+
+# 检查并构建基础镜像（如果不存在）
+echo "检查基础镜像..."
+if ! docker images hifate-base:latest --format "{{.Repository}}" | grep -q hifate-base; then
+    echo "   基础镜像不存在，开始构建（约5-10分钟）..."
+    echo "   正在构建基础镜像，请耐心等待..."
+    docker build \
+        --platform linux/amd64 \
+        -f Dockerfile.base \
+        -t hifate-base:latest \
+        -t hifate-base:$(date +%Y%m%d) \
+        . || {
+        echo "   ❌ 基础镜像构建失败"
+        exit 1
+    }
+    echo "   ✅ 基础镜像构建完成"
+else
+    echo "   ✅ 基础镜像已存在"
+fi
+
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 echo ""

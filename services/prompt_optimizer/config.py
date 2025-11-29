@@ -5,8 +5,8 @@ Prompt Optimizer 配置
 import os
 
 # 服务配置
-SERVICE_PORT = 9009
-SERVICE_HOST = "0.0.0.0"
+SERVICE_PORT = int(os.getenv("SERVICE_PORT", 9009))
+SERVICE_HOST = os.getenv("SERVICE_HOST", "0.0.0.0")
 
 # MongoDB 配置（存储反馈和报告）
 MONGO_HOST = "127.0.0.1"
@@ -17,11 +17,11 @@ MONGO_PASSWORD = os.getenv("MONGO_PASSWORD", "")
 
 # MySQL 配置（Prompt版本管理）
 MYSQL_CONFIG = {
-    'host': '127.0.0.1',
-    'port': 13306,
-    'user': 'root',
-    'password': 'root123',
-    'database': 'bazi_system',
+    'host': os.getenv("MYSQL_HOST", "127.0.0.1"),
+    'port': int(os.getenv("MYSQL_PORT", 13306)),
+    'user': os.getenv("MYSQL_USER", "root"),
+    'password': os.getenv("MYSQL_PASSWORD", "root123"),
+    'database': os.getenv("MYSQL_DATABASE", "bazi_system"),
     'charset': 'utf8mb4',
     'use_unicode': True
 }

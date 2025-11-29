@@ -144,6 +144,12 @@ class EnhancedRuleEngine:
                 for rule in indexed_rules:
                     rule_id = rule.get('rule_id', id(rule))
                     candidates_dict[rule_id] = rule
+                    # 调试：记录70067-70088范围的规则
+                    if 'FORMULA_身体_700' in rule_id:
+                        rule_num = rule_id[-5:]
+                        if rule_num.isdigit() and 70067 <= int(rule_num) <= 70088:
+                            import logging
+                            logging.debug(f"候选规则: {rule_id} (类型: {rule_type})")
         else:
             # 如果没有指定规则类型，从所有规则类型索引中获取
             for rule_type, rules in self._index['by_rule_type'].items():
@@ -181,6 +187,19 @@ class EnhancedRuleEngine:
             # 如果没有指定规则类型，也要过滤掉未启用的规则
             candidates = [r for r in candidates if r.get('enabled', True)]
         
+        # 调试：统计70067-70088范围的候选规则
+        candidates_70067_88 = [r for r in candidates if 'FORMULA_身体_700' in r.get('rule_id', '')]
+        if candidates_70067_88:
+            rule_nums = []
+            for r in candidates_70067_88:
+                rule_id = r.get('rule_id', '')
+                rule_num = rule_id[-5:]
+                if rule_num.isdigit() and 70067 <= int(rule_num) <= 70088:
+                    rule_nums.append(rule_num)
+            if rule_nums:
+                import logging
+                logging.info(f"候选规则中70067-70088范围的规则: {len(rule_nums)} 条, IDs: {sorted(rule_nums)[:10]}")
+        
         # 调试：检查候选规则中的十神命格规则
         if rule_types and 'shishen' in rule_types:
             shishen_candidates = [r for r in candidates if r.get('rule_type') == 'shishen']
@@ -194,12 +213,27 @@ class EnhancedRuleEngine:
         
         for rule in candidates:
             try:
-                if self._match_single_rule(rule, bazi_data):
+                match_result = self._match_single_rule(rule, bazi_data)
+                if match_result:
                     matched_rules.append(rule)
+                # 调试：检查70067-70088范围的规则
+                rule_id = rule.get('rule_id', '')
+                if 'FORMULA_身体_700' in rule_id:
+                    rule_num = rule_id[-5:]
+                    if rule_num.isdigit() and 70067 <= int(rule_num) <= 70088:
+                        import logging
+                        logging.debug(f"规则 {rule_id} 匹配结果: {match_result}")
             except Exception as e:
                 # 如果匹配出错，记录日志但不跳过
                 import logging
-                logging.warning(f"规则匹配出错: {rule.get('rule_id')}: {e}")
+                rule_id = rule.get('rule_id', '')
+                logging.warning(f"规则匹配出错: {rule_id}: {e}")
+                # 如果是70067-70088范围的规则，记录详细错误
+                if 'FORMULA_身体_700' in rule_id:
+                    rule_num = rule_id[-5:]
+                    if rule_num.isdigit() and 70067 <= int(rule_num) <= 70088:
+                        import traceback
+                        logging.error(f"规则 {rule_id} 匹配异常详情:\n{traceback.format_exc()}")
         
         # 3. 按优先级排序
         matched_rules.sort(key=lambda r: r.get('priority', 100), reverse=True)

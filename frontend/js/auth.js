@@ -2,19 +2,25 @@
 class Auth {
     static async login(username, password) {
         try {
+            console.log('开始登录，用户名:', username);
             const response = await api.post('/auth/login', {
                 username,
                 password
             });
             
-            if (response.access_token) {
+            console.log('登录响应:', response);
+            
+            if (response && response.access_token) {
                 localStorage.setItem(TOKEN_KEY, response.access_token);
+                console.log('登录成功，token 已保存');
                 return true;
             }
+            console.warn('登录响应中没有 access_token');
             return false;
         } catch (error) {
             console.error('Login error:', error);
-            throw error;
+            console.error('错误详情:', error.message, error.stack);
+            throw new Error(error.message || '登录失败，请检查网络连接和服务是否启动');
         }
     }
 
