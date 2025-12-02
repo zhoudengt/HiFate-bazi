@@ -105,6 +105,25 @@ async def smart_analyze(
             monitor.add_metric("intent_recognition", "intents_count", len(intent_result.get("intents", [])))
             monitor.add_metric("intent_recognition", "confidence", intent_result.get("confidence", 0))
             monitor.add_metric("intent_recognition", "method", intent_result.get("method", "unknown"))
+            
+            # ==================== 记录用户问题（用于模型微调）====================
+            try:
+                from server.services.intent_question_logger import get_question_logger
+                question_logger = get_question_logger()
+                solar_date = f"{year:04d}-{month:02d}-{day:02d}"
+                solar_time = f"{hour:02d}:00"
+                question_logger.log_question(
+                    question=question,
+                    intent_result=intent_result,
+                    user_id=user_id,
+                    session_id=None,  # 可以后续添加session管理
+                    solar_date=solar_date,
+                    solar_time=solar_time,
+                    gender=gender
+                )
+            except Exception as e:
+                logger.warning(f"[smart_fortune] 记录用户问题失败: {e}", exc_info=True)
+                # 不影响主流程，仅记录警告
         
         # 如果问题不相关（LLM已判断）
         if not intent_result.get("is_fortune_related", True) or "non_fortune" in intent_result.get("intents", []):
@@ -219,7 +238,7 @@ async def smart_analyze(
                 except Exception as e:
                     logger.error(f"LLM深度分析异常: {e}", exc_info=True)
                     monitor.end_stage("llm_analysis", success=False, error=str(e))
-        
+            
         # ==================== 阶段6：生成响应文本 ====================
         with monitor.stage("response_generation", "生成响应文本"):
             if fortune_context:
@@ -734,21 +753,40 @@ async def smart_analyze_stream(
                     question=question,
                     user_id=user_id or "anonymous"
                 )
-                
-                # 防御性检查：确保intent_result不为None
-                if intent_result is None:
-                    intent_result = {
-                        "intents": ["general"],
-                        "confidence": 0.5,
-                        "keywords": [],
-                        "is_ambiguous": True,
-                        "time_intent": None,
-                        "is_fortune_related": True
-                    }
+            
+            # 防御性检查：确保intent_result不为None
+            if intent_result is None:
+                intent_result = {
+                    "intents": ["general"],
+                    "confidence": 0.5,
+                    "keywords": [],
+                    "is_ambiguous": True,
+                    "time_intent": None,
+                    "is_fortune_related": True
+                }
                 
                 monitor.add_metric("intent_recognition", "intents_count", len(intent_result.get("intents", [])))
                 monitor.add_metric("intent_recognition", "confidence", intent_result.get("confidence", 0))
                 monitor.add_metric("intent_recognition", "method", intent_result.get("method", "unknown"))
+                
+                # ==================== 记录用户问题（用于模型微调）====================
+                try:
+                    from server.services.intent_question_logger import get_question_logger
+                    question_logger = get_question_logger()
+                    solar_date = f"{year:04d}-{month:02d}-{day:02d}"
+                    solar_time = f"{hour:02d}:00"
+                    question_logger.log_question(
+                        question=question,
+                        intent_result=intent_result,
+                        user_id=user_id,
+                        session_id=None,  # 可以后续添加session管理
+                        solar_date=solar_date,
+                        solar_time=solar_time,
+                        gender=gender
+                    )
+                except Exception as e:
+                    logger.warning(f"[smart_fortune_stream] 记录用户问题失败: {e}", exc_info=True)
+                    # 不影响主流程，仅记录警告
             
             # 如果问题不相关（LLM已判断）
             if not intent_result.get("is_fortune_related", True) or "non_fortune" in intent_result.get("intents", []):
@@ -843,59 +881,97 @@ async def smart_analyze_stream(
             # ==================== 阶段6：流式输出LLM深度解读 ====================
             yield _sse_message("status", {"stage": "llm", "message": "正在生成深度解读..."})
             
-            with monitor.stage("llm_analysis", "LLM深度解读（流式）", intent=rule_types[0] if rule_types else "general"):
+            main_intent = rule_types[0] if rule_types and rule_types[0] != "ALL" else "general"
+            logger.info(f"[smart_fortune_stream] 🌊 开始流式输出LLM深度解读，意图: {main_intent}, 问题: {question[:50]}...")
+            
+            with monitor.stage("llm_analysis", "LLM深度解读（流式）", intent=main_intent):
                 try:
                     llm_client = get_fortune_llm_client()
-                    main_intent = rule_types[0] if rule_types and rule_types[0] != "ALL" else "general"
                     
-                    chunk_received = False
-                    chunk_count = 0
-                    total_content_length = 0
+                    logger.info(f"[smart_fortune_stream] 📞 调用 analyze_fortune(stream=True)")
+                    logger.debug(f"[smart_fortune_stream] 参数: intent={main_intent}, question={question[:100]}, fortune_context={'有' if fortune_context else '无'}, matched_rules={len(matched_rules) if matched_rules else 0}")
                     
-                    for chunk in llm_client.analyze_fortune(
+                    # ⭐ 调用LLM并检查返回值类型
+                    llm_result = llm_client.analyze_fortune(
                         intent=main_intent,
                         question=question,
                         bazi_data=bazi_result,
                         fortune_context=fortune_context,
                         matched_rules=matched_rules,
                         stream=True
-                    ):
+                    )
+                    
+                    # ⭐ 关键检查：确保返回的是生成器，不是字典
+                    if isinstance(llm_result, dict):
+                        logger.error(f"[smart_fortune_stream] ❌ analyze_fortune 返回了字典而不是生成器！")
+                        logger.error(f"[smart_fortune_stream] 返回值: {json.dumps(llm_result, ensure_ascii=False)[:500]}")
+                        monitor.end_stage("llm_analysis", success=False, error="返回类型错误：期望生成器，实际返回字典")
+                        yield _sse_message("llm_error", {"message": "AI服务配置错误：流式输出模式返回了非流式数据"})
+                    elif not hasattr(llm_result, '__iter__') or isinstance(llm_result, str):
+                        logger.error(f"[smart_fortune_stream] ❌ analyze_fortune 返回的不是生成器！类型: {type(llm_result)}, 值: {str(llm_result)[:200]}")
+                        monitor.end_stage("llm_analysis", success=False, error=f"返回类型错误：{type(llm_result)}")
+                        yield _sse_message("llm_error", {"message": "AI服务配置错误：流式输出模式返回了非流式数据"})
+                    else:
+                        logger.info(f"[smart_fortune_stream] ✅ analyze_fortune 返回生成器，类型: {type(llm_result)}")
+                    
+                    chunk_received = False
+                    chunk_count = 0
+                    total_content_length = 0
+                    
+                    logger.info(f"[smart_fortune_stream] 🔄 开始迭代生成器...")
+                    
+                    for chunk in llm_result:
+                        logger.debug(f"[smart_fortune_stream] 📨 收到chunk: type={type(chunk)}, is_dict={isinstance(chunk, dict)}, keys={list(chunk.keys()) if isinstance(chunk, dict) else 'N/A'}")
+                        
                         chunk_received = True
                         chunk_count += 1
-                        chunk_type = chunk.get('type')
+                        chunk_type = chunk.get('type') if isinstance(chunk, dict) else None
+                        
+                        logger.debug(f"[smart_fortune_stream] 📦 chunk #{chunk_count}: type={chunk_type}, full_chunk={json.dumps(chunk, ensure_ascii=False)[:200] if isinstance(chunk, dict) else str(chunk)[:200]}")
                         
                         if chunk_type == 'start':
+                            logger.info(f"[smart_fortune_stream] ✅ LLM流式输出开始")
                             yield _sse_message("llm_start", {})
                         elif chunk_type == 'chunk':
                             content = chunk.get('content', '')
                             if content:
                                 total_content_length += len(content)
+                                logger.debug(f"[smart_fortune_stream] 📝 发送chunk #{chunk_count}: {len(content)}字符, 内容预览: {content[:50]}...")
                                 yield _sse_message("llm_chunk", {"content": content})
+                            else:
+                                logger.warning(f"[smart_fortune_stream] ⚠️ chunk #{chunk_count} 类型为chunk但content为空")
                         elif chunk_type == 'end':
+                            logger.info(f"[smart_fortune_stream] ✅ LLM流式输出完成: 共{chunk_count}个chunk, 总长度{total_content_length}字符")
                             monitor.add_metric("llm_analysis", "chunk_count", chunk_count)
                             monitor.add_metric("llm_analysis", "total_length", total_content_length)
                             yield _sse_message("llm_end", {})
                             break
                         elif chunk_type == 'error':
                             error_msg = chunk.get('error', '未知错误')
+                            logger.error(f"[smart_fortune_stream] ❌ LLM流式输出错误: {error_msg}")
                             monitor.end_stage("llm_analysis", success=False, error=error_msg)
                             yield _sse_message("llm_error", {"message": error_msg})
                             break
+                        else:
+                            logger.warning(f"[smart_fortune_stream] ⚠️ 未知chunk类型: {chunk_type}, chunk内容: {json.dumps(chunk, ensure_ascii=False)[:200] if isinstance(chunk, dict) else str(chunk)[:200]}")
                     
                     if not chunk_received:
+                        logger.warning(f"[smart_fortune_stream] ⚠️ 未收到任何chunk，可能流式输出失败")
                         monitor.end_stage("llm_analysis", success=False, error="无响应")
                         yield _sse_message("llm_error", {"message": "AI深度解读服务无响应，请检查Bot配置和网络连接"})
                     else:
+                        logger.info(f"[smart_fortune_stream] ✅ LLM流式输出成功完成，共处理{chunk_count}个chunk")
                         monitor.end_stage("llm_analysis", success=True)
                 
                 except ValueError as e:
                     error_msg = str(e)
+                    logger.error(f"[smart_fortune_stream] ❌ ValueError: {error_msg}", exc_info=True)
                     monitor.end_stage("llm_analysis", success=False, error=error_msg)
                     yield _sse_message("llm_error", {"message": f"AI服务配置错误: {error_msg}"})
                 except Exception as e:
                     error_msg = str(e)
+                    logger.error(f"[smart_fortune_stream] ❌ 流式输出异常: {error_msg}", exc_info=True)
                     monitor.end_stage("llm_analysis", success=False, error=error_msg)
-                    logger.error(f"LLM streaming error: {e}", exc_info=True)
                     yield _sse_message("llm_error", {"message": f"AI深度解读失败: {error_msg}"})
             
             # 发送性能摘要

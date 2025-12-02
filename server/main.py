@@ -221,6 +221,15 @@ except ImportError as e:
     unified_payment_router = None
     UNIFIED_PAYMENT_ROUTER_AVAILABLE = False
 
+# 新增：模型微调路由
+try:
+    from server.api.v1.model_tuning import router as model_tuning_router
+    MODEL_TUNING_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"模型微调路由导入失败（可选功能）: {e}")
+    model_tuning_router = None
+    MODEL_TUNING_ROUTER_AVAILABLE = False
+
 # 推送服务和数据分析路由已废弃，已删除
 
 # 尝试导入限流中间件（可选，如果安装失败也不影响主流程）
@@ -406,6 +415,11 @@ if FORMULA_ANALYSIS_ROUTER_AVAILABLE and formula_analysis_router:
 # 统一支付路由
 if UNIFIED_PAYMENT_ROUTER_AVAILABLE and unified_payment_router:
     app.include_router(unified_payment_router, prefix="/api/v1", tags=["统一支付"])
+
+# 注册模型微调路由（可选功能）
+if MODEL_TUNING_ROUTER_AVAILABLE and model_tuning_router:
+    app.include_router(model_tuning_router, prefix="/api/v1", tags=["模型微调"])
+    logger.info("✓ 模型微调路由已注册")
     logger.info("✓ 统一支付路由已注册")
 
 # 推送服务和数据分析路由已废弃，已删除

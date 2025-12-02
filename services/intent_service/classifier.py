@@ -6,11 +6,19 @@
 from typing import Dict, Any, List
 import time
 import re
+from datetime import datetime
 from services.intent_service.llm_client import IntentLLMClient
-from services.intent_service.local_classifier import LocalIntentClassifier
 from services.intent_service.rule_postprocessor import RulePostProcessor
 from services.intent_service.config import INTENT_CATEGORIES, INTENT_TO_RULE_TYPE_MAP
-from services.intent_service.logger import logger
+from services.intent_service.logger import logger  # ✅ 先导入 logger
+
+# 优先使用 V2 版本（sentence-transformers，准确率85%+）
+try:
+    from services.intent_service.local_classifier_v2 import LocalIntentClassifierV2 as LocalIntentClassifier
+    logger.info("[IntentClassifier] 使用 LocalIntentClassifierV2 (sentence-transformers)")
+except ImportError:
+    from services.intent_service.local_classifier import LocalIntentClassifier
+    logger.warning("[IntentClassifier] LocalIntentClassifierV2 不可用，使用原版本")
 
 # 意图分类 Prompt 模板 v2.0（事项意图 + 时间意图 + 命理相关性判断）
 INTENT_CLASSIFICATION_PROMPT = """你是一个专业的命理学意图识别专家，负责：
@@ -315,92 +323,194 @@ class IntentClassifier:
             }
         """
         start_time = time.time()
+        request_id = f"classify_{int(time.time() * 1000)}"
         
         try:
-            logger.info(f"Classifying question: {question[:50]}...")
+            logger.info(f"[IntentClassifier][{request_id}] ========== 开始分类问题 ==========")
+            logger.info(f"[IntentClassifier][{request_id}] 📥 输入: question={question}")
             
             # ==================== 第1层：本地模型分类 ====================
-            local_result = self.local_classifier.classify(question)
-            local_confidence = local_result.get("confidence", 0.5)
-            local_method = local_result.get("method", "unknown")
-            
-            logger.info(f"Local model result: intents={local_result.get('intents')}, "
-                       f"confidence={local_confidence:.2f}, method={local_method}")
+            logger.info(f"[IntentClassifier][{request_id}] [第1层] 开始本地模型分类...")
+            local_start = time.time()
+            try:
+                local_result = self.local_classifier.classify(question)
+                local_time = int((time.time() - local_start) * 1000)
+                local_confidence = local_result.get("confidence", 0.5)
+                local_method = local_result.get("method", "unknown")
+                
+                logger.info(f"[IntentClassifier][{request_id}] [第1层] ✅ 本地模型分类完成: "
+                           f"intents={local_result.get('intents')}, "
+                           f"confidence={local_confidence:.2f}, "
+                           f"method={local_method}, "
+                           f"耗时={local_time}ms")
+                logger.info(f"[IntentClassifier][{request_id}] [第1层] 📤 输出: {local_result}")
+            except Exception as e:
+                local_time = int((time.time() - local_start) * 1000)
+                logger.error(f"[IntentClassifier][{request_id}] [第1层] ❌ 本地模型分类失败: {e}, 耗时={local_time}ms", exc_info=True)
+                # 降级：使用默认结果
+                local_result = {
+                    "intents": ["general"],
+                    "confidence": 0.5,
+                    "keywords": [],
+                    "reasoning": f"Local model error: {str(e)}",
+                    "is_ambiguous": True,
+                    "response_time_ms": local_time,
+                    "method": "error_fallback"
+                }
+                local_confidence = 0.5
+                local_method = "error_fallback"
+                logger.warning(f"[IntentClassifier][{request_id}] [第1层] ⚠️ 降级使用默认结果")
             
             # ==================== 第2层：判断是否需要LLM兜底 ====================
-            need_llm_fallback = self._need_llm_fallback(
-                question=question,
-                local_result=local_result
-            )
+            logger.info(f"[IntentClassifier][{request_id}] [第2层] 开始判断是否需要LLM兜底...")
+            fallback_start = time.time()
+            try:
+                need_llm_fallback = self._need_llm_fallback(
+                    question=question,
+                    local_result=local_result
+                )
+                fallback_time = int((time.time() - fallback_start) * 1000)
+                logger.info(f"[IntentClassifier][{request_id}] [第2层] ✅ LLM兜底判断完成: "
+                           f"need_llm={need_llm_fallback}, "
+                           f"confidence={local_confidence:.2f}, "
+                           f"method={local_method}, "
+                           f"耗时={fallback_time}ms")
+            except Exception as e:
+                fallback_time = int((time.time() - fallback_start) * 1000)
+                logger.error(f"[IntentClassifier][{request_id}] [第2层] ❌ LLM fallback判断失败: {e}, 耗时={fallback_time}ms", exc_info=True)
+                # 降级：如果判断失败，且本地结果置信度低，则使用LLM
+                need_llm_fallback = local_confidence < 0.6
+                logger.warning(f"[IntentClassifier][{request_id}] [第2层] ⚠️ 降级判断: need_llm={need_llm_fallback} (confidence={local_confidence:.2f})")
             
             if need_llm_fallback:
-                logger.info("Using LLM fallback for complex/ambiguous question")
-                # 使用LLM兜底
-                llm_result = self.llm_client.call_coze_api(
-                    question=question,
-                    prompt_template=INTENT_CLASSIFICATION_PROMPT,
-                    use_cache=use_cache,
-                    prompt_version=prompt_version
-                )
-                
-                # 检查是否为命理相关问题
-                if not llm_result.get("is_fortune_related", True):
-                    response_time_ms = int((time.time() - start_time) * 1000)
-                    llm_result["response_time_ms"] = response_time_ms
-                    llm_result["rule_types"] = []
-                    llm_result["method"] = "llm_fallback"
-                    return llm_result
-                
-                # 使用LLM结果
-                base_result = llm_result
-                base_result["method"] = "llm_fallback"
+                logger.info(f"[IntentClassifier][{request_id}] [第2层] 🔄 进入LLM兜底流程 (confidence={local_confidence:.2f}, method={local_method})")
+                llm_start = time.time()
+                try:
+                    # 使用LLM兜底
+                    logger.info(f"[IntentClassifier][{request_id}] [第2层-LLM] 调用LLM API...")
+                    llm_result = self.llm_client.call_coze_api(
+                        question=question,
+                        prompt_template=INTENT_CLASSIFICATION_PROMPT,
+                        use_cache=use_cache,
+                        prompt_version=prompt_version
+                    )
+                    llm_time = int((time.time() - llm_start) * 1000)
+                    logger.info(f"[IntentClassifier][{request_id}] [第2层-LLM] ✅ LLM调用完成: "
+                               f"intents={llm_result.get('intents')}, "
+                               f"confidence={llm_result.get('confidence', 0):.2f}, "
+                               f"耗时={llm_time}ms")
+                    logger.info(f"[IntentClassifier][{request_id}] [第2层-LLM] 📤 输出: {llm_result}")
+                    
+                    # 检查是否为命理相关问题
+                    if not llm_result.get("is_fortune_related", True):
+                        response_time_ms = int((time.time() - start_time) * 1000)
+                        llm_result["response_time_ms"] = response_time_ms
+                        llm_result["rule_types"] = []
+                        llm_result["method"] = "llm_fallback"
+                        logger.info(f"[IntentClassifier][{request_id}] [第2层-LLM] ⛔ 问题不相关，直接返回")
+                        return llm_result
+                    
+                    # 使用LLM结果
+                    base_result = llm_result
+                    base_result["method"] = "llm_fallback"
+                except Exception as e:
+                    llm_time = int((time.time() - llm_start) * 1000)
+                    logger.error(f"[IntentClassifier][{request_id}] [第2层-LLM] ❌ LLM调用失败: {e}, 耗时={llm_time}ms", exc_info=True)
+                    # 降级：LLM失败时使用本地结果
+                    logger.warning(f"[IntentClassifier][{request_id}] [第2层-LLM] ⚠️ LLM失败，降级使用本地模型结果")
+                    base_result = local_result
+                    base_result["is_fortune_related"] = True
+                    base_result["method"] = "local_model_fallback"
             else:
                 # 使用本地模型结果
+                logger.info(f"[IntentClassifier][{request_id}] [第2层] ✅ 跳过LLM，使用本地模型结果")
                 base_result = local_result
                 base_result["is_fortune_related"] = True  # 本地模型假设都是命理相关
-                base_result["method"] = "local_model"
+                base_result["method"] = local_method
             
             # ==================== 第3层：规则后处理 ====================
-            final_result = self.post_processor.process(
-                question=question,
-                base_result=base_result
-            )
+            logger.info(f"[IntentClassifier][{request_id}] [第3层] 开始规则后处理...")
+            postprocess_start = time.time()
+            try:
+                final_result = self.post_processor.process(
+                    question=question,
+                    base_result=base_result
+                )
+                postprocess_time = int((time.time() - postprocess_start) * 1000)
+                logger.info(f"[IntentClassifier][{request_id}] [第3层] ✅ 规则后处理完成: "
+                           f"time_intent={final_result.get('time_intent', {}).get('type', 'N/A')}, "
+                           f"耗时={postprocess_time}ms")
+                logger.info(f"[IntentClassifier][{request_id}] [第3层] 📤 输出: {final_result}")
+            except Exception as e:
+                postprocess_time = int((time.time() - postprocess_start) * 1000)
+                logger.error(f"[IntentClassifier][{request_id}] [第3层] ❌ 规则后处理失败: {e}, 耗时={postprocess_time}ms", exc_info=True)
+                # 降级：后处理失败时使用基础结果
+                logger.warning(f"[IntentClassifier][{request_id}] [第3层] ⚠️ 降级使用基础结果")
+                final_result = base_result
+                final_result["time_intent"] = {
+                    "type": "this_year",
+                    "target_years": [datetime.now().year],
+                    "description": f"今年（{datetime.now().year}年，默认）",
+                    "is_explicit": False
+                }
             
             # 添加元数据
             final_result["prompt_version"] = prompt_version
             final_result["response_time_ms"] = int((time.time() - start_time) * 1000)
             
-            logger.info(f"Classification result: intents={final_result['intents']}, "
+            total_time = final_result["response_time_ms"]
+            logger.info(f"[IntentClassifier][{request_id}] ========== 分类完成 ==========")
+            logger.info(f"[IntentClassifier][{request_id}] 📊 总耗时: {total_time}ms "
+                       f"(本地模型={local_time}ms, 兜底判断={fallback_time}ms, "
+                       f"{'LLM=' + str(llm_time) + 'ms, ' if need_llm_fallback else ''}"
+                       f"后处理={postprocess_time}ms)")
+            logger.info(f"[IntentClassifier][{request_id}] 📤 最终输出: intents={final_result['intents']}, "
                        f"time={final_result.get('time_intent', {}).get('type', 'N/A')}, "
                        f"confidence={final_result['confidence']:.2f}, "
-                       f"method={final_result.get('method', 'unknown')}, "
-                       f"time={final_result['response_time_ms']}ms")
+                       f"method={final_result.get('method', 'unknown')}")
             
             return final_result
             
         except Exception as e:
-            logger.error(f"Classification failed: {e}")
-            # 发生错误时返回默认分类
-            from datetime import datetime as dt
-            current_year = dt.now().year
+            total_time = int((time.time() - start_time) * 1000)
+            logger.error(f"[IntentClassifier][{request_id}] ❌ 分类失败: {e}, 总耗时={total_time}ms", exc_info=True)
+            # 发生错误时返回默认分类（降级方案）
+            current_year = datetime.now().year
+            
+            # 尝试从问题中提取关键词作为意图
+            fallback_intents = ["general"]
+            fallback_keywords = []
+            if "投资" in question or "理财" in question or "赚钱" in question or "发财" in question:
+                fallback_intents = ["wealth"]
+                fallback_keywords = ["投资", "理财", "赚钱", "发财"]
+            elif "事业" in question or "工作" in question or "升职" in question:
+                fallback_intents = ["career"]
+                fallback_keywords = ["事业", "工作", "升职"]
+            elif "婚姻" in question or "感情" in question or "恋爱" in question:
+                fallback_intents = ["marriage"]
+                fallback_keywords = ["婚姻", "感情", "恋爱"]
+            elif "健康" in question or "身体" in question:
+                fallback_intents = ["health"]
+                fallback_keywords = ["健康", "身体"]
+            
             return {
                 "is_fortune_related": True,  # 错误时默认为命理相关
-                "intents": ["general"],
+                "intents": fallback_intents,
                 "time_intent": {
                     "type": "this_year",
                     "target_years": [current_year],
                     "description": f"今年（{current_year}年，默认）",
                     "is_explicit": False
                 },
-                "confidence": 0.5,
-                "rule_types": ["ALL"],
-                "keywords": [],
-                "reasoning": f"Classification error: {str(e)}",
-                "is_ambiguous": True,
+                "confidence": 0.7,  # 提高默认置信度，避免再次触发LLM
+                "rule_types": [self.rule_type_map.get(fallback_intents[0], "ALL")],
+                "keywords": fallback_keywords[:3],
+                "reasoning": f"Classification error (fallback): {str(e)}",
+                "is_ambiguous": False,  # 明确标记为非模糊，避免触发LLM
                 "prompt_version": prompt_version,
                 "response_time_ms": int((time.time() - start_time) * 1000),
                 "error": str(e),
-                "method": "error"
+                "method": "error_fallback"
             }
     
     def _need_llm_fallback(
@@ -409,49 +519,64 @@ class IntentClassifier:
         local_result: Dict[str, Any]
     ) -> bool:
         """
-        判断是否需要LLM兜底
+        判断是否需要LLM兜底（强制本地优先版本）
         
-        需要LLM的情况：
-        1. 本地模型置信度 < 0.6
-        2. 问题过于模糊（长度 < 5 或缺少关键词）
-        3. 多意图冲突（意图数量 > 2 且置信度低）
-        4. 时间表达复杂（需要上下文理解）
+        🔴 核心原则：必须优先使用本地模型/关键词回退，LLM仅作为极端情况下的最后兜底
+        
+        ⚠️ 只有在以下极端情况下才使用LLM：
+        1. 置信度 < 0.3（极低，几乎无法识别）
+        2. 问题长度 < 2（完全无法理解）
+        3. 完全没有关键词且置信度 < 0.3（完全无法识别）
         """
         confidence = local_result.get("confidence", 0.5)
         intents = local_result.get("intents", [])
         keywords = local_result.get("keywords", [])
         is_ambiguous = local_result.get("is_ambiguous", True)
+        method = local_result.get("method", "unknown")
         
-        # 1. 置信度太低
-        if confidence < 0.6:
-            logger.info(f"Low confidence ({confidence:.2f}), using LLM fallback")
+        # 🔴 强制规则1：关键词回退优先（降低阈值到0.80，更容易跳过LLM）
+        if method == "keyword_fallback":
+            if confidence >= 0.80:
+                logger.info(f"[IntentClassifier] ✅ 关键词回退置信度足够高 ({confidence:.2f})，强制跳过LLM调用")
+                return False
+            elif confidence >= 0.60:
+                # 即使置信度在0.60-0.80之间，也优先使用关键词回退，不调用LLM
+                logger.info(f"[IntentClassifier] ✅ 关键词回退置信度中等 ({confidence:.2f})，优先使用本地结果，跳过LLM调用")
+                return False
+            else:
+                # 只有置信度<0.60时才考虑LLM，但还要检查其他条件
+                logger.warning(f"[IntentClassifier] ⚠️ 关键词回退置信度较低 ({confidence:.2f})，但继续检查是否真的需要LLM")
+        
+        # 🔴 强制规则2：本地模型优先（降低阈值到0.60，更容易跳过LLM）
+        if method == "local_model":
+            if confidence >= 0.60:
+                logger.info(f"[IntentClassifier] ✅ 本地模型置信度足够高 ({confidence:.2f})，强制跳过LLM调用")
+                return False
+            elif confidence >= 0.40:
+                # 即使置信度在0.40-0.60之间，也优先使用本地模型，不调用LLM
+                logger.info(f"[IntentClassifier] ✅ 本地模型置信度中等 ({confidence:.2f})，优先使用本地结果，跳过LLM调用")
+                return False
+            else:
+                # 只有置信度<0.40时才考虑LLM，但还要检查其他条件
+                logger.warning(f"[IntentClassifier] ⚠️ 本地模型置信度较低 ({confidence:.2f})，但继续检查是否真的需要LLM")
+        
+        # 🔴 极端情况1：置信度极低（<0.3）且完全没有关键词
+        if confidence < 0.3 and len(keywords) == 0:
+            logger.warning(f"[IntentClassifier] ❌ 极端情况：置信度极低 ({confidence:.2f}) 且无关键词，使用LLM兜底")
             return True
         
-        # 2. 问题过于模糊
-        if len(question) < 5 or len(keywords) == 0:
-            logger.info(f"Question too ambiguous (len={len(question)}, keywords={len(keywords)}), using LLM fallback")
+        # 🔴 极端情况2：问题完全无法理解（长度<2）
+        if len(question.strip()) < 2:
+            logger.warning(f"[IntentClassifier] ❌ 极端情况：问题长度过短 ({len(question)}), 使用LLM兜底")
             return True
         
-        # 3. 多意图冲突
-        if len(intents) > 2 and confidence < 0.75:
-            logger.info(f"Multiple intents conflict ({intents}), using LLM fallback")
+        # 🔴 极端情况3：置信度<0.3且问题模糊
+        if confidence < 0.3 and is_ambiguous:
+            logger.warning(f"[IntentClassifier] ❌ 极端情况：置信度极低 ({confidence:.2f}) 且模糊，使用LLM兜底")
             return True
         
-        # 4. 复杂时间表达（需要上下文理解）
-        complex_time_patterns = [
-            r'后\d+年', r'未来\d+年', r'最近\d+年',
-            r'\d{4}[到-]\d{4}年', r'最近'
-        ]
-        has_complex_time = any(re.search(pattern, question) for pattern in complex_time_patterns)
-        if has_complex_time and confidence < 0.7:
-            logger.info(f"Complex time expression detected, using LLM fallback")
-            return True
-        
-        # 5. 明确标记为模糊
-        if is_ambiguous and confidence < 0.65:
-            logger.info(f"Explicitly ambiguous, using LLM fallback")
-            return True
-        
+        # ✅ 其他所有情况：优先使用本地结果，不调用LLM
+        logger.info(f"[IntentClassifier] ✅ 本地模型/关键词回退结果可用，强制跳过LLM调用 (confidence={confidence:.2f}, method={method}, intents={intents})")
         return False
     
     def _post_process_result(self, result: Dict[str, Any]) -> Dict[str, Any]:

@@ -51,9 +51,48 @@ class GrpcGatewayClient {
             const trailerStatus = trailers['grpc-status'] ?? response.headers.get('grpc-status') ?? '0';
         
             if (trailerStatus !== '0' || !parsed.success) {
-                const grpcMessage = parsed.error || trailers['grpc-message'] || 'gRPC 调用失败';
-                console.error('gRPC 错误:', { trailerStatus, grpcMessage, parsed });
-                throw new Error(grpcMessage);
+                // ⭐ 增强错误处理：尝试从多个来源获取错误信息
+                let errorMessage = '';
+                
+                // 1. 优先使用 parsed.error
+                if (parsed.error) {
+                    errorMessage = parsed.error;
+                }
+                // 2. 尝试从 trailers 获取
+                else if (trailers['grpc-message']) {
+                    errorMessage = trailers['grpc-message'];
+                }
+                // 3. 尝试从 data_json 解析错误信息
+                else if (parsed.data_json) {
+                    try {
+                        const errorData = JSON.parse(parsed.data_json);
+                        if (errorData.detail) {
+                            errorMessage = errorData.detail;
+                        } else if (errorData.message) {
+                            errorMessage = errorData.message;
+                        } else if (errorData.error) {
+                            errorMessage = errorData.error;
+                        } else {
+                            errorMessage = JSON.stringify(errorData);
+                        }
+                    } catch (e) {
+                        // 如果解析失败，使用原始字符串的前200个字符
+                        errorMessage = parsed.data_json.substring(0, 200);
+                    }
+                }
+                
+                // 4. 如果还是没有错误信息，使用默认消息
+                if (!errorMessage) {
+                    errorMessage = `gRPC 调用失败 (status: ${trailerStatus})`;
+                }
+                
+                console.error('gRPC 错误:', { 
+                    trailerStatus, 
+                    errorMessage, 
+                    parsed,
+                    trailers 
+                });
+                throw new Error(errorMessage);
             }
 
             if (!parsed.data_json) {
@@ -61,7 +100,12 @@ class GrpcGatewayClient {
                 return {};
             }
 
-            return JSON.parse(parsed.data_json);
+            try {
+                return JSON.parse(parsed.data_json);
+            } catch (e) {
+                console.error('解析 data_json 失败:', e, '原始数据:', parsed.data_json);
+                throw new Error('服务器响应格式错误');
+            }
         } finally {
             clearTimeout(timeoutId);
         }

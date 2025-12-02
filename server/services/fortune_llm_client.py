@@ -250,7 +250,26 @@ class FortuneLLMClient:
             # 如果是流式输出，不使用缓存
             if stream:
                 logger.info("🌊 流式输出模式，跳过缓存")
-                return self._call_coze_api_stream(input_data)
+                logger.info(f"[fortune_llm_client] 📞 调用 _call_coze_api_stream，输入数据大小: {len(json.dumps(input_data, ensure_ascii=False))}字符")
+                generator = self._call_coze_api_stream(input_data)
+                
+                # ⭐ 关键检查：确保返回的是生成器
+                if isinstance(generator, dict):
+                    logger.error(f"[fortune_llm_client] ❌ _call_coze_api_stream 返回了字典而不是生成器！")
+                    logger.error(f"[fortune_llm_client] 返回值: {json.dumps(generator, ensure_ascii=False)[:500]}")
+                    # 返回一个生成器，yield错误
+                    def error_generator():
+                        yield {'type': 'error', 'content': '', 'error': '流式输出配置错误：返回了字典类型'}
+                    return error_generator()
+                elif not hasattr(generator, '__iter__') or isinstance(generator, str):
+                    logger.error(f"[fortune_llm_client] ❌ _call_coze_api_stream 返回的不是生成器！类型: {type(generator)}")
+                    # 返回一个生成器，yield错误
+                    def error_generator():
+                        yield {'type': 'error', 'content': '', 'error': f'流式输出配置错误：返回了非生成器类型 {type(generator)}'}
+                    return error_generator()
+                
+                logger.info(f"[fortune_llm_client] ✅ _call_coze_api_stream 返回生成器，类型: {type(generator)}")
+                return generator
             
             # 尝试从缓存获取（非流式模式）
             cache_key = None
@@ -657,7 +676,12 @@ class FortuneLLMClient:
         
         try:
             logger.info("🚀 开始流式调用 Coze API...")
+            logger.info(f"[fortune_llm_client] 📤 请求URL: {self.api_base}")
+            logger.info(f"[fortune_llm_client] 📤 Bot ID: {self.bot_id}")
+            logger.info(f"[fortune_llm_client] 📤 请求体大小: {len(json.dumps(payload, ensure_ascii=False))}字符")
+            
             self._content_received = False  # 重置内容接收标志
+            logger.info(f"[fortune_llm_client] ✅ 发送 start chunk")
             yield {'type': 'start', 'content': '', 'error': None}
             
             logger.info(f"📤 发送请求到Coze API: {self.api_base}")
@@ -673,11 +697,13 @@ class FortuneLLMClient:
             )
             
             logger.info(f"📥 Coze API响应: HTTP {response.status_code}")
-            logger.debug(f"   响应头: {dict(response.headers)}")
+            logger.info(f"[fortune_llm_client] 📥 响应状态码: {response.status_code}")
+            logger.info(f"[fortune_llm_client] 📥 响应头: {dict(response.headers)}")
             
             if response.status_code != 200:
                 error_msg = f'HTTP {response.status_code}: {response.text}'
                 logger.error(f"❌ Coze API请求失败: {error_msg}")
+                logger.error(f"[fortune_llm_client] ❌ 非200响应，返回错误chunk: {error_msg}")
                 yield {'type': 'error', 'content': '', 'error': error_msg}
                 return
             
@@ -788,12 +814,14 @@ class FortuneLLMClient:
                                     
                                     self._content_received = True
                                     logger.debug(f"📝 收到delta chunk ({msg_type}): {len(content)}字符")
+                                    logger.info(f"[fortune_llm_client] 📝 发送chunk: {len(content)}字符, 预览: {content[:50]}...")
                                     yield {'type': 'chunk', 'content': content, 'error': None}
                                 continue
                             
                             # 新版格式：conversation.chat.completed
                             elif event_type == 'conversation.chat.completed':
                                 logger.info("✅ 对话完成（conversation.chat.completed）")
+                                logger.info(f"[fortune_llm_client] ✅ 收到 conversation.chat.completed，发送 end chunk")
                                 yield {'type': 'end', 'content': '', 'error': None}
                                 stream_ended = True
                                 break
@@ -847,6 +875,7 @@ class FortuneLLMClient:
                                     
                                     self._content_received = True
                                     logger.info(f"📝 收到完整消息 ({msg_type}): {len(content)}字符")
+                                    logger.info(f"[fortune_llm_client] 📝 发送完整消息chunk: {len(content)}字符, 预览: {content[:50]}...")
                                     yield {'type': 'chunk', 'content': content, 'error': None}
                                 elif msg_type != 'answer':
                                     # ⭐ 非 answer 类型，直接跳过
@@ -938,16 +967,19 @@ class FortuneLLMClient:
             # 流结束（只有在没有通过error/end结束的情况下才yield end）
             if not stream_ended:
                 logger.info("✅ SSE流结束（正常结束）")
+                logger.info(f"[fortune_llm_client] ✅ SSE流正常结束，发送 end chunk")
                 
                 # ⚠️ 如果没有收到任何内容chunk，记录警告
                 if not hasattr(self, '_content_received'):
                     self._content_received = False
                 if not self._content_received:
                     logger.warning("⚠️ SSE流结束，但未收到任何内容chunk，可能Bot未生成内容或响应格式异常")
+                    logger.warning(f"[fortune_llm_client] ⚠️ 未收到任何内容chunk")
                 
                 yield {'type': 'end', 'content': '', 'error': None}
             else:
                 logger.info("✅ SSE流结束（已通过error/end事件结束）")
+                logger.info(f"[fortune_llm_client] ✅ SSE流已通过事件结束")
             
         except requests.exceptions.Timeout:
             error_msg = '流式请求超时（60秒）'

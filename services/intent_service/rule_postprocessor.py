@@ -99,7 +99,16 @@ class RulePostProcessor:
                 "is_explicit": True
             }
         
-        # 3. 后N年/未来N年（需要先匹配，避免被"明年"干扰）
+        # 3. 后年（特殊处理：后年 = 明年+1 = 当前年份+2）
+        if re.search(r'后年', question):
+            return {
+                "type": "specific_year",
+                "target_years": [self.current_year + 2],
+                "description": f"后年（{self.current_year + 2}年）",
+                "is_explicit": True
+            }
+        
+        # 4. 后N年/未来N年（需要先匹配，避免被"明年"干扰）
         # 支持中文数字和阿拉伯数字
         chinese_numbers = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10}
         future_years_match = re.search(r'(后|未来)(\d+|[' + ''.join(chinese_numbers.keys()) + ']+)年', question)
@@ -126,7 +135,7 @@ class RulePostProcessor:
                 "is_explicit": True
             }
         
-        # 4. 明年（只有1年，需要在"后N年"之后匹配）
+        # 5. 明年（只有1年，需要在"后N年"之后匹配）
         if re.search(r'明年', question):
             return {
                 "type": "next_year",

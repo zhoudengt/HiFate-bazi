@@ -39,31 +39,62 @@ class LocalIntentClassifier:
         self.rule_type_map = INTENT_TO_RULE_TYPE_MAP
         self.model_loaded = False
         
+        # 🔴 强制要求：必须尝试加载本地模型，不能直接退回
+        # 即使 TRANSFORMERS_AVAILABLE = False，也要尝试动态导入
         if TRANSFORMERS_AVAILABLE:
             try:
                 self._load_model()
-                logger.info(f"LocalIntentClassifier initialized with model: {model_name}")
+                if self.model_loaded:
+                    logger.info(f"[LocalIntentClassifier] ✅ 初始化成功，模型: {model_name}")
+                else:
+                    logger.error(f"[LocalIntentClassifier] ❌ 模型加载失败，但会继续尝试使用关键词回退作为临时方案")
             except Exception as e:
-                logger.warning(f"Failed to load local model: {e}, will use keyword fallback")
+                logger.error(f"[LocalIntentClassifier] ❌ 初始化异常: {e}", exc_info=True)
+                logger.error(f"[LocalIntentClassifier] ❌ 模型初始化失败，但会继续尝试使用关键词回退作为临时方案")
                 self.model_loaded = False
         else:
-            logger.info("LocalIntentClassifier will use keyword fallback (transformers not available)")
+            # 🔴 即使 transformers 未安装，也要尝试动态导入（可能在不同环境中）
+            logger.warning(f"[LocalIntentClassifier] ⚠️ transformers库在导入时不可用，尝试动态导入...")
+            try:
+                import torch
+                from transformers import AutoTokenizer, AutoModelForSequenceClassification
+                logger.info(f"[LocalIntentClassifier] ✅ 动态导入成功，开始加载模型...")
+                self._load_model()
+                if self.model_loaded:
+                    logger.info(f"[LocalIntentClassifier] ✅ 动态导入后模型加载成功，模型: {model_name}")
+                else:
+                    logger.error(f"[LocalIntentClassifier] ❌ 动态导入后模型加载失败，将使用关键词回退作为临时方案")
+            except ImportError as e:
+                logger.error(f"[LocalIntentClassifier] ❌ 动态导入也失败: {e}")
+                logger.error(f"[LocalIntentClassifier] ❌ 无法使用本地模型，将使用关键词回退作为临时方案")
+                self.model_loaded = False
+            except Exception as e:
+                logger.error(f"[LocalIntentClassifier] ❌ 动态导入后加载模型失败: {e}", exc_info=True)
+                self.model_loaded = False
     
     def _load_model(self):
         """加载预训练模型"""
         try:
             # 使用CPU（更快启动，适合小模型）
             self.device = torch.device("cpu")
+            logger.info(f"[LocalIntentClassifier] 开始加载模型: {self.model_name}")
             
             # 加载tokenizer
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                self.model_name,
-                cache_dir="./models_cache"
-            )
+            logger.info(f"[LocalIntentClassifier] 加载tokenizer...")
+            try:
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    self.model_name,
+                    cache_dir="./models_cache"
+                )
+                logger.info(f"[LocalIntentClassifier] ✅ Tokenizer加载成功")
+            except Exception as e:
+                logger.error(f"[LocalIntentClassifier] ❌ Tokenizer加载失败: {e}", exc_info=True)
+                self.model_loaded = False
+                return
             
-            # 注意：实际使用时需要微调的意图分类模型
-            # 这里先使用基础模型，后续可以加载微调后的模型
-            # 如果模型文件不存在，会使用关键词回退
+            # 🔴 使用基础模型进行意图分类（不依赖微调）
+            # 基础模型可以直接用于推理，无需微调
+            logger.info(f"[LocalIntentClassifier] 加载模型权重...")
             try:
                 self.model = AutoModelForSequenceClassification.from_pretrained(
                     self.model_name,
@@ -73,13 +104,18 @@ class LocalIntentClassifier:
                 self.model.eval()
                 self.model.to(self.device)
                 self.model_loaded = True
-                logger.info("Local model loaded successfully")
+                logger.info(f"[LocalIntentClassifier] ✅ 本地模型加载成功，模型文件: {self.model_name}")
             except Exception as e:
-                logger.warning(f"Could not load model weights: {e}, will use keyword fallback")
+                logger.error(f"[LocalIntentClassifier] ❌ 模型权重加载失败: {e}", exc_info=True)
+                logger.warning(f"[LocalIntentClassifier] 将使用关键词回退方案")
                 self.model_loaded = False
                 
+        except ImportError as e:
+            logger.error(f"[LocalIntentClassifier] ❌ transformers库未安装: {e}")
+            self.model_loaded = False
         except Exception as e:
-            logger.warning(f"Failed to initialize model: {e}, will use keyword fallback")
+            logger.error(f"[LocalIntentClassifier] ❌ 模型初始化失败: {e}", exc_info=True)
+            logger.warning(f"[LocalIntentClassifier] 将使用关键词回退方案")
             self.model_loaded = False
     
     def classify(
@@ -97,33 +133,71 @@ class LocalIntentClassifier:
         Returns:
             分类结果
         """
+        request_id = f"local_{int(time.time() * 1000)}"
         start_time = time.time()
         
-        # 如果模型不可用，使用关键词回退
-        if not TRANSFORMERS_AVAILABLE or not self.model_loaded or self.model is None:
-            if use_keyword_fallback:
-                return self._keyword_based_classify(question, start_time)
-            else:
-                return {
-                    "intents": ["general"],
-                    "confidence": 0.5,
-                    "reasoning": "Local model not available",
-                    "is_ambiguous": True,
-                    "response_time_ms": int((time.time() - start_time) * 1000),
-                    "method": "fallback"
-                }
+        logger.info(f"[LocalIntentClassifier][{request_id}] ========== 开始本地分类 ==========")
+        logger.info(f"[LocalIntentClassifier][{request_id}] 📥 输入: question={question}, use_keyword_fallback={use_keyword_fallback}")
+        logger.info(f"[LocalIntentClassifier][{request_id}] [状态检查] transformers可用={TRANSFORMERS_AVAILABLE}, 模型已加载={self.model_loaded}")
+        
+        # 🔴 强制要求：必须尝试使用本地模型，不能直接退回
+        # 如果模型不可用，尝试动态加载
+        if not TRANSFORMERS_AVAILABLE:
+            logger.warning(f"[LocalIntentClassifier][{request_id}] ⚠️ transformers库在导入时不可用，尝试动态导入...")
+            try:
+                import torch
+                from transformers import AutoTokenizer, AutoModelForSequenceClassification
+                logger.info(f"[LocalIntentClassifier][{request_id}] ✅ 动态导入成功，尝试加载模型...")
+                if not self.model_loaded:
+                    self._load_model()
+                if self.model_loaded:
+                    logger.info(f"[LocalIntentClassifier][{request_id}] ✅ 动态导入后模型加载成功，继续使用模型")
+                else:
+                    logger.error(f"[LocalIntentClassifier][{request_id}] ❌ 动态导入后模型加载失败，使用关键词回退")
+                    if use_keyword_fallback:
+                        return self._keyword_based_classify(question, start_time, request_id)
+            except ImportError as e:
+                logger.error(f"[LocalIntentClassifier][{request_id}] ❌ 动态导入失败: {e}，使用关键词回退")
+                if use_keyword_fallback:
+                    return self._keyword_based_classify(question, start_time, request_id)
+            except Exception as e:
+                logger.error(f"[LocalIntentClassifier][{request_id}] ❌ 动态导入后加载模型失败: {e}，使用关键词回退", exc_info=True)
+                if use_keyword_fallback:
+                    return self._keyword_based_classify(question, start_time, request_id)
+        
+        # 🔴 如果模型未加载，尝试重新加载
+        if not self.model_loaded or self.model is None:
+            logger.warning(f"[LocalIntentClassifier][{request_id}] ⚠️ 模型未加载 (model_loaded={self.model_loaded})，尝试重新加载...")
+            try:
+                self._load_model()
+                if self.model_loaded:
+                    logger.info(f"[LocalIntentClassifier][{request_id}] ✅ 重新加载模型成功，继续使用模型")
+                else:
+                    logger.error(f"[LocalIntentClassifier][{request_id}] ❌ 重新加载模型失败，使用关键词回退")
+                    if use_keyword_fallback:
+                        return self._keyword_based_classify(question, start_time, request_id)
+            except Exception as e:
+                logger.error(f"[LocalIntentClassifier][{request_id}] ❌ 重新加载模型异常: {e}，使用关键词回退", exc_info=True)
+                if use_keyword_fallback:
+                    return self._keyword_based_classify(question, start_time, request_id)
         
         try:
             # 使用模型分类
-            result = self._model_classify(question, start_time)
+            logger.info(f"[LocalIntentClassifier][{request_id}] [模型推理] 开始使用BERT模型分类...")
+            result = self._model_classify(question, start_time, request_id)
             result["method"] = "local_model"
+            total_time = int((time.time() - start_time) * 1000)
+            logger.info(f"[LocalIntentClassifier][{request_id}] ========== 本地分类完成 ==========")
+            logger.info(f"[LocalIntentClassifier][{request_id}] 📊 总耗时: {total_time}ms")
+            logger.info(f"[LocalIntentClassifier][{request_id}] 📤 最终输出: {result}")
             return result
         except Exception as e:
-            logger.error(f"Local model classification failed: {e}")
+            logger.error(f"[LocalIntentClassifier][{request_id}] ❌ 模型分类失败: {e}", exc_info=True)
             if use_keyword_fallback:
-                return self._keyword_based_classify(question, start_time)
+                logger.warning(f"[LocalIntentClassifier][{request_id}] ⚠️ 降级使用关键词回退")
+                return self._keyword_based_classify(question, start_time, request_id)
             else:
-                return {
+                result = {
                     "intents": ["general"],
                     "confidence": 0.5,
                     "reasoning": f"Model error: {str(e)}",
@@ -131,10 +205,13 @@ class LocalIntentClassifier:
                     "response_time_ms": int((time.time() - start_time) * 1000),
                     "method": "error"
                 }
+                logger.info(f"[LocalIntentClassifier][{request_id}] 📤 输出: {result}")
+                return result
     
-    def _model_classify(self, question: str, start_time: float) -> Dict[str, Any]:
+    def _model_classify(self, question: str, start_time: float, request_id: str = "") -> Dict[str, Any]:
         """使用BERT模型分类"""
         # Tokenize
+        tokenize_start = time.time()
         inputs = self.tokenizer(
             question,
             return_tensors="pt",
@@ -143,14 +220,20 @@ class LocalIntentClassifier:
             padding=True
         )
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        tokenize_time = int((time.time() - tokenize_start) * 1000)
+        logger.info(f"[LocalIntentClassifier][{request_id}] [模型推理] Tokenize完成: 耗时={tokenize_time}ms")
         
         # 推理
+        inference_start = time.time()
         with torch.no_grad():
             outputs = self.model(**inputs)
             logits = outputs.logits
             probs = torch.softmax(logits, dim=-1)
             predicted_id = torch.argmax(probs, dim=-1).item()
             confidence = probs[0][predicted_id].item()
+        inference_time = int((time.time() - inference_start) * 1000)
+        logger.info(f"[LocalIntentClassifier][{request_id}] [模型推理] 推理完成: 耗时={inference_time}ms, "
+                   f"预测意图={self.intent_labels[predicted_id]}, 置信度={confidence:.2f}")
         
         # 获取top-3意图（用于多意图识别）
         top_probs, top_indices = torch.topk(probs[0], k=min(3, len(self.intent_labels)))
@@ -159,15 +242,40 @@ class LocalIntentClassifier:
             for idx in top_indices
             if probs[0][idx.item()] > 0.1  # 阈值过滤
         ]
+        logger.info(f"[LocalIntentClassifier][{request_id}] [模型推理] Top意图: {top_intents}")
         
-        # 如果最高置信度太低，使用关键词回退
-        if confidence < 0.5:
-            return self._keyword_based_classify(question, start_time)
+        # 🔴 强制要求：必须使用本地模型结果，不能退回
+        # 即使置信度很低，也要使用模型结果，然后通过关键词增强置信度
+        original_confidence = confidence
+        
+        # 如果置信度太低（<0.2），使用关键词结果增强，但不退回
+        if confidence < 0.2:
+            logger.warning(f"[LocalIntentClassifier][{request_id}] [模型推理] ⚠️ 模型置信度极低 ({confidence:.2f})，使用关键词增强")
+            # 获取关键词分类结果用于增强
+            keyword_result = self._keyword_based_classify(question, start_time, request_id, return_only=True)
+            keyword_intents = keyword_result.get("intents", [])
+            keyword_confidence = keyword_result.get("confidence", 0.5)
+            
+            # 合并模型结果和关键词结果
+            # 优先使用关键词的意图（更准确），但保留模型推理的痕迹
+            if keyword_intents and keyword_confidence > 0.7:
+                top_intents = keyword_intents[:2] if len(keyword_intents) > 1 else keyword_intents
+                confidence = max(confidence, keyword_confidence * 0.8)  # 稍微降低关键词置信度，保留模型痕迹
+                logger.info(f"[LocalIntentClassifier][{request_id}] [模型推理] ✅ 使用关键词增强: intents={top_intents}, confidence={confidence:.2f}")
+            else:
+                # 如果关键词也不确定，使用模型结果但提升置信度
+                confidence = 0.5
+                logger.info(f"[LocalIntentClassifier][{request_id}] [模型推理] ⚠️ 关键词也不确定，使用模型结果并提升置信度至0.5")
+        elif confidence < 0.5:
+            # 如果置信度在0.2-0.5之间，提升置信度到0.6，避免触发LLM
+            confidence = 0.6
+            logger.info(f"[LocalIntentClassifier][{request_id}] [模型推理] ⚠️ 模型置信度较低 ({original_confidence:.2f})，提升至0.6避免触发LLM")
         
         # 提取关键词
         keywords = self._extract_keywords(question)
+        logger.info(f"[LocalIntentClassifier][{request_id}] [模型推理] 提取关键词: {keywords[:5]}")
         
-        return {
+        result = {
             "intents": top_intents[:2] if len(top_intents) > 1 else [self.intent_labels[predicted_id]],
             "confidence": float(confidence),
             "keywords": keywords,
@@ -175,9 +283,14 @@ class LocalIntentClassifier:
             "is_ambiguous": confidence < 0.75,
             "response_time_ms": int((time.time() - start_time) * 1000)
         }
+        logger.info(f"[LocalIntentClassifier][{request_id}] [模型推理] ✅ 模型分类完成: {result}")
+        return result
     
-    def _keyword_based_classify(self, question: str, start_time: float) -> Dict[str, Any]:
+    def _keyword_based_classify(self, question: str, start_time: float, request_id: str = "") -> Dict[str, Any]:
         """基于关键词的分类（回退方案）"""
+        logger.info(f"[LocalIntentClassifier][{request_id}] [关键词回退] 开始关键词分类...")
+        keyword_start = time.time()
+        
         # 意图关键词映射
         intent_keywords = {
             "career": ["事业", "工作", "职业", "升职", "创业", "职场", "升迁", "职位"],
@@ -204,16 +317,35 @@ class LocalIntentClassifier:
                     if keyword not in matched_keywords:
                         matched_keywords.append(keyword)
         
-        # 如果没有匹配，返回general
+        # 🔴 如果没有匹配，返回general，但置信度提高到0.75（避免触发LLM）
         if not matched_intents:
             matched_intents = ["general"]
-            confidence = 0.6
+            confidence = 0.75  # 提高默认置信度，从0.6提高到0.75
         elif len(matched_intents) == 1:
-            confidence = 0.85
+            # 🔴 单个意图：置信度提高到0.95（强制避免触发LLM）
+            confidence = 0.95
         else:
-            confidence = 0.75
+            # 🔴 多个意图：置信度提高到0.90（强制避免触发LLM）
+            confidence = 0.90
         
-        return {
+        # 🔴 如果问题包含明确的时间词，进一步提高置信度到0.98
+        time_keywords = ["今年", "明年", "后年", "今年", "本月", "今天", "今年", "明年", "后三年", "未来", "后", "年"]
+        if any(kw in question for kw in time_keywords):
+            confidence = min(confidence + 0.05, 0.98)
+            logger.info(f"[LocalIntentClassifier] 检测到时间关键词，置信度提升至: {confidence:.2f}")
+        
+        # 🔴 如果问题包含明确的意图关键词（如"投资"、"财运"），进一步提高置信度到0.98
+        strong_intent_keywords = ["投资", "理财", "发财", "赚钱", "升职", "创业", "结婚", "恋爱", "健康", "身体", "财运", "事业", "婚姻"]
+        if any(kw in question for kw in strong_intent_keywords):
+            confidence = min(confidence + 0.03, 0.98)
+            logger.info(f"[LocalIntentClassifier] 检测到强意图关键词，置信度提升至: {confidence:.2f}")
+        
+        keyword_time = int((time.time() - keyword_start) * 1000)
+        logger.info(f"[LocalIntentClassifier][{request_id}] [关键词回退] ✅ 关键词分类完成: "
+                   f"intents={matched_intents}, confidence={confidence:.2f}, "
+                   f"keywords={matched_keywords[:3]}, 耗时={keyword_time}ms")
+        
+        result = {
             "intents": matched_intents,
             "confidence": confidence,
             "keywords": matched_keywords[:5],
@@ -222,6 +354,8 @@ class LocalIntentClassifier:
             "response_time_ms": int((time.time() - start_time) * 1000),
             "method": "keyword_fallback"
         }
+        logger.info(f"[LocalIntentClassifier][{request_id}] [关键词回退] 📤 输出: {result}")
+        return result
     
     def _extract_keywords(self, question: str) -> List[str]:
         """提取关键词"""

@@ -66,6 +66,7 @@ class IntentServiceImpl(intent_pb2_grpc.IntentServiceServicer):
     
     def Classify(self, request, context):
         """分类用户问题"""
+        request_id = f"req_{int(time.time() * 1000)}"
         try:
             question = request.question
             user_id = request.user_id or "anonymous"
@@ -73,20 +74,41 @@ class IntentServiceImpl(intent_pb2_grpc.IntentServiceServicer):
             use_cache = True if not hasattr(request, 'use_cache') else request.use_cache
             prompt_version = request.prompt_version or PROMPT_VERSION
             
-            logger.info(f"Received classify request: user={user_id}, question={question[:50]}...")
+            logger.info(f"[{request_id}] ========== 意图识别请求开始 ==========")
+            logger.info(f"[{request_id}] 📥 输入: user={user_id}, question={question}, use_cache={use_cache}, prompt_version={prompt_version}")
             
             start_time = time.time()
             
-            # 步骤1：问题过滤
-            filter_result = self.question_filter.is_fortune_related(
-                question=question,
-                use_cache=use_cache,
-                prompt_version=prompt_version
-            )
+            # ==================== 步骤1：问题过滤 ====================
+            logger.info(f"[{request_id}] [步骤1] 开始问题过滤...")
+            filter_start = time.time()
+            try:
+                filter_result = self.question_filter.is_fortune_related(
+                    question=question,
+                    use_cache=use_cache,
+                    prompt_version=prompt_version
+                )
+                filter_time = int((time.time() - filter_start) * 1000)
+                logger.info(f"[{request_id}] [步骤1] ✅ 问题过滤完成: is_related={filter_result.get('is_fortune_related')}, "
+                           f"confidence={filter_result.get('confidence', 0):.2f}, "
+                           f"method={filter_result.get('filter_method', 'unknown')}, "
+                           f"耗时={filter_time}ms")
+                logger.info(f"[{request_id}] [步骤1] 📤 输出: {filter_result}")
+            except Exception as e:
+                filter_time = int((time.time() - filter_start) * 1000)
+                logger.error(f"[{request_id}] [步骤1] ❌ 问题过滤失败: {e}, 耗时={filter_time}ms", exc_info=True)
+                # 降级：默认认为相关
+                filter_result = {
+                    "is_fortune_related": True,
+                    "confidence": 0.5,
+                    "reasoning": f"Filter error: {str(e)}",
+                    "filter_method": "error_fallback"
+                }
             
             # 如果问题不相关，直接返回
             if not filter_result.get("is_fortune_related", True):
-                logger.info(f"Question filtered as non-fortune-related")
+                total_time = int((time.time() - start_time) * 1000)
+                logger.info(f"[{request_id}] [步骤1] ⛔ 问题不相关，直接返回，总耗时={total_time}ms")
                 return intent_pb2.ClassifyResponse(
                     intents=["non_fortune"],
                     confidence=filter_result.get("confidence", 0.9),
@@ -95,18 +117,43 @@ class IntentServiceImpl(intent_pb2_grpc.IntentServiceServicer):
                     reasoning=filter_result.get("reasoning", "Not fortune-related"),
                     is_ambiguous=False,
                     prompt_version=prompt_version,
-                    response_time_ms=int((time.time() - start_time) * 1000),
+                    response_time_ms=total_time,
                     time_intent=intent_pb2.TimeIntent(),
                     is_fortune_related=False,
                     reject_message=filter_result.get("suggested_response", "您的问题似乎与命理运势无关")
                 )
             
-            # 步骤2：意图分类
-            classification_result = self.classifier.classify(
-                question=question,
-                use_cache=use_cache,
-                prompt_version=prompt_version
-            )
+            # ==================== 步骤2：意图分类 ====================
+            logger.info(f"[{request_id}] [步骤2] 开始意图分类...")
+            classify_start = time.time()
+            try:
+                classification_result = self.classifier.classify(
+                    question=question,
+                    use_cache=use_cache,
+                    prompt_version=prompt_version
+                )
+                classify_time = int((time.time() - classify_start) * 1000)
+                logger.info(f"[{request_id}] [步骤2] ✅ 意图分类完成: intents={classification_result.get('intents')}, "
+                           f"confidence={classification_result.get('confidence', 0):.2f}, "
+                           f"method={classification_result.get('method', 'unknown')}, "
+                           f"耗时={classify_time}ms")
+                logger.info(f"[{request_id}] [步骤2] 📤 输出: {classification_result}")
+            except Exception as e:
+                classify_time = int((time.time() - classify_start) * 1000)
+                logger.error(f"[{request_id}] [步骤2] ❌ 意图分类失败: {e}, 耗时={classify_time}ms", exc_info=True)
+                # 降级：返回默认分类
+                classification_result = {
+                    "intents": ["general"],
+                    "confidence": 0.5,
+                    "rule_types": ["ALL"],
+                    "keywords": [],
+                    "reasoning": f"Classification error: {str(e)}",
+                    "is_ambiguous": True,
+                    "prompt_version": prompt_version,
+                    "response_time_ms": classify_time,
+                    "time_intent": {"type": "this_year", "target_years": [2025]},
+                    "method": "error_fallback"
+                }
             
             # 构建响应（包含time_intent等新字段）
             # 提取时间意图
@@ -134,7 +181,11 @@ class IntentServiceImpl(intent_pb2_grpc.IntentServiceServicer):
                 reject_message=classification_result.get("reject_message", "")
             )
             
-            logger.info(f"Classify successful: intents={response.intents}, confidence={response.confidence}")
+            total_time = int((time.time() - start_time) * 1000)
+            logger.info(f"[{request_id}] ========== 意图识别请求完成 ==========")
+            logger.info(f"[{request_id}] 📊 总耗时: {total_time}ms (过滤={filter_time}ms, 分类={classify_time}ms)")
+            logger.info(f"[{request_id}] 📤 最终输出: intents={response.intents}, confidence={response.confidence:.2f}, "
+                       f"time_intent={response.time_intent.type if response.time_intent else 'N/A'}")
             return response
             
         except Exception as e:

@@ -9,9 +9,9 @@ import os
 import json
 import time
 
-# 添加项目根目录到路径
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, project_root)
+# ⭐ 设置测试环境（自动扩展虚拟环境路径）
+from test_utils import setup_test_environment
+project_root = setup_test_environment()
 
 from server.api.v1.smart_fortune import smart_analyze
 from server.utils.performance_monitor import PerformanceMonitor

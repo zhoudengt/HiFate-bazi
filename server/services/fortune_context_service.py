@@ -8,6 +8,7 @@
 
 import sys
 import os
+import time
 from typing import Dict, Any, List, Optional
 from datetime import datetime, date, timedelta
 import calendar
@@ -98,6 +99,27 @@ TIME_KEYWORDS = {
 
 class FortuneContextService:
     """流年大运上下文服务 - 作为智能问答的增强模块"""
+    
+    # ⭐ 性能优化：缓存 calculate_detail_full 结果
+    _detail_cache = {}
+    _cache_max_size = 50  # 最多缓存50条
+    
+    @staticmethod
+    def _get_cached_detail(solar_date: str, solar_time: str, gender: str, current_time: datetime) -> Optional[dict]:
+        """获取缓存的 detail_result"""
+        cache_key = f"{solar_date}_{solar_time}_{gender}_{current_time.isoformat()}"
+        return FortuneContextService._detail_cache.get(cache_key)
+    
+    @staticmethod
+    def _set_cached_detail(solar_date: str, solar_time: str, gender: str, current_time: datetime, result: dict):
+        """缓存 detail_result"""
+        cache_key = f"{solar_date}_{solar_time}_{gender}_{current_time.isoformat()}"
+        # 简单的LRU：如果缓存满了，删除最旧的
+        if len(FortuneContextService._detail_cache) >= FortuneContextService._cache_max_size:
+            # 删除第一个（FIFO）
+            oldest_key = next(iter(FortuneContextService._detail_cache))
+            del FortuneContextService._detail_cache[oldest_key]
+        FortuneContextService._detail_cache[cache_key] = result
     
     @staticmethod
     def extract_time_range_from_question(question: str) -> Dict[str, Any]:
@@ -391,83 +413,113 @@ class FortuneContextService:
                     logger.debug("target_years为空，返回None")
                     return None
                 
-                # 查询多个流年
-                liunian_list = []
-                dayun_info = None
-                day_stem = None  # 日主天干，用于计算十神
+                # ⭐ 性能优化：只调用一次 calculate_detail_full，复用结果
+                # 原因：calculate_detail_full 会计算所有流年，我们只需要从结果中提取特定年份
+                logger.debug(f"开始计算流年大运，目标年份: {target_years}")
+                start_time = time.time()
                 
-                for target_year in target_years:
+                # ⭐ 性能优化：先检查缓存
+                current_time = datetime(target_years[0], 1, 1)
+                cached_result = FortuneContextService._get_cached_detail(
+                    solar_date, solar_time, gender, current_time
+                )
+                
+                if cached_result:
+                    logger.debug(f"[FortuneContextService] 缓存命中，跳过 calculate_detail_full")
+                    detail_result = cached_result
+                    calc_time = 0
+                else:
+                    # 只调用一次，使用第一个年份（结果包含所有流年）
                     detail_result = BaziDetailService.calculate_detail_full(
                         solar_date=solar_date,
                         solar_time=solar_time,
                         gender=gender,
-                        current_time=datetime(target_year, 1, 1)
+                        current_time=current_time
                     )
                     
+                    calc_time = (time.time() - start_time) * 1000
+                    logger.info(f"[FortuneContextService] calculate_detail_full 耗时: {calc_time:.0f}ms")
+                    
+                    # 缓存结果
                     if detail_result:
-                        # 注意：detail_result 本身就是完整数据，不需要再 .get("details")
+                        FortuneContextService._set_cached_detail(
+                            solar_date, solar_time, gender, current_time, detail_result
+                        )
+                
+                if not detail_result:
+                    logger.warning("calculate_detail_full 返回空结果")
+                    return None
+                
+                # 从结果中提取所有需要的流年
+                liunian_list = []
+                dayun_info = None
+                day_stem = None  # 日主天干，用于计算十神
+                
+                # 获取日主天干（用于计算十神）
+                bazi_pillars = detail_result.get("bazi_pillars", {})
+                day_pillar = bazi_pillars.get("day", {})
+                day_stem = day_pillar.get("stem", "")
+                
+                # 获取所有流年序列（一次计算，包含所有年份）
+                liunian_sequence = detail_result.get("liunian_sequence", [])
+                logger.debug(f"获取到流年序列，共 {len(liunian_sequence)} 个流年")
+                
+                # 从流年序列中提取目标年份
+                for target_year in target_years:
+                    current_liunian = None
+                    for ln in liunian_sequence:
+                        if ln.get("year") == target_year:
+                            current_liunian = ln.copy()  # 复制，避免修改原数据
+                            break
+                    
+                    if current_liunian:
+                        # 补充计算五行和十神信息
+                        stem = current_liunian.get("stem", "")
+                        branch = current_liunian.get("branch", "")
                         
-                        # 获取日主天干（用于计算十神）
-                        if not day_stem:
-                            bazi_pillars = detail_result.get("bazi_pillars", {})
-                            day_pillar = bazi_pillars.get("day", {})
-                            day_stem = day_pillar.get("stem", "")
+                        # 计算天干五行
+                        if stem:
+                            current_liunian["stem_element"] = TIANGAN_WUXING.get(stem, "")
                         
-                        # 获取当年的流年信息
-                        liunian_sequence = detail_result.get("liunian_sequence", [])
-                        current_liunian = None
-                        for ln in liunian_sequence:
-                            if ln.get("year") == target_year:
-                                current_liunian = ln
-                                break
+                        # 计算地支五行
+                        if branch:
+                            current_liunian["branch_element"] = DIZHI_WUXING.get(branch, "")
                         
-                        if current_liunian:
-                            # 补充计算五行和十神信息
-                            stem = current_liunian.get("stem", "")
-                            branch = current_liunian.get("branch", "")
-                            
-                            # 计算天干五行
+                        # 计算十神（需要日主）
+                        if day_stem:
                             if stem:
-                                current_liunian["stem_element"] = TIANGAN_WUXING.get(stem, "")
-                            
-                            # 计算地支五行
+                                current_liunian["stem_shishen"] = get_shishen(day_stem, stem)
                             if branch:
-                                current_liunian["branch_element"] = DIZHI_WUXING.get(branch, "")
-                            
-                            # 计算十神（需要日主）
-                            if day_stem:
-                                if stem:
-                                    current_liunian["stem_shishen"] = get_shishen(day_stem, stem)
-                                if branch:
-                                    # 地支取藏干主气计算十神
-                                    branch_stem = DIZHI_CANGANG.get(branch, "")
-                                    if branch_stem:
-                                        current_liunian["branch_shishen"] = get_shishen(day_stem, branch_stem)
-                            
-                            liunian_list.append(current_liunian)
+                                # 地支取藏干主气计算十神
+                                branch_stem = DIZHI_CANGANG.get(branch, "")
+                                if branch_stem:
+                                    current_liunian["branch_shishen"] = get_shishen(day_stem, branch_stem)
                         
-                        # 大运信息（多年共享同一个大运）
-                        # ⚠️ 修复：根据target_year动态查找对应的大运（而不是用当前时间）
-                        if not dayun_info:
-                            # 方法1：从dayun_sequence查找对应年份的大运
-                            dayun_sequence = detail_result.get("dayun_sequence", [])
-                            for dayun in dayun_sequence:
-                                year_start = dayun.get("year_start", 0)
-                                year_end = dayun.get("year_end", 0)
-                                
-                                # 找到包含target_year的大运
-                                if year_start <= target_year <= year_end:
-                                    # 排除"小运"（stem为"小运"）
-                                    if dayun.get("stem") != "小运":
-                                        dayun_info = dayun
-                                        logger.debug(f"找到{target_year}年对应的大运: {dayun.get('stem')}{dayun.get('branch')} ({year_start}-{year_end})")
-                                        break
-                            
-                            # 如果没找到，fallback到current_dayun
-                            if not dayun_info:
-                                logger.debug(f"未找到{target_year}年对应的大运，使用current_dayun")
-                                dayun_data = detail_result.get("dayun_info", {})
-                                dayun_info = dayun_data.get("current_dayun", {})
+                        liunian_list.append(current_liunian)
+                    else:
+                        logger.warning(f"未找到 {target_year} 年的流年信息")
+                
+                # 大运信息（多年共享同一个大运）
+                # 从第一个年份的大运序列中查找
+                dayun_sequence = detail_result.get("dayun_sequence", [])
+                first_target_year = target_years[0]
+                for dayun in dayun_sequence:
+                    year_start = dayun.get("year_start", 0)
+                    year_end = dayun.get("year_end", 0)
+                    
+                    # 找到包含第一个目标年份的大运
+                    if year_start <= first_target_year <= year_end:
+                        # 排除"小运"（stem为"小运"）
+                        if dayun.get("stem") != "小运":
+                            dayun_info = dayun
+                            logger.debug(f"找到{first_target_year}年对应的大运: {dayun.get('stem')}{dayun.get('branch')} ({year_start}-{year_end})")
+                            break
+                
+                # 如果没找到，fallback到current_dayun
+                if not dayun_info:
+                    logger.debug(f"未找到{first_target_year}年对应的大运，使用current_dayun")
+                    dayun_data = detail_result.get("dayun_info", {})
+                    dayun_info = dayun_data.get("current_dayun", {})
                 
                 if liunian_list:
                     logger.debug(f"获取到{len(liunian_list)}个流年")
@@ -484,18 +536,13 @@ class FortuneContextService:
                         xi_ji_elements = wangshuai_result.get('xi_ji_elements', {})
                         logger.debug(f"喜神（十神）: {xi_ji.get('xi_shen', [])}, 喜神（五行）: {xi_ji_elements.get('xi_shen', [])}")
                         
-                        # 2. 获取八字五行统计（从detail_result）
-                        first_detail = BaziDetailService.calculate_detail_full(
-                            solar_date=solar_date,
-                            solar_time=solar_time,
-                            gender=gender,
-                            current_time=datetime(target_years[0], 1, 1)
-                        )
-                        bazi_elements = first_detail.get("element_counts", {})
-                        bazi_pillars = first_detail.get("bazi_pillars", {})
+                        # 2. 获取八字五行统计（从detail_result，避免重复调用）
+                        # ⭐ 性能优化：复用已计算的 detail_result，不再重复调用
+                        bazi_elements = detail_result.get("element_counts", {})
+                        bazi_pillars = detail_result.get("bazi_pillars", {})
                         
                         # 3. 为每个流年添加深度分析
-                        shishen_stats = first_detail.get("ten_gods_stats", {})  # 获取十神统计
+                        shishen_stats = detail_result.get("ten_gods_stats", {})  # 获取十神统计
                         
                         for i, liunian in enumerate(liunian_list):
                             logger.debug(f"流年{i+1}/{len(liunian_list)}: {liunian.get('year')}")

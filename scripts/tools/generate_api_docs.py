@@ -28,9 +28,9 @@ except ImportError:
     print("安装命令: pip install python-docx")
     sys.exit(1)
 
-# 添加项目根目录到路径
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+# ⭐ 设置测试环境（自动扩展虚拟环境路径）
+from test_utils import setup_test_environment
+project_root = Path(setup_test_environment())
 
 # 颜色定义
 HEADER_COLOR = RGBColor(0, 51, 102)

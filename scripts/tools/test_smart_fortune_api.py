@@ -10,9 +10,9 @@ import requests
 import json
 import time
 
-# 添加项目根目录到路径
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, project_root)
+# ⭐ 设置测试环境（自动扩展虚拟环境路径）
+from test_utils import setup_test_environment
+project_root = setup_test_environment()
 
 def test_smart_fortune_stream():
     """测试流式API"""

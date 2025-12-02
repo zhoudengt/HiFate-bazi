@@ -167,23 +167,30 @@ class QuestionFilter:
                 "filter_method": "strong_indicator" | "keyword" | "llm"
             }
         """
+        request_id = f"filter_{int(time.time() * 1000)}"
         try:
-            logger.info(f"[QuestionFilter] 开始过滤问题: {question[:50]}...")
+            logger.info(f"[QuestionFilter][{request_id}] ========== 开始过滤问题 ==========")
+            logger.info(f"[QuestionFilter][{request_id}] 📥 输入: question={question}")
             question_lower = question.lower()
             
             # ==================== 第1级：强命理指示词检查（最高优先级）====================
+            logger.info(f"[QuestionFilter][{request_id}] [第1级] 检查强命理指示词...")
             for indicator in STRONG_FORTUNE_INDICATORS:
                 if indicator in question:
-                    logger.info(f"[QuestionFilter] ✅ 强指示词命中: '{indicator}' -> 直接通过")
-                    return {
+                    logger.info(f"[QuestionFilter][{request_id}] [第1级] ✅ 强指示词命中: '{indicator}' -> 直接通过")
+                    result = {
                         "is_fortune_related": True,
                         "confidence": 0.99,
                         "reasoning": f"包含强命理指示词：{indicator}",
                         "suggested_response": "",
                         "filter_method": "strong_indicator"
                     }
+                    logger.info(f"[QuestionFilter][{request_id}] [第1级] 📤 输出: {result}")
+                    return result
+            logger.info(f"[QuestionFilter][{request_id}] [第1级] ⏭️ 未命中强指示词，继续下一级")
             
             # ==================== 第2级：黑名单快速拒绝 ====================
+            logger.info(f"[QuestionFilter][{request_id}] [第2级] 检查黑名单关键词...")
             # 检查是否包含明显不相关的关键词
             non_fortune_hits = []
             for keyword in NON_FORTUNE_KEYWORDS:
@@ -196,18 +203,23 @@ class QuestionFilter:
                 has_fortune_keyword = any(kw in question for kw in FORTUNE_KEYWORDS)
                 
                 if not has_fortune_keyword:
-                    logger.info(f"[QuestionFilter] ❌ 黑名单命中: {non_fortune_hits} -> 拒绝")
-                    return {
+                    logger.info(f"[QuestionFilter][{request_id}] [第2级] ❌ 黑名单命中: {non_fortune_hits} -> 拒绝")
+                    result = {
                         "is_fortune_related": False,
                         "confidence": 0.95,
                         "reasoning": f"包含非命理关键词：{', '.join(non_fortune_hits[:3])}",
                         "suggested_response": "抱歉，我是专业的命理分析助手，只能回答关于运势、事业、财富、婚姻、健康等命理相关的问题。",
                         "filter_method": "keyword_blacklist"
                     }
+                    logger.info(f"[QuestionFilter][{request_id}] [第2级] 📤 输出: {result}")
+                    return result
                 else:
-                    logger.info(f"[QuestionFilter] ⚠️ 黑名单命中但有命理词，继续LLM判断")
+                    logger.info(f"[QuestionFilter][{request_id}] [第2级] ⚠️ 黑名单命中但有命理词，继续下一级")
+            else:
+                logger.info(f"[QuestionFilter][{request_id}] [第2级] ⏭️ 未命中黑名单，继续下一级")
             
             # ==================== 第3级：白名单快速通过 ====================
+            logger.info(f"[QuestionFilter][{request_id}] [第3级] 检查白名单关键词...")
             fortune_hits = []
             for keyword in FORTUNE_KEYWORDS:
                 if keyword in question:
@@ -215,35 +227,59 @@ class QuestionFilter:
             
             # 命中2个及以上命理关键词，直接通过
             if len(fortune_hits) >= 2:
-                logger.info(f"[QuestionFilter] ✅ 白名单命中: {fortune_hits[:3]} -> 直接通过")
-                return {
+                logger.info(f"[QuestionFilter][{request_id}] [第3级] ✅ 白名单命中: {fortune_hits[:3]} -> 直接通过")
+                result = {
                     "is_fortune_related": True,
                     "confidence": 0.92,
                     "reasoning": f"包含多个命理关键词：{', '.join(fortune_hits[:3])}",
                     "suggested_response": "",
                     "filter_method": "keyword_whitelist"
                 }
+                logger.info(f"[QuestionFilter][{request_id}] [第3级] 📤 输出: {result}")
+                return result
             
             # 命中1个命理关键词，且问题较长（>10字），也通过
             if len(fortune_hits) == 1 and len(question) >= 10:
-                logger.info(f"[QuestionFilter] ✅ 白名单命中: {fortune_hits[0]} + 长问题 -> 通过")
-                return {
+                logger.info(f"[QuestionFilter][{request_id}] [第3级] ✅ 白名单命中: {fortune_hits[0]} + 长问题 -> 通过")
+                result = {
                     "is_fortune_related": True,
                     "confidence": 0.85,
                     "reasoning": f"包含命理关键词：{fortune_hits[0]}",
                     "suggested_response": "",
                     "filter_method": "keyword_whitelist"
                 }
+                logger.info(f"[QuestionFilter][{request_id}] [第3级] 📤 输出: {result}")
+                return result
+            
+            logger.info(f"[QuestionFilter][{request_id}] [第3级] ⏭️ 白名单未完全匹配，继续下一级")
             
             # ==================== 第4级：LLM深度判断（模糊情况）====================
-            logger.info(f"[QuestionFilter] 🤖 关键词不确定，调用LLM判断...")
-            
-            result = self.llm_client.call_coze_api(
-                question=question,
-                prompt_template=QUESTION_FILTER_PROMPT,
-                use_cache=use_cache,
-                prompt_version=prompt_version
-            )
+            logger.info(f"[QuestionFilter][{request_id}] [第4级] 🤖 关键词不确定，调用LLM判断...")
+            llm_start = time.time()
+            try:
+                result = self.llm_client.call_coze_api(
+                    question=question,
+                    prompt_template=QUESTION_FILTER_PROMPT,
+                    use_cache=use_cache,
+                    prompt_version=prompt_version
+                )
+                llm_time = int((time.time() - llm_start) * 1000)
+                logger.info(f"[QuestionFilter][{request_id}] [第4级-LLM] ✅ LLM调用完成: "
+                           f"is_related={result.get('is_fortune_related')}, "
+                           f"confidence={result.get('confidence', 0):.2f}, "
+                           f"耗时={llm_time}ms")
+            except Exception as e:
+                llm_time = int((time.time() - llm_start) * 1000)
+                logger.error(f"[QuestionFilter][{request_id}] [第4级-LLM] ❌ LLM调用失败: {e}, 耗时={llm_time}ms", exc_info=True)
+                # 降级：默认认为相关
+                result = {
+                    "is_fortune_related": True,
+                    "confidence": 0.5,
+                    "reasoning": f"LLM error: {str(e)}",
+                    "suggested_response": "",
+                    "filter_method": "llm_error_fallback"
+                }
+                logger.warning(f"[QuestionFilter][{request_id}] [第4级-LLM] ⚠️ 降级使用默认结果")
             
             # 确保返回必需字段
             if "is_fortune_related" not in result:
@@ -255,15 +291,16 @@ class QuestionFilter:
             if "suggested_response" not in result:
                 result["suggested_response"] = ""
             
-            result["filter_method"] = "llm"
+                result["filter_method"] = "llm"
             
-            logger.info(f"[QuestionFilter] LLM判断: is_related={result['is_fortune_related']}, confidence={result['confidence']}")
+            logger.info(f"[QuestionFilter][{request_id}] [第4级] 📤 输出: {result}")
+            logger.info(f"[QuestionFilter][{request_id}] ========== 过滤完成 ==========")
             return result
             
         except Exception as e:
-            logger.error(f"[QuestionFilter] 过滤失败: {e}")
+            logger.error(f"[QuestionFilter][{request_id}] ❌ 过滤失败: {e}", exc_info=True)
             # 发生错误时，默认认为相关（降低误拒率）
-            return {
+            result = {
                 "is_fortune_related": True,
                 "confidence": 0.5,
                 "reasoning": f"Filter error: {str(e)}",
@@ -271,6 +308,8 @@ class QuestionFilter:
                 "filter_method": "error_fallback",
                 "error": str(e)
             }
+            logger.warning(f"[QuestionFilter][{request_id}] ⚠️ 降级使用默认结果: {result}")
+            return result
     
     def filter_batch(self, questions: list) -> list:
         """批量过滤问题"""

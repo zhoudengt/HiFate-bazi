@@ -1,0 +1,171 @@
+syntax = "proto3";
+
+package model_tuning;
+
+// 模型微调服务
+service ModelTuningService {
+    // 创建训练批次
+    rpc CreateTrainingBatch(CreateTrainingBatchRequest) returns (CreateTrainingBatchResponse);
+    
+    // 执行训练批次
+    rpc RunTrainingBatch(RunTrainingBatchRequest) returns (RunTrainingBatchResponse);
+    
+    // 获取训练批次列表
+    rpc ListTrainingBatches(ListTrainingBatchesRequest) returns (ListTrainingBatchesResponse);
+    
+    // 获取训练批次详情
+    rpc GetTrainingBatch(GetTrainingBatchRequest) returns (GetTrainingBatchResponse);
+    
+    // 提取关键词规则
+    rpc ExtractKeywordRules(ExtractKeywordRulesRequest) returns (ExtractKeywordRulesResponse);
+    
+    // 获取未标注问题
+    rpc GetUnlabeledQuestions(GetUnlabeledQuestionsRequest) returns (GetUnlabeledQuestionsResponse);
+    
+    // 更新问题标注
+    rpc UpdateQuestionLabel(UpdateQuestionLabelRequest) returns (UpdateQuestionLabelResponse);
+    
+    // 激活模型版本
+    rpc ActivateModelVersion(ActivateModelVersionRequest) returns (ActivateModelVersionResponse);
+}
+
+// 创建训练批次请求
+message CreateTrainingBatchRequest {
+    float min_confidence = 1;  // 最小置信度
+    string description = 2;     // 批次描述
+}
+
+// 创建训练批次响应
+message CreateTrainingBatchResponse {
+    bool success = 1;
+    string batch_id = 2;
+    string error = 3;
+}
+
+// 执行训练批次请求
+message RunTrainingBatchRequest {
+    string batch_id = 1;
+    bool auto_extract_keywords = 2;  // 是否自动提取关键词规则
+}
+
+// 执行训练批次响应
+message RunTrainingBatchResponse {
+    bool success = 1;
+    string batch_id = 2;
+    string model_version = 3;
+    string model_path = 4;
+    int32 training_samples = 5;
+    int32 keyword_rules_added = 6;
+    string error = 7;
+}
+
+// 获取训练批次列表请求
+message ListTrainingBatchesRequest {
+    int32 limit = 1;
+    string status = 2;  // pending/training/completed/failed
+}
+
+// 训练批次信息
+message TrainingBatchInfo {
+    string batch_id = 1;
+    string model_version = 2;
+    int32 question_count = 3;
+    int32 labeled_count = 4;
+    string training_status = 5;
+    string created_at = 6;
+    string training_start_time = 7;
+    string training_end_time = 8;
+    int32 training_duration_sec = 9;
+}
+
+// 获取训练批次列表响应
+message ListTrainingBatchesResponse {
+    bool success = 1;
+    repeated TrainingBatchInfo batches = 2;
+    string error = 3;
+}
+
+// 获取训练批次详情请求
+message GetTrainingBatchRequest {
+    string batch_id = 1;
+}
+
+// 获取训练批次详情响应
+message GetTrainingBatchResponse {
+    bool success = 1;
+    TrainingBatchInfo batch = 2;
+    string error = 3;
+}
+
+// 提取关键词规则请求
+message ExtractKeywordRulesRequest {
+    float min_confidence = 1;
+    int32 limit = 2;
+}
+
+// 关键词规则
+message KeywordRule {
+    string keyword = 1;
+    string intent = 2;
+    float confidence_boost = 3;
+    int32 frequency = 4;
+    float success_rate = 5;
+}
+
+// 提取关键词规则响应
+message ExtractKeywordRulesResponse {
+    bool success = 1;
+    repeated KeywordRule rules = 2;
+    int32 total_count = 3;
+    string error = 4;
+}
+
+// 获取未标注问题请求
+message GetUnlabeledQuestionsRequest {
+    int32 limit = 1;
+    float min_confidence = 2;
+}
+
+// 用户问题
+message UserQuestion {
+    int64 id = 1;
+    string question = 2;
+    repeated string intents = 3;
+    float confidence = 4;
+    string method = 5;
+    string created_at = 6;
+}
+
+// 获取未标注问题响应
+message GetUnlabeledQuestionsResponse {
+    bool success = 1;
+    repeated UserQuestion questions = 2;
+    int32 total_count = 3;
+    string error = 4;
+}
+
+// 更新问题标注请求
+message UpdateQuestionLabelRequest {
+    int64 question_id = 1;
+    repeated string correct_intent = 2;
+    string correct_time_intent_json = 3;  // JSON格式的时间意图
+    string labeler_id = 4;
+}
+
+// 更新问题标注响应
+message UpdateQuestionLabelResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+// 激活模型版本请求
+message ActivateModelVersionRequest {
+    string version = 1;
+}
+
+// 激活模型版本响应
+message ActivateModelVersionResponse {
+    bool success = 1;
+    string error = 2;
+}
+

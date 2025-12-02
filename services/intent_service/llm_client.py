@@ -127,22 +127,28 @@ class IntentLLMClient:
             ]
         }
         
+        request_id = f"llm_{int(time.time() * 1000)}"
         try:
             # 调用 Coze API
-            logger.info(f"Calling Coze API for question: {question[:50]}...")
+            logger.info(f"[LLMClient][{request_id}] ========== 开始调用Coze API ==========")
+            logger.info(f"[LLMClient][{request_id}] 📥 输入: question={question[:50]}..., use_cache={use_cache}, prompt_version={prompt_version}")
+            api_start = time.time()
+            
             response = requests.post(
                 self.base_url,
                 headers=headers,
                 json=payload,
                 timeout=10
             )
+            api_time = int((time.time() - api_start) * 1000)
             response.raise_for_status()
             
             # 解析响应
             result = response.json()
             
             # 记录完整响应以便调试
-            logger.info(f"Coze API response: {json.dumps(result, ensure_ascii=False)[:500]}")
+            logger.info(f"[LLMClient][{request_id}] [API调用] ✅ API调用完成: 耗时={api_time}ms")
+            logger.info(f"[LLMClient][{request_id}] [API调用] 📤 响应: {json.dumps(result, ensure_ascii=False)[:500]}")
             
             if result.get("code") != 0:
                 raise Exception(f"Coze API error: {result.get('msg', 'Unknown error')}")
@@ -153,41 +159,72 @@ class IntentLLMClient:
             status = data.get("status")
             
             # 如果状态是 in_progress，需要轮询等待完成
+            poll_time = 0
             if status == "in_progress":
-                logger.info(f"Chat {chat_id} is in progress, start polling...")
+                logger.info(f"[LLMClient][{request_id}] [轮询] Chat {chat_id} is in progress, start polling...")
+                poll_start = time.time()
                 status, last_error = self._poll_chat_result(chat_id, conversation_id)
+                poll_time = int((time.time() - poll_start) * 1000)
                 
                 if status == "failed":
                     error_msg = last_error.get("msg", "Unknown error")
+                    logger.error(f"[LLMClient][{request_id}] [轮询] ❌ Chat失败: {error_msg}, 耗时={poll_time}ms")
                     raise Exception(f"Chat failed: {error_msg}")
                 
+                logger.info(f"[LLMClient][{request_id}] [轮询] ✅ 轮询完成: status={status}, 耗时={poll_time}ms")
                 # 获取完整消息列表
                 messages = self._get_messages(conversation_id, chat_id)
             else:
                 # 直接从响应中获取消息
                 messages = data.get("messages", [])
+                logger.info(f"[LLMClient][{request_id}] [轮询] ⏭️ 无需轮询，直接获取消息")
             
             # 提取消息内容
+            logger.info(f"[LLMClient][{request_id}] [消息提取] 开始提取消息内容...")
             answer_content = ""
             for msg in messages:
-                logger.info(f"Message: role={msg.get('role')}, type={msg.get('type')}")
+                logger.info(f"[LLMClient][{request_id}] [消息提取] Message: role={msg.get('role')}, type={msg.get('type')}")
                 if msg.get("role") == "assistant" and msg.get("type") == "answer":
                     answer_content = msg.get("content", "")
                     break
             
             if not answer_content:
-                logger.warning(f"No answer in messages. Full data: {json.dumps(result.get('data', {}), ensure_ascii=False)[:500]}")
+                logger.warning(f"[LLMClient][{request_id}] [消息提取] ❌ 未找到答案内容")
+                logger.warning(f"[LLMClient][{request_id}] [消息提取] Full data: {json.dumps(result.get('data', {}), ensure_ascii=False)[:500]}")
                 raise Exception("No answer content in Coze response")
             
+            logger.info(f"[LLMClient][{request_id}] [消息提取] ✅ 提取到答案内容: {answer_content[:100]}...")
+            
             # 解析 JSON 格式的结果
-            parsed_result = self._parse_llm_response(answer_content)
-            parsed_result["prompt_version"] = prompt_version
+            logger.info(f"[LLMClient][{request_id}] [结果解析] 开始解析JSON结果...")
+            parse_start = time.time()
+            try:
+                parsed_result = self._parse_llm_response(answer_content)
+                parsed_result["prompt_version"] = prompt_version
+                parse_time = int((time.time() - parse_start) * 1000)
+                logger.info(f"[LLMClient][{request_id}] [结果解析] ✅ 解析完成: 耗时={parse_time}ms")
+                logger.info(f"[LLMClient][{request_id}] [结果解析] 📤 解析结果: {parsed_result}")
+            except Exception as e:
+                parse_time = int((time.time() - parse_start) * 1000)
+                logger.error(f"[LLMClient][{request_id}] [结果解析] ❌ 解析失败: {e}, 耗时={parse_time}ms", exc_info=True)
+                raise
             
             # 保存到缓存
             if use_cache:
-                self._save_to_cache(cache_key, parsed_result)
+                logger.info(f"[LLMClient][{request_id}] [缓存] 保存到缓存...")
+                try:
+                    self._save_to_cache(cache_key, parsed_result)
+                    logger.info(f"[LLMClient][{request_id}] [缓存] ✅ 缓存保存成功")
+                except Exception as e:
+                    logger.warning(f"[LLMClient][{request_id}] [缓存] ⚠️ 缓存保存失败: {e}")
             
-            logger.info(f"LLM call successful: {parsed_result}")
+            total_time = int((time.time() - api_start) * 1000)
+            logger.info(f"[LLMClient][{request_id}] ========== Coze API调用完成 ==========")
+            logger.info(f"[LLMClient][{request_id}] 📊 总耗时: {total_time}ms "
+                       f"(API调用={api_time}ms, "
+                       f"{'轮询=' + str(poll_time) + 'ms, ' if poll_time > 0 else ''}"
+                       f"解析={parse_time}ms)")
+            logger.info(f"[LLMClient][{request_id}] 📤 最终输出: {parsed_result}")
             return parsed_result
             
         except requests.RequestException as e:
@@ -212,6 +249,10 @@ class IntentLLMClient:
         Returns:
             (status, last_error)
         """
+        poll_id = f"poll_{int(time.time() * 1000)}"
+        logger.info(f"[LLMClient][{poll_id}] ========== 开始轮询 ==========")
+        logger.info(f"[LLMClient][{poll_id}] 📥 输入: chat_id={chat_id}, conversation_id={conversation_id}, max_wait={max_wait}s")
+        
         retrieve_url = f"https://api.coze.cn/v3/chat/retrieve?chat_id={chat_id}&conversation_id={conversation_id}"
         headers = {
             "Authorization": f"Bearer {self.access_token}",
@@ -219,39 +260,54 @@ class IntentLLMClient:
         }
         
         start_time = time.time()
+        poll_count = 0
         while time.time() - start_time < max_wait:
+            poll_count += 1
+            elapsed = int(time.time() - start_time)
             try:
+                poll_start = time.time()
                 response = requests.get(retrieve_url, headers=headers, timeout=5)
+                poll_time = int((time.time() - poll_start) * 1000)
                 response.raise_for_status()
                 result = response.json()
                 
                 if result.get("code") != 0:
-                    logger.error(f"Retrieve API error: {result.get('msg')}")
+                    logger.error(f"[LLMClient][{poll_id}] [轮询#{poll_count}] ❌ Retrieve API错误: {result.get('msg')}, 耗时={poll_time}ms")
                     return "failed", {"msg": result.get("msg", "Unknown error")}
                 
                 data = result.get("data", {})
                 status = data.get("status")
                 last_error = data.get("last_error", {})
                 
-                logger.info(f"Poll chat {chat_id}: status={status}")
+                logger.info(f"[LLMClient][{poll_id}] [轮询#{poll_count}] status={status}, 已等待={elapsed}s, 本次耗时={poll_time}ms")
                 
                 if status == "completed":
+                    total_time = int((time.time() - start_time) * 1000)
+                    logger.info(f"[LLMClient][{poll_id}] ========== 轮询完成 ==========")
+                    logger.info(f"[LLMClient][{poll_id}] 📊 总耗时: {total_time}ms, 轮询次数: {poll_count}, 最终状态: {status}")
                     return status, last_error
                 elif status == "failed":
+                    total_time = int((time.time() - start_time) * 1000)
+                    error_msg = last_error.get("msg", "Unknown error")
+                    logger.error(f"[LLMClient][{poll_id}] ========== 轮询失败 ==========")
+                    logger.error(f"[LLMClient][{poll_id}] 📊 总耗时: {total_time}ms, 轮询次数: {poll_count}, 错误: {error_msg}")
                     return status, last_error
                 elif status in ["in_progress", "created"]:
                     time.sleep(1)  # 等待1秒后重试
                     continue
                 else:
-                    logger.warning(f"Unknown status: {status}")
+                    logger.warning(f"[LLMClient][{poll_id}] [轮询#{poll_count}] ⚠️ 未知状态: {status}")
                     return "failed", {"msg": f"Unknown status: {status}"}
                     
             except Exception as e:
-                logger.error(f"Poll error: {e}")
+                poll_time = int((time.time() - poll_start) * 1000)
+                logger.error(f"[LLMClient][{poll_id}] [轮询#{poll_count}] ❌ 轮询异常: {e}, 耗时={poll_time}ms", exc_info=True)
                 time.sleep(1)
         
         # 超时
-        logger.error(f"Poll timeout after {max_wait}s")
+        total_time = int((time.time() - start_time) * 1000)
+        logger.error(f"[LLMClient][{poll_id}] ========== 轮询超时 ==========")
+        logger.error(f"[LLMClient][{poll_id}] 📊 总耗时: {total_time}ms, 轮询次数: {poll_count}, 超时时间: {max_wait}s")
         return "failed", {"msg": f"Timeout after {max_wait}s"}
     
     def _get_messages(self, conversation_id: str, chat_id: str) -> list:
