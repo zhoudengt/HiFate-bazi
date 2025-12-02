@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-意图分类器 - 95%准确率的核心组件
-支持双维度意图识别：事项意图 + 时间意图（LLM智能识别）
+意图分类器 - 混合架构（95%准确率目标）
+支持多层级处理：关键词过滤 → 本地模型 → 规则后处理 → LLM兜底
 """
 from typing import Dict, Any, List
 import time
+import re
 from services.intent_service.llm_client import IntentLLMClient
+from services.intent_service.local_classifier import LocalIntentClassifier
+from services.intent_service.rule_postprocessor import RulePostProcessor
 from services.intent_service.config import INTENT_CATEGORIES, INTENT_TO_RULE_TYPE_MAP
 from services.intent_service.logger import logger
 
@@ -267,13 +270,15 @@ INTENT_CLASSIFICATION_PROMPT = """你是一个专业的命理学意图识别专�
 
 
 class IntentClassifier:
-    """意图分类器（95%准确率目标）"""
+    """意图分类器（混合架构）"""
     
     def __init__(self):
         self.llm_client = IntentLLMClient()
+        self.local_classifier = LocalIntentClassifier()
+        self.post_processor = RulePostProcessor()
         self.intent_categories = INTENT_CATEGORIES
         self.rule_type_map = INTENT_TO_RULE_TYPE_MAP
-        logger.info("IntentClassifier initialized")
+        logger.info("IntentClassifier initialized (Hybrid Architecture)")
     
     def classify(
         self,
@@ -282,7 +287,13 @@ class IntentClassifier:
         prompt_version: str = "v1.0"
     ) -> Dict[str, Any]:
         """
-        分类用户问题（双维度：事项意图 + 时间意图）
+        混合架构分类（多层级处理）
+        
+        流程：
+        1. 关键词过滤（0ms）→ 处理60%的明确问题
+        2. 本地BERT模型（50-100ms）→ 处理20%的简单问题
+        3. 规则后处理（10-20ms）→ 解析时间意图、格式化JSON
+        4. LLM兜底（500-1000ms）→ 仅处理5%的模糊问题
         
         Args:
             question: 用户问题
@@ -299,97 +310,73 @@ class IntentClassifier:
                 "is_ambiguous": bool,
                 "prompt_version": str,
                 "response_time_ms": int,
-                "time_intent": Dict[str, Any]   # 新增：时间意图
+                "time_intent": Dict[str, Any],  # 时间意图
+                "method": str                   # 处理方法（local_model/llm_fallback/keyword_fallback）
             }
         """
         start_time = time.time()
         
         try:
-            logger.info(f"Classifying question: {question}")
+            logger.info(f"Classifying question: {question[:50]}...")
             
-            # ⭐⭐⭐ 详细日志：显示输入
-            import json
-            print(f"\n{'🔍'*40}")
-            print(f"[Intent LLM] 输入识别")
-            print(f"{'🔍'*40}")
-            print(f"用户问题: {question}")
-            print(f"使用缓存: {use_cache}")
-            print(f"Prompt版本: {prompt_version}")
-            print(f"{'🔍'*40}\n")
+            # ==================== 第1层：本地模型分类 ====================
+            local_result = self.local_classifier.classify(question)
+            local_confidence = local_result.get("confidence", 0.5)
+            local_method = local_result.get("method", "unknown")
             
-            # 1. 识别事项意图（财富、健康、事业等）
-            result = self.llm_client.call_coze_api(
+            logger.info(f"Local model result: intents={local_result.get('intents')}, "
+                       f"confidence={local_confidence:.2f}, method={local_method}")
+            
+            # ==================== 第2层：判断是否需要LLM兜底 ====================
+            need_llm_fallback = self._need_llm_fallback(
                 question=question,
-                prompt_template=INTENT_CLASSIFICATION_PROMPT,
-                use_cache=use_cache,
-                prompt_version=prompt_version
+                local_result=local_result
             )
             
-            # ⭐⭐⭐ 详细日志：显示LLM输出
-            print(f"\n{'✅'*40}")
-            print(f"[Intent LLM] 识别结果")
-            print(f"{'✅'*40}")
-            print(f"完整JSON:")
-            print(json.dumps(result, ensure_ascii=False, indent=2))
-            if "time_intent" in result:
-                ti = result["time_intent"]
-                print(f"\n⏰ 时间意图:")
-                print(f"  - 类型: {ti.get('type', 'N/A')}")
-                print(f"  - 目标年份: {ti.get('target_years', [])}")
-                print(f"  - 描述: {ti.get('description', 'N/A')}")
-            print(f"{'✅'*40}\n")
+            if need_llm_fallback:
+                logger.info("Using LLM fallback for complex/ambiguous question")
+                # 使用LLM兜底
+                llm_result = self.llm_client.call_coze_api(
+                    question=question,
+                    prompt_template=INTENT_CLASSIFICATION_PROMPT,
+                    use_cache=use_cache,
+                    prompt_version=prompt_version
+                )
+                
+                # 检查是否为命理相关问题
+                if not llm_result.get("is_fortune_related", True):
+                    response_time_ms = int((time.time() - start_time) * 1000)
+                    llm_result["response_time_ms"] = response_time_ms
+                    llm_result["rule_types"] = []
+                    llm_result["method"] = "llm_fallback"
+                    return llm_result
+                
+                # 使用LLM结果
+                base_result = llm_result
+                base_result["method"] = "llm_fallback"
+            else:
+                # 使用本地模型结果
+                base_result = local_result
+                base_result["is_fortune_related"] = True  # 本地模型假设都是命理相关
+                base_result["method"] = "local_model"
             
-            # 1. 检查是否为命理相关问题
-            if not result.get("is_fortune_related", True):
-                # 命理无关问题，直接返回婉拒
-                logger.info(f"Non-fortune question detected: {result.get('reject_message')}")
-                response_time_ms = int((time.time() - start_time) * 1000)
-                result["response_time_ms"] = response_time_ms
-                result["rule_types"] = []
-                return result
+            # ==================== 第3层：规则后处理 ====================
+            final_result = self.post_processor.process(
+                question=question,
+                base_result=base_result
+            )
             
-            # 2. 确保事项意图必需字段
-            if "intents" not in result or not result["intents"]:
-                result["intents"] = ["general"]
-            if "confidence" not in result:
-                result["confidence"] = 0.7
-            if "keywords" not in result:
-                result["keywords"] = []
-            if "reasoning" not in result:
-                result["reasoning"] = "Default classification"
-            if "is_ambiguous" not in result:
-                result["is_ambiguous"] = result["confidence"] < 0.75
+            # 添加元数据
+            final_result["prompt_version"] = prompt_version
+            final_result["response_time_ms"] = int((time.time() - start_time) * 1000)
             
-            # 3. 确保时间意图字段（LLM应该返回，如果没有则提供默认值）
-            if "time_intent" not in result:
-                from datetime import datetime as dt
-                current_year = dt.now().year
-                result["time_intent"] = {
-                    "type": "this_year",
-                    "target_years": [current_year],
-                    "description": f"今年（{current_year}年，默认）",
-                    "is_explicit": False
-                }
-                logger.warning(f"LLM未返回time_intent，使用默认值: {current_year}")
+            logger.info(f"Classification result: intents={final_result['intents']}, "
+                       f"time={final_result.get('time_intent', {}).get('type', 'N/A')}, "
+                       f"confidence={final_result['confidence']:.2f}, "
+                       f"method={final_result.get('method', 'unknown')}, "
+                       f"time={final_result['response_time_ms']}ms")
             
-            # 4. 映射到规则类型
-            result["rule_types"] = [
-                self.rule_type_map.get(intent, "ALL")
-                for intent in result["intents"]
-            ]
-            
-            # 5. 后处理：置信度校准
-            result = self._post_process_result(result)
-            
-            time_intent = result["time_intent"]
-            logger.info(f"时间意图: {time_intent.get('description', 'N/A')} ({time_intent.get('target_years', [])})")
-            
-            # 计算响应时间
-            response_time_ms = int((time.time() - start_time) * 1000)
-            result["response_time_ms"] = response_time_ms
-            
-            logger.info(f"Classification result: intents={result['intents']}, time={time_intent['type']}, confidence={result['confidence']}, time={response_time_ms}ms")
-            return result
+            return final_result
             
         except Exception as e:
             logger.error(f"Classification failed: {e}")
@@ -412,8 +399,60 @@ class IntentClassifier:
                 "is_ambiguous": True,
                 "prompt_version": prompt_version,
                 "response_time_ms": int((time.time() - start_time) * 1000),
-                "error": str(e)
+                "error": str(e),
+                "method": "error"
             }
+    
+    def _need_llm_fallback(
+        self,
+        question: str,
+        local_result: Dict[str, Any]
+    ) -> bool:
+        """
+        判断是否需要LLM兜底
+        
+        需要LLM的情况：
+        1. 本地模型置信度 < 0.6
+        2. 问题过于模糊（长度 < 5 或缺少关键词）
+        3. 多意图冲突（意图数量 > 2 且置信度低）
+        4. 时间表达复杂（需要上下文理解）
+        """
+        confidence = local_result.get("confidence", 0.5)
+        intents = local_result.get("intents", [])
+        keywords = local_result.get("keywords", [])
+        is_ambiguous = local_result.get("is_ambiguous", True)
+        
+        # 1. 置信度太低
+        if confidence < 0.6:
+            logger.info(f"Low confidence ({confidence:.2f}), using LLM fallback")
+            return True
+        
+        # 2. 问题过于模糊
+        if len(question) < 5 or len(keywords) == 0:
+            logger.info(f"Question too ambiguous (len={len(question)}, keywords={len(keywords)}), using LLM fallback")
+            return True
+        
+        # 3. 多意图冲突
+        if len(intents) > 2 and confidence < 0.75:
+            logger.info(f"Multiple intents conflict ({intents}), using LLM fallback")
+            return True
+        
+        # 4. 复杂时间表达（需要上下文理解）
+        complex_time_patterns = [
+            r'后\d+年', r'未来\d+年', r'最近\d+年',
+            r'\d{4}[到-]\d{4}年', r'最近'
+        ]
+        has_complex_time = any(re.search(pattern, question) for pattern in complex_time_patterns)
+        if has_complex_time and confidence < 0.7:
+            logger.info(f"Complex time expression detected, using LLM fallback")
+            return True
+        
+        # 5. 明确标记为模糊
+        if is_ambiguous and confidence < 0.65:
+            logger.info(f"Explicitly ambiguous, using LLM fallback")
+            return True
+        
+        return False
     
     def _post_process_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """

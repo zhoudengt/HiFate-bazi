@@ -582,6 +582,20 @@
                 // LLM输出完成，准备显示结果
             });
 
+            // 监听LLM错误
+            eventSource.addEventListener('llm_error', function(e) {
+                const data = JSON.parse(e.data);
+                console.error('LLM错误:', data.message);
+                // 显示错误，但不中断整个流程
+                if (llmResponse) {
+                    // 如果已经有部分内容，继续显示
+                    llmResponse += '\n\n⚠️ ' + data.message;
+                } else {
+                    // 如果没有内容，显示错误提示
+                    showError('AI深度解读失败: ' + data.message);
+                }
+            });
+
             // 监听最终结果
             eventSource.addEventListener('end', function(e) {
                 const endTime = Date.now();

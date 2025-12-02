@@ -545,7 +545,20 @@
             // 监听不同类型的事件
             eventSource.addEventListener('status', function(e) {
                 const data = JSON.parse(e.data);
+                console.log('📥 收到 status 事件:', data.stage, data.message);
                 updateProgress(data.stage, data.message);
+                
+                // ⭐ 修复：当进入LLM阶段时，提前显示LLM分析区域
+                if (data.stage === 'llm') {
+                    console.log('🎯 进入LLM阶段，显示LLM分析区域');
+                    const section = document.getElementById('llmAnalysisSection');
+                    if (section) {
+                        section.style.display = 'block';
+                        console.log('✅ LLM分析区域已显示');
+                    } else {
+                        console.error('❌ 找不到 llmAnalysisSection 元素');
+                    }
+                }
             });
 
             eventSource.addEventListener('basic_analysis', function(e) {
@@ -555,20 +568,24 @@
             });
 
             eventSource.addEventListener('llm_start', function(e) {
+                console.log('📥 收到 llm_start 事件');
                 displayLLMStart();
             });
 
             eventSource.addEventListener('llm_chunk', function(e) {
                 const data = JSON.parse(e.data);
+                console.log('📥 收到 llm_chunk 事件，内容长度:', data.content ? data.content.length : 0);
                 appendLLMChunk(data.content);
             });
 
             eventSource.addEventListener('llm_end', function(e) {
+                console.log('📥 收到 llm_end 事件');
                 finishLLMAnalysis();
             });
 
             eventSource.addEventListener('llm_error', function(e) {
                 const data = JSON.parse(e.data);
+                console.error('❌ 收到 llm_error 事件:', data.message);
                 displayLLMError(data.message);
             });
 
@@ -656,14 +673,25 @@
         }
 
         function displayLLMStart() {
+            console.log('🚀 displayLLMStart 被调用');
             const section = document.getElementById('llmAnalysisSection');
             const content = document.getElementById('llmAnalysisContent');
+            
+            if (!section) {
+                console.error('❌ 找不到 llmAnalysisSection 元素');
+                return;
+            }
+            if (!content) {
+                console.error('❌ 找不到 llmAnalysisContent 元素');
+                return;
+            }
             
             llmBuffer = '';  // 清空缓存
             // 清空之前的加载提示，只显示光标
             content.innerHTML = '';
             content.classList.add('streaming');
             section.style.display = 'block';
+            console.log('✅ LLM分析区域已显示');
 
             // 平滑滚动到LLM分析区域
             section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -709,13 +737,33 @@
         }
 
         function displayLLMError(message) {
+            console.error('🔴 displayLLMError 被调用，消息:', message);
+            const section = document.getElementById('llmAnalysisSection');
             const content = document.getElementById('llmAnalysisContent');
+            
+            if (!section) {
+                console.error('❌ 找不到 llmAnalysisSection 元素');
+                return;
+            }
+            if (!content) {
+                console.error('❌ 找不到 llmAnalysisContent 元素');
+                return;
+            }
+            
+            // ⭐ 修复：显示区域（因为可能没有收到llm_start事件）
+            console.log('📌 显示LLM分析区域');
+            section.style.display = 'block';
+            
             content.innerHTML = `
                 <div class="error-message">
                     ⚠️ LLM分析失败：${message}
                 </div>
             `;
             content.classList.remove('streaming');
+            
+            // 平滑滚动到错误区域
+            section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            console.log('✅ 错误信息已显示');
         }
 
         function displayError(message) {

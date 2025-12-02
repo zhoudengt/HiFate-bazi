@@ -1,8 +1,3 @@
-# 环境变量
-.env
-*.env
-config/*.env
-
 # Python
 __pycache__/
 *.py[cod]
@@ -24,70 +19,63 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
+
+# Virtual Environment
 venv/
 ENV/
-
-# 日志文件
-logs/
-*.log
-*.pid
+env/
+.venv/
 
 # IDE
-.idea/
 .vscode/
-*.iml
-.DS_Store
+.idea/
+*.swp
+*.swo
+*~
 
-# Node
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-package-lock.json
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+*.cover
+coverage.xml
+*.log
 
-# 数据库
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Database
 *.db
 *.sqlite
 *.sqlite3
 
-# 临时文件
-*.tmp
-*.bak
-*.swp
-*.backup
-*~
+# Logs
+logs/
+*.log
 
-# 系统文件
+# OS
 .DS_Store
 Thumbs.db
 
-# MCP 配置（如果包含敏感信息）
-.mcp-cursor-settings.json
-
-# 测试和临时文件
-test_*.py
-debug_*.py
-temp/
-tmp/
-
-# 模型文件（大文件）
+# Project specific
+proto/generated/
+node_modules/
 *.pt
-*.pth
-*.onnx
-*.pb
+yolov8n.pt
 
-# 构建产物
-hifate_bazi.spec
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
-# 敏感配置（确保不提交）
-config/services.env
-tableplus_connections.json
+# Pylint
+.pylint.d/
 
-# 项目特定忽略
-verify_frontend_integration.html
-
-# Excel 文件（数据已转换为数据库/JSON，不需要提交源文件）
-*.xlsx
-*.xls
-*.docx
-*.doc
+# Black
+.black
+models_cache/

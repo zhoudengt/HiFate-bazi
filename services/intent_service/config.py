@@ -64,3 +64,8 @@ INTENT_TO_RULE_TYPE_MAP = {
 LOG_FILE = "logs/intent_service.log"
 LOG_LEVEL = "INFO"
 
+# 混合架构配置
+HYBRID_ARCHITECTURE_ENABLED = os.getenv("HYBRID_ARCHITECTURE_ENABLED", "true").lower() == "true"
+LOCAL_MODEL_NAME = os.getenv("LOCAL_MODEL_NAME", "hfl/chinese-roberta-wwm-ext")
+LLM_FALLBACK_THRESHOLD = float(os.getenv("LLM_FALLBACK_THRESHOLD", "0.6"))  # 置信度阈值
+

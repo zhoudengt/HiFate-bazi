@@ -60,6 +60,20 @@ scipy>=1.11.0
 # 微信支付
 wechatpy>=1.8.0
 
+# === 测试工具 ===
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+pytest-timeout==2.2.0
+
+# === 代码质量检查工具 ===
+pylint==3.0.3
+black==23.12.1
+mypy==1.7.1
+flake8==6.1.0
+isort==5.13.2
+
 # === 以下是重型依赖，暂不启用 ===
 # 深度学习（非常大，约2GB，需要时再启用）
 # torch>=2.4.0

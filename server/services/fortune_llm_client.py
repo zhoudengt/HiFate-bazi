@@ -38,10 +38,48 @@ class FortuneLLMClient:
         self.bot_id = os.getenv("FORTUNE_ANALYSIS_BOT_ID")
         self.api_base = "https://api.coze.cn/v3/chat"  # 使用Chat API而非Workflow API
         
-        if not self.access_token:
-            raise ValueError("COZE_ACCESS_TOKEN not set in environment")
+        # 如果FORTUNE_ANALYSIS_BOT_ID不存在，尝试使用COZE_BOT_ID作为fallback
         if not self.bot_id:
-            raise ValueError("FORTUNE_ANALYSIS_BOT_ID not set in environment")
+            self.bot_id = os.getenv("COZE_BOT_ID")
+            if self.bot_id:
+                logger.warning("⚠️ FORTUNE_ANALYSIS_BOT_ID未设置，使用COZE_BOT_ID作为fallback")
+        
+        # 如果环境变量缺失，尝试从config/services.env加载
+        if not self.access_token or not self.bot_id:
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            services_env_path = os.path.join(project_root, "config", "services.env")
+            if os.path.exists(services_env_path):
+                try:
+                    with open(services_env_path, 'r', encoding='utf-8') as f:
+                        for line in f:
+                            line = line.strip()
+                            if not line or line.startswith('#'):
+                                continue
+                            
+                            # 解析 export KEY="VALUE" 格式
+                            if line.startswith('export '):
+                                line = line[7:].strip()  # 去掉 'export '
+                                if '=' in line:
+                                    key, value = line.split('=', 1)
+                                    key = key.strip()
+                                    value = value.strip().strip('"').strip("'")
+                                    
+                                    if not self.access_token and key == 'COZE_ACCESS_TOKEN' and value:
+                                        self.access_token = value
+                                        os.environ['COZE_ACCESS_TOKEN'] = value
+                                        logger.info(f"✓ 从config/services.env加载COZE_ACCESS_TOKEN")
+                                    
+                                    if not self.bot_id and key == 'FORTUNE_ANALYSIS_BOT_ID' and value:
+                                        self.bot_id = value
+                                        os.environ['FORTUNE_ANALYSIS_BOT_ID'] = value
+                                        logger.info(f"✓ 从config/services.env加载FORTUNE_ANALYSIS_BOT_ID: {self.bot_id}")
+                except Exception as e:
+                    logger.warning(f"⚠️ 读取config/services.env失败: {e}")
+        
+        if not self.access_token:
+            raise ValueError("COZE_ACCESS_TOKEN not set in environment (also checked config/services.env)")
+        if not self.bot_id:
+            raise ValueError("FORTUNE_ANALYSIS_BOT_ID not set in environment (also checked COZE_BOT_ID and config/services.env)")
         
         # 初始化Redis客户端（如果可用）
         self.redis_client = None
@@ -619,7 +657,12 @@ class FortuneLLMClient:
         
         try:
             logger.info("🚀 开始流式调用 Coze API...")
+            self._content_received = False  # 重置内容接收标志
             yield {'type': 'start', 'content': '', 'error': None}
+            
+            logger.info(f"📤 发送请求到Coze API: {self.api_base}")
+            logger.debug(f"   请求头: {headers}")
+            logger.debug(f"   请求体: {json.dumps(payload, ensure_ascii=False)[:500]}...")
             
             response = requests.post(
                 self.api_base,
@@ -628,6 +671,9 @@ class FortuneLLMClient:
                 stream=True,  # 启用流式接收
                 timeout=60
             )
+            
+            logger.info(f"📥 Coze API响应: HTTP {response.status_code}")
+            logger.debug(f"   响应头: {dict(response.headers)}")
             
             if response.status_code != 200:
                 error_msg = f'HTTP {response.status_code}: {response.text}'
@@ -642,73 +688,266 @@ class FortuneLLMClient:
             yield {'type': 'start', 'content': '', 'error': None}
             
             # 逐行读取SSE数据（使用更大的chunk避免UTF-8截断）
-            for line in response.iter_lines(decode_unicode=True, chunk_size=8192):
-                if not line:
+            buffer = ""
+            stream_ended = False  # ⭐ 标志：流是否已结束（通过error或end）
+            current_event = None  # ⭐ 记录当前SSE事件名称
+            for chunk in response.iter_content(chunk_size=8192, decode_unicode=True):
+                if not chunk:
                     continue
                 
-                # SSE格式: "data: {...}"
-                if line.startswith('data:'):
-                    data_str = line[5:].strip()  # 去掉 "data:" 前缀
-                    
-                    if data_str == '[DONE]':
-                        logger.info("✅ 流式输出完成")
-                        yield {'type': 'end', 'content': '', 'error': None}
-                        break
-                    
-                    try:
-                        data = json.loads(data_str)
-                        
-                        # 防御性检查：确保 data 是字典
-                        if not isinstance(data, dict):
-                            logger.warning(f"⚠️ SSE数据不是字典: {type(data)}, 数据: {data_str[:100]}")
-                            continue
-                        
-                        # Coze API 有两种格式：
-                        # 1. 带 event 字段的（新版）
-                        # 2. 直接消息对象的（当前版本）
-                        event_type = data.get('event', '')
-                        msg_type = data.get('type', '')
-                        
-                        if event_type == 'conversation.message.delta':
-                            # 新版格式：消息增量
-                            delta = data.get('delta', {})
-                            content = delta.get('content', '')
-                            if content:
-                                logger.debug(f"📝 收到chunk: {content[:50]}...")
-                                yield {'type': 'chunk', 'content': content, 'error': None}
-                        
-                        elif event_type == 'conversation.chat.completed':
-                            # 新版格式：对话完成
-                            logger.info("✅ 对话完成")
-                            yield {'type': 'end', 'content': '', 'error': None}
-                            break
-                        
-                        elif msg_type == 'answer':
-                            # 当前版本格式：直接返回answer消息
-                            content = data.get('content', '')
-                            if content:
-                                logger.debug(f"📝 收到answer: {content[:50]}...")
-                                yield {'type': 'chunk', 'content': content, 'error': None}
-                        
-                        elif msg_type == 'follow_up':
-                            # 后续问题，忽略
-                            logger.debug("⏭️ 跳过follow_up消息")
-                            continue
-                        
-                        elif event_type == 'error' or msg_type == 'error':
-                            # 错误事件
-                            error_msg = data.get('message', data.get('content', '未知错误'))
-                            logger.error(f"❌ Bot返回错误: {error_msg}")
-                            yield {'type': 'error', 'content': '', 'error': error_msg}
-                            break
-                    
-                    except json.JSONDecodeError as e:
-                        logger.error(f"❌ 解析SSE数据失败: {e}, 原始数据: {data_str[:200]}")
+                buffer += chunk
+                lines = buffer.split('\n')
+                buffer = lines[-1]  # 保留最后一行（可能不完整）
+                
+                for line in lines[:-1]:
+                    line = line.strip()
+                    if not line:
                         continue
+                    
+                    # SSE格式: "data: {...}" 或 "event: xxx"
+                    if line.startswith('event:'):
+                        # ⭐ 记录事件名称（Coze API 的事件在 event: 行中）
+                        current_event = line[6:].strip()
+                        logger.debug(f"📨 收到SSE事件: {current_event}")
+                        continue
+                    
+                    elif line.startswith('data:'):
+                        data_str = line[5:].strip()  # 去掉 "data:" 前缀
+                        
+                        if data_str == '[DONE]':
+                            logger.info("✅ 流式输出完成（收到[DONE]标记）")
+                            yield {'type': 'end', 'content': '', 'error': None}
+                            stream_ended = True
+                            break
+                        
+                        try:
+                            data = json.loads(data_str)
+                            
+                            # 防御性检查：确保 data 是字典
+                            if not isinstance(data, dict):
+                                logger.warning(f"⚠️ SSE数据不是字典: {type(data)}, 数据: {data_str[:100]}")
+                                continue
+                            
+                            # ⭐ 使用 current_event（从 event: 行获取）或 data 中的 event 字段
+                            event_type = current_event or data.get('event', '')
+                            msg_type = data.get('type', '')
+                            status = data.get('status', '')  # ⭐ 新增：检查status字段
+                            
+                            # ⭐ 详细日志：记录所有收到的数据（用于调试）
+                            logger.debug(f"📨 处理SSE数据: event={event_type}, type={msg_type}, status={status}, keys={list(data.keys())[:10]}")
+                            
+                            # ⭐ 提前检查：如果是 verbose 类型且 content 很大，可能是 knowledge_recall
+                            if msg_type == 'verbose' and 'content' in data:
+                                content_str = str(data.get('content', ''))
+                                if len(content_str) > 10000:  # 大内容很可能是 knowledge_recall JSON
+                                    try:
+                                        if content_str.strip().startswith('{'):
+                                            test_parse = json.loads(content_str)
+                                            if isinstance(test_parse, dict) and test_parse.get('msg_type') == 'knowledge_recall':
+                                                logger.info(f"⏭️ 提前跳过 verbose 类型的 knowledge_recall 消息（content长度: {len(content_str)}）")
+                                                continue
+                                    except (json.JSONDecodeError, AttributeError, ValueError):
+                                        pass
+                            
+                            # ⭐ 优先检查status字段（Coze API可能不设置event字段）
+                            if status == 'failed':
+                                last_error = data.get('last_error', {})
+                                error_code = last_error.get('code', 0)
+                                error_msg = last_error.get('msg', 'Bot处理失败')
+                                logger.error(f"❌ Bot处理失败（通过status字段）: code={error_code}, msg={error_msg}")
+                                yield {'type': 'error', 'content': '', 'error': f'Bot处理失败: {error_msg} (错误码: {error_code})'}
+                                stream_ended = True
+                                break
+                            
+                            # 新版格式：conversation.message.delta（事件在 event: 行中，内容在 data 中）
+                            if event_type == 'conversation.message.delta':
+                                # ⭐ Coze API 的 delta 格式：data 中直接包含 content 字段，不是嵌套在 delta 中
+                                msg_type = data.get('type', '')
+                                
+                                # ⭐ 跳过 knowledge_recall 类型的消息
+                                if msg_type == 'knowledge_recall' or msg_type == 'verbose':
+                                    logger.debug(f"⏭️ 跳过 {msg_type} 类型的delta消息")
+                                    continue
+                                
+                                content = data.get('content', '')
+                                if content:
+                                    # ⭐ 检查 content 是否是JSON字符串
+                                    try:
+                                        parsed_content = json.loads(content)
+                                        if isinstance(parsed_content, dict):
+                                            # 如果是 knowledge_recall JSON，跳过
+                                            if parsed_content.get('msg_type') == 'knowledge_recall':
+                                                logger.debug("⏭️ 跳过 knowledge_recall JSON delta")
+                                                continue
+                                            # 尝试提取文本
+                                            text_content = parsed_content.get('text') or parsed_content.get('content')
+                                            if text_content and isinstance(text_content, str):
+                                                content = text_content
+                                    except (json.JSONDecodeError, AttributeError):
+                                        pass
+                                    
+                                    self._content_received = True
+                                    logger.debug(f"📝 收到delta chunk ({msg_type}): {len(content)}字符")
+                                    yield {'type': 'chunk', 'content': content, 'error': None}
+                                continue
+                            
+                            # 新版格式：conversation.chat.completed
+                            elif event_type == 'conversation.chat.completed':
+                                logger.info("✅ 对话完成（conversation.chat.completed）")
+                                yield {'type': 'end', 'content': '', 'error': None}
+                                stream_ended = True
+                                break
+                            
+                            # 新版格式：conversation.message.completed（完整消息，可能包含大量内容）
+                            elif event_type == 'conversation.message.completed':
+                                # ⭐ 检查消息类型，只处理 answer 类型，跳过 knowledge_recall 等
+                                msg_type = data.get('type', '')
+                                content = data.get('content', '')
+                                
+                                # ⭐ 对于 verbose 类型，直接跳过（verbose 通常是知识库召回或调试信息）
+                                if msg_type == 'verbose':
+                                    logger.info(f"⏭️ 跳过 verbose 类型消息（知识库召回/调试信息，不是Bot回答），content长度: {len(str(content))}")
+                                    continue
+                                
+                                # ⭐ 跳过 knowledge_recall 类型的消息（这是知识库召回，不是Bot回答）
+                                if msg_type == 'knowledge_recall':
+                                    logger.info(f"⏭️ 跳过 {msg_type} 类型消息（知识库召回，不是Bot回答）")
+                                    continue
+                                
+                                # ⭐ 只处理 answer 类型的消息
+                                if msg_type == 'answer' and content and isinstance(content, str) and len(content) > 10:
+                                    # 检查 content 是否是JSON字符串（需要解析）
+                                    try:
+                                        # 尝试解析JSON
+                                        if content.strip().startswith('{'):
+                                            parsed_content = json.loads(content)
+                                            # 如果是JSON，检查是否有实际文本内容
+                                            if isinstance(parsed_content, dict):
+                                                # 如果是 knowledge_recall 类型的JSON，跳过
+                                                if parsed_content.get('msg_type') == 'knowledge_recall':
+                                                    logger.info("⏭️ 跳过 knowledge_recall JSON内容")
+                                                    continue
+                                                # 尝试提取文本内容
+                                                text_content = parsed_content.get('text') or parsed_content.get('content') or parsed_content.get('message')
+                                                if text_content and isinstance(text_content, str):
+                                                    content = text_content
+                                    except (json.JSONDecodeError, AttributeError, ValueError):
+                                        # 不是JSON，直接使用
+                                        pass
+                                    
+                                    # ⭐ 最终检查 content 不是 knowledge_recall JSON
+                                    try:
+                                        if isinstance(content, str) and content.strip().startswith('{'):
+                                            test_parse = json.loads(content)
+                                            if isinstance(test_parse, dict) and test_parse.get('msg_type') == 'knowledge_recall':
+                                                logger.info("⏭️ 最终检查：跳过 knowledge_recall JSON")
+                                                continue
+                                    except (json.JSONDecodeError, AttributeError, ValueError):
+                                        pass
+                                    
+                                    self._content_received = True
+                                    logger.info(f"📝 收到完整消息 ({msg_type}): {len(content)}字符")
+                                    yield {'type': 'chunk', 'content': content, 'error': None}
+                                elif msg_type != 'answer':
+                                    # ⭐ 非 answer 类型，直接跳过
+                                    logger.debug(f"⏭️ 跳过非 answer 类型的消息: {msg_type}")
+                                continue
+                            
+                            # 新版格式：conversation.chat.failed
+                            elif event_type == 'conversation.chat.failed':
+                                last_error = data.get('last_error', {})
+                                error_code = last_error.get('code', 0)
+                                error_msg = last_error.get('msg', '未知错误')
+                                logger.error(f"❌ Bot处理失败: code={error_code}, msg={error_msg}")
+                                yield {'type': 'error', 'content': '', 'error': f'Bot处理失败: {error_msg} (code: {error_code})'}
+                                stream_ended = True
+                                break
+                            
+                            # 旧版格式：answer消息
+                            elif msg_type == 'answer':
+                                content = data.get('content', '')
+                                if content:
+                                    self._content_received = True
+                                    logger.info(f"📝 收到answer: {len(content)}字符")
+                                    yield {'type': 'chunk', 'content': content, 'error': None}
+                            
+                            # 旧版格式：完整消息（可能包含完整内容）
+                            elif 'content' in data and data.get('content'):
+                                content = data.get('content', '')
+                                if isinstance(content, str) and content:
+                                    # ⭐ 检查是否是 knowledge_recall JSON
+                                    try:
+                                        if content.strip().startswith('{') and len(content) > 1000:
+                                            parsed = json.loads(content)
+                                            if isinstance(parsed, dict) and parsed.get('msg_type') == 'knowledge_recall':
+                                                logger.info(f"⏭️ 跳过 knowledge_recall JSON content（长度: {len(content)}）")
+                                                continue
+                                    except (json.JSONDecodeError, AttributeError, ValueError):
+                                        pass
+                                    
+                                    self._content_received = True
+                                    logger.info(f"📝 收到content: {len(content)}字符")
+                                    yield {'type': 'chunk', 'content': content, 'error': None}
+                            
+                            # follow_up消息，忽略
+                            elif msg_type == 'follow_up':
+                                logger.debug("⏭️ 跳过follow_up消息")
+                                continue
+                            
+                            # 错误事件
+                            elif event_type == 'error' or msg_type == 'error':
+                                error_msg = data.get('message', data.get('content', data.get('error', '未知错误')))
+                                logger.error(f"❌ Bot返回错误: {error_msg}")
+                                yield {'type': 'error', 'content': '', 'error': error_msg}
+                                stream_ended = True
+                                break
+                            
+                            # 其他未知格式，记录日志但不中断
+                            else:
+                                logger.warning(f"⚠️ 未知SSE格式: event={event_type}, type={msg_type}, keys={list(data.keys())[:5]}, 完整数据: {json.dumps(data, ensure_ascii=False)[:200]}")
+                                # 尝试提取任何可能的文本内容
+                                for key in ['text', 'message', 'data', 'result', 'answer', 'content']:
+                                    if key in data:
+                                        value = data[key]
+                                        if isinstance(value, str) and value.strip():
+                                            logger.info(f"📝 从{key}字段提取内容: {len(value)}字符")
+                                            yield {'type': 'chunk', 'content': value, 'error': None}
+                                            break
+                        
+                        except json.JSONDecodeError as e:
+                            logger.error(f"❌ 解析SSE数据失败: {e}, 原始数据: {data_str[:200]}")
+                            continue
+                    
+                    # 处理 event: 行
+                    elif line.startswith('event:'):
+                        event_name = line[6:].strip()
+                        logger.debug(f"📨 收到SSE事件: {event_name}")
+                    
+                    # ⭐ 如果流已结束（通过error或end），跳出内层循环
+                    if stream_ended:
+                        break
+                
+                # ⭐ 如果流已结束，跳出外层循环
+                if stream_ended:
+                    break
             
-            # 流结束
-            logger.info("✅ SSE流结束")
-            yield {'type': 'end', 'content': '', 'error': None}
+            # 处理剩余的buffer
+            if buffer.strip():
+                logger.debug(f"⚠️ 有未处理的buffer: {buffer[:100]}")
+            
+            # 流结束（只有在没有通过error/end结束的情况下才yield end）
+            if not stream_ended:
+                logger.info("✅ SSE流结束（正常结束）")
+                
+                # ⚠️ 如果没有收到任何内容chunk，记录警告
+                if not hasattr(self, '_content_received'):
+                    self._content_received = False
+                if not self._content_received:
+                    logger.warning("⚠️ SSE流结束，但未收到任何内容chunk，可能Bot未生成内容或响应格式异常")
+                
+                yield {'type': 'end', 'content': '', 'error': None}
+            else:
+                logger.info("✅ SSE流结束（已通过error/end事件结束）")
             
         except requests.exceptions.Timeout:
             error_msg = '流式请求超时（60秒）'

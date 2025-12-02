@@ -66,6 +66,71 @@ const result = await api.post('/bazi/formula-analysis', {
 const result = await fetch('/api/v1/bazi/formula-analysis', {...});
 ```
 
+### 🔴 前端错误处理规范 【必须遵守】
+
+#### 1. 错误处理必须显示UI区域
+
+**要求**：
+- 所有错误处理函数必须同时更新内容和显示状态
+- 如果UI区域初始为 `display:none`，错误处理时必须显示
+
+**错误示例**：
+```javascript
+// ❌ 错误：只更新内容，不显示区域
+function displayError(message) {
+    const content = document.getElementById('content');
+    content.innerHTML = `<div class="error">${message}</div>`;
+    // 缺少：section.style.display = 'block';
+}
+```
+
+**正确示例**：
+```javascript
+// ✅ 正确：同时更新内容和显示状态
+function displayError(message) {
+    const section = document.getElementById('section');
+    const content = document.getElementById('content');
+    
+    section.style.display = 'block';  // 显示区域
+    content.innerHTML = `<div class="error">${message}</div>`;
+    section.scrollIntoView({ behavior: 'smooth' });  // 滚动到错误区域
+}
+```
+
+#### 2. 关键阶段提前显示UI区域
+
+**要求**：
+- 在进入关键处理阶段时，提前显示相关UI区域
+- 确保用户能看到处理进度和结果
+
+**示例**：
+```javascript
+eventSource.addEventListener('status', function(e) {
+    const data = JSON.parse(e.data);
+    updateProgress(data.stage, data.message);
+    
+    // ⭐ 当进入关键阶段时，提前显示相关UI区域
+    if (data.stage === 'llm') {
+        document.getElementById('llmAnalysisSection').style.display = 'block';
+    }
+});
+```
+
+#### 3. 错误处理与正常流程保持一致
+
+**要求**：
+- 错误处理函数的UI操作必须与正常流程函数一致
+- 确保错误场景下用户体验不中断
+
+**检查清单**：
+- [ ] 错误处理函数是否显示相关UI区域
+- [ ] 是否在关键阶段提前显示UI区域
+- [ ] 错误处理逻辑是否与正常流程一致
+- [ ] 是否添加了用户可见的错误提示
+- [ ] 是否测试了所有错误场景
+
+**相关复盘**：见 `docs/问题复盘-AI深度解读区域不显示.md`
+
 ### 后端注册规范
 ```python
 # 1. 在 server/api/v1/ 下创建 REST API
@@ -1543,6 +1608,341 @@ docker rmi hifate-base:20241128
 7. **📝 规范命名**：类型用英文，ID 统一格式（见"规则编码规范"和"规则类型命名"）
 8. **🔄 问题复盘**：每次问题必须复盘并更新规范（见"问题复盘机制"）
 9. **💾 Token 节省**：只读取相关文件，使用 `offset`/`limit` 限制范围（见"Token 节省原则"）
+10. **🧪 A/B 测试优先**：新功能必须支持 A/B 测试（见"A/B 测试和灰度发布规范"）
+11. **🚀 灰度发布优先**：重要变更必须通过灰度发布（见"A/B 测试和灰度发布规范"）
+12. **🔄 回滚准备**：所有数据库变更必须准备回滚脚本（见"A/B 测试和灰度发布规范"）
+
+---
+
+## 🧪 A/B 测试和灰度发布规范 【必须遵守】
+
+### 🔴 核心原则
+
+> **所有新功能、重要变更、数据库变更都必须支持 A/B 测试、灰度发布和回滚机制。**
+
+| 场景 | 要求 | 实现方式 |
+|------|------|----------|
+| **新功能开发** | ✅ 必须 | 使用功能开关（Feature Flag）控制 |
+| **算法优化** | ✅ 必须 | 使用 A/B 测试对比效果 |
+| **重要变更** | ✅ 必须 | 通过灰度发布逐步上线 |
+| **数据库变更** | ✅ 必须 | 准备回滚脚本，支持快速回滚 |
+| **性能优化** | ✅ 推荐 | 使用 A/B 测试验证效果 |
+
+---
+
+### 📋 A/B 测试开发规范
+
+#### 1. 新功能必须支持 A/B 测试
+
+**要求**：
+- 所有新功能、算法优化、UI 变更必须支持 A/B 测试
+- 使用 `server/utils/ab_test.py` 框架
+- 创建实验，分配变体，记录事件
+
+**开发流程**：
+
+```python
+# 1. 导入 A/B 测试框架
+from server.utils.ab_test import get_ab_test_manager, Experiment, ExperimentStatus
+
+# 2. 创建实验（在服务启动时或通过 API）
+manager = get_ab_test_manager()
+experiment = Experiment(
+    name="新算法测试",
+    description="测试新的八字计算算法",
+    status=ExperimentStatus.RUNNING,
+    traffic_percent=50.0,  # 50% 流量
+    variants={"A": 50, "B": 50}  # A/B 各 50%
+)
+manager.create_experiment(experiment)
+
+# 3. 在代码中使用
+variant = manager.assign_variant("新算法测试", user_id=user_id)
+if variant == "A":
+    result = old_algorithm.calculate()
+elif variant == "B":
+    result = new_algorithm.calculate()
+
+# 4. 记录用户行为事件
+manager.record_event("新算法测试", user_id, "click", {"button": "submit"})
+```
+
+**检查清单**：
+- [ ] 新功能是否创建了 A/B 测试实验
+- [ ] 是否在代码中正确分配变体
+- [ ] 是否记录了关键事件（点击、转化等）
+- [ ] 是否可以通过 API 查看实验统计
+
+---
+
+### 🚩 功能开关开发规范
+
+#### 1. 新功能必须使用功能开关
+
+**要求**：
+- 所有新功能必须通过功能开关控制
+- 支持快速开启/关闭，无需重新部署
+- 支持百分比灰度、白名单、黑名单
+
+**开发流程**：
+
+```python
+# 1. 导入功能开关框架
+from server.utils.feature_flag import get_feature_flag_manager, FeatureFlag, FlagType
+
+# 2. 创建功能开关（在服务启动时或通过 API）
+manager = get_feature_flag_manager()
+flag = FeatureFlag(
+    name="新功能",
+    description="新功能开关",
+    enabled=True,
+    flag_type=FlagType.PERCENTAGE,  # 百分比开关
+    value=10.0  # 10% 流量
+)
+manager.create_flag(flag)
+
+# 3. 在代码中检查开关
+if manager.is_enabled("新功能", user_id=user_id):
+    # 使用新功能
+    result = new_feature.process()
+else:
+    # 使用旧功能或跳过
+    result = old_feature.process()
+```
+
+**功能开关类型**：
+- `FlagType.BOOLEAN` - 布尔开关（全部开启/关闭）
+- `FlagType.PERCENTAGE` - 百分比开关（灰度发布）
+- `FlagType.WHITELIST` - 白名单（指定用户）
+- `FlagType.BLACKLIST` - 黑名单（排除用户）
+
+**检查清单**：
+- [ ] 新功能是否创建了功能开关
+- [ ] 是否在代码中正确检查开关状态
+- [ ] 是否支持快速关闭（紧急情况）
+- [ ] 是否可以通过 API 切换开关状态
+
+---
+
+### 🚀 灰度发布规范
+
+#### 1. 重要变更必须通过灰度发布
+
+**要求**：
+- 所有重要功能变更、性能优化、架构调整必须通过灰度发布
+- 从 10% 流量开始，逐步增加到 100%
+- 监控关键指标，随时准备回滚
+
+**灰度发布流程**：
+
+```bash
+# 1. 开发新功能
+git checkout -b feature/new-feature
+# ... 开发代码 ...
+
+# 2. 创建功能开关（10% 流量）
+# 使用 API 或代码创建功能开关
+
+# 3. 执行灰度发布
+./deploy.sh
+# 选择 8) 灰度发布
+
+# 4. 监控灰度版本
+docker logs -f hifate-bazi-web-gray
+
+# 5. 逐步增加流量（如果正常）
+# 调整负载均衡器配置：10% → 20% → 50% → 100%
+
+# 6. 如果异常，立即回滚
+./deploy.sh
+# 选择 10) 灰度发布回滚
+```
+
+**灰度发布检查清单**：
+- [ ] 是否创建了功能开关（百分比开关）
+- [ ] 是否执行了灰度发布脚本
+- [ ] 是否配置了负载均衡器流量分配
+- [ ] 是否监控了关键指标（错误率、响应时间、业务指标）
+- [ ] 是否准备了回滚方案
+
+**监控指标**：
+- 错误率（应 < 1%）
+- 响应时间（不应明显增加）
+- 业务指标（转化率、用户满意度等）
+- 系统资源（CPU、内存、数据库连接等）
+
+---
+
+### 🔄 数据库回滚规范
+
+#### 1. 所有数据库变更必须准备回滚脚本
+
+**要求**：
+- 所有数据库迁移必须同时准备回滚脚本
+- 回滚脚本必须经过测试验证
+- 回滚脚本命名规范：`rollback_YYYYMMDD_HHMMSS_description.sql`
+
+**开发流程**：
+
+```bash
+# 1. 创建数据库迁移脚本
+# scripts/migration/add_user_table.sql
+CREATE TABLE `new_user_table` (...);
+
+# 2. 同时创建回滚脚本
+./scripts/migration/create_rollback.sh
+# 输入描述：回滚添加用户表
+
+# 3. 编辑回滚脚本
+# scripts/migration/rollback/rollback_20250115_143000_add_user_table.sql
+START TRANSACTION;
+DROP TABLE IF EXISTS `new_user_table`;
+COMMIT;
+
+# 4. 在测试环境验证回滚脚本
+mysql -h test_host -u root -p test_db < scripts/migration/rollback/rollback_*.sql
+
+# 5. 执行迁移（生产环境）
+# 如果失败，立即执行回滚
+./deploy.sh
+# 选择 9) 数据库回滚
+```
+
+**回滚脚本规范**：
+- 必须使用事务（`START TRANSACTION` / `COMMIT`）
+- 必须使用 `IF EXISTS` 避免错误
+- 必须包含验证 SQL（可选）
+- 必须记录回滚日志
+
+**检查清单**：
+- [ ] 是否创建了回滚脚本
+- [ ] 回滚脚本是否经过测试验证
+- [ ] 回滚脚本是否使用事务
+- [ ] 是否可以在生产环境快速执行回滚
+
+---
+
+### 📝 开发检查清单
+
+每次开发新功能或重要变更时，必须检查：
+
+#### A/B 测试检查
+- [ ] 是否创建了 A/B 测试实验
+- [ ] 是否在代码中正确分配变体
+- [ ] 是否记录了关键事件
+- [ ] 是否可以通过 API 查看统计
+
+#### 功能开关检查
+- [ ] 是否创建了功能开关
+- [ ] 是否在代码中正确检查开关
+- [ ] 是否支持快速关闭
+- [ ] 是否可以通过 API 切换
+
+#### 灰度发布检查
+- [ ] 是否执行了灰度发布
+- [ ] 是否配置了流量分配
+- [ ] 是否监控了关键指标
+- [ ] 是否准备了回滚方案
+
+#### 数据库回滚检查
+- [ ] 是否创建了回滚脚本
+- [ ] 回滚脚本是否经过测试
+- [ ] 是否可以在生产环境快速执行
+
+---
+
+### 🎯 使用场景示例
+
+#### 场景 1：新算法上线
+
+```python
+# 1. 创建 A/B 测试实验
+experiment = Experiment(
+    name="新算法测试",
+    status=ExperimentStatus.RUNNING,
+    traffic_percent=50.0,
+    variants={"A": 50, "B": 50}
+)
+
+# 2. 在代码中使用
+variant = manager.assign_variant("新算法测试", user_id)
+if variant == "A":
+    result = old_algorithm.calculate()
+else:
+    result = new_algorithm.calculate()
+
+# 3. 记录事件
+manager.record_event("新算法测试", user_id, "calculate", {"result": result})
+
+# 4. 分析统计，决定是否全量上线
+stats = manager.get_experiment_stats("新算法测试")
+```
+
+#### 场景 2：新功能灰度发布
+
+```python
+# 1. 创建功能开关（10% 流量）
+flag = FeatureFlag(
+    name="新功能",
+    enabled=True,
+    flag_type=FlagType.PERCENTAGE,
+    value=10.0
+)
+
+# 2. 在代码中检查
+if manager.is_enabled("新功能", user_id):
+    result = new_feature.process()
+else:
+    result = old_feature.process()
+
+# 3. 监控指标，逐步增加流量
+# 10% → 20% → 50% → 100%
+```
+
+#### 场景 3：数据库变更
+
+```sql
+-- 1. 迁移脚本
+-- scripts/migration/add_index.sql
+ALTER TABLE `user_table` ADD INDEX `idx_email` (`email`);
+
+-- 2. 回滚脚本
+-- scripts/migration/rollback/rollback_20250115_143000_add_index.sql
+START TRANSACTION;
+ALTER TABLE `user_table` DROP INDEX IF EXISTS `idx_email`;
+COMMIT;
+```
+
+---
+
+### 📚 相关文档
+
+- [A/B 测试和灰度发布指南](../docs/A_B测试和灰度发布指南.md) - 详细使用说明
+- [部署文档](../docs/Docker生产部署完整指南.md) - 部署指南
+
+---
+
+### ⚠️ 注意事项
+
+1. **A/B 测试**：
+   - 确保变体流量总和为 100%
+   - 同一用户在同一实验中总是分配到相同变体
+   - 定期分析统计，及时调整实验
+
+2. **功能开关**：
+   - 百分比开关基于用户ID哈希，确保一致性
+   - 白名单/黑名单需要明确的用户ID列表
+   - 紧急情况可以快速关闭功能
+
+3. **灰度发布**：
+   - 从 10% 流量开始，逐步增加
+   - 监控关键指标，随时准备回滚
+   - 保留回滚脚本和回滚方案
+
+4. **数据库回滚**：
+   - 执行回滚前必须备份数据
+   - 先在测试环境验证回滚脚本
+   - 某些操作（如删除数据）无法完全回滚
 
 ---
 
@@ -1598,3 +1998,190 @@ docker rmi hifate-base:20241128
 - **所有规则匹配必须使用 `RuleService`，禁止使用 `FormulaRuleService`**（见"规则存储规范"）
 - **每次问题必须复盘并更新开发规范**（见"问题复盘机制"）
 - **操作更新时，文档必须同步更新**（见"文档维护规范"）
+- **新功能必须支持 A/B 测试和功能开关**（见"A/B 测试和灰度发布规范"）
+- **重要变更必须通过灰度发布**（见"A/B 测试和灰度发布规范"）
+- **数据库变更必须准备回滚脚本**（见"A/B 测试和灰度发布规范"）
+- **意图识别必须使用混合架构，响应时间 < 1秒**（见"意图识别混合架构规范"）
+
+---
+
+## 🚀 意图识别混合架构规范 【必须遵守】
+
+### 🔴 核心原则
+
+> **意图识别响应时间必须 < 1秒，使用混合架构实现高性能。**
+
+### 📋 架构设计
+
+**混合架构流程**：
+```
+用户输入
+    ↓
+【第1层：关键词过滤】（0ms，处理60%的明确问题）
+    ├─ 强指示词 → 直接通过（99%准确）
+    ├─ 黑名单 → 直接拒绝（95%准确）
+    └─ 白名单 → 直接通过（90%准确）
+    ↓
+【第2层：本地BERT模型】（50-100ms，处理20%的简单问题）
+    ├─ 模型分类（如果可用）
+    └─ 关键词回退（如果模型不可用）
+    ↓
+【第3层：判断是否需要LLM兜底】
+    ├─ 置信度 < 0.6 → LLM
+    ├─ 问题模糊 → LLM
+    └─ 复杂时间表达 → LLM
+    ↓
+【第4层：规则后处理】（10-20ms）
+    ├─ 时间意图解析（支持中文数字）
+    ├─ 多意图合并
+    └─ JSON格式化
+    ↓
+【第5层：LLM兜底】（500-1000ms，仅处理5%的模糊问题）
+    └─ 仅处理复杂/模糊问题
+    ↓
+最终结果
+```
+
+### 🎯 性能要求
+
+| 场景 | 占比 | 响应时间 | 准确率 | 使用技术 |
+|------|------|---------|--------|---------|
+| 关键词明确 | 60% | <10ms | 95%+ | 关键词过滤 |
+| 简单问题 | 20% | 50-100ms | 85-90% | 本地模型 + 规则 |
+| 复杂问题 | 15% | 100-200ms | 80-85% | 本地模型 + 规则 |
+| 模糊问题 | 5% | 500-1000ms | 90%+ | LLM兜底 |
+
+**平均响应时间**：< 100ms（满足 < 1秒要求）
+
+### 📁 核心文件
+
+| 文件 | 作用 | 说明 |
+|------|------|------|
+| `services/intent_service/local_classifier.py` | 本地BERT模型分类器 | 处理简单问题（50-100ms） |
+| `services/intent_service/rule_postprocessor.py` | 规则后处理器 | 时间意图解析、JSON格式化（10-20ms） |
+| `services/intent_service/classifier.py` | 混合架构路由 | 智能路由到不同处理层 |
+| `services/intent_service/question_filter.py` | 关键词过滤器 | 快速过滤明确问题（0ms） |
+| `services/intent_service/llm_client.py` | LLM客户端 | 兜底处理复杂问题（500-1000ms） |
+
+### 🔧 实现要求
+
+#### 1. 本地模型分类器
+
+**要求**：
+- 使用BERT/RoBERTa中文模型（可选，如果不可用则使用关键词回退）
+- 支持关键词回退方案（确保模型不可用时仍能工作）
+- 响应时间 < 100ms
+
+**实现示例**：
+```python
+from services.intent_service.local_classifier import LocalIntentClassifier
+
+classifier = LocalIntentClassifier()
+result = classifier.classify(question)
+# 返回：{"intents": ["wealth"], "confidence": 0.85, "method": "local_model"}
+```
+
+#### 2. 规则后处理器
+
+**要求**：
+- 支持中文数字和阿拉伯数字的时间表达
+- 支持多种时间类型（今天、本月、今年、明年、后N年、XXXX年、XXXX-YYYY年等）
+- 响应时间 < 20ms
+
+**时间意图类型**：
+- `today` - 今天/今日
+- `this_month` - 本月/这个月
+- `this_year` - 今年/本年（默认）
+- `next_year` - 明年（只有1年）
+- `future_years` - 后N年/未来N年（N年）
+- `recent_years` - 最近N年
+- `specific_year` - XXXX年（单个年份）
+- `year_range` - XXXX-YYYY年（年份范围）
+
+**实现示例**：
+```python
+from services.intent_service.rule_postprocessor import RulePostProcessor
+
+processor = RulePostProcessor()
+result = processor.process(question, base_result)
+# 返回：包含time_intent的完整结果
+```
+
+#### 3. 混合架构路由
+
+**要求**：
+- 智能判断是否需要LLM兜底
+- 优先使用本地模型，仅在必要时调用LLM
+- 确保平均响应时间 < 100ms
+
+**LLM兜底条件**：
+- 本地模型置信度 < 0.6
+- 问题过于模糊（长度 < 5 或缺少关键词）
+- 多意图冲突（意图数量 > 2 且置信度低）
+- 复杂时间表达（需要上下文理解）
+
+**实现示例**：
+```python
+from services.intent_service.classifier import IntentClassifier
+
+classifier = IntentClassifier()
+result = classifier.classify(question)
+# 自动路由到合适的处理层
+```
+
+### ⚙️ 配置项
+
+在 `services/intent_service/config.py` 中：
+
+```python
+# 混合架构配置
+HYBRID_ARCHITECTURE_ENABLED = os.getenv("HYBRID_ARCHITECTURE_ENABLED", "true").lower() == "true"
+LOCAL_MODEL_NAME = os.getenv("LOCAL_MODEL_NAME", "hfl/chinese-roberta-wwm-ext")
+LLM_FALLBACK_THRESHOLD = float(os.getenv("LLM_FALLBACK_THRESHOLD", "0.6"))  # 置信度阈值
+```
+
+### ✅ 检查清单
+
+每次修改意图识别相关代码时，必须检查：
+
+- [ ] 平均响应时间是否 < 100ms
+- [ ] 是否优先使用本地模型/关键词过滤
+- [ ] LLM兜底是否仅在必要时调用（< 5%的情况）
+- [ ] 时间意图识别是否支持中文数字
+- [ ] 是否支持所有时间类型（今天、明年、后N年、XXXX年等）
+- [ ] 错误处理是否完善（模型不可用时使用回退方案）
+
+### 🚨 常见问题
+
+#### 问题1：时间意图识别失败
+
+**症状**："后三年"无法识别为`future_years`
+
+**原因**：正则表达式不支持中文数字
+
+**解决**：在`rule_postprocessor.py`中支持中文数字转换
+
+#### 问题2：响应时间过长
+
+**症状**：平均响应时间 > 1秒
+
+**原因**：过多调用LLM API
+
+**解决**：
+- 降低LLM兜底阈值（`LLM_FALLBACK_THRESHOLD`）
+- 优化关键词过滤规则
+- 增强本地模型能力
+
+#### 问题3：本地模型不可用
+
+**症状**：`transformers`未安装或模型加载失败
+
+**解决**：自动使用关键词回退方案，确保服务可用
+
+---
+
+**核心要点**：
+- **意图识别必须使用混合架构，响应时间 < 1秒**
+- **优先使用本地模型/关键词过滤，LLM仅作为兜底**
+- **时间意图识别必须支持中文数字和阿拉伯数字**
+- **所有时间类型必须正确识别（今天、明年、后N年、XXXX年等）**

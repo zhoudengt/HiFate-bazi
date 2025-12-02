@@ -1,0 +1,27 @@
+{
+  "mcp.servers": {
+    "puppeteer": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-puppeteer"
+      ],
+      "env": {
+        "PUPPETEER_HEADLESS": "false"
+      }
+    },
+    "mysql-bazi": {
+      "command": "node",
+      "args": [
+        "/Users/zhoudt/Downloads/project/HiFate-bazi/scripts/mcp-mysql-server.js"
+      ],
+      "env": {
+        "MYSQL_HOST": "127.0.0.1",
+        "MYSQL_PORT": "13306",
+        "MYSQL_USER": "root",
+        "MYSQL_PASSWORD": "root",
+        "MYSQL_DATABASE": "bazi_system"
+      }
+    }
+  }
+}

@@ -1,0 +1,76 @@
+[MASTER]
+# 忽略的目录和文件
+ignore=tests,proto/generated,venv,__pycache__,.venv,node_modules
+
+# 加载的插件
+load-plugins=pylint.extensions.code_style
+
+[MESSAGES CONTROL]
+# 禁用的检查项
+disable=
+    missing-docstring,
+    too-few-public-methods,
+    too-many-arguments,
+    too-many-instance-attributes,
+    too-many-locals,
+    too-many-branches,
+    too-many-statements,
+    too-many-public-methods,
+    too-many-return-statements,
+    too-many-boolean-expressions,
+    import-outside-toplevel,
+    broad-except,
+    bare-except,
+    unused-argument,
+    protected-access,
+    consider-using-f-string
+
+# 错误级别
+errors-only=false
+
+[FORMAT]
+# 最大行长度
+max-line-length=120
+
+# 缩进
+indent-string='    '
+indent-after-paren=4
+
+# 其他格式选项
+good-names=i,j,k,ex,Run,_,id,db,pk
+
+[BASIC]
+# 命名规范
+module-rgx=(([a-z_][a-z0-9_]*)|([A-Z][a-zA-Z0-9]+))$
+const-rgx=(([A-Z_][A-Z0-9_]*)|(__.*__))$
+class-rgx=[A-Z_][a-zA-Z0-9]+$
+function-rgx=[a-z_][a-z0-9_]*$
+method-rgx=[a-z_][a-z0-9_]*$
+attr-rgx=[a-z_][a-z0-9_]*$
+argument-rgx=[a-z_][a-z0-9_]*$
+variable-rgx=[a-z_][a-z0-9_]*$
+
+# 其他选项
+bad-functions=map,filter,apply,input,eval,exec
+
+[DESIGN]
+# 设计相关检查
+max-args=10
+max-locals=20
+max-returns=8
+max-branches=15
+max-statements=60
+max-parents=10
+max-attributes=15
+min-public-methods=0
+max-public-methods=30
+
+[IMPORTS]
+# 导入检查
+preferred-modules=
+deprecated-modules=
+
+[EXCEPTIONS]
+# 异常检查
+overgeneral-exceptions=BaseException,Exception
+

@@ -49,9 +49,18 @@ echo "  6) 查看服务器状态"
 echo ""
 echo -e "  ${YELLOW}7) 首次部署：初始化服务器${NC}"
 echo ""
-read -p "选择 [1-7]: " choice
+echo -e "  ${BLUE}8) 灰度发布${NC}"
+echo "     逐步发布新版本，降低风险"
+echo ""
+echo -e "  ${BLUE}9) 数据库回滚${NC}"
+echo "     回滚数据库到指定版本"
+echo ""
+echo -e "  ${BLUE}10) 灰度发布回滚${NC}"
+echo "     回滚正在进行的灰度发布"
+echo ""
+read -p "选择 [1-10]: " choice
 
-case $choice in
+    case $choice in
     1)
         echo ""
         echo -e "${YELLOW}=== 完整部署流程 ===${NC}"
@@ -72,9 +81,59 @@ case $choice in
             fi
         fi
         
+        # 0. 运行测试和代码检查（新增）
+        echo ""
+        echo -e "${YELLOW}🧪 [0/5] 运行测试和代码检查...${NC}"
+        
+        # 检查是否安装了测试工具
+        if ! command -v pytest &> /dev/null; then
+            echo -e "${YELLOW}⚠️  测试工具未安装，正在安装...${NC}"
+            pip install pytest pytest-cov pylint black mypy isort 2>/dev/null || {
+                echo -e "${RED}❌ 测试工具安装失败，请手动安装：pip install -r requirements.txt${NC}"
+                read -p "是否跳过测试继续部署？[y/N]: " skip_tests
+                if [[ $skip_tests != "y" && $skip_tests != "Y" ]]; then
+                    exit 1
+                fi
+            }
+        fi
+        
+        # 代码格式检查（非阻塞）
+        echo "   🔍 代码格式检查（Black）..."
+        if black --check server/ src/ services/ 2>/dev/null; then
+            echo -e "   ${GREEN}✅ 代码格式正确${NC}"
+        else
+            echo -e "   ${YELLOW}⚠️  代码格式不符合规范（非阻塞）${NC}"
+        fi
+        
+        # 代码质量检查（非阻塞）
+        echo "   🔍 代码质量检查（pylint）..."
+        pylint_errors=$(pylint server/ --errors-only --disable=all --enable=E,F 2>/dev/null | grep -c "E[0-9]" || echo "0")
+        if [ "$pylint_errors" -eq 0 ]; then
+            echo -e "   ${GREEN}✅ 代码质量检查通过${NC}"
+        else
+            echo -e "   ${YELLOW}⚠️  代码质量检查有警告（非阻塞）${NC}"
+        fi
+        
+        # 运行单元测试（阻塞）
+        echo "   🧪 运行单元测试..."
+        if pytest tests/unit/ -v --tb=short -x 2>/dev/null; then
+            echo -e "   ${GREEN}✅ 单元测试通过${NC}"
+        else
+            echo -e "   ${RED}❌ 单元测试失败${NC}"
+            read -p "是否继续部署？[y/N]: " continue_deploy
+            if [[ $continue_deploy != "y" && $continue_deploy != "Y" ]]; then
+                echo -e "${RED}部署已取消${NC}"
+                exit 1
+            else
+                echo -e "${YELLOW}⚠️  继续部署（测试失败）${NC}"
+            fi
+        fi
+        
+        echo -e "${GREEN}✅ 测试和检查完成${NC}"
+        
         # 1. 推送到 Gitee
         echo ""
-        echo "📤 [1/4] 推送代码到 Gitee..."
+        echo "📤 [1/5] 推送代码到 Gitee..."
         git push gitee $BRANCH 2>&1 || {
             echo -e "${RED}推送失败！请检查 Gitee 配置${NC}"
             exit 1
@@ -83,7 +142,7 @@ case $choice in
         
         # 2. 服务器部署
         echo ""
-        echo "🚀 [2/4] 服务器拉取代码..."
+        echo "🚀 [2/5] 服务器拉取代码..."
         $SSH_CMD << 'ENDSSH'
 cd /opt/HiFate-bazi
 
@@ -101,7 +160,7 @@ echo "✅ 代码更新完成"
 ENDSSH
         
         echo ""
-        echo "🐳 [3/4] Docker 零停机重启..."
+        echo "🐳 [3/5] Docker 零停机重启..."
         $SSH_CMD << 'ENDSSH'
 cd /opt/HiFate-bazi
 
@@ -135,7 +194,7 @@ echo "✅ 服务重启完成"
 ENDSSH
         
         echo ""
-        echo "🏥 [4/4] 健康检查（最多 ${HEALTH_TIMEOUT} 秒）..."
+        echo "🏥 [4/5] 健康检查（最多 ${HEALTH_TIMEOUT} 秒）..."
         $SSH_CMD << ENDSSH
 for i in \$(seq 1 $HEALTH_TIMEOUT); do
     if curl -sf http://localhost:8001/api/v1/health > /dev/null 2>&1; then
@@ -411,6 +470,49 @@ echo ""
 echo "后续部署只需在本地执行: ./deploy.sh"
 echo ""
 ENDSSH
+        fi
+        ;;
+    
+    8)
+        echo ""
+        echo -e "${YELLOW}=== 灰度发布 ===${NC}"
+        echo ""
+        echo "灰度发布将逐步发布新版本，降低风险"
+        echo ""
+        read -p "是否继续？[y/N]: " confirm
+        if [[ $confirm == "y" || $confirm == "Y" ]]; then
+            if [ -f "scripts/deployment/gray_release.sh" ]; then
+                bash scripts/deployment/gray_release.sh
+            else
+                echo -e "${RED}❌ 灰度发布脚本不存在${NC}"
+                exit 1
+            fi
+        else
+            echo -e "${YELLOW}已取消${NC}"
+        fi
+        ;;
+    
+    9)
+        echo ""
+        echo -e "${YELLOW}=== 数据库回滚 ===${NC}"
+        echo ""
+        if [ -f "scripts/deployment/rollback.sh" ]; then
+            bash scripts/deployment/rollback.sh
+        else
+            echo -e "${RED}❌ 回滚脚本不存在${NC}"
+            exit 1
+        fi
+        ;;
+    
+    10)
+        echo ""
+        echo -e "${YELLOW}=== 灰度发布回滚 ===${NC}"
+        echo ""
+        if [ -f "scripts/deployment/rollback_gray.sh" ]; then
+            bash scripts/deployment/rollback_gray.sh
+        else
+            echo -e "${RED}❌ 灰度回滚脚本不存在${NC}"
+            exit 1
         fi
         ;;
     

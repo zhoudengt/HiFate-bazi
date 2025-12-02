@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 from server.services.intent_client import IntentServiceClient
 from server.services.bazi_service import BaziService
 from server.services.fortune_llm_client import get_fortune_llm_client
+from server.utils.performance_monitor import PerformanceMonitor
 from src.tool.BaziCalculator import BaziCalculator
 
 router = APIRouter()
@@ -77,167 +78,170 @@ async def smart_analyze(
     
     自动识别用户问题意图，返回针对性的分析结果
     """
+    # 初始化性能监控器
+    monitor = PerformanceMonitor()
+    
     try:
-        # 步骤1：意图识别
-        intent_client = IntentServiceClient()
-        intent_result = intent_client.classify(
-            question=question,
-            user_id=user_id or "anonymous"
-        )
-        print(f"[DEBUG] intent_result type: {type(intent_result)}")
-        print(f"[DEBUG] intent_result: {intent_result}")
-        
-        # 防御性检查：确保intent_result不为None
-        if intent_result is None:
-            print("[DEBUG] intent_result is None, using default")
-            intent_result = {
-                "intents": ["general"],
-                "confidence": 0.5,
-                "keywords": [],
-                "is_ambiguous": True,
-                "time_intent": None,
-                "is_fortune_related": True
-            }
+        # ==================== 阶段1：意图识别 ====================
+        with monitor.stage("intent_recognition", "意图识别", question=question):
+            intent_client = IntentServiceClient()
+            intent_result = intent_client.classify(
+                question=question,
+                user_id=user_id or "anonymous"
+            )
+            
+            # 防御性检查：确保intent_result不为None
+            if intent_result is None:
+                logger.warning("[smart_fortune] intent_result is None, using default")
+                intent_result = {
+                    "intents": ["general"],
+                    "confidence": 0.5,
+                    "keywords": [],
+                    "is_ambiguous": True,
+                    "time_intent": None,
+                    "is_fortune_related": True
+                }
+            
+            monitor.add_metric("intent_recognition", "intents_count", len(intent_result.get("intents", [])))
+            monitor.add_metric("intent_recognition", "confidence", intent_result.get("confidence", 0))
+            monitor.add_metric("intent_recognition", "method", intent_result.get("method", "unknown"))
         
         # 如果问题不相关（LLM已判断）
         if not intent_result.get("is_fortune_related", True) or "non_fortune" in intent_result.get("intents", []):
+            monitor.log_summary()
             return {
                 "success": False,
                 "message": intent_result.get("reject_message", "您的问题似乎与命理运势无关，我只能回答关于八字、运势等相关问题。"),
-                "intent_result": intent_result
+                "intent_result": intent_result,
+                "performance": monitor.get_summary()
             }
         
-        # 步骤1.5：获取时间意图（LLM已识别）
+        # 获取时间意图（LLM已识别）
         time_intent = intent_result.get("time_intent", {})
-        print(f"[DEBUG] time_intent: {time_intent}")
         target_years = time_intent.get("target_years", []) if time_intent else []
-        print(f"[smart_fortune] 时间意图识别（LLM）: {time_intent.get('description', 'N/A')} -> {target_years}")
+        logger.info(f"[smart_fortune] 时间意图识别: {time_intent.get('description', 'N/A')} -> {target_years}")
         
-        # 步骤2：计算八字
+        # ==================== 阶段2：八字计算 ====================
         solar_date = f"{year:04d}-{month:02d}-{day:02d}"
         solar_time = f"{hour:02d}:00"
-        calculator = BaziCalculator(solar_date, solar_time, gender)
-        bazi_result = calculator.calculate()
         
-        if not bazi_result or "error" in bazi_result:
-            raise HTTPException(status_code=400, detail="八字计算失败")
+        with monitor.stage("bazi_calculation", "八字计算", solar_date=solar_date, solar_time=solar_time, gender=gender):
+            calculator = BaziCalculator(solar_date, solar_time, gender)
+            bazi_result = calculator.calculate()
+            
+            if not bazi_result or "error" in bazi_result:
+                raise HTTPException(status_code=400, detail="八字计算失败")
         
-        # 步骤3：根据意图匹配规则
+        # ==================== 阶段3：规则匹配 ====================
         rule_types = intent_result.get("rule_types", ["ALL"])
         confidence = intent_result.get("confidence", 0)
         
         # 如果意图识别置信度低（<60%），使用关键词fallback
         if confidence < 0.6 and "ALL" in rule_types:
-            fallback_types = _extract_rule_types_from_question(question)
-            if fallback_types != ["ALL"]:
-                rule_types = fallback_types
-                intent_result["rule_types"] = rule_types  # 更新结果
-                intent_result["fallback_used"] = True
-                intent_result["intents"] = fallback_types  # 同时更新intents
+            with monitor.stage("intent_fallback", "意图识别回退（关键词匹配）"):
+                fallback_types = _extract_rule_types_from_question(question)
+                if fallback_types != ["ALL"]:
+                    rule_types = fallback_types
+                    intent_result["rule_types"] = rule_types
+                    intent_result["fallback_used"] = True
+                    intent_result["intents"] = fallback_types
         
-        matched_rules = []
-        for rule_type in rule_types:
-            if rule_type != "ALL":
-                # rule_type是字符串，需要包装成列表传递给_match_rules
-                rules = bazi_service._match_rules(bazi_result, [rule_type])
-                matched_rules.extend(rules)
-        
-        # 如果是综合分析或没有匹配到特定规则
-        if not matched_rules or "ALL" in rule_types:
-            rules = bazi_service._match_rules(bazi_result)
-            matched_rules = rules
-        
-        # ⭐ 详细日志：记录匹配到的规则信息（用于调试）
-        logger.info(f"规则匹配结果: 匹配到{len(matched_rules)}条规则，意图={rule_types}")
-        if matched_rules:
+        with monitor.stage("rule_matching", "规则匹配", rule_types=rule_types):
+            matched_rules = []
+            for rule_type in rule_types:
+                if rule_type != "ALL":
+                    rules = bazi_service._match_rules(bazi_result, [rule_type])
+                    matched_rules.extend(rules)
+            
+            # 如果是综合分析或没有匹配到特定规则
+            if not matched_rules or "ALL" in rule_types:
+                rules = bazi_service._match_rules(bazi_result)
+                matched_rules = rules
+            
+            monitor.add_metric("rule_matching", "matched_rules_count", len(matched_rules))
+            monitor.add_metric("rule_matching", "rule_types_count", len(rule_types))
+            
             # 统计各类型规则数量
-            rule_type_counts = {}
-            for rule in matched_rules:
-                rt = rule.get('rule_type', 'unknown')
-                rule_type_counts[rt] = rule_type_counts.get(rt, 0) + 1
-            logger.info(f"规则类型统计: {rule_type_counts}")
-            
-            # 检查是否有日柱和十神命格规则
-            rizhu_count = sum(1 for r in matched_rules if 'rizhu' in r.get('rule_type', '').lower() or r.get('rule_code', '').startswith('RZ_'))
-            shishen_count = sum(1 for r in matched_rules if 'shishen' in r.get('rule_type', '').lower())
-            if rizhu_count > 0:
-                logger.info(f"✅ 匹配到{rizhu_count}条日柱规则")
-            if shishen_count > 0:
-                logger.info(f"✅ 匹配到{shishen_count}条十神命格规则")
+            if matched_rules:
+                rule_type_counts = {}
+                for rule in matched_rules:
+                    rt = rule.get('rule_type', 'unknown')
+                    rule_type_counts[rt] = rule_type_counts.get(rt, 0) + 1
+                monitor.add_metric("rule_matching", "rule_type_counts", rule_type_counts)
+                logger.info(f"规则匹配结果: 匹配到{len(matched_rules)}条规则，意图={rule_types}, 统计={rule_type_counts}")
         
-        # 步骤3.5：获取流年大运上下文（可选，默认关闭）
+        # ==================== 阶段4：流年大运分析（可选）====================
         fortune_context = None
-        if include_fortune_context:  # ⭐ 移除 rule_types != ["ALL"] 限制
-            try:
-                from server.services.fortune_context_service import FortuneContextService
-                print(f"[smart_fortune] 开始获取流年大运分析，rule_types={rule_types}, years={target_years}")
-                
-                # 获取流年大运上下文（使用LLM识别的时间意图）
-                fortune_context = FortuneContextService.get_fortune_context(
-                    solar_date=solar_date,
-                    solar_time=solar_time,
-                    gender=gender,
-                    intent_types=rule_types,
-                    target_years=target_years  # 使用LLM识别的年份列表
-                )
-            except Exception as e:
-                # 静默失败，不影响主流程
-                print(f"[smart_fortune] Fortune context error (ignored): {e}")
-                import traceback
-                print(f"[smart_fortune] Traceback:")
-                traceback.print_exc()
-                fortune_context = None
+        if include_fortune_context:
+            with monitor.stage("fortune_context", "流年大运分析", target_years=target_years, rule_types=rule_types):
+                try:
+                    from server.services.fortune_context_service import FortuneContextService
+                    
+                    fortune_context = FortuneContextService.get_fortune_context(
+                        solar_date=solar_date,
+                        solar_time=solar_time,
+                        gender=gender,
+                        intent_types=rule_types,
+                        target_years=target_years
+                    )
+                    
+                    if fortune_context:
+                        liunian_list = fortune_context.get('time_analysis', {}).get('liunian_list', [])
+                        monitor.add_metric("fortune_context", "liunian_count", len(liunian_list))
+                        logger.info(f"流年大运分析完成: {len(liunian_list)}个流年")
+                except Exception as e:
+                    logger.error(f"流年大运分析失败: {e}", exc_info=True)
+                    monitor.end_stage("fortune_context", success=False, error=str(e))
         
-        # 步骤4：生成回答
-        llm_deep_analysis = None  # 用于存储LLM深度解读
-        
+        # ==================== 阶段5：LLM深度解读（可选）====================
+        llm_deep_analysis = None
         if fortune_context:
-            # 🆕 步骤4.1：调用命理分析Bot生成深度解读
-            try:
-                llm_client = get_fortune_llm_client()
-                
-                # 提取意图（使用第一个意图，如果没有则为"general"）
-                main_intent = rule_types[0] if rule_types and rule_types[0] != "ALL" else "general"
-                
-                # 调用命理分析Bot（传递匹配到的规则）
-                llm_result = llm_client.analyze_fortune(
-                    intent=main_intent,
-                    question=question,
-                    bazi_data=bazi_result,
-                    fortune_context=fortune_context,
-                    matched_rules=matched_rules  # ⭐ 传递规则内容
-                )
-                
-                if llm_result.get("success"):
-                    llm_deep_analysis = llm_result.get("analysis")
-                    print(f"[smart_fortune] ✅ LLM深度分析生成成功，长度：{len(llm_deep_analysis) if llm_deep_analysis else 0}")
-                else:
-                    print(f"[smart_fortune] ⚠️ LLM深度分析失败: {llm_result.get('error')}")
-            
-            except Exception as e:
-                print(f"[smart_fortune] ❌ LLM深度分析异常: {e}")
-                import traceback
-                traceback.print_exc()
-            
-            # 步骤4.2：使用增强版响应生成（包含流年大运 + LLM深度解读）
-            response_text = _generate_response_with_fortune(
-                question=question,
-                intent_result=intent_result,
-                bazi_result=bazi_result,
-                matched_rules=matched_rules,
-                fortune_context=fortune_context,
-                llm_deep_analysis=llm_deep_analysis  # 传入LLM深度解读
-            )
-        else:
-            # 使用原有响应生成（保持不变）
-            response_text = _generate_response(
-                question=question,
-                intent_result=intent_result,
-                bazi_result=bazi_result,
-                matched_rules=matched_rules
-            )
+            with monitor.stage("llm_analysis", "LLM深度解读", intent=rule_types[0] if rule_types else "general"):
+                try:
+                    llm_client = get_fortune_llm_client()
+                    main_intent = rule_types[0] if rule_types and rule_types[0] != "ALL" else "general"
+                    
+                    llm_result = llm_client.analyze_fortune(
+                        intent=main_intent,
+                        question=question,
+                        bazi_data=bazi_result,
+                        fortune_context=fortune_context,
+                        matched_rules=matched_rules
+                    )
+                    
+                    if llm_result.get("success"):
+                        llm_deep_analysis = llm_result.get("analysis")
+                        monitor.add_metric("llm_analysis", "analysis_length", len(llm_deep_analysis) if llm_deep_analysis else 0)
+                        logger.info(f"LLM深度分析生成成功，长度：{len(llm_deep_analysis) if llm_deep_analysis else 0}")
+                    else:
+                        monitor.end_stage("llm_analysis", success=False, error=llm_result.get('error', 'Unknown error'))
+                        logger.warning(f"LLM深度分析失败: {llm_result.get('error')}")
+                except Exception as e:
+                    logger.error(f"LLM深度分析异常: {e}", exc_info=True)
+                    monitor.end_stage("llm_analysis", success=False, error=str(e))
         
-        # 提取八字信息（适配BaziCalculator的数据结构）
+        # ==================== 阶段6：生成响应文本 ====================
+        with monitor.stage("response_generation", "生成响应文本"):
+            if fortune_context:
+                response_text = _generate_response_with_fortune(
+                    question=question,
+                    intent_result=intent_result,
+                    bazi_result=bazi_result,
+                    matched_rules=matched_rules,
+                    fortune_context=fortune_context,
+                    llm_deep_analysis=llm_deep_analysis
+                )
+            else:
+                response_text = _generate_response(
+                    question=question,
+                    intent_result=intent_result,
+                    bazi_result=bazi_result,
+                    matched_rules=matched_rules
+                )
+            
+            monitor.add_metric("response_generation", "response_length", len(response_text))
+        
+        # ==================== 构建最终结果 ====================
         bazi_pillars = bazi_result.get("bazi_pillars", {})
         formatted_pillars = {}
         if bazi_pillars:
@@ -252,24 +256,29 @@ async def smart_analyze(
         result = {
             "success": True,
             "question": question,
-            "intent_result": intent_result,  # 保留完整的意图结果（含time_intent、is_fortune_related等）
+            "intent_result": intent_result,
             "bazi_info": {
                 "四柱": formatted_pillars,
                 "十神": bazi_result.get("ten_gods_stats", {}),
                 "五行": bazi_result.get("element_counts", {})
             },
             "matched_rules_count": len(matched_rules),
-            "response": response_text
+            "response": response_text,
+            "performance": monitor.get_summary()  # ⭐ 添加性能摘要
         }
         
-        # ⭐ 添加fortune_context（如果有）
         if fortune_context:
             result["fortune_context"] = fortune_context
-            print(f"[smart_fortune] ✅ fortune_context已添加到响应中")
+        
+        # 输出性能摘要
+        monitor.log_summary()
         
         return result
         
     except Exception as e:
+        monitor.end_stage(monitor.current_stage or "unknown", success=False, error=str(e))
+        monitor.log_summary()
+        logger.error(f"[smart_fortune] 请求失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -712,62 +721,63 @@ async def smart_analyze_stream(
     
     async def event_generator():
         """生成SSE事件流"""
+        # 初始化性能监控器
+        monitor = PerformanceMonitor()
+        
         try:
-            # 步骤1：意图识别
+            # ==================== 阶段1：意图识别 ====================
             yield _sse_message("status", {"stage": "intent", "message": "正在识别意图..."})
             
-            intent_client = IntentServiceClient()
-            intent_result = intent_client.classify(
-                question=question,
-                user_id=user_id or "anonymous"
-            )
-            
-            # 防御性检查：确保intent_result不为None
-            if intent_result is None:
-                intent_result = {
-                    "intents": ["general"],
-                    "confidence": 0.5,
-                    "keywords": [],
-                    "is_ambiguous": True,
-                    "time_intent": None,
-                    "is_fortune_related": True
-                }
+            with monitor.stage("intent_recognition", "意图识别", question=question):
+                intent_client = IntentServiceClient()
+                intent_result = intent_client.classify(
+                    question=question,
+                    user_id=user_id or "anonymous"
+                )
+                
+                # 防御性检查：确保intent_result不为None
+                if intent_result is None:
+                    intent_result = {
+                        "intents": ["general"],
+                        "confidence": 0.5,
+                        "keywords": [],
+                        "is_ambiguous": True,
+                        "time_intent": None,
+                        "is_fortune_related": True
+                    }
+                
+                monitor.add_metric("intent_recognition", "intents_count", len(intent_result.get("intents", [])))
+                monitor.add_metric("intent_recognition", "confidence", intent_result.get("confidence", 0))
+                monitor.add_metric("intent_recognition", "method", intent_result.get("method", "unknown"))
             
             # 如果问题不相关（LLM已判断）
             if not intent_result.get("is_fortune_related", True) or "non_fortune" in intent_result.get("intents", []):
+                monitor.log_summary()
                 yield _sse_message("error", {
-                    "message": intent_result.get("reject_message", "您的问题似乎与命理运势无关，我只能回答关于八字、运势等相关问题。")
+                    "message": intent_result.get("reject_message", "您的问题似乎与命理运势无关，我只能回答关于八字、运势等相关问题。"),
+                    "performance": monitor.get_summary()
                 })
                 yield _sse_message("end", {})
                 return
             
-            # 步骤1.5：获取时间意图（LLM已识别）
+            # 获取时间意图（LLM已识别）
             time_intent = intent_result.get("time_intent", {})
             target_years = time_intent.get("target_years", [])
             
-            # 精简日志：只在需要时输出关键信息
-            import json
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.debug(f"[STEP1] Intent识别: question={question}, intents={intent_result.get('intents', [])}, target_years={target_years}")
-            
-            # 步骤2：计算八字
+            # ==================== 阶段2：八字计算 ====================
             yield _sse_message("status", {"stage": "bazi", "message": "正在计算八字..."})
             
             solar_date = f"{year:04d}-{month:02d}-{day:02d}"
             solar_time = f"{hour:02d}:00"
-            calculator = BaziCalculator(solar_date, solar_time, gender)
-            bazi_result = calculator.calculate()
             
-            if not bazi_result or "error" in bazi_result:
-                yield _sse_message("error", {"message": "八字计算失败"})
-                yield _sse_message("end", {})
-                return
+            with monitor.stage("bazi_calculation", "八字计算", solar_date=solar_date, solar_time=solar_time, gender=gender):
+                calculator = BaziCalculator(solar_date, solar_time, gender)
+                bazi_result = calculator.calculate()
+                
+                if not bazi_result or "error" in bazi_result:
+                    raise HTTPException(status_code=400, detail="八字计算失败")
             
-            # 精简日志
-            logger.debug(f"[STEP2] 八字计算完成: {solar_date} {solar_time}, gender={gender}")
-            
-            # 步骤3：匹配规则
+            # ==================== 阶段3：规则匹配 ====================
             yield _sse_message("status", {"stage": "rules", "message": "正在匹配规则..."})
             
             rule_types = intent_result.get("rule_types", ["ALL"])
@@ -775,52 +785,50 @@ async def smart_analyze_stream(
             
             # 关键词fallback
             if confidence < 0.6 and "ALL" in rule_types:
-                fallback_types = _extract_rule_types_from_question(question)
-                if fallback_types != ["ALL"]:
-                    rule_types = fallback_types
+                with monitor.stage("intent_fallback", "意图识别回退（关键词匹配）"):
+                    fallback_types = _extract_rule_types_from_question(question)
+                    if fallback_types != ["ALL"]:
+                        rule_types = fallback_types
             
-            matched_rules = []
-            for rule_type in rule_types:
-                if rule_type != "ALL":
-                    rules = bazi_service._match_rules(bazi_result, [rule_type])
-                    matched_rules.extend(rules)
+            with monitor.stage("rule_matching", "规则匹配", rule_types=rule_types):
+                matched_rules = []
+                for rule_type in rule_types:
+                    if rule_type != "ALL":
+                        rules = bazi_service._match_rules(bazi_result, [rule_type])
+                        matched_rules.extend(rules)
+                
+                if not matched_rules or "ALL" in rule_types:
+                    rules = bazi_service._match_rules(bazi_result)
+                    matched_rules = rules
+                
+                monitor.add_metric("rule_matching", "matched_rules_count", len(matched_rules))
+                monitor.add_metric("rule_matching", "rule_types_count", len(rule_types))
             
-            if not matched_rules or "ALL" in rule_types:
-                rules = bazi_service._match_rules(bazi_result)
-                matched_rules = rules
-            
-            # 步骤4：获取流年大运上下文
-            yield _sse_message("status", {"stage": "fortune", "message": "正在分析流年大运..."})
-            
-            # 步骤4：获取流年大运上下文
+            # ==================== 阶段4：流年大运分析 ====================
             fortune_context = None
             if target_years:
-                try:
-                    from server.services.fortune_context_service import FortuneContextService
-                    
-                    # 精简日志
-                    logger.debug(f"[STEP4] Fortune Context开始: target_years={target_years}, intent_types={rule_types}")
-                    
-                    fortune_context = FortuneContextService.get_fortune_context(
-                        solar_date=solar_date,
-                        solar_time=solar_time,
-                        gender=gender,
-                        intent_types=rule_types,
-                        target_years=target_years
-                    )
-                    
-                    # 精简日志
-                    if fortune_context:
-                        liunian_list = fortune_context.get('time_analysis', {}).get('liunian_list', [])
-                        logger.debug(f"[STEP4] Fortune Context完成: 流年数量={len(liunian_list)}")
-                    else:
-                        logger.debug(f"[STEP4] Fortune Context完成: 返回None")
-                except Exception as e:
-                    logger.error(f"Fortune context error: {e}", exc_info=True)
-            else:
-                logger.debug("无目标年份，跳过流年大运分析")
+                yield _sse_message("status", {"stage": "fortune", "message": "正在分析流年大运..."})
+                
+                with monitor.stage("fortune_context", "流年大运分析", target_years=target_years, rule_types=rule_types):
+                    try:
+                        from server.services.fortune_context_service import FortuneContextService
+                        
+                        fortune_context = FortuneContextService.get_fortune_context(
+                            solar_date=solar_date,
+                            solar_time=solar_time,
+                            gender=gender,
+                            intent_types=rule_types,
+                            target_years=target_years
+                        )
+                        
+                        if fortune_context:
+                            liunian_list = fortune_context.get('time_analysis', {}).get('liunian_list', [])
+                            monitor.add_metric("fortune_context", "liunian_count", len(liunian_list))
+                    except Exception as e:
+                        logger.error(f"流年大运分析失败: {e}", exc_info=True)
+                        monitor.end_stage("fortune_context", success=False, error=str(e))
             
-            # 步骤5：发送基础分析结果（立即显示）
+            # ==================== 阶段5：发送基础分析结果 ====================
             yield _sse_message("basic_analysis", {
                 "intent": intent_result,
                 "bazi_info": {
@@ -832,47 +840,80 @@ async def smart_analyze_stream(
                 "fortune_context": fortune_context
             })
             
-            # 步骤6：流式输出LLM深度解读
+            # ==================== 阶段6：流式输出LLM深度解读 ====================
             yield _sse_message("status", {"stage": "llm", "message": "正在生成深度解读..."})
             
-            try:
-                llm_client = get_fortune_llm_client()
-                main_intent = rule_types[0] if rule_types and rule_types[0] != "ALL" else "general"
-                
-                # 调用流式API（传递匹配到的规则）
-                for chunk in llm_client.analyze_fortune(
-                    intent=main_intent,
-                    question=question,
-                    bazi_data=bazi_result,
-                    fortune_context=fortune_context,
-                    matched_rules=matched_rules,  # ⭐ 传递规则内容
-                    stream=True  # 启用流式输出
-                ):
-                    chunk_type = chunk.get('type')
+            with monitor.stage("llm_analysis", "LLM深度解读（流式）", intent=rule_types[0] if rule_types else "general"):
+                try:
+                    llm_client = get_fortune_llm_client()
+                    main_intent = rule_types[0] if rule_types and rule_types[0] != "ALL" else "general"
                     
-                    if chunk_type == 'start':
-                        yield _sse_message("llm_start", {})
-                    elif chunk_type == 'chunk':
-                        content = chunk.get('content', '')
-                        yield _sse_message("llm_chunk", {"content": content})
-                    elif chunk_type == 'end':
-                        yield _sse_message("llm_end", {})
-                    elif chunk_type == 'error':
-                        error_msg = chunk.get('error', '未知错误')
-                        yield _sse_message("llm_error", {"message": error_msg})
+                    chunk_received = False
+                    chunk_count = 0
+                    total_content_length = 0
+                    
+                    for chunk in llm_client.analyze_fortune(
+                        intent=main_intent,
+                        question=question,
+                        bazi_data=bazi_result,
+                        fortune_context=fortune_context,
+                        matched_rules=matched_rules,
+                        stream=True
+                    ):
+                        chunk_received = True
+                        chunk_count += 1
+                        chunk_type = chunk.get('type')
+                        
+                        if chunk_type == 'start':
+                            yield _sse_message("llm_start", {})
+                        elif chunk_type == 'chunk':
+                            content = chunk.get('content', '')
+                            if content:
+                                total_content_length += len(content)
+                                yield _sse_message("llm_chunk", {"content": content})
+                        elif chunk_type == 'end':
+                            monitor.add_metric("llm_analysis", "chunk_count", chunk_count)
+                            monitor.add_metric("llm_analysis", "total_length", total_content_length)
+                            yield _sse_message("llm_end", {})
+                            break
+                        elif chunk_type == 'error':
+                            error_msg = chunk.get('error', '未知错误')
+                            monitor.end_stage("llm_analysis", success=False, error=error_msg)
+                            yield _sse_message("llm_error", {"message": error_msg})
+                            break
+                    
+                    if not chunk_received:
+                        monitor.end_stage("llm_analysis", success=False, error="无响应")
+                        yield _sse_message("llm_error", {"message": "AI深度解读服务无响应，请检查Bot配置和网络连接"})
+                    else:
+                        monitor.end_stage("llm_analysis", success=True)
+                
+                except ValueError as e:
+                    error_msg = str(e)
+                    monitor.end_stage("llm_analysis", success=False, error=error_msg)
+                    yield _sse_message("llm_error", {"message": f"AI服务配置错误: {error_msg}"})
+                except Exception as e:
+                    error_msg = str(e)
+                    monitor.end_stage("llm_analysis", success=False, error=error_msg)
+                    logger.error(f"LLM streaming error: {e}", exc_info=True)
+                    yield _sse_message("llm_error", {"message": f"AI深度解读失败: {error_msg}"})
             
-            except Exception as e:
-                print(f"[smart_fortune_stream] LLM streaming error: {e}")
-                yield _sse_message("llm_error", {"message": str(e)})
+            # 发送性能摘要
+            performance_summary = monitor.get_summary()
+            yield _sse_message("performance", performance_summary)
+            
+            # 输出性能摘要到日志
+            monitor.log_summary()
             
             # 结束
             yield _sse_message("end", {})
         
         except Exception as e:
-            print(f"[smart_fortune_stream] Stream error: {e}")
-            import traceback
-            traceback.print_exc()
-            yield _sse_message("error", {"message": str(e)})
+            if monitor.current_stage:
+                monitor.end_stage(monitor.current_stage, success=False, error=str(e))
+            monitor.log_summary()
+            logger.error(f"[smart_fortune_stream] Stream error: {e}", exc_info=True)
+            yield _sse_message("error", {"message": str(e), "performance": monitor.get_summary()})
             yield _sse_message("end", {})
     
     return StreamingResponse(

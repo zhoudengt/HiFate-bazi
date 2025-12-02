@@ -1,0 +1,95 @@
+[tool.black]
+# Black 代码格式化配置
+line-length = 120
+target-version = ['py311']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | venv
+  | __pycache__
+  | proto/generated
+  | node_modules
+  | \.eggs
+  | \.mypy_cache
+  | \.pytest_cache
+  | htmlcov
+)/
+'''
+
+[tool.isort]
+# isort 导入排序配置
+profile = "black"
+line_length = 120
+skip = ["proto/generated", "__pycache__", ".venv", "venv"]
+known_first_party = ["server", "src", "services"]
+
+[tool.mypy]
+# mypy 类型检查配置
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+show_error_codes = true
+
+# 忽略的路径
+exclude = [
+    "proto/generated/",
+    "tests/",
+    "venv/",
+    ".venv/",
+    "__pycache__/",
+]
+
+# 模块配置
+[[tool.mypy.overrides]]
+module = [
+    "pymysql.*",
+    "redis.*",
+    "mediapipe.*",
+    "cv2.*",
+    "sklearn.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+# pytest 配置（与 pytest.ini 保持一致）
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+# 覆盖率配置
+source = ["server", "src"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/proto/generated/*",
+    "*/venv/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+# 覆盖率报告配置
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
