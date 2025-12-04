@@ -331,7 +331,7 @@ def get_payment_providers():
             {
                 "id": "paypal",
                 "name": "PayPal",
-                "enabled": bool(paypal_client.client_id),
+                "enabled": paypal_client.is_enabled,
                 "regions": ["全球"],
                 "currencies": ["USD", "EUR", "HKD", "GBP", "AUD"],
                 "description": "全球认知度最高的支付平台"

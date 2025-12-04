@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>算法公式规则分析 - HiFate</title>
     <style>
         * {
@@ -400,7 +403,8 @@
             'summary': { name: '📜 总评', color: '#3498db' },
             'health': { name: '🏥 身体', color: '#2ecc71' },
             'peach_blossom': { name: '🌸 桃花', color: '#ff6b81' },
-            'shishen': { name: '🔮 十神命格', color: '#16a085' }
+            'shishen': { name: '🔮 十神命格', color: '#16a085' },
+            'parents': { name: '👨‍👩‍👧 父母', color: '#e91e63' }  // 新增
         };
 
         let currentData = null;
@@ -530,6 +534,10 @@
                 <div class="stat-item">
                     <div class="count">${stats.shishen_count || 0}</div>
                     <div class="label">十神命格</div>
+                </div>
+                <div class="stat-item">
+                    <div class="count">${stats.parents_count || 0}</div>
+                    <div class="label">父母</div>
                 </div>
             `;
             document.getElementById('statistics').innerHTML = html;

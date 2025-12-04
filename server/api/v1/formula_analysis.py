@@ -23,7 +23,7 @@ class FormulaAnalysisRequest(BaseModel):
     solar_date: str = Field(..., description="阳历日期，格式：YYYY-MM-DD")
     solar_time: str = Field(..., description="阳历时间，格式：HH:MM")
     gender: str = Field(..., description="性别：male/female")
-    rule_types: Optional[List[str]] = Field(None, description="规则类型列表，可选值：wealth/marriage/career/children/character/summary/health/peach_blossom/shishen")
+    rule_types: Optional[List[str]] = Field(None, description="规则类型列表，可选值：wealth/marriage/career/children/character/summary/health/peach_blossom/shishen/parents")
 
 
 class FormulaAnalysisResponse(BaseModel):
@@ -50,6 +50,7 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
     - health: 身体规则
     - peach_blossom: 桃花规则
     - shishen: 十神命格规则
+    - parents: 父母规则
     """
     try:
         # 1. 计算八字
@@ -81,20 +82,37 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
         }
         
         # 转换规则类型（前端传入的是英文，RuleService也使用英文）
-        rule_types = request.rule_types if request.rule_types else ['wealth', 'marriage', 'career', 'children', 'character', 'summary', 'health', 'peach_blossom', 'shishen']
+        rule_types = request.rule_types if request.rule_types else ['wealth', 'marriage', 'career', 'children', 'character', 'summary', 'health', 'peach_blossom', 'shishen', 'parents']
         
         # ✅ 统一使用RuleService匹配所有规则（包括十神命格）
         # 十神命格规则已迁移到数据库，使用JSON条件格式，RuleService已支持
         migrated_rules = []
         
+        # ⚠️ 修复：数据库中存在两种格式的 rule_type（wealth 和 formula_wealth）
+        # 需要同时匹配两种格式，确保所有规则都能匹配到
+        rule_types_for_match = []
+        for rt in rule_types:
+            # 如果已经是 formula_ 开头，只添加它
+            if rt.startswith('formula_'):
+                rule_types_for_match.append(rt)
+            else:
+                # 否则同时添加两种格式：原始格式和 formula_ 前缀格式
+                # 例如：wealth -> [wealth, formula_wealth]
+                rule_types_for_match.append(rt)  # 原始格式
+                rule_types_for_match.append(f'formula_{rt}')  # formula_ 前缀格式
+        
+        # 去重（避免重复匹配）
+        rule_types_for_match = list(set(rule_types_for_match))
+        
         # 使用RuleService匹配所有规则（只匹配迁移的FORMULA_规则）
         # ⚠️ 修复：禁用缓存，确保规则匹配结果是最新的
-        if rule_types:
-            rule_matched = RuleService.match_rules(rule_data, rule_types=rule_types, use_cache=False)
+        if rule_types_for_match:
+            rule_matched = RuleService.match_rules(rule_data, rule_types=rule_types_for_match, use_cache=False)
         # 筛选迁移的规则（FORMULA_前缀）
             migrated_rules.extend([r for r in rule_matched if r.get('rule_id', '').startswith('FORMULA_')])
         
         # 3. 转换为前端期望的响应格式（保持API兼容性）
+        # 注意：使用原始的 rule_types（不带 formula_ 前缀），因为前端期望的是 wealth, parents 等格式
         matched_result = _convert_rule_service_to_formula_format(migrated_rules, rule_types)
         
         # 4. 格式化响应
@@ -120,7 +138,8 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
                 'summary_count': len(matched_result['matched_rules'].get('summary', [])),
                 'health_count': len(matched_result['matched_rules'].get('health', [])),
                 'peach_blossom_count': len(matched_result['matched_rules'].get('peach_blossom', [])),
-                'shishen_count': len(matched_result['matched_rules'].get('shishen', []))
+                'shishen_count': len(matched_result['matched_rules'].get('shishen', [])),
+                'parents_count': len(matched_result['matched_rules'].get('parents', []))
             }
         }
         
@@ -153,7 +172,8 @@ def _convert_rule_service_to_formula_format(migrated_rules: list, rule_types: Op
         'summary': [],
         'health': [],
         'peach_blossom': [],
-        'shishen': []
+        'shishen': [],
+        'parents': []  # 新增
     }
     rule_details = {}
     
@@ -167,7 +187,8 @@ def _convert_rule_service_to_formula_format(migrated_rules: list, rule_types: Op
         'summary': '总评',
         'health': '身体',
         'peach_blossom': '桃花',
-        'shishen': '十神命格'
+        'shishen': '十神命格',
+        'parents': '父母'  # 新增
     }
     
     # ✅ 从数据库查询规则详情（包括条件信息）
@@ -180,6 +201,10 @@ def _convert_rule_service_to_formula_format(migrated_rules: list, rule_types: Op
     for rule in migrated_rules:
         rule_id = rule.get('rule_id', '')
         rule_type = rule.get('rule_type', '')
+        
+        # 处理 rule_type 格式（可能是 formula_parents 或 parents）
+        if rule_type.startswith('formula_'):
+            rule_type = rule_type.replace('formula_', '')
         
         # 提取原始规则ID（去掉FORMULA_前缀）
         if rule_id.startswith('FORMULA_'):
