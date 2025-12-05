@@ -4,10 +4,7 @@
 name: 🚀 Deploy to Production
 
 on:
-  push:
-    branches:
-      - master
-  workflow_dispatch:  # 支持手动触发
+  workflow_dispatch:  # 仅支持手动触发（生产环境必须手动部署）
 
 jobs:
   deploy:
