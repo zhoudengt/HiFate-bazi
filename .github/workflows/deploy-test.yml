@@ -60,19 +60,25 @@ jobs:
               exit 1
             }
             
-            # 拉取最新镜像
+            # 拉取最新镜像（增加超时和重试）
             echo "📥 拉取最新镜像..."
             # Docker 镜像名称必须全小写
             REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
             IMAGE_TAG="ghcr.io/${REPO_LOWER}/hifate-bazi:master"
-            docker pull ${IMAGE_TAG} || {
+            
+            # 使用 timeout 防止长时间挂起
+            if timeout 600 docker pull ${IMAGE_TAG} 2>&1; then
+              echo "✅ 镜像拉取成功: ${IMAGE_TAG}"
+            else
               echo "⚠️  拉取 master 标签失败，尝试 latest 标签"
               IMAGE_TAG="ghcr.io/${REPO_LOWER}/hifate-bazi:latest"
-              docker pull ${IMAGE_TAG} || {
+              if timeout 600 docker pull ${IMAGE_TAG} 2>&1; then
+                echo "✅ 镜像拉取成功: ${IMAGE_TAG}"
+              else
                 echo "❌ 无法拉取任何镜像，部署失败"
                 exit 1
-              }
-            }
+              fi
+            fi
             
             echo "✅ 镜像拉取成功: ${IMAGE_TAG}"
             
