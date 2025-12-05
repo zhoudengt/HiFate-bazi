@@ -39,7 +39,7 @@ jobs:
       # 4. 部署到测试服务器
       - name: 🚀 Deploy to test server
         run: |
-          ssh ${{ secrets.TEST_SERVER_USER }}@${{ secrets.TEST_SERVER_HOST }} << 'EOF'
+          ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o ConnectTimeout=30 ${{ secrets.TEST_SERVER_USER }}@${{ secrets.TEST_SERVER_HOST }} << 'EOF'
             set -e
             
             echo "🔄 开始部署到测试环境..."
