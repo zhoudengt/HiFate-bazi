@@ -25,28 +25,75 @@ fi
 PROJECT_DIR="/opt/HiFate-bazi"
 
 echo -e "${GREEN}📋 步骤 1/7: 检测操作系统...${NC}"
-if [ -f /etc/redhat-release ]; then
+
+# 改进的操作系统检测逻辑
+OS=""
+if [ -f /etc/os-release ]; then
+  # 使用 /etc/os-release（更通用）
+  . /etc/os-release
+  case $ID in
+    centos|rhel|fedora|almalinux|rocky|alibaba|alinux|anolis)
+      OS="centos"
+      echo "✅ 检测到基于 RedHat 的系统: $PRETTY_NAME"
+      ;;
+    ubuntu|debian)
+      OS="ubuntu"
+      echo "✅ 检测到基于 Debian 的系统: $PRETTY_NAME"
+      ;;
+    *)
+      # 尝试通过包管理器判断
+      if command -v yum &> /dev/null || command -v dnf &> /dev/null; then
+        OS="centos"
+        echo "✅ 通过包管理器检测到 RedHat 系列系统"
+      elif command -v apt &> /dev/null || command -v apt-get &> /dev/null; then
+        OS="ubuntu"
+        echo "✅ 通过包管理器检测到 Debian 系列系统"
+      else
+        echo -e "${YELLOW}⚠️  无法自动检测操作系统，尝试使用 yum...${NC}"
+        if command -v yum &> /dev/null; then
+          OS="centos"
+          echo "✅ 使用 yum 包管理器"
+        elif command -v apt-get &> /dev/null; then
+          OS="ubuntu"
+          echo "✅ 使用 apt-get 包管理器"
+        fi
+      fi
+      ;;
+  esac
+elif [ -f /etc/redhat-release ]; then
   OS="centos"
-  echo "✅ 检测到 CentOS 系统"
+  echo "✅ 检测到 RedHat 系列系统"
 elif [ -f /etc/lsb-release ]; then
   OS="ubuntu"
   echo "✅ 检测到 Ubuntu 系统"
 else
-  echo -e "${RED}❌ 不支持的操作系统${NC}"
-  exit 1
+  # 最后的回退：通过包管理器判断
+  if command -v yum &> /dev/null || command -v dnf &> /dev/null; then
+    OS="centos"
+    echo "✅ 通过包管理器检测到 RedHat 系列系统"
+  elif command -v apt &> /dev/null || command -v apt-get &> /dev/null; then
+    OS="ubuntu"
+    echo "✅ 通过包管理器检测到 Debian 系列系统"
+  else
+    echo -e "${RED}❌ 无法检测操作系统，请手动安装 Docker 和 Docker Compose${NC}"
+    echo "   系统信息："
+    cat /etc/*release 2>/dev/null || echo "   无法获取系统信息"
+    exit 1
+  fi
 fi
 
 echo -e "${GREEN}📋 步骤 2/7: 更新系统包...${NC}"
 if [ "$OS" = "centos" ]; then
-  yum update -y
-  yum install -y epel-release
+  yum update -y || dnf update -y
+  # 尝试安装 epel-release（如果可用）
+  yum install -y epel-release 2>/dev/null || dnf install -y epel-release 2>/dev/null || echo "⚠️  EPEL 仓库不可用，跳过"
 elif [ "$OS" = "ubuntu" ]; then
   apt update && apt upgrade -y
 fi
 
 echo -e "${GREEN}📋 步骤 3/7: 安装基础软件...${NC}"
 if [ "$OS" = "centos" ]; then
-  yum install -y git curl wget vim net-tools lsof
+  yum install -y git curl wget vim net-tools lsof 2>/dev/null || dnf install -y git curl wget vim net-tools lsof
 elif [ "$OS" = "ubuntu" ]; then
   apt install -y git curl wget vim net-tools lsof
 fi
@@ -54,7 +101,8 @@ fi
 echo -e "${GREEN}📋 步骤 4/7: 安装 Docker 和 Docker Compose...${NC}"
 if ! command -v docker &> /dev/null; then
   if [ "$OS" = "centos" ]; then
-    yum install -y docker
+    # Alibaba Cloud Linux 使用 yum
+    yum install -y docker 2>/dev/null || dnf install -y docker
   elif [ "$OS" = "ubuntu" ]; then
     apt install -y docker.io
   fi
@@ -85,6 +133,8 @@ if [ "$OS" = "centos" ]; then
     firewall-cmd --permanent --add-port=22/tcp
     firewall-cmd --reload
     echo "✅ 防火墙规则已配置"
+  else
+    echo "⚠️  firewalld 未运行，跳过防火墙配置"
   fi
 elif [ "$OS" = "ubuntu" ]; then
   if command -v ufw &> /dev/null; then
@@ -93,6 +143,8 @@ elif [ "$OS" = "ubuntu" ]; then
     ufw allow 8001/tcp
     ufw allow 22/tcp
     echo "✅ 防火墙规则已配置"
+  else
+    echo "⚠️  ufw 未安装，跳过防火墙配置"
   fi
 fi
 

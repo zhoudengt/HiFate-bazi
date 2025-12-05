@@ -1,19 +1,23 @@
 # HiFate-bazi 测试环境自动部署
 # 触发条件：推送到 master 分支（测试环境：123.57.216.15）
 # 功能：从 GitHub Container Registry 拉取镜像并部署到测试服务器
+# 
+# 标准流程：
+#   1. build-and-push.yml 构建镜像并推送到 GHCR
+#   2. 本 workflow 从 GHCR 拉取镜像
+#   3. 部署到测试服务器（零停机滚动更新）
 
 name: 🧪 Deploy to Test Environment
 
 on:
   push:
     branches: [ master ]
-  workflow_dispatch:  # 支持手动触发
+  workflow_dispatch:
 
 jobs:
   deploy:
     name: 部署到测试服务器
     runs-on: ubuntu-latest
-    needs: []  # 可以添加依赖 build-and-push job
     
     steps:
       # 1. 检出代码
@@ -32,23 +36,7 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.TEST_SERVER_HOST }} >> ~/.ssh/known_hosts
       
-      # 4. 等待镜像构建完成（如果 build-and-push workflow 正在运行）
-      - name: ⏳ Wait for image build
-        run: |
-          echo "⏳ 等待镜像构建完成..."
-          MAX_WAIT=600
-          WAIT_TIME=0
-          while [ $WAIT_TIME -lt $MAX_WAIT ]; do
-            if docker pull ghcr.io/${{ github.repository }}/hifate-bazi:master 2>/dev/null; then
-              echo "✅ 镜像已可用"
-              break
-            fi
-            echo "⏳ 镜像尚未就绪，等待中... ($WAIT_TIME/$MAX_WAIT 秒)"
-            sleep 30
-            WAIT_TIME=$((WAIT_TIME + 30))
-          done
-      
-      # 5. 部署到测试服务器
+      # 4. 部署到测试服务器
       - name: 🚀 Deploy to test server
         run: |
           ssh ${{ secrets.TEST_SERVER_USER }}@${{ secrets.TEST_SERVER_HOST }} << 'EOF'
@@ -67,15 +55,10 @@ jobs:
             
             # 登录到 GitHub Container Registry
             echo "🔐 登录到 GitHub Container Registry..."
-            if [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
-              echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            else
-              echo "⚠️  GHCR_TOKEN 未配置，尝试使用 GITHUB_TOKEN"
-              echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin || {
-                echo "❌ 无法登录到 GitHub Container Registry"
-                exit 1
-              }
-            fi
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin || {
+              echo "❌ 无法登录到 GitHub Container Registry"
+              exit 1
+            }
             
             # 拉取最新镜像
             echo "📥 拉取最新镜像..."
@@ -83,14 +66,17 @@ jobs:
             docker pull ${IMAGE_TAG} || {
               echo "⚠️  拉取 master 标签失败，尝试 latest 标签"
               IMAGE_TAG="ghcr.io/${{ github.repository }}/hifate-bazi:latest"
-              docker pull ${IMAGE_TAG}
+              docker pull ${IMAGE_TAG} || {
+                echo "❌ 无法拉取任何镜像，部署失败"
+                exit 1
+              }
             }
             
             echo "✅ 镜像拉取成功: ${IMAGE_TAG}"
             
-            # 滚动更新（零停机部署）- 使用拉取的镜像
+            # 滚动更新（零停机部署）
             echo "🔄 滚动更新服务..."
-            DOCKER_IMAGE=${IMAGE_TAG} docker-compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml up -d --no-deps web
+            DOCKER_IMAGE=${IMAGE_TAG} docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml up -d --no-deps web
             
             # 等待新容器启动
             echo "⏳ 等待新容器启动..."
@@ -115,20 +101,20 @@ jobs:
             if [ "$HEALTH_CHECK_PASSED" = true ]; then
               echo "✅ 测试环境部署成功！服务运行正常"
               
-              # 更新其他微服务（使用拉取的镜像）
-              DOCKER_IMAGE=${IMAGE_TAG} docker-compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml up -d --no-deps bazi-analyzer
+              # 更新其他微服务
+              DOCKER_IMAGE=${IMAGE_TAG} docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml up -d --no-deps bazi-analyzer
               sleep 10
-              DOCKER_IMAGE=${IMAGE_TAG} docker-compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml up -d --no-deps fortune-analyzer
+              DOCKER_IMAGE=${IMAGE_TAG} docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml up -d --no-deps fortune-analyzer
               sleep 10
-              DOCKER_IMAGE=${IMAGE_TAG} docker-compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml up -d --no-deps rule-service
+              DOCKER_IMAGE=${IMAGE_TAG} docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml up -d --no-deps rule-service
               
               echo "✅ 所有服务更新完成"
             else
               echo "❌ 测试环境部署失败！服务未响应"
               echo "📋 查看服务日志："
-              docker-compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100 web
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100 web
               echo "📋 查看容器状态："
-              docker-compose -f docker-compose.yml -f docker-compose.prod.yml ps
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
               exit 1
             fi
             
@@ -139,7 +125,7 @@ jobs:
             echo "🎉 测试环境部署完成！"
           EOF
       
-      # 6. 显示部署信息
+      # 5. 显示部署信息
       - name: 📊 Deployment summary
         if: success()
         run: |
@@ -154,4 +140,3 @@ jobs:
           echo "镜像：ghcr.io/${{ github.repository }}/hifate-bazi:master"
           echo "访问：http://${{ secrets.TEST_SERVER_HOST }}:8001"
           echo "=========================================="
-

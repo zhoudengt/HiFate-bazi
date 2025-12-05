@@ -1475,6 +1475,89 @@ rule_type = 'formula_career'  # 不要使用 formula_ 前缀
 
 ---
 
+## 🚀 CI/CD 标准流程 【必须遵守】
+
+### 🔴 核心原则
+
+> **所有部署必须遵循标准 CI/CD 流程，禁止在服务器上直接构建镜像。**
+
+### 📋 标准流程
+
+```
+本地开发 → 推送到 GitHub → GitHub Actions 构建镜像 → 推送到 GHCR → 服务器拉取镜像部署
+```
+
+| 步骤 | 操作 | 说明 |
+|------|------|------|
+| **1. 本地开发** | 在本地 Mac 开发 | 修改代码、测试 |
+| **2. 推送到 GitHub** | `git push origin master` | 触发 CI/CD |
+| **3. 自动构建镜像** | GitHub Actions 执行 | `.github/workflows/build-and-push.yml` |
+| **4. 推送到 GHCR** | 自动推送到 GitHub Container Registry | 镜像标签：`ghcr.io/owner/repo/hifate-bazi:master` |
+| **5. 服务器拉取部署** | 服务器从 GHCR 拉取镜像 | `.github/workflows/deploy-test.yml` 自动部署 |
+
+### 🔧 工作流文件
+
+| 文件 | 功能 | 触发条件 |
+|------|------|---------|
+| `.github/workflows/build-and-push.yml` | 构建镜像并推送到 GHCR | 推送到 `master` 或 `develop` 分支 |
+| `.github/workflows/deploy-test.yml` | 部署到测试环境 | 推送到 `master` 分支 |
+| `.github/workflows/deploy-production.yml` | 部署到生产环境 | 推送到 `master` 分支（手动触发） |
+
+### ✅ 标准流程检查清单
+
+每次部署前必须检查：
+
+- [ ] 代码已推送到 GitHub
+- [ ] GitHub Actions 构建成功
+- [ ] 镜像已推送到 GHCR
+- [ ] 服务器成功拉取镜像
+- [ ] 健康检查通过
+
+### 🚫 禁止的操作
+
+| 操作 | 原因 | 正确方式 |
+|------|------|---------|
+| ❌ 在服务器上构建镜像 | 占用服务器资源、构建慢 | 使用 GitHub Actions 构建 |
+| ❌ 手动上传镜像文件 | 不标准、容易出错 | 使用 GHCR 自动推送 |
+| ❌ 直接修改服务器代码 | 无法版本控制 | 推送到 GitHub，自动部署 |
+
+### 📝 部署命令
+
+**测试环境部署**（自动）：
+```bash
+# 1. 本地开发完成后
+git add .
+git commit -m "feat: 新功能"
+git push origin master
+
+# 2. GitHub Actions 自动执行：
+#    - build-and-push.yml: 构建镜像并推送到 GHCR
+#    - deploy-test.yml: 部署到测试服务器 (123.57.216.15)
+```
+
+**生产环境部署**（手动触发）：
+```bash
+# 1. 在 GitHub Actions 页面手动触发 deploy-production.yml
+# 2. 或推送到 master 分支后，在 Actions 页面手动触发
+```
+
+### 🔍 故障排查
+
+**如果部署失败**：
+1. 查看 GitHub Actions 日志
+2. 检查镜像是否成功推送到 GHCR
+3. 检查服务器 SSH 连接
+4. 检查服务器磁盘空间
+5. 查看服务器日志：`docker compose logs --tail=100`
+
+### 📚 相关文档
+
+- `.github/workflows/build-and-push.yml` - 构建和推送流程
+- `.github/workflows/deploy-test.yml` - 测试环境部署流程
+- `docs/GitHub-Container-Registry部署方案.md` - 详细部署文档
+
+---
+
 ## 🚀 服务管理
 
 ### 启动服务

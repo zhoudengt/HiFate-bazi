@@ -43,7 +43,7 @@ htmlcov/
 .vscode/
 *.iml
 
-# 文档和测试
+# 文档和测试（排除所有文档，只保留必要的 README）
 docs/
 tests/
 *.md

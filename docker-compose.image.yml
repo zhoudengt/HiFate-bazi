@@ -1,6 +1,7 @@
 # HiFate-bazi Docker Compose 镜像配置
-# 使用方式：IMAGE=ghcr.io/owner/repo/hifate-bazi:latest docker-compose -f docker-compose.yml -f docker-compose.image.yml up -d
-# 功能：使用预构建的镜像而不是本地构建
+# 标准 CI/CD 流程：使用从 GitHub Container Registry 拉取的镜像
+# 使用方式：DOCKER_IMAGE=ghcr.io/owner/repo/hifate-bazi:master docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml up -d
+# 功能：使用预构建的镜像而不是本地构建（标准流程）
 
 version: '3.8'
 

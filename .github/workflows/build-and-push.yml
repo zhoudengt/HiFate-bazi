@@ -1,13 +1,19 @@
-# HiFate-bazi Docker 镜像构建和推送
+# HiFate-bazi 标准 CI/CD 流程
 # 触发条件：推送到 master 或 develop 分支
 # 功能：构建 Docker 镜像并推送到 GitHub Container Registry
+# 
+# 标准流程：
+#   1. 本地开发 → 推送到 GitHub
+#   2. GitHub Actions 自动构建镜像
+#   3. 推送到 GHCR
+#   4. 服务器从 GHCR 拉取镜像部署
 
 name: 🐳 Build and Push Docker Image
 
 on:
   push:
     branches: [ master, develop ]
-  workflow_dispatch:  # 支持手动触发
+  workflow_dispatch:
     inputs:
       tag:
         description: '镜像标签（可选）'
@@ -41,7 +47,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
-      # 4. 提取元数据（标签、标签等）
+      # 4. 提取元数据（标签等）
       - name: 📋 Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -49,21 +55,10 @@ jobs:
           images: ghcr.io/${{ github.repository }}/hifate-bazi
           tags: |
             type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
       
-      # 5. 检查基础镜像是否存在（如果不存在，先构建基础镜像）
-      - name: 🔍 Check base image
-        id: check-base
-        run: |
-          # 检查本地是否有基础镜像（在 GitHub Actions 中通常没有）
-          # 这里我们直接构建应用镜像，基础镜像应该在服务器上构建
-          echo "base_exists=false" >> $GITHUB_OUTPUT
-      
-      # 6. 构建并推送 Docker 镜像
+      # 5. 构建并推送 Docker 镜像
       - name: 🐳 Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -80,7 +75,7 @@ jobs:
             VCS_REF=${{ github.sha }}
             VERSION=${{ github.ref_name }}
       
-      # 7. 显示镜像信息
+      # 6. 显示镜像信息
       - name: 📊 Image info
         run: |
           echo "=========================================="
@@ -92,11 +87,3 @@ jobs:
           echo "拉取命令："
           echo "docker pull ghcr.io/${{ github.repository }}/hifate-bazi:latest"
           echo "=========================================="
-      
-      # 8. 输出镜像 URL（用于后续部署）
-      - name: 📝 Output image URL
-        run: |
-          IMAGE_URL="ghcr.io/${{ github.repository }}/hifate-bazi:latest"
-          echo "IMAGE_URL=$IMAGE_URL" >> $GITHUB_ENV
-          echo "镜像 URL: $IMAGE_URL"
-
