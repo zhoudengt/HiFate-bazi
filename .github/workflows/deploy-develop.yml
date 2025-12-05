@@ -48,13 +48,27 @@ jobs:
             git checkout develop
             git pull origin develop
             
+            # 检查并构建基础镜像（如果不存在）
+            echo "🔍 检查基础镜像..."
+            if ! docker images | grep -q "hifate-base.*latest"; then
+              echo "🔨 构建基础镜像（首次部署，可能需要5-10分钟）..."
+              if [ -f "./scripts/docker/build_base.sh" ]; then
+                chmod +x ./scripts/docker/build_base.sh
+                ./scripts/docker/build_base.sh
+              else
+                echo "⚠️  基础镜像构建脚本不存在，跳过基础镜像优化"
+              fi
+            else
+              echo "✅ 基础镜像已存在，跳过构建"
+            fi
+            
             # 停止旧容器
             echo "🛑 停止旧容器..."
             docker-compose -f docker-compose.yml -f docker-compose.dev.yml down
             
-            # 构建新镜像
-            echo "🔨 构建新镜像..."
-            docker-compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache
+            # 构建应用镜像（使用基础镜像，只需10-20秒）
+            echo "🔨 构建应用镜像..."
+            docker-compose -f docker-compose.yml -f docker-compose.dev.yml build
             
             # 启动新容器
             echo "✅ 启动新容器..."
@@ -68,13 +82,30 @@ jobs:
             echo "⏳ 等待服务启动..."
             sleep 15
             
-            # 健康检查
+            # 健康检查（重试机制）
             echo "🏥 健康检查..."
-            if curl -f http://localhost:8001/health; then
+            MAX_RETRIES=5
+            RETRY_COUNT=0
+            HEALTH_CHECK_PASSED=false
+            
+            while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+              if curl -f -s http://localhost:8001/health > /dev/null 2>&1; then
+                HEALTH_CHECK_PASSED=true
+                break
+              fi
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              echo "⏳ 健康检查失败，重试 $RETRY_COUNT/$MAX_RETRIES..."
+              sleep 5
+            done
+            
+            if [ "$HEALTH_CHECK_PASSED" = true ]; then
               echo "✅ 部署成功！服务运行正常"
             else
               echo "❌ 部署失败！服务未响应"
-              docker-compose logs --tail=50
+              echo "📋 查看服务日志："
+              docker-compose -f docker-compose.yml -f docker-compose.dev.yml logs --tail=100
+              echo "📋 查看容器状态："
+              docker-compose -f docker-compose.yml -f docker-compose.dev.yml ps
               exit 1
             fi
             
