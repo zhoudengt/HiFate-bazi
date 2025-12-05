@@ -62,10 +62,12 @@ jobs:
             
             # 拉取最新镜像
             echo "📥 拉取最新镜像..."
-            IMAGE_TAG="ghcr.io/${{ github.repository }}/hifate-bazi:master"
+            # Docker 镜像名称必须全小写
+            REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+            IMAGE_TAG="ghcr.io/${REPO_LOWER}/hifate-bazi:master"
             docker pull ${IMAGE_TAG} || {
               echo "⚠️  拉取 master 标签失败，尝试 latest 标签"
-              IMAGE_TAG="ghcr.io/${{ github.repository }}/hifate-bazi:latest"
+              IMAGE_TAG="ghcr.io/${REPO_LOWER}/hifate-bazi:latest"
               docker pull ${IMAGE_TAG} || {
                 echo "❌ 无法拉取任何镜像，部署失败"
                 exit 1
@@ -137,6 +139,6 @@ jobs:
           echo "分支：master"
           echo "提交：${{ github.sha }}"
           echo "提交者：${{ github.actor }}"
-          echo "镜像：ghcr.io/${{ github.repository }}/hifate-bazi:master"
+          echo "镜像：ghcr.io/zhoudengt/hifate-bazi:master"
           echo "访问：http://${{ secrets.TEST_SERVER_HOST }}:8001"
           echo "=========================================="
