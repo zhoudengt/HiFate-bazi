@@ -47,9 +47,24 @@ jobs:
           ACR_USERNAME="${{ secrets.ACR_USERNAME }}"
           ACR_PASSWORD="${{ secrets.ACR_PASSWORD }}"
           
-          if [ -n "$ACR_REGISTRY" ] && [ -n "$ACR_NAMESPACE" ] && [ -n "$ACR_USERNAME" ] && [ -n "$ACR_PASSWORD" ] && [ "$ACR_REGISTRY" != "***" ] && [ "$ACR_NAMESPACE" != "***" ]; then
+          # 检查 secrets 是否包含 ***（GitHub Actions 隐藏值）
+          if echo "${ACR_REGISTRY}" | grep -q "\*\*\*" || echo "${ACR_NAMESPACE}" | grep -q "\*\*\*"; then
+            echo "⚠️  检测到 secrets 被隐藏（***），视为未配置"
+            ACR_REGISTRY=""
+            ACR_NAMESPACE=""
+            ACR_USERNAME=""
+            ACR_PASSWORD=""
+          fi
+          
+          if [ -n "$ACR_REGISTRY" ] && [ -n "$ACR_NAMESPACE" ] && [ -n "$ACR_USERNAME" ] && [ -n "$ACR_PASSWORD" ]; then
             echo "acr_configured=true" >> $GITHUB_OUTPUT
             IMAGE_NAME="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
+            # 再次验证镜像名称不包含 ***
+            if echo "${IMAGE_NAME}" | grep -q "\*\*\*"; then
+              echo "❌ 错误: 镜像名称包含无效字符: ${IMAGE_NAME}"
+              echo "❌ 这通常意味着 ACR secrets 未正确配置"
+              exit 1
+            fi
             echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
             echo "✅ ACR secrets 已配置"
             echo "✅ 镜像名称: ${IMAGE_NAME}"
