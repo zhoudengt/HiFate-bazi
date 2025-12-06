@@ -83,17 +83,32 @@ jobs:
       # 5. 提取元数据（标签等）
       - name: 📋 Extract metadata
         id: meta
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
         run: |
-          # 从 check_acr 步骤获取镜像名称
-          RAW_IMAGE_NAME="${{ steps.check_acr.outputs.image_name }}"
-          
-          # 验证镜像名称不包含 ***（GitHub Actions 可能将 secrets 隐藏为 ***）
-          if echo "${RAW_IMAGE_NAME}" | grep -q "\*\*\*" || [ -z "${RAW_IMAGE_NAME}" ]; then
-            echo "⚠️  警告: 镜像名称包含 *** 或为空: '${RAW_IMAGE_NAME}'"
-            echo "⚠️  强制使用本地镜像名称"
-            IMAGE_NAME="hifate-bazi"
+          # 根据 acr_configured 标志决定镜像名称（不依赖 check_acr 的 image_name 输出）
+          # 因为 GitHub Actions 可能会将 secrets 隐藏为 ***，导致 image_name 输出也包含 ***
+          if [ "${{ steps.check_acr.outputs.acr_configured }}" == "true" ]; then
+            # ACR 已配置，使用环境变量构建镜像名称
+            # 验证环境变量不包含 ***
+            if echo "${ACR_REGISTRY}" | grep -q "\*\*\*" || echo "${ACR_NAMESPACE}" | grep -q "\*\*\*" || \
+               [ -z "${ACR_REGISTRY}" ] || [ -z "${ACR_NAMESPACE}" ]; then
+              echo "⚠️  警告: ACR 环境变量包含 *** 或为空，使用本地镜像名称"
+              IMAGE_NAME="hifate-bazi"
+            else
+              # 构建 ACR 镜像名称
+              IMAGE_NAME="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
+              
+              # 再次验证镜像名称不包含 ***
+              if echo "${IMAGE_NAME}" | grep -q "\*\*\*"; then
+                echo "⚠️  警告: 构建的镜像名称包含 ***，使用本地镜像名称"
+                IMAGE_NAME="hifate-bazi"
+              fi
+            fi
           else
-            IMAGE_NAME="${RAW_IMAGE_NAME}"
+            # ACR 未配置，使用本地镜像名称
+            IMAGE_NAME="hifate-bazi"
           fi
           
           # 最终验证：确保镜像名称有效且不包含 ***
@@ -101,7 +116,6 @@ jobs:
             echo "❌ 错误: 无法确定有效的镜像名称，最终值: '${IMAGE_NAME}'"
             echo "❌ 调试信息:"
             echo "   acr_configured: ${{ steps.check_acr.outputs.acr_configured }}"
-            echo "   raw_image_name: ${RAW_IMAGE_NAME}"
             # 如果镜像名称仍然无效，强制使用本地镜像名称
             IMAGE_NAME="hifate-bazi"
             echo "⚠️  强制使用本地镜像名称: ${IMAGE_NAME}"
