@@ -86,24 +86,26 @@ jobs:
           # 生成标签（使用换行符分隔，docker/build-push-action 支持）
           BRANCH="${{ github.ref_name }}"
           SHA="${{ github.sha }}"
-          TAGS="${IMAGE_NAME}:${BRANCH}
-${IMAGE_NAME}:${SHA:0:7}
-${IMAGE_NAME}:latest"
+          SHA_SHORT="${SHA:0:7}"
+          
+          # 使用多行输出格式（EOF）生成标签
+          {
+            echo "tags<<EOF"
+            echo "${IMAGE_NAME}:${BRANCH}"
+            echo "${IMAGE_NAME}:${SHA_SHORT}"
+            echo "${IMAGE_NAME}:latest"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
           
           # 生成标签 JSON（docker/build-push-action 需要的格式）
           LABELS_JSON="{\"org.opencontainers.image.title\":\"HiFate-bazi\",\"org.opencontainers.image.version\":\"${BRANCH}\",\"org.opencontainers.image.revision\":\"${SHA}\"}"
-          
-          # 使用多行输出格式（EOF）
-          {
-            echo "tags<<EOF"
-            echo "${TAGS}"
-            echo "EOF"
-            echo "labels=${LABELS_JSON}"
-          } >> $GITHUB_OUTPUT
+          echo "labels=${LABELS_JSON}" >> $GITHUB_OUTPUT
           
           echo "✅ 镜像名称: ${IMAGE_NAME}"
           echo "✅ 标签:"
-          echo "${TAGS}" | sed 's/^/  - /'
+          echo "  - ${IMAGE_NAME}:${BRANCH}"
+          echo "  - ${IMAGE_NAME}:${SHA_SHORT}"
+          echo "  - ${IMAGE_NAME}:latest"
       
       # 6. 构建并推送 Docker 镜像
       - name: 🐳 Build and push Docker image
