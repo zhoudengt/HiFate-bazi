@@ -77,9 +77,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
-          # 禁用 provenance 和 sbom（ACR 不支持）
           provenance: false
-          sbom: false
           build-args: |
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
