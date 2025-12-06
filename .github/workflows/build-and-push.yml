@@ -92,9 +92,16 @@ jobs:
           IMAGE_NAME="${{ steps.check_acr.outputs.image_name }}"
           
           # 验证镜像名称格式（不能包含 ***）
+          # 如果包含 ***，说明 secrets 未正确配置，使用本地镜像名称
           if echo "${IMAGE_NAME}" | grep -q "\*\*\*"; then
-            echo "❌ 错误: 镜像名称包含无效字符: ${IMAGE_NAME}"
-            echo "❌ 这通常意味着 ACR secrets 未正确配置"
+            echo "⚠️  警告: 镜像名称包含无效字符: ${IMAGE_NAME}"
+            echo "⚠️  这通常意味着 ACR secrets 未正确配置，使用本地镜像名称"
+            IMAGE_NAME="hifate-bazi"
+          fi
+          
+          # 最终验证：确保镜像名称有效
+          if [ -z "${IMAGE_NAME}" ] || echo "${IMAGE_NAME}" | grep -q "\*\*\*"; then
+            echo "❌ 错误: 无法确定有效的镜像名称"
             exit 1
           fi
           
