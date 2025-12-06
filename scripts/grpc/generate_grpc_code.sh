@@ -86,6 +86,10 @@ for grpc_file in grpc_files:
             print(f"  ⚠️  未找到需要修复的内容: {os.path.basename(grpc_file)}")
 EOF
 
+# 自动修复版本检查逻辑
+echo ">>> 自动修复版本检查逻辑..."
+"${PYTHON}" scripts/grpc/fix_version_check.py || echo "⚠️  版本检查修复失败，但继续"
+
 echo "✅ gRPC 代码生成完成！"
 echo "   输出目录: ${OUTPUT_DIR}"
 

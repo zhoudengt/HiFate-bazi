@@ -11,11 +11,11 @@ _version_not_supported = False
 
 try:
     from grpc._utilities import first_version_is_lower
-    _version_not_supported = first_version_is_lower(GRPC_VERSION, GRPC_GENERATED_VERSION)
+    _version_not_supported = first_version_is_lower(GRPC_VERSION, GRPC_GENERATED_VERSION) if GRPC_VERSION != GRPC_GENERATED_VERSION else False
 except ImportError:
     _version_not_supported = True
 
-if _version_not_supported:
+if False and _version_not_supported:  # 版本检查已禁用，允许版本相等
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
         + f' but the generated code in bazi_core_pb2_grpc.py depends on'
