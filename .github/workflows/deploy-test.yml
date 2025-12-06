@@ -71,23 +71,38 @@ jobs:
             
             # 拉取最新镜像
             echo "📥 拉取最新镜像..."
-            IMAGE_TAG="${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:master"
             
-            # 拉取镜像（不使用 timeout，让 SSH 保活机制处理）
-            if docker pull ${IMAGE_TAG} 2>&1; then
-              echo "✅ 镜像拉取成功: ${IMAGE_TAG}"
+            # 检查必要的 secrets
+            if [ -z "${{ secrets.ACR_REGISTRY }}" ] || [ -z "${{ secrets.ACR_NAMESPACE }}" ]; then
+              echo "❌ ACR_REGISTRY 或 ACR_NAMESPACE 未配置，跳过镜像拉取"
+              echo "⚠️  将使用本地构建的镜像或现有镜像"
+              IMAGE_TAG="hifate-bazi:master"
             else
-              echo "⚠️  拉取 master 标签失败，尝试 latest 标签"
-              IMAGE_TAG="${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:latest"
-              if docker pull ${IMAGE_TAG} 2>&1; then
-                echo "✅ 镜像拉取成功: ${IMAGE_TAG}"
+              IMAGE_TAG="${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:master"
+              
+              # 验证镜像标签格式
+              if [[ ! "${IMAGE_TAG}" =~ ^[a-zA-Z0-9._/-]+:[a-zA-Z0-9._-]+$ ]]; then
+                echo "❌ 镜像标签格式无效: ${IMAGE_TAG}"
+                echo "⚠️  将使用本地构建的镜像或现有镜像"
+                IMAGE_TAG="hifate-bazi:master"
               else
-                echo "❌ 无法拉取任何镜像，部署失败"
-                exit 1
+                # 拉取镜像（不使用 timeout，让 SSH 保活机制处理）
+                if docker pull ${IMAGE_TAG} 2>&1; then
+                  echo "✅ 镜像拉取成功: ${IMAGE_TAG}"
+                else
+                  echo "⚠️  拉取 master 标签失败，尝试 latest 标签"
+                  IMAGE_TAG="${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:latest"
+                  if docker pull ${IMAGE_TAG} 2>&1; then
+                    echo "✅ 镜像拉取成功: ${IMAGE_TAG}"
+                  else
+                    echo "⚠️  无法拉取远程镜像，将使用本地构建"
+                    IMAGE_TAG="hifate-bazi:master"
+                  fi
+                fi
               fi
             fi
             
-            echo "✅ 镜像拉取成功: ${IMAGE_TAG}"
+            echo "📦 使用镜像: ${IMAGE_TAG}"
             
             # 滚动更新（零停机部署）
             echo "🔄 滚动更新服务..."

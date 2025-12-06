@@ -8,7 +8,7 @@
 import pytest
 import sys
 import os
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
