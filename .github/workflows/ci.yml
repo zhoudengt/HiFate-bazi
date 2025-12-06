@@ -92,7 +92,12 @@ jobs:
         run: |
           # 确保使用正确的 grpcio-tools 版本生成代码
           python -m grpc_tools.protoc --version || echo "grpc_tools 已安装"
+          # 验证 grpcio 版本
+          python -c "import grpc; print(f'grpcio version: {grpc.__version__}')"
+          # 重新生成 gRPC 代码（会自动修复版本检查逻辑）
           bash scripts/grpc/generate_grpc_code.sh || echo "gRPC 代码生成失败，继续使用现有代码"
+          # 验证生成的代码
+          python -c "import sys; sys.path.insert(0, 'proto/generated'); import bazi_core_pb2_grpc; print('✅ gRPC 代码验证通过')" || echo "⚠️ gRPC 代码验证失败"
       
       - name: 运行单元测试
         env:
