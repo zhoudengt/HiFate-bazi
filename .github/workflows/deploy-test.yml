@@ -125,11 +125,10 @@ jobs:
             
             echo "🔄 开始部署到测试环境..."
             
-            # 清理磁盘空间（防止空间不足）
+            # 清理磁盘空间（防止 no space left on device 错误）
             echo "🧹 清理磁盘空间..."
-            docker system prune -af --volumes 2>/dev/null || true
+            docker system prune -af 2>/dev/null || true
             docker image prune -af 2>/dev/null || true
-            echo "📊 当前磁盘使用："
             df -h / | tail -1
             
             # 进入项目目录
