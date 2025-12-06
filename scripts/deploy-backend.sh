@@ -66,52 +66,115 @@ echo "   ✅ 环境变量配置检查通过"
 
 # 1. 拉取最新代码
 echo ""
-echo "📥 [1/6] 更新代码..."
+echo "📥 [1/7] 更新代码..."
 git pull origin master || {
     echo "❌ 代码更新失败"
     exit 1
 }
 echo "   ✅ 代码更新完成"
 
-# 2. 检查并构建基础镜像（如果不存在）
+# 2. 检查 ACR 配置并拉取镜像
 echo ""
-echo "🐳 [2/6] 检查基础镜像..."
-if ! docker images hifate-base:latest --format "{{.Repository}}" | grep -q hifate-base; then
-    echo "   ⚠️  基础镜像不存在，开始构建（约5-10分钟）..."
-    docker build \
-        --platform linux/amd64 \
-        -f Dockerfile.base \
-        -t hifate-base:latest \
-        -t hifate-base:$(date +%Y%m%d) \
-        . || {
-        echo "   ❌ 基础镜像构建失败"
-        exit 1
+echo "🐳 [2/7] 检查镜像源配置..."
+ACR_REGISTRY="${ACR_REGISTRY:-}"
+ACR_NAMESPACE="${ACR_NAMESPACE:-}"
+ACR_USERNAME="${ACR_USERNAME:-}"
+ACR_PASSWORD="${ACR_PASSWORD:-}"
+IMAGE_TAG="${IMAGE_TAG:-master}"
+
+# 检查是否配置了 ACR
+if [ -n "$ACR_REGISTRY" ] && [ -n "$ACR_NAMESPACE" ] && [ -n "$ACR_USERNAME" ] && [ -n "$ACR_PASSWORD" ]; then
+    echo "   ✅ ACR 配置已设置，使用 ACR 镜像"
+    FULL_IMAGE="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi:${IMAGE_TAG}"
+    
+    # 登录到 ACR
+    echo "   🔐 登录到阿里云容器镜像服务..."
+    echo "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" -u "$ACR_USERNAME" --password-stdin || {
+        echo "   ⚠️  ACR 登录失败，尝试使用本地构建"
+        FULL_IMAGE=""
     }
-    echo "   ✅ 基础镜像构建完成"
+    
+    # 拉取镜像
+    if [ -n "$FULL_IMAGE" ]; then
+        echo "   📥 拉取镜像: ${FULL_IMAGE}..."
+        if docker pull "$FULL_IMAGE" 2>&1; then
+            echo "   ✅ 镜像拉取成功"
+            export DOCKER_IMAGE="$FULL_IMAGE"
+        else
+            echo "   ⚠️  拉取 ${IMAGE_TAG} 标签失败，尝试 latest 标签"
+            FULL_IMAGE="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi:latest"
+            if docker pull "$FULL_IMAGE" 2>&1; then
+                echo "   ✅ 镜像拉取成功（latest）"
+                export DOCKER_IMAGE="$FULL_IMAGE"
+            else
+                echo "   ⚠️  无法拉取远程镜像，将使用本地构建"
+                FULL_IMAGE=""
+            fi
+        fi
+    fi
 else
-    echo "   ✅ 基础镜像已存在"
+    echo "   ⚠️  ACR 未配置，检查 GitHub Container Registry (GHCR)..."
+    # 尝试使用 GHCR（如果配置了 GITHUB_TOKEN）
+    if [ -n "$GITHUB_TOKEN" ]; then
+        echo "   🔐 登录到 GitHub Container Registry..."
+        echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin 2>/dev/null || true
+        
+        GHCR_IMAGE="ghcr.io/zhoudengt/hifate-bazi:${IMAGE_TAG}"
+        echo "   📥 拉取镜像: ${GHCR_IMAGE}..."
+        if docker pull "$GHCR_IMAGE" 2>&1; then
+            echo "   ✅ 镜像拉取成功（GHCR）"
+            export DOCKER_IMAGE="$GHCR_IMAGE"
+            FULL_IMAGE="$GHCR_IMAGE"
+        else
+            echo "   ⚠️  GHCR 镜像拉取失败，将使用本地构建"
+            FULL_IMAGE=""
+        fi
+    else
+        echo "   ⚠️  GHCR 未配置，将使用本地构建"
+        FULL_IMAGE=""
+    fi
+fi
+
+# 如果无法拉取镜像，使用本地构建（备用方案）
+if [ -z "$FULL_IMAGE" ]; then
+    echo "   ⚠️  使用本地构建（备用方案，可能占用较多磁盘空间）"
+    echo "   💡 建议配置 ACR 以避免本地构建"
+    export DOCKER_IMAGE=""
 fi
 
 # 3. 停止现有服务（如果存在）
 echo ""
-echo "🛑 [3/6] 停止现有服务..."
+echo "🛑 [3/7] 停止现有服务..."
 docker compose -f docker-compose.yml -f docker-compose.prod.yml down 2>/dev/null || true
 echo "   ✅ 现有服务已停止"
 
-# 4. 启动所有服务（包括 MySQL 和 Redis）
+# 4. 启动所有服务
 echo ""
-echo "🔄 [4/6] 启动所有服务..."
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build || {
-    echo "❌ 服务启动失败"
-    echo "📋 查看错误日志："
-    docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=50
-    exit 1
-}
+echo "🔄 [4/7] 启动所有服务..."
+if [ -n "$DOCKER_IMAGE" ]; then
+    # 使用预构建的镜像（从 ACR 或 GHCR）
+    echo "   📦 使用镜像: ${DOCKER_IMAGE}"
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml up -d || {
+        echo "❌ 服务启动失败"
+        echo "📋 查看错误日志："
+        docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml logs --tail=50
+        exit 1
+    }
+else
+    # 本地构建（备用方案）
+    echo "   🔨 本地构建镜像（可能占用较多磁盘空间）..."
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build || {
+        echo "❌ 服务启动失败"
+        echo "📋 查看错误日志："
+        docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=50
+        exit 1
+    }
+fi
 echo "   ✅ 服务启动命令执行完成"
 
 # 5. 等待 MySQL 和 Redis 启动
 echo ""
-echo "⏳ [5/6] 等待 MySQL 和 Redis 启动..."
+echo "⏳ [5/7] 等待 MySQL 和 Redis 启动..."
 MAX_WAIT=60
 WAIT_TIME=0
 MYSQL_READY=false
@@ -158,7 +221,7 @@ fi
 
 # 6. 健康检查
 echo ""
-echo "🏥 [6/6] Web 服务健康检查..."
+echo "🏥 [6/7] Web 服务健康检查..."
 sleep 5
 MAX_RETRIES=10
 RETRY_COUNT=0
@@ -180,12 +243,25 @@ done
 if [ "$HEALTH_CHECK_PASSED" = false ]; then
     echo "   ❌ Web 服务健康检查失败"
     echo "   📋 查看服务日志："
-    docker compose -f docker-compose.yml -f docker-compose.prod.yml logs web --tail=50
-    echo ""
-    echo "   📋 查看所有服务状态："
-    docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+    if [ -n "$DOCKER_IMAGE" ]; then
+        docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml logs web --tail=50
+        echo ""
+        echo "   📋 查看所有服务状态："
+        docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml ps
+    else
+        docker compose -f docker-compose.yml -f docker-compose.prod.yml logs web --tail=50
+        echo ""
+        echo "   📋 查看所有服务状态："
+        docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+    fi
     exit 1
 fi
+
+# 7. 清理未使用的镜像（可选）
+echo ""
+echo "🧹 [7/7] 清理未使用的镜像..."
+docker image prune -f 2>/dev/null || true
+echo "   ✅ 清理完成"
 
 echo ""
 echo "=========================================="
@@ -193,7 +269,11 @@ echo "✅ 后端部署完成"
 echo "=========================================="
 echo ""
 echo "📊 服务状态："
-docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+if [ -n "$DOCKER_IMAGE" ]; then
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml ps
+else
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+fi
 echo ""
 echo "🔗 访问地址："
 echo "   Web API: http://localhost:8001"
