@@ -98,6 +98,48 @@ jobs:
               fi
             }
             
+            # 检查 MySQL 和 Redis 是否运行
+            echo "🔍 检查 MySQL 和 Redis 服务..."
+            if ! docker ps --format "{{.Names}}" | grep -q "hifate-mysql"; then
+              echo "⚠️  MySQL 容器未运行，启动 MySQL..."
+              docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d mysql
+              echo "⏳ 等待 MySQL 启动..."
+              sleep 20
+            else
+              echo "✅ MySQL 容器正在运行"
+            fi
+            
+            if ! docker ps --format "{{.Names}}" | grep -q "hifate-redis"; then
+              echo "⚠️  Redis 容器未运行，启动 Redis..."
+              docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d redis
+              echo "⏳ 等待 Redis 启动..."
+              sleep 10
+            else
+              echo "✅ Redis 容器正在运行"
+            fi
+            
+            # 验证 MySQL 连接
+            echo "🔍 验证 MySQL 连接..."
+            MAX_MYSQL_RETRIES=10
+            MYSQL_RETRY=0
+            MYSQL_READY=false
+            while [ $MYSQL_RETRY -lt $MAX_MYSQL_RETRIES ]; do
+              if docker exec hifate-mysql mysqladmin ping -h localhost -u root -p"${MYSQL_ROOT_PASSWORD}" --silent 2>/dev/null; then
+                MYSQL_READY=true
+                echo "✅ MySQL 连接正常"
+                break
+              fi
+              MYSQL_RETRY=$((MYSQL_RETRY + 1))
+              echo "⏳ MySQL 连接失败，重试 $MYSQL_RETRY/$MAX_MYSQL_RETRIES..."
+              sleep 3
+            done
+            
+            if [ "$MYSQL_READY" = false ]; then
+              echo "❌ MySQL 连接失败，请检查 MySQL 容器状态和密码配置"
+              docker logs hifate-mysql --tail=30
+              exit 1
+            fi
+            
             # 拉取最新镜像（从 GitHub Container Registry）
             echo "📥 拉取最新镜像..."
             IMAGE_TAG="ghcr.io/${{ github.repository }}/hifate-bazi:master"
