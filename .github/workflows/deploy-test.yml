@@ -15,14 +15,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  # 构建并推送镜像（依赖 build-and-push.yml 的逻辑）
+  # 构建并推送镜像
   build:
     name: 构建 Docker 镜像
     runs-on: ubuntu-latest
     permissions:
       contents: read
     outputs:
-      image_tag: ${{ steps.set_output.outputs.image_tag }}
       acr_configured: ${{ steps.check_acr.outputs.acr_configured }}
     
     steps:
@@ -54,17 +53,6 @@ jobs:
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
       
-      - name: 📋 Extract metadata
-        id: meta
-        if: steps.check_acr.outputs.acr_configured == 'true'
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix=
-            type=raw,value=latest
-      
       - name: 🐳 Build and push Docker image
         if: steps.check_acr.outputs.acr_configured == 'true'
         uses: docker/build-push-action@v5
@@ -72,8 +60,10 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:${{ github.ref_name }}
+            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:${{ github.sha }}
+            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
@@ -81,12 +71,6 @@ jobs:
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
             VERSION=${{ github.ref_name }}
-      
-      - name: 📝 Set output
-        id: set_output
-        run: |
-          # 使用 branch 名称作为默认标签
-          echo "image_tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
 
   # 部署到测试服务器
   deploy:
@@ -114,7 +98,7 @@ jobs:
           ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
-          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+          IMAGE_TAG: ${{ github.ref_name }}
           ACR_CONFIGURED: ${{ needs.build.outputs.acr_configured }}
         run: |
           # 将部署脚本复制到服务器并执行

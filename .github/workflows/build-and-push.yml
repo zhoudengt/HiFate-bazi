@@ -61,40 +61,8 @@ jobs:
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
       
-      # 5. 提取元数据（使用 docker/metadata-action 避免 secrets 掩码问题）
-      - name: 📋 Extract metadata (ACR)
-        id: meta_acr
-        if: steps.check_acr.outputs.acr_configured == 'true'
-        uses: docker/metadata-action@v5
-        with:
-          # 使用完整的镜像名称（直接引用 secrets，不通过 shell 变量）
-          images: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix=
-            type=raw,value=latest
-          labels: |
-            org.opencontainers.image.title=HiFate-bazi
-            org.opencontainers.image.description=HiFate 八字系统
-            org.opencontainers.image.vendor=HiFate Team
-      
-      # 6. 提取元数据（本地镜像，当 ACR 未配置时使用）
-      - name: 📋 Extract metadata (Local)
-        id: meta_local
-        if: steps.check_acr.outputs.acr_configured != 'true'
-        uses: docker/metadata-action@v5
-        with:
-          images: hifate-bazi
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix=
-            type=raw,value=latest
-          labels: |
-            org.opencontainers.image.title=HiFate-bazi
-            org.opencontainers.image.description=HiFate 八字系统
-            org.opencontainers.image.vendor=HiFate Team
-      
-      # 7. 构建并推送 Docker 镜像（ACR 已配置）
+      # 5. 构建并推送 Docker 镜像（ACR 已配置）
+      # 注意：直接在 tags 中使用 secrets，避免通过中间变量传递导致掩码问题
       - name: 🐳 Build and push Docker image (ACR)
         if: steps.check_acr.outputs.acr_configured == 'true'
         uses: docker/build-push-action@v5
@@ -102,8 +70,17 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ steps.meta_acr.outputs.tags }}
-          labels: ${{ steps.meta_acr.outputs.labels }}
+          # 直接构建 tags，不使用 docker/metadata-action
+          tags: |
+            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:${{ github.ref_name }}
+            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:${{ github.sha }}
+            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:latest
+          labels: |
+            org.opencontainers.image.title=HiFate-bazi
+            org.opencontainers.image.description=HiFate 八字系统
+            org.opencontainers.image.vendor=HiFate Team
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
@@ -112,7 +89,7 @@ jobs:
             VCS_REF=${{ github.sha }}
             VERSION=${{ github.ref_name }}
       
-      # 8. 仅构建 Docker 镜像（ACR 未配置）
+      # 6. 仅构建 Docker 镜像（ACR 未配置）
       - name: 🐳 Build Docker image (Local)
         if: steps.check_acr.outputs.acr_configured != 'true'
         uses: docker/build-push-action@v5
@@ -120,8 +97,14 @@ jobs:
           context: .
           file: ./Dockerfile
           push: false
-          tags: ${{ steps.meta_local.outputs.tags }}
-          labels: ${{ steps.meta_local.outputs.labels }}
+          tags: |
+            hifate-bazi:${{ github.ref_name }}
+            hifate-bazi:${{ github.sha }}
+            hifate-bazi:latest
+          labels: |
+            org.opencontainers.image.title=HiFate-bazi
+            org.opencontainers.image.description=HiFate 八字系统
+            org.opencontainers.image.vendor=HiFate Team
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
@@ -130,7 +113,7 @@ jobs:
             VCS_REF=${{ github.sha }}
             VERSION=${{ github.ref_name }}
       
-      # 9. 显示镜像信息
+      # 7. 显示镜像信息
       - name: 📊 Image info
         run: |
           echo "=========================================="
@@ -139,12 +122,11 @@ jobs:
             echo "✅ 镜像已推送到 ACR！"
             echo "=========================================="
             echo "镜像标签："
-            echo "${{ steps.meta_acr.outputs.tags }}"
+            echo "  - ${{ github.ref_name }}"
+            echo "  - ${{ github.sha }}"
+            echo "  - latest"
             echo "=========================================="
           else
             echo "⚠️  ACR secrets 未配置，跳过镜像推送。"
-            echo "=========================================="
-            echo "本地镜像标签："
-            echo "${{ steps.meta_local.outputs.tags }}"
           fi
           echo "=========================================="
