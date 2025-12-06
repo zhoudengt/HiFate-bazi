@@ -69,6 +69,51 @@ config/*.env
 *.spec
 yolov8n.pt
 
+# GitHub Actions
+.github/
+
+# 模型缓存（如果不需要）
+models_cache/
+tuned_models/
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# 大型数据文件
+*.xlsx
+*.xls
+*.csv
+*.json
+!package.json
+!package-lock.json
+
+# 日志文件
+*.log
+logs/
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 压缩文件
+*.zip
+*.tar
+*.tar.gz
+*.gz
+
+# 图片文件（如果不需要）
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.ico
+
 
 
 

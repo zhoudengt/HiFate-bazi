@@ -58,28 +58,31 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 COPY requirements.txt .
 COPY services/desk_fengshui/requirements.txt /tmp/desk_fengshui_requirements.txt
 
-# 先安装基础依赖（不包含 ultralytics）
+# 合并安装步骤，减少层数并立即清理
 RUN pip install --no-cache-dir -r requirements.txt && \
-    # 清理缓存
-    pip cache purge || true && \
-    rm -rf /root/.cache/pip /tmp/pip-* /var/tmp/*
-
-# 安装 ultralytics（YOLOv8）及其依赖（使用 CPU 版本的 torch 以减少空间）
-RUN TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu \
+    TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu \
     pip install --no-cache-dir \
         --index-url https://download.pytorch.org/whl/cpu \
         torch torchvision --no-deps && \
     pip install --no-cache-dir -r /tmp/desk_fengshui_requirements.txt && \
     rm -f /tmp/desk_fengshui_requirements.txt && \
-    # 立即清理 pip 缓存和临时文件
+    # 立即清理所有缓存和临时文件
     pip cache purge || true && \
-    rm -rf /root/.cache/pip /root/.cache/torch /tmp/pip-* /var/tmp/* && \
+    rm -rf /root/.cache/pip /root/.cache/torch /root/.cache/huggingface /tmp/pip-* /var/tmp/* && \
     # 清理 Python 字节码缓存
     find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
     find /usr/local/lib/python3.11 -name "*.pyc" -delete 2>/dev/null || true && \
-    # 清理 torch 的测试和文档文件（减少空间）
-    find /usr/local/lib/python3.11/site-packages/torch -name "test" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    find /usr/local/lib/python3.11/site-packages/torch -name "*.md" -delete 2>/dev/null || true
+    # 清理大型库的测试、文档和示例文件（减少空间）
+    find /usr/local/lib/python3.11/site-packages -name "test" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages -name "*.md" -delete 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages -name "*.txt" -not -path "*/dist-info/*" -delete 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages -name "*.rst" -delete 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages -name "*.html" -delete 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages -name "*.css" -delete 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages -name "*.js" -delete 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages -name "examples" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages -name "example" -type d -exec rm -rf {} + 2>/dev/null || true
 
 # ============================================
 # 复制应用代码
@@ -96,16 +99,24 @@ RUN find /tmp/source -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null |
     find /tmp/source -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true && \
     rm -rf /tmp/source/.git /tmp/source/node_modules /tmp/source/logs /tmp/source/tests /tmp/source/docs
 
-# 复制代码到应用目录
+# 复制代码到应用目录并最终清理
 RUN cp -r /tmp/source/* ${APP_HOME}/ && \
     rm -rf /tmp/source && \
     # 清理系统临时文件
     rm -rf /tmp/* /var/tmp/* && \
     # 清理 apt 缓存（如果还有）
-    rm -rf /var/lib/apt/lists/* /var/cache/apt/* && \
-    # 清理 Python 缓存
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/cache/debconf/* && \
+    # 清理 Python 缓存（最终清理）
     find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
-    find /usr/local/lib/python3.11 -name "*.pyc" -delete 2>/dev/null || true
+    find /usr/local/lib/python3.11 -name "*.pyc" -delete 2>/dev/null || true && \
+    find ${APP_HOME} -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    find ${APP_HOME} -name "*.pyc" -delete 2>/dev/null || true && \
+    # 清理构建工具（如果不再需要）
+    apt-get purge -y gcc g++ make 2>/dev/null || true && \
+    apt-get autoremove -y 2>/dev/null || true && \
+    apt-get clean && \
+    # 显示最终镜像大小
+    du -sh /usr/local/lib/python3.11/site-packages 2>/dev/null || true
 
 # 验证关键文件存在
 RUN echo "验证关键文件..." && \

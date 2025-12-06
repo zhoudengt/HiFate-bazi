@@ -25,12 +25,43 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
       
+      - name: 🧹 Clean up disk space before build
+        run: |
+          echo "📊 构建前磁盘使用情况："
+          df -h
+          echo ""
+          echo "🧹 清理系统空间..."
+          # 清理不需要的工具和缓存
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          # 清理 Docker 资源
+          docker system prune -af --volumes || true
+          docker builder prune -af || true
+          echo ""
+          echo "📊 清理后磁盘使用情况："
+          df -h
+      
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
           platforms: linux/amd64
+          driver-opts: |
+            image=moby/buildkit:latest
+            network=host
+      
+      - name: 🔐 Login to ACR
+        if: ${{ secrets.ACR_REGISTRY != '' && secrets.ACR_NAMESPACE != '' && secrets.ACR_USERNAME != '' && secrets.ACR_PASSWORD != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
       
       - name: 🐳 Build and Push Docker image
+        id: build
         env:
           ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
           ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
@@ -39,40 +70,70 @@ jobs:
           BRANCH: ${{ github.ref_name }}
           SHA: ${{ github.sha }}
         run: |
-          # 检查 ACR secrets 是否配置
+          # 检查 ACR 配置
           if [ -z "$ACR_REGISTRY" ] || [ -z "$ACR_NAMESPACE" ] || [ -z "$ACR_USERNAME" ] || [ -z "$ACR_PASSWORD" ]; then
             echo "⚠️  ACR secrets 未配置，仅构建本地镜像"
-            docker build --platform linux/amd64 -t hifate-bazi:${BRANCH} -t hifate-bazi:latest .
-            echo "✅ 本地镜像构建完成"
-            exit 0
+            IMAGE_BASE="hifate-bazi"
+            PUSH_IMAGE=false
+          else
+            IMAGE_BASE="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
+            PUSH_IMAGE=true
           fi
           
-          # 登录到 ACR
-          echo "🔐 登录到阿里云容器镜像服务..."
-          echo "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" -u "$ACR_USERNAME" --password-stdin
+          # 设置缓存配置
+          if [ "$PUSH_IMAGE" = "true" ]; then
+            CACHE_FROM="type=registry,ref=${IMAGE_BASE}:buildcache"
+            CACHE_TO="type=registry,ref=${IMAGE_BASE}:buildcache,mode=max"
+          else
+            CACHE_FROM="type=gha"
+            CACHE_TO="type=gha,mode=max"
+          fi
           
-          # 构建完整镜像名称
-          IMAGE_BASE="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
+          # 构建镜像（使用 BuildKit）
+          echo "🏗️ 开始构建镜像（使用 BuildKit 缓存）..."
+          export DOCKER_BUILDKIT=1
           
-          # 构建镜像
-          echo "🏗️ 开始构建镜像..."
-          docker build --platform linux/amd64 \
-            -t "${IMAGE_BASE}:${BRANCH}" \
-            -t "${IMAGE_BASE}:${SHA:0:7}" \
-            -t "${IMAGE_BASE}:latest" \
+          docker buildx build \
+            --platform linux/amd64 \
+            --file ./Dockerfile \
+            --tag "${IMAGE_BASE}:${BRANCH}" \
+            --tag "${IMAGE_BASE}:${SHA:0:7}" \
+            --tag "${IMAGE_BASE}:latest" \
+            --cache-from "${CACHE_FROM}" \
+            --cache-to "${CACHE_TO}" \
             --build-arg BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
             --build-arg VCS_REF=${SHA} \
             --build-arg VERSION=${BRANCH} \
+            --output type=docker,dest=/tmp/image.tar \
+            --progress=plain \
             .
           
-          # 推送镜像
-          echo "📤 推送镜像到 ACR..."
-          docker push "${IMAGE_BASE}:${BRANCH}"
-          docker push "${IMAGE_BASE}:${SHA:0:7}"
-          docker push "${IMAGE_BASE}:latest"
-          
-          echo "✅ 镜像构建并推送完成！"
-          echo "镜像标签："
-          echo "  - ${IMAGE_BASE}:${BRANCH}"
-          echo "  - ${IMAGE_BASE}:${SHA:0:7}"
-          echo "  - ${IMAGE_BASE}:latest"
+          # 如果配置了 ACR，推送镜像
+          if [ "$PUSH_IMAGE" = "true" ]; then
+            echo "📤 推送镜像到 ACR..."
+            docker load -i /tmp/image.tar
+            docker push "${IMAGE_BASE}:${BRANCH}" || true
+            docker push "${IMAGE_BASE}:${SHA:0:7}" || true
+            docker push "${IMAGE_BASE}:latest" || true
+            
+            echo "✅ 镜像构建并推送完成！"
+            echo "镜像标签："
+            echo "  - ${IMAGE_BASE}:${BRANCH}"
+            echo "  - ${IMAGE_BASE}:${SHA:0:7}"
+            echo "  - ${IMAGE_BASE}:latest"
+          else
+            echo "✅ 本地镜像构建完成"
+            echo "镜像标签："
+            echo "  - ${IMAGE_BASE}:${BRANCH}"
+            echo "  - ${IMAGE_BASE}:latest"
+          fi
+      
+      - name: 🧹 Clean up after build
+        if: always()
+        run: |
+          echo "🧹 构建后清理..."
+          docker system prune -af --volumes || true
+          docker builder prune -af || true
+          rm -f /tmp/image.tar || true
+          echo "📊 最终磁盘使用情况："
+          df -h
