@@ -62,13 +62,29 @@ jobs:
       # 5. 提取元数据（标签等）
       - name: 📋 Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ steps.check_acr.outputs.acr_configured == 'true' && format('{0}/{1}/hifate-bazi', secrets.ACR_REGISTRY, secrets.ACR_NAMESPACE) || 'hifate-bazi' }}
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
+        run: |
+          if [ "${{ steps.check_acr.outputs.acr_configured }}" == "true" ]; then
+            # ACR 已配置，使用 ACR 镜像名称
+            IMAGE_NAME="${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi"
+          else
+            # ACR 未配置，使用本地镜像名称
+            IMAGE_NAME="hifate-bazi"
+          fi
+          
+          # 生成标签
+          BRANCH="${{ github.ref_name }}"
+          SHA="${{ github.sha }}"
+          TAGS="${IMAGE_NAME}:${BRANCH} ${IMAGE_NAME}:${SHA:0:7} ${IMAGE_NAME}:latest"
+          
+          # 生成标签 JSON（docker/build-push-action 需要的格式）
+          LABELS_JSON="{\"org.opencontainers.image.title\":\"HiFate-bazi\",\"org.opencontainers.image.version\":\"${BRANCH}\",\"org.opencontainers.image.revision\":\"${SHA}\"}"
+          
+          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "labels=${LABELS_JSON}" >> $GITHUB_OUTPUT
+          
+          echo "✅ 镜像名称: ${IMAGE_NAME}"
+          echo "✅ 标签: ${TAGS}"
       
       # 6. 构建并推送 Docker 镜像
       - name: 🐳 Build and push Docker image
