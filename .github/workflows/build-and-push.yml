@@ -75,13 +75,20 @@ jobs:
         run: |
           # 根据 acr_configured 标志决定镜像名称
           if [ "${{ steps.check_acr.outputs.acr_configured }}" == "true" ]; then
-            # ACR 已配置，构建镜像名称
-            IMAGE_NAME="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
-            
-            # 验证镜像名称不包含 ***
-            if echo "${IMAGE_NAME}" | grep -q "\*\*\*"; then
-              echo "⚠️  警告: 镜像名称包含 ***，使用本地镜像名称"
+            # ACR 已配置，先验证环境变量不包含 ***
+            if echo "${ACR_REGISTRY}" | grep -q "\*\*\*" || echo "${ACR_NAMESPACE}" | grep -q "\*\*\*" || \
+               [ -z "${ACR_REGISTRY}" ] || [ -z "${ACR_NAMESPACE}" ]; then
+              echo "⚠️  警告: ACR 环境变量包含 *** 或为空，使用本地镜像名称"
               IMAGE_NAME="hifate-bazi"
+            else
+              # 构建 ACR 镜像名称
+              IMAGE_NAME="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
+              
+              # 再次验证镜像名称不包含 ***
+              if echo "${IMAGE_NAME}" | grep -q "\*\*\*"; then
+                echo "⚠️  警告: 构建的镜像名称包含 ***，使用本地镜像名称"
+                IMAGE_NAME="hifate-bazi"
+              fi
             fi
           else
             # ACR 未配置，使用本地镜像名称
