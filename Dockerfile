@@ -163,8 +163,20 @@ RUN mv /tmp/obfuscated/* ${APP_HOME}/ && \
     fi && \
     # 检查并删除任何可能的原始源码文件（通过检查文件内容是否包含 pyarmor 标记）
     # 如果文件不包含 pyarmor 相关标记，可能是原始文件，需要删除
-    find ${APP_HOME} -type f -name "*.py" ! -path "*/pyarmor_runtime/*" ! -path "*/site-packages/*" \
+    # 但保留启动脚本 server/start.py（即使没有被混淆也要保留）
+    find ${APP_HOME} -type f -name "*.py" ! -path "*/pyarmor_runtime/*" ! -path "*/site-packages/*" ! -path "*/server/start.py" \
         -exec sh -c 'grep -q "pyarmor\|__pyarmor__\|PyArmor" "$1" || rm -f "$1"' _ {} \; 2>/dev/null || true && \
+    # 确保启动脚本存在（如果被误删，从源文件恢复）
+    if [ ! -f "${APP_HOME}/server/start.py" ]; then \
+        echo "⚠️  启动脚本不存在，尝试恢复..."; \
+        if [ -f "/tmp/source/server/start.py" ]; then \
+            cp /tmp/source/server/start.py ${APP_HOME}/server/start.py; \
+            echo "✅ 启动脚本已恢复"; \
+        else \
+            echo "❌ 无法恢复启动脚本，构建失败"; \
+            exit 1; \
+        fi; \
+    fi && \
     # 删除临时目录并清理空间
     rm -rf /tmp/source /tmp/obfuscated && \
     # 清理系统临时文件
