@@ -77,6 +77,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
+          # 禁用 provenance 和 sbom（ACR 不支持）
+          provenance: false
+          sbom: false
           build-args: |
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
@@ -141,32 +144,6 @@ jobs:
                 git checkout master 2>/dev/null || true
               }
             }
-            
-            # 检查 .env 文件（关键步骤！）
-            echo "🔍 检查环境变量配置..."
-            if [ ! -f .env ]; then
-              if [ -f env.template ]; then
-                echo "⚠️  .env 文件不存在，从 env.template 创建..."
-                cp env.template .env
-              else
-                echo "❌ 错误: .env 和 env.template 都不存在"
-                exit 1
-              fi
-            fi
-            
-            # 验证关键环境变量
-            source .env 2>/dev/null || true
-            if [ -z "$MYSQL_ROOT_PASSWORD" ]; then
-              echo "MYSQL_ROOT_PASSWORD=hifate_secure_password_2024" >> .env
-            fi
-            if [ -z "$REDIS_PASSWORD" ]; then
-              echo "REDIS_PASSWORD=hifate_redis_password_2024" >> .env
-            fi
-            
-            # 启动基础服务（MySQL、Redis）
-            echo "🔄 启动基础服务..."
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d mysql redis
-            sleep 10
             
             # 检查并设置镜像标签
             if [ "${ACR_CONFIGURED}" == "true" ] && [ -n "${ACR_REGISTRY}" ] && [ -n "${ACR_NAMESPACE}" ]; then
