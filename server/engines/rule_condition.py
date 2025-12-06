@@ -1062,6 +1062,663 @@ class EnhancedRuleCondition:
                     return False
                 return True
             
+            elif key == "nayin_equals":
+                """检查指定柱的纳音是否等于指定值
+                格式: {"nayin_equals": {"pillar": "year", "nayin": "海中金"}}
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                pillar = value.get('pillar', '')
+                target_nayin = value.get('nayin', '')
+                
+                if not pillar or not target_nayin:
+                    return False
+                
+                details = bazi_data.get('details', {})
+                pillar_details = details.get(pillar, {})
+                actual_nayin = pillar_details.get('nayin', '') if isinstance(pillar_details, dict) else ''
+                
+                return actual_nayin == target_nayin
+            
+            elif key == "nayin_relation":
+                """检查纳音之间的刑克关系
+                格式: {"nayin_relation": {"pillar_a": "year", "pillar_b": "day", "relation": "ke"}}
+                注意：纳音刑克关系需要根据纳音五行来判断
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                pillar_a = value.get('pillar_a', '')
+                pillar_b = value.get('pillar_b', '')
+                relation = value.get('relation', 'ke')
+                
+                if not pillar_a or not pillar_b:
+                    return False
+                
+                details = bazi_data.get('details', {})
+                pillar_a_details = details.get(pillar_a, {})
+                pillar_b_details = details.get(pillar_b, {})
+                
+                nayin_a = pillar_a_details.get('nayin', '') if isinstance(pillar_a_details, dict) else ''
+                nayin_b = pillar_b_details.get('nayin', '') if isinstance(pillar_b_details, dict) else ''
+                
+                if not nayin_a or not nayin_b:
+                    return False
+                
+                # 纳音五行映射表（根据纳音名称判断五行）
+                nayin_element_map = {
+                    '海中金': '金', '炉中火': '火', '大林木': '木', '路旁土': '土', '剑锋金': '金',
+                    '山头火': '火', '涧下水': '水', '城头土': '土', '白蜡金': '金', '杨柳木': '木',
+                    '泉中水': '水', '屋上土': '土', '霹雳火': '火', '松柏木': '木', '长流水': '水',
+                    '砂中金': '金', '山下火': '火', '平地木': '木', '壁上土': '土', '金箔金': '金',
+                    '覆灯火': '火', '天河水': '水', '大驿土': '土', '钗钏金': '金', '桑柘木': '木',
+                    '大溪水': '水', '沙中土': '土', '天上火': '火', '石榴木': '木', '大海水': '水',
+                    '城墙土': '土', '沙中金': '金'
+                }
+                
+                element_a = nayin_element_map.get(nayin_a, '')
+                element_b = nayin_element_map.get(nayin_b, '')
+                
+                if not element_a or not element_b:
+                    return False
+                
+                # 五行相克关系：金克木、木克土、土克水、水克火、火克金
+                ke_relations = {
+                    '金': '木', '木': '土', '土': '水', '水': '火', '火': '金'
+                }
+                
+                if relation == 'ke':
+                    return ke_relations.get(element_a) == element_b
+                
+                return False
+            
+            # ========== 新增：十神数量比较 ==========
+            elif key == "ten_gods_compare":
+                """比较两个十神的数量
+                格式: {"ten_gods_compare": {"god_a": "正财", "god_b": "偏财", "relation": "more_than"}}
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                god_a = value.get('god_a', '')
+                god_b = value.get('god_b', '')
+                relation = value.get('relation', 'more_than')
+                
+                if not god_a or not god_b:
+                    return False
+                
+                # 统计两个十神的数量
+                ten_gods_stats = bazi_data.get('ten_gods_stats', {})
+                totals = ten_gods_stats.get('totals', {})
+                
+                count_a = totals.get(god_a, 0)
+                count_b = totals.get(god_b, 0)
+                
+                if relation == "more_than":
+                    return count_a > count_b
+                elif relation == "less_than":
+                    return count_a < count_b
+                elif relation == "equal":
+                    return count_a == count_b
+                
+                return False
+            
+            elif key == "ten_gods_compare_group":
+                """比较两组十神的数量
+                格式: {"ten_gods_compare_group": {"more": ["正财", "偏财"], "less": ["正官", "正印"]}}
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                more_gods = ensure_list(value.get('more', []))
+                less_gods = ensure_list(value.get('less', []))
+                
+                if not more_gods or not less_gods:
+                    return False
+                
+                # 统计两组十神的总数量
+                ten_gods_stats = bazi_data.get('ten_gods_stats', {})
+                totals = ten_gods_stats.get('totals', {})
+                
+                more_count = sum(totals.get(god, 0) for god in more_gods)
+                less_count = sum(totals.get(god, 0) for god in less_gods)
+                
+                return more_count > less_count
+            
+            # ========== 新增：不被克判断 ==========
+            elif key == "ten_gods_not_ke":
+                """判断十神是否不被其他十神克制
+                格式: {"ten_gods_not_ke": "正财"}
+                十神相克关系：
+                - 比肩、劫财克正财、偏财
+                - 正财、偏财克正印、偏印
+                - 正印、偏印克食神、伤官
+                - 食神、伤官克正官、七杀
+                - 正官、七杀克比肩、劫财
+                """
+                if not isinstance(value, str):
+                    return False
+                
+                target_god = value
+                
+                # 十神相克关系映射
+                ke_relations = {
+                    '正财': ['比肩', '劫财'],
+                    '偏财': ['比肩', '劫财'],
+                    '正印': ['正财', '偏财'],
+                    '偏印': ['正财', '偏财'],
+                    '食神': ['正印', '偏印'],
+                    '伤官': ['正印', '偏印'],
+                    '正官': ['食神', '伤官'],
+                    '七杀': ['食神', '伤官'],
+                    '比肩': ['正官', '七杀'],
+                    '劫财': ['正官', '七杀']
+                }
+                
+                ke_gods = ke_relations.get(target_god, [])
+                if not ke_gods:
+                    return True  # 没有相克关系，认为不被克
+                
+                # 检查是否有相克的十神
+                ten_gods_stats = bazi_data.get('ten_gods_stats', {})
+                totals = ten_gods_stats.get('totals', {})
+                
+                for ke_god in ke_gods:
+                    if totals.get(ke_god, 0) > 0:
+                        return False  # 有相克的十神，返回False
+                
+                return True  # 没有相克的十神，返回True
+            
+            # ========== 新增：同柱关系判断 ==========
+            elif key == "ten_gods_same_pillar_branch":
+                """判断十神和地支是否在同一柱
+                格式: {"ten_gods_same_pillar_branch": {"ten_god": "正财", "branches": ["寅", "申", "巳", "亥"]}}
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                ten_god = value.get('ten_god', '')
+                target_branches = ensure_list(value.get('branches', []))
+                
+                if not ten_god or not target_branches:
+                    return False
+                
+                bazi_pillars = bazi_data.get('bazi_pillars', {})
+                details = bazi_data.get('details', {})
+                
+                # 检查每个柱
+                for pillar_name in PILLAR_NAMES:
+                    pillar_data = bazi_pillars.get(pillar_name, {})
+                    pillar_branch = pillar_data.get('branch', '')
+                    
+                    if pillar_branch not in target_branches:
+                        continue
+                    
+                    # 检查该柱是否有指定的十神
+                    pillar_details = details.get(pillar_name, {})
+                    main_star = pillar_details.get('main_star', '')
+                    hidden_stars = pillar_details.get('hidden_stars', [])
+                    
+                    if not isinstance(hidden_stars, list):
+                        hidden_stars = [hidden_stars] if hidden_stars else []
+                    
+                    if main_star == ten_god or ten_god in hidden_stars:
+                        return True
+                
+                return False
+            
+            elif key == "ten_gods_branch_benqi":
+                """判断十神是否出现在地支本气
+                格式: {"ten_gods_branch_benqi": {"names": ["正财"], "min": 1}}
+                地支本气：地支藏干中的第一个（主气）
+                """
+                names = ensure_list(value.get('names', []))
+                min_count = value.get('min', 1)
+                
+                if not names:
+                    return False
+                
+                bazi_pillars = bazi_data.get('bazi_pillars', {})
+                details = bazi_data.get('details', {})
+                day_stem = bazi_pillars.get('day', {}).get('stem', '')
+                
+                if not day_stem:
+                    return False
+                
+                from src.bazi_config.ten_gods_config import TenGodsCalculator
+                calculator = TenGodsCalculator()
+                
+                count = 0
+                for pillar_name in PILLAR_NAMES:
+                    pillar_data = bazi_pillars.get(pillar_name, {})
+                    branch = pillar_data.get('branch', '')
+                    
+                    if not branch:
+                        continue
+                    
+                    # 获取地支本气（第一个藏干）
+                    from src.data.constants import HIDDEN_STEMS
+                    hidden_stems = HIDDEN_STEMS.get(branch, [])
+                    if hidden_stems:
+                        benqi_stem = hidden_stems[0][0]  # 第一个藏干的天干
+                        benqi_ten_god = calculator.get_stem_ten_god(day_stem, benqi_stem)
+                        
+                        if benqi_ten_god in names:
+                            count += 1
+                
+                return count >= min_count
+            
+            # ========== 新增：连续出现判断 ==========
+            elif key == "pillars_consecutive":
+                """判断相邻柱是否连续出现指定的干支
+                格式: {"pillars_consecutive": {"ganzhi_list": ["己亥", "癸巳"]}}
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                ganzhi_list = ensure_list(value.get('ganzhi_list', []))
+                
+                if not ganzhi_list:
+                    return False
+                
+                bazi_pillars = bazi_data.get('bazi_pillars', {})
+                
+                # 检查相邻柱（年-月、月-日、日-时）
+                pillar_pairs = [
+                    ('year', 'month'),
+                    ('month', 'day'),
+                    ('day', 'hour')
+                ]
+                
+                for pillar_a, pillar_b in pillar_pairs:
+                    pillar_a_data = bazi_pillars.get(pillar_a, {})
+                    pillar_b_data = bazi_pillars.get(pillar_b, {})
+                    
+                    ganzhi_a = f"{pillar_a_data.get('stem', '')}{pillar_a_data.get('branch', '')}"
+                    ganzhi_b = f"{pillar_b_data.get('stem', '')}{pillar_b_data.get('branch', '')}"
+                    
+                    # 检查是否匹配任何一个连续组合
+                    for ganzhi in ganzhi_list:
+                        if len(ganzhi) == 2:
+                            # 检查是否年柱和月柱匹配
+                            if ganzhi_a == ganzhi or ganzhi_b == ganzhi:
+                                # 检查相邻柱是否也匹配另一个
+                                for other_ganzhi in ganzhi_list:
+                                    if other_ganzhi != ganzhi:
+                                        if (pillar_a == 'year' and pillar_b == 'month' and 
+                                            (ganzhi_a == ganzhi and ganzhi_b == other_ganzhi or
+                                             ganzhi_a == other_ganzhi and ganzhi_b == ganzhi)):
+                                            return True
+                
+                return False
+            
+            # ========== 新增：占比计算 ==========
+            elif key == "ten_gods_ratio":
+                """计算十神数量占比
+                格式: {"ten_gods_ratio": {"names": ["食神", "正印"], "min_ratio": 0.67}}
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                names = ensure_list(value.get('names', []))
+                min_ratio = value.get('min_ratio', 0.5)
+                
+                if not names:
+                    return False
+                
+                # 统计指定十神的总数量
+                ten_gods_stats = bazi_data.get('ten_gods_stats', {})
+                totals = ten_gods_stats.get('totals', {})
+                
+                target_count = sum(totals.get(god, 0) for god in names)
+                
+                # 统计所有十神的总数量（四柱共8个位置：年、月、时柱各1个主星，日柱不算，加上所有副星）
+                # 简化处理：统计所有十神的总数
+                total_count = sum(totals.values())
+                
+                if total_count == 0:
+                    return False
+                
+                ratio = target_count / total_count
+                return ratio >= min_ratio
+            
+            # ========== 新增：命格判断 ==========
+            elif key == "mingge_type":
+                """判断命格类型
+                格式: {"mingge_type": "伤官"}
+                命格判断：根据月柱主星或副星判断
+                """
+                if not isinstance(value, str):
+                    return False
+                
+                mingge_type = value
+                
+                # 检查月柱主星或副星
+                details = bazi_data.get('details', {})
+                month_details = details.get('month', {})
+                
+                main_star = month_details.get('main_star', '')
+                hidden_stars = month_details.get('hidden_stars', [])
+                
+                if not isinstance(hidden_stars, list):
+                    hidden_stars = [hidden_stars] if hidden_stars else []
+                
+                # 如果月柱主星或副星是目标十神，则匹配
+                if main_star == mingge_type or mingge_type in hidden_stars:
+                    return True
+                
+                return False
+            
+            # ========== 新增：五行相生关系 ==========
+            elif key == "ten_gods_element_sheng":
+                """判断十神五行与地支五行的相生关系
+                格式: {"ten_gods_element_sheng": {"ten_god": "正财", "branches": ["寅", "申", "巳", "亥"]}}
+                五行相生：木生火、火生土、土生金、金生水、水生木
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                ten_god = value.get('ten_god', '')
+                target_branches = ensure_list(value.get('branches', []))
+                
+                if not ten_god or not target_branches:
+                    return False
+                
+                bazi_pillars = bazi_data.get('bazi_pillars', {})
+                details = bazi_data.get('details', {})
+                day_stem = bazi_pillars.get('day', {}).get('stem', '')
+                
+                if not day_stem:
+                    return False
+                
+                from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
+                from src.bazi_config.ten_gods_config import TenGodsCalculator
+                
+                calculator = TenGodsCalculator()
+                
+                # 检查每个柱
+                for pillar_name in PILLAR_NAMES:
+                    pillar_data = bazi_pillars.get(pillar_name, {})
+                    pillar_branch = pillar_data.get('branch', '')
+                    
+                    if pillar_branch not in target_branches:
+                        continue
+                    
+                    # 检查该柱是否有指定的十神
+                    pillar_details = details.get(pillar_name, {})
+                    main_star = pillar_details.get('main_star', '')
+                    hidden_stars = pillar_details.get('hidden_stars', [])
+                    
+                    if not isinstance(hidden_stars, list):
+                        hidden_stars = [hidden_stars] if hidden_stars else []
+                    
+                    if main_star != ten_god and ten_god not in hidden_stars:
+                        continue
+                    
+                    # 获取十神的五行（通过天干）
+                    # 简化处理：通过十神所在的天干判断五行
+                    pillar_stem = pillar_data.get('stem', '')
+                    if pillar_stem:
+                        ten_god_element = STEM_ELEMENTS.get(pillar_stem, '')
+                        branch_element = BRANCH_ELEMENTS.get(pillar_branch, '')
+                        
+                        # 五行相生关系
+                        sheng_relations = {
+                            '木': '火', '火': '土', '土': '金', '金': '水', '水': '木'
+                        }
+                        
+                        if ten_god_element and branch_element:
+                            if sheng_relations.get(ten_god_element) == branch_element:
+                                return True
+                
+                return False
+            
+            # ========== 新增：关系统计 ==========
+            elif key == "relations_count":
+                """统计五合、三合、三会、六合的数量
+                格式: {"relations_count": {"min": 3, "include": ["wuhe", "sanhe", "sanhui", "liuhe"]}}
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                min_count = value.get('min', 0)
+                include_types = ensure_list(value.get('include', []))
+                
+                count = 0
+                
+                # 统计五合
+                if "wuhe" in include_types:
+                    from src.data.relations import STEM_HE
+                    bazi_pillars = bazi_data.get('bazi_pillars', {})
+                    stems = [
+                        bazi_pillars.get('year', {}).get('stem', ''),
+                        bazi_pillars.get('month', {}).get('stem', ''),
+                        bazi_pillars.get('day', {}).get('stem', ''),
+                        bazi_pillars.get('hour', {}).get('stem', '')
+                    ]
+                    stem_pairs = set()
+                    for stem in stems:
+                        if stem and STEM_HE.get(stem):
+                            pair = tuple(sorted([stem, STEM_HE[stem]]))
+                            stem_pairs.add(pair)
+                    count += len(stem_pairs)
+                
+                # 统计三合、三会、六合（使用现有的branch_liuhe_sanhe_count逻辑）
+                if any(t in include_types for t in ["sanhe", "sanhui", "liuhe"]):
+                    # 使用现有的branch_liuhe_sanhe_count逻辑
+                    from src.data.relations import BRANCH_LIUHE, BRANCH_SANHE_GROUPS, BRANCH_SANHUI_GROUPS
+                    bazi_pillars = bazi_data.get('bazi_pillars', {})
+                    branches = [
+                        bazi_pillars.get('year', {}).get('branch', ''),
+                        bazi_pillars.get('month', {}).get('branch', ''),
+                        bazi_pillars.get('day', {}).get('branch', ''),
+                        bazi_pillars.get('hour', {}).get('branch', '')
+                    ]
+                    branch_set = set(branches)
+                    
+                    # 统计六合
+                    if "liuhe" in include_types:
+                        liuhe_pairs = set()
+                        for branch in branches:
+                            if branch and BRANCH_LIUHE.get(branch):
+                                pair = tuple(sorted([branch, BRANCH_LIUHE[branch]]))
+                                liuhe_pairs.add(pair)
+                        count += len(liuhe_pairs)
+                    
+                    # 统计三合
+                    if "sanhe" in include_types:
+                        for group in BRANCH_SANHE_GROUPS:
+                            if branch_set.issuperset(set(group)):
+                                count += 1
+                    
+                    # 统计三会
+                    if "sanhui" in include_types:
+                        for group in BRANCH_SANHUI_GROUPS:
+                            if branch_set.issuperset(set(group)):
+                                count += 1
+                
+                return count >= min_count
+            
+            # ========== 新增：金神判断 ==========
+            elif key == "jinshen":
+                """判断是否为金神
+                格式: {"jinshen": True}
+                金神：日柱或时柱为乙丑、己巳、癸酉，且日主为金
+                """
+                if not value:
+                    return True
+                
+                bazi_pillars = bazi_data.get('bazi_pillars', {})
+                day_pillar = bazi_pillars.get('day', {})
+                hour_pillar = bazi_pillars.get('hour', {})
+                
+                day_stem = day_pillar.get('stem', '')
+                day_branch = day_pillar.get('branch', '')
+                hour_stem = hour_pillar.get('stem', '')
+                hour_branch = hour_pillar.get('branch', '')
+                
+                from src.data.constants import STEM_ELEMENTS
+                day_element = STEM_ELEMENTS.get(day_stem, '')
+                
+                # 金神条件：日柱或时柱为乙丑、己巳、癸酉，且日主为金
+                jinshen_ganzhi = ['乙丑', '己巳', '癸酉']
+                day_ganzhi = f"{day_stem}{day_branch}"
+                hour_ganzhi = f"{hour_stem}{hour_branch}"
+                
+                if day_element == '金' and (day_ganzhi in jinshen_ganzhi or hour_ganzhi in jinshen_ganzhi):
+                    return True
+                
+                return False
+            
+            # ========== 新增：羊刃判断 ==========
+            elif key == "yangren":
+                """判断是否有羊刃
+                格式: {"yangren": True}
+                羊刃：日主的帝旺位
+                甲见卯、乙见寅、丙见午、丁见巳、戊见午、己见巳、庚见酉、辛见申、壬见子、癸见亥
+                """
+                if not value:
+                    return True
+                
+                bazi_pillars = bazi_data.get('bazi_pillars', {})
+                day_stem = bazi_pillars.get('day', {}).get('stem', '')
+                
+                if not day_stem:
+                    return False
+                
+                # 羊刃对应表
+                yangren_map = {
+                    '甲': '卯', '乙': '寅', '丙': '午', '丁': '巳',
+                    '戊': '午', '己': '巳', '庚': '酉', '辛': '申',
+                    '壬': '子', '癸': '亥'
+                }
+                
+                yangren_branch = yangren_map.get(day_stem, '')
+                if not yangren_branch:
+                    return False
+                
+                # 检查四柱地支是否有羊刃
+                for pillar_name in PILLAR_NAMES:
+                    pillar_data = bazi_pillars.get(pillar_name, {})
+                    branch = pillar_data.get('branch', '')
+                    if branch == yangren_branch:
+                        return True
+                
+                return False
+            
+            # ========== 新增：十神在所有柱中 ==========
+            elif key == "ten_gods_in_all_pillars":
+                """判断十神是否在所有柱中都出现
+                格式: {"ten_gods_in_all_pillars": {"names": ["七杀"]}}
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                names = ensure_list(value.get('names', []))
+                
+                if not names:
+                    return False
+                
+                details = bazi_data.get('details', {})
+                
+                # 检查每个柱是否都有指定的十神
+                for pillar_name in PILLAR_NAMES:
+                    pillar_details = details.get(pillar_name, {})
+                    main_star = pillar_details.get('main_star', '')
+                    hidden_stars = pillar_details.get('hidden_stars', [])
+                    
+                    if not isinstance(hidden_stars, list):
+                        hidden_stars = [hidden_stars] if hidden_stars else []
+                    
+                    # 检查该柱是否有任一指定的十神
+                    has_god = False
+                    for god in names:
+                        if main_star == god or god in hidden_stars:
+                            has_god = True
+                            break
+                    
+                    if not has_god:
+                        return False  # 某个柱没有该十神
+                
+                return True  # 所有柱都有该十神
+            
+            # ========== 新增：神煞数量统计 ==========
+            elif key == "deities_count":
+                """统计神煞数量
+                格式: {"deities_count": {"name": "华盖", "min": 3}}
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                deity_name = value.get('name', '')
+                min_count = value.get('min', 1)
+                
+                if not deity_name:
+                    return False
+                
+                details = bazi_data.get('details', {})
+                count = 0
+                
+                # 统计每个柱的神煞数量
+                for pillar_name in PILLAR_NAMES:
+                    pillar_details = details.get(pillar_name, {})
+                    deities = pillar_details.get('deities', [])
+                    
+                    if not isinstance(deities, list):
+                        deities = [deities] if deities else []
+                    
+                    if deity_name in deities:
+                        count += 1
+                
+                return count >= min_count
+            
+            # ========== 新增：十神被破坏判断 ==========
+            elif key == "ten_gods_destroyed":
+                """判断十神是否被刑冲破害破坏
+                格式: {"ten_gods_destroyed": {"names": ["正财", "偏财"]}}
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                names = ensure_list(value.get('names', []))
+                
+                if not names:
+                    return False
+                
+                bazi_pillars = bazi_data.get('bazi_pillars', {})
+                details = bazi_data.get('details', {})
+                relationships = bazi_data.get('relationships', {})
+                branch_relations = relationships.get('branch_relations', {})
+                
+                # 检查每个十神是否被破坏
+                for god in names:
+                    # 检查该十神所在的地支是否被刑冲破害
+                    for pillar_name in PILLAR_NAMES:
+                        pillar_details = details.get(pillar_name, {})
+                        main_star = pillar_details.get('main_star', '')
+                        hidden_stars = pillar_details.get('hidden_stars', [])
+                        
+                        if not isinstance(hidden_stars, list):
+                            hidden_stars = [hidden_stars] if hidden_stars else []
+                        
+                        if main_star == god or god in hidden_stars:
+                            # 检查该柱的地支是否被刑冲破害
+                            pillar_data = bazi_pillars.get(pillar_name, {})
+                            branch = pillar_data.get('branch', '')
+                            
+                            if branch:
+                                # 检查是否有刑冲破害关系
+                                for relation_type in ['chong', 'xing', 'hai', 'po']:
+                                    relations = branch_relations.get(relation_type, [])
+                                    for relation in relations:
+                                        if isinstance(relation, dict):
+                                            branches = relation.get('branches', [])
+                                            if branch in branches:
+                                                return True  # 被破坏
+                
+                return False
+            
             elif key == "deities_count":
                 """统计神煞在四柱中出现的次数"""
                 deity_name = value.get('name', '')

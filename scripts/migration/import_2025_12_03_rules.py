@@ -182,6 +182,15 @@ class RuleParser:
         if cond1 == "神煞":
             return cls._parse_shensha(cond2)
         
+        # 神煞十神条件（新增支持）
+        if cond1 == "神煞十神":
+            # 先尝试解析为十神条件
+            result = cls._parse_ten_gods(cond2)
+            if result.success:
+                return result
+            # 如果失败，尝试解析为复合条件
+            return cls._parse_composite(cond1, cond2, qty)
+        
         # 日柱条件
         if cond1 == "日柱":
             return cls._parse_day_pillar(cond2)
@@ -238,6 +247,18 @@ class RuleParser:
         if cond1 == "十神命格":
             return cls._parse_shishen_mingge(cond2)
         
+        # ========== 新增：五行条件类型 ==========
+        if cond1 == "五行":
+            return cls._parse_wuxing(cond2)
+        
+        # ========== 新增：纳音条件类型 ==========
+        if cond1 == "纳音":
+            return cls._parse_nayin(cond2)
+        
+        # ========== 新增：天干条件类型 ==========
+        if cond1 == "天干":
+            return cls._parse_stem(cond2)
+        
         # 复合条件类型（用逗号分隔）
         if "，" in cond1 or "," in cond1:
             return cls._parse_composite(cond1, cond2, qty)
@@ -248,6 +269,24 @@ class RuleParser:
     def _parse_shensha(cls, cond2: str) -> ParseResult:
         """解析神煞条件"""
         conds = []
+        
+        # "华盖数量3个及以上" - 神煞数量
+        if "华盖数量" in cond2:
+            count_match = re.search(r"华盖数量(\d+)个及以上", cond2)
+            if count_match:
+                count = int(count_match.group(1))
+                return ParseResult(True, conditions={
+                    "deities_count": {"name": "华盖", "min": count}
+                })
+        
+        # "正印生沐浴" - 神煞特殊条件
+        if "正印生沐浴" in cond2:
+            return ParseResult(True, conditions={
+                "all": [
+                    {"ten_gods_total": {"names": ["正印"], "min": 1}},
+                    {"deities_in_any_pillar": "沐浴"}
+                ]
+            })
         
         # 四柱神煞有XXX
         if "四柱神煞有" in cond2:
@@ -615,6 +654,67 @@ class RuleParser:
                 "pillar_relation": {"pillar_a": "day", "pillar_b": "month", "relation": "chong"}
             })
         
+        # ========== 新增：柱间关系条件解析（增强） ==========
+        # "年柱与月柱天干克地支冲" - 天干相克且地支相冲
+        pillar_ke_chong_match = re.search(r"(年柱|月柱|日柱|时柱)与(年柱|月柱|日柱|时柱)天干克地支冲", cond2)
+        if pillar_ke_chong_match:
+            pillar_a_name = pillar_ke_chong_match.group(1)
+            pillar_b_name = pillar_ke_chong_match.group(2)
+            pillar_a = cls._pillar_to_key(pillar_a_name)
+            pillar_b = cls._pillar_to_key(pillar_b_name)
+            return ParseResult(True, conditions={
+                "all": [
+                    {"pillar_relation": {"pillar_a": pillar_a, "pillar_b": pillar_b, "relation": "ke", "part": "stem"}},
+                    {"pillar_relation": {"pillar_a": pillar_a, "pillar_b": pillar_b, "relation": "chong", "part": "branch"}}
+                ]
+            })
+        
+        # "四柱地支中有辰巳戌亥" - 地支组合条件
+        if "四柱地支中有" in cond2:
+            branches = [b for b in BRANCHES if b in cond2]
+            if branches:
+                return ParseResult(True, conditions={
+                    "branches_count": {"names": branches, "min": len(branches)}
+                })
+        
+        # "四柱中有寅，申，巳，亥" - 地支组合条件
+        if "四柱中有" in cond2 and any(b in cond2 for b in ["寅", "申", "巳", "亥"]):
+            branches = [b for b in ["寅", "申", "巳", "亥"] if b in cond2]
+            if branches:
+                return ParseResult(True, conditions={
+                    "branches_count": {"names": branches, "min": 1}}
+                )
+        
+        # "年月地支冲日时地支" - 年冲日或月冲时
+        if "年月地支冲日时地支" in cond2:
+            return ParseResult(True, conditions={
+                "any": [
+                    {"pillar_relation": {"pillar_a": "year", "pillar_b": "day", "relation": "chong", "part": "branch"}},
+                    {"pillar_relation": {"pillar_a": "month", "pillar_b": "hour", "relation": "chong", "part": "branch"}}
+                ]
+            })
+        
+        # "年柱与月柱天干克地支冲，或日柱与时柱天干克地支冲，或月柱与日柱天干克地支冲"
+        if "天干克地支冲" in cond2 and ("或" in cond2 or "，或" in cond2):
+            # 解析多个"或"条件
+            parts = re.split(r"[，,]或|或", cond2)
+            any_conds = []
+            for part in parts:
+                part_match = re.search(r"(年柱|月柱|日柱|时柱)与(年柱|月柱|日柱|时柱)天干克地支冲", part)
+                if part_match:
+                    pillar_a_name = part_match.group(1)
+                    pillar_b_name = part_match.group(2)
+                    pillar_a = cls._pillar_to_key(pillar_a_name)
+                    pillar_b = cls._pillar_to_key(pillar_b_name)
+                    any_conds.append({
+                        "all": [
+                            {"pillar_relation": {"pillar_a": pillar_a, "pillar_b": pillar_b, "relation": "ke", "part": "stem"}},
+                            {"pillar_relation": {"pillar_a": pillar_a, "pillar_b": pillar_b, "relation": "chong", "part": "branch"}}
+                        ]
+                    })
+            if any_conds:
+                return ParseResult(True, conditions={"any": any_conds})
+        
         # 四柱天干主星出现XXX和YYY
         if "四柱的天干主星出现" in cond2 or "四柱天干主星出现" in cond2:
             # 提取十神
@@ -638,6 +738,97 @@ class RuleParser:
                     "ten_gods_main": {"names": gods, "min": len(gods)}
                 })
         
+        # ========== 新增：十神数量比较条件（增强） ==========
+        # "四柱中正财数量多于偏财者" - 需要比较两个十神的数量
+        more_than_match = re.search(r"(.+?)(?:数量|的数量)(?:多于|大于)(.+?)(?:者|，|$)", cond2)
+        if more_than_match:
+            god1 = more_than_match.group(1).strip()
+            god2 = more_than_match.group(2).strip().rstrip("者").rstrip("，")
+            # 清理可能的"四柱中"、"十神"等前缀
+            god1 = re.sub(r"^(四柱中|十神|四柱)", "", god1).strip()
+            god2 = re.sub(r"^(四柱中|十神|四柱)", "", god2).strip()
+            if god1 in TEN_GODS and god2 in TEN_GODS:
+                # 使用ten_gods_compare条件（需要在规则引擎中实现）
+                return ParseResult(True, conditions={
+                    "ten_gods_compare": {"god_a": god1, "god_b": god2, "relation": "more_than"}
+                })
+        
+        # "X数量少于Y个" - 数量少于
+        less_than_match = re.search(r"(.+?)(?:数量|的数量)少于(\d+)个", cond2)
+        if less_than_match:
+            god = less_than_match.group(1).strip()
+            count = int(less_than_match.group(2))
+            god = re.sub(r"^(四柱中|十神|四柱)", "", god).strip()
+            if god in TEN_GODS:
+                return ParseResult(True, conditions={
+                    "ten_gods_total": {"names": [god], "max": count - 1}
+                })
+        
+        # "X比Y数量少" - 比较两个十神
+        compare_less_match = re.search(r"(.+?)比(.+?)数量少", cond2)
+        if compare_less_match:
+            god1 = compare_less_match.group(1).strip()
+            god2 = compare_less_match.group(2).strip()
+            god1 = re.sub(r"^(四柱中|十神|四柱)", "", god1).strip()
+            god2 = re.sub(r"^(四柱中|十神|四柱)", "", god2).strip()
+            if god1 in TEN_GODS and god2 in TEN_GODS:
+                return ParseResult(True, conditions={
+                    "ten_gods_compare": {"god_a": god1, "god_b": god2, "relation": "less_than"}
+                })
+        
+        # "四柱中X数量少于Y个" - 数量少于
+        less_than_match = re.search(r"(.+)数量少于(\d+)个", cond2)
+        if less_than_match:
+            god = less_than_match.group(1).strip()
+            count = int(less_than_match.group(2))
+            if god in TEN_GODS:
+                return ParseResult(True, conditions={
+                    "ten_gods_total": {"names": [god], "max": count - 1}
+                })
+        
+        # "X数量为0" 或 "X数量为0-1"
+        zero_match = re.search(r"(.+?)(?:数量|的数量)为0(?:-(\d+))?", cond2)
+        if zero_match:
+            god = zero_match.group(1).strip()
+            max_count = int(zero_match.group(2)) if zero_match.group(2) else 0
+            god = re.sub(r"^(四柱中|十神|四柱)", "", god).strip()
+            if god in TEN_GODS:
+                if max_count > 0:
+                    return ParseResult(True, conditions={
+                        "ten_gods_total": {"names": [god], "min": 0, "max": max_count}
+                    })
+                else:
+                    return ParseResult(True, conditions={
+                        "ten_gods_total": {"names": [god], "eq": 0}
+                    })
+        
+        # "X或Y数量为0" - 多个十神数量为0
+        zero_or_match = re.search(r"(.+?)或(.+?)数量为0", cond2)
+        if zero_or_match:
+            god1 = zero_or_match.group(1).strip()
+            god2 = zero_or_match.group(2).strip()
+            if god1 in TEN_GODS and god2 in TEN_GODS:
+                return ParseResult(True, conditions={
+                    "any": [
+                        {"ten_gods_total": {"names": [god1], "eq": 0}},
+                        {"ten_gods_total": {"names": [god2], "eq": 0}}
+                    ]
+                })
+        
+        # "十神X或Y数量为0" - 修复格式
+        zero_or_ten_gods_match = re.search(r"十神(.+?)或(.+?)数量为0", cond2)
+        if zero_or_ten_gods_match:
+            god1 = zero_or_ten_gods_match.group(1).strip()
+            god2 = zero_or_ten_gods_match.group(2).strip()
+            if god1 in TEN_GODS and god2 in TEN_GODS:
+                # 两个十神数量都为0
+                return ParseResult(True, conditions={
+                    "all": [
+                        {"ten_gods_total": {"names": [god1], "eq": 0}},
+                        {"ten_gods_total": {"names": [god2], "eq": 0}}
+                    ]
+                })
+        
         # 食神、伤官多，能量强
         if "食神" in cond2 and "伤官" in cond2 and "能量强" in cond2:
             return ParseResult(True, conditions={
@@ -649,6 +840,31 @@ class RuleParser:
             for god in TEN_GODS:
                 if god in cond2:
                     return ParseResult(True, conditions={"xishen": god})
+        
+        # ========== 新增：喜用神条件解析（增强） ==========
+        # "日柱喜用神为X者" - 注意：这里可能是五行，需要检查
+        xishen_pillar_match = re.search(r"(日柱|年柱|月柱|时柱)?喜用神(?:为|是)([木火土金水]|[\u4e00-\u9fa5]+)", cond2)
+        if xishen_pillar_match:
+            element_or_god = xishen_pillar_match.group(2).strip()
+            # 如果是五行（木火土金水），需要转换为对应的十神或使用五行条件
+            # 暂时先检查是否是十神
+            if element_or_god in TEN_GODS:
+                return ParseResult(True, conditions={"xishen": element_or_god})
+            elif element_or_god in ["木", "火", "土", "金", "水"]:
+                # 五行喜用神：需要检查八字中是否有该五行的十神
+                # 五行到十神的映射（简化处理，实际需要根据日主判断）
+                # 暂时使用element_total条件，表示该五行数量较多
+                # 注意：这只是一个近似处理，真正的五行喜用神需要更复杂的逻辑
+                return ParseResult(True, conditions={"element_total": {"names": [element_or_god], "min": 2}})
+        
+        # "喜用神为X" 或 "喜用神是X"
+        xishen_simple_match = re.search(r"喜用神(?:为|是)([木火土金水]|[\u4e00-\u9fa5]+)", cond2)
+        if xishen_simple_match:
+            element_or_god = xishen_simple_match.group(1).strip()
+            if element_or_god in TEN_GODS:
+                return ParseResult(True, conditions={"xishen": element_or_god})
+            elif element_or_god in ["木", "火", "土", "金", "水"]:
+                return ParseResult(False, reason=f"五行喜用神暂不支持: {cond2}")
         
         # ========== 新增：十神坐格式 ==========
         # "食神坐偏财"：表示天干是食神，地支是偏财（同一柱）
@@ -702,6 +918,51 @@ class RuleParser:
         # "太旺"：旺衰极旺（已有支持）
         if "太旺" in cond2 or "极旺" in cond2:
             return ParseResult(True, conditions={"wangshuai": ["极旺"]})
+        
+        # ========== 新增：旺相条件解析（在十神条件中） ==========
+        # "且旺" 或 "并且旺相" - 在十神条件中出现的旺相判断
+        if "且旺" in cond2 or "并且旺相" in cond2 or "旺相" in cond2:
+            # 提取十神条件
+            ten_god_conds = []
+            for god in TEN_GODS:
+                if god in cond2:
+                    # 检查是否有数量条件
+                    count_match = re.search(r"(\d+)个", cond2)
+                    if count_match:
+                        count = int(count_match.group(1))
+                        ten_god_conds.append({"ten_gods_total": {"names": [god], "min": count}})
+                    else:
+                        ten_god_conds.append({"ten_gods_total": {"names": [god], "min": 1}})
+            
+            if ten_god_conds:
+                # 组合十神条件和旺相条件
+                wangshuai_cond = {"wangshuai": ["身旺", "极旺"]}
+                if len(ten_god_conds) == 1:
+                    return ParseResult(True, conditions={"all": [ten_god_conds[0], wangshuai_cond]})
+                else:
+                    return ParseResult(True, conditions={"all": ten_god_conds + [wangshuai_cond]})
+        
+        # "日主身旺"
+        if "日主身旺" in cond2:
+            # 提取十神条件
+            for god in TEN_GODS:
+                if god in cond2:
+                    count_match = re.search(r"(\d+)个", cond2)
+                    if count_match:
+                        count = int(count_match.group(1))
+                        return ParseResult(True, conditions={
+                            "all": [
+                                {"ten_gods_total": {"names": [god], "min": count}},
+                                {"wangshuai": ["身旺"]}
+                            ]
+                        })
+                    else:
+                        return ParseResult(True, conditions={
+                            "all": [
+                                {"ten_gods_total": {"names": [god], "min": 1}},
+                                {"wangshuai": ["身旺"]}
+                            ]
+                        })
         
         # "衰弱"：力量弱
         # 结合旺衰判断，暂时标记为待确认（需要更复杂的逻辑）
@@ -771,6 +1032,545 @@ class RuleParser:
                         "main_star_in_pillar": {"pillar": pillar_key, "eq": ten_god}
                     })
         
+        # ========== 新增：不被克判断 ==========
+        # "且不被克" - 需要判断十神是否被其他十神克制
+        if "且不被克" in cond2 or "不被克" in cond2:
+            # 提取十神
+            for god in TEN_GODS:
+                if god in cond2:
+                    # 移除"且不被克"部分，重新解析
+                    clean_cond = cond2.replace("且不被克", "").replace("不被克", "").strip()
+                    # 先解析其他条件
+                    base_result = cls._parse_ten_gods(clean_cond)
+                    if base_result.success:
+                        # 添加不被克条件
+                        if isinstance(base_result.conditions, dict):
+                            base_result.conditions = {"all": [base_result.conditions, {"ten_gods_not_ke": god}]}
+                        elif isinstance(base_result.conditions, list):
+                            base_result.conditions.append({"ten_gods_not_ke": god})
+                        return base_result
+        
+        # ========== 新增：同柱关系判断 ==========
+        # "并且与寅申巳亥中任何一个字同柱" - 十神和地支同柱
+        same_pillar_branch_match = re.search(r"与([子丑寅卯辰巳午未申酉戌亥、，,]+)中任何一个字同柱", cond2)
+        if same_pillar_branch_match:
+            branches_text = same_pillar_branch_match.group(1)
+            branches = [b.strip() for b in re.split(r"[、，,]", branches_text) if b.strip() in BRANCHES]
+            if branches:
+                # 提取十神（支持"或"逻辑）
+                gods = [g for g in TEN_GODS if g in cond2]
+                if gods:
+                    # 使用any组合：任一十神与任一地支同柱
+                    return ParseResult(True, conditions={
+                        "any": [
+                            {"ten_gods_same_pillar_branch": {"ten_god": god, "branches": branches}}
+                            for god in gods
+                        ]
+                    })
+        
+        # "四柱出现X或者Y，并且与Z同柱" - 修复格式
+        appear_and_same_match = re.search(r"四柱出现(.+?)或者(.+?)，并且与(.+?)中任何一个字同柱", cond2)
+        if appear_and_same_match:
+            god1 = appear_and_same_match.group(1).strip()
+            god2 = appear_and_same_match.group(2).strip()
+            branches_text = appear_and_same_match.group(3).strip()
+            branches = [b.strip() for b in re.split(r"[、，,]", branches_text) if b.strip() in BRANCHES]
+            
+            if (god1 in TEN_GODS or god2 in TEN_GODS) and branches:
+                conds = []
+                if god1 in TEN_GODS:
+                    conds.append({"ten_gods_same_pillar_branch": {"ten_god": god1, "branches": branches}})
+                if god2 in TEN_GODS:
+                    conds.append({"ten_gods_same_pillar_branch": {"ten_god": god2, "branches": branches}})
+                if conds:
+                    return ParseResult(True, conditions={"any": conds})
+        
+        # "同一柱出现神煞X与Y" - 神煞同柱
+        same_pillar_deity_match = re.search(r"同一柱出现神煞(.+?)与(.+)", cond2)
+        if same_pillar_deity_match:
+            deity1 = same_pillar_deity_match.group(1).strip()
+            deity2 = same_pillar_deity_match.group(2).strip()
+            # 提取十神
+            for god in TEN_GODS:
+                if god in cond2:
+                    return ParseResult(True, conditions={
+                        "all": [
+                            {"ten_gods_total": {"names": [god], "min": 1}},
+                            {"deities_same_pillar": [deity1, deity2]}
+                        ]
+                    })
+        
+        # ========== 新增：连续出现判断 ==========
+        # "四柱中连续出现X或Y" - 相邻柱连续出现
+        consecutive_match = re.search(r"连续出现(.+?)或(.+?)(?:，|、|$)", cond2)
+        if consecutive_match:
+            ganzhi1 = consecutive_match.group(1).strip()
+            ganzhi2 = consecutive_match.group(2).strip()
+            # 提取干支（如"己亥"、"癸巳"）
+            ganzhi_list = [g.strip() for g in re.split(r"[或、，,]", cond2.split("连续出现")[1].split("，")[0]) if len(g.strip()) == 2]
+            if ganzhi_list:
+                return ParseResult(True, conditions={
+                    "pillars_consecutive": {"ganzhi_list": ganzhi_list}
+                })
+        
+        # ========== 新增：占比计算 ==========
+        # "数量占所有十神数量的三分之二以上" - 占比计算
+        ratio_match = re.search(r"(.+?)数量占所有十神数量的(.+?)以上", cond2)
+        if ratio_match:
+            gods_text = ratio_match.group(1)
+            ratio_text = ratio_match.group(2)
+            # 提取十神（支持多个，用逗号分隔）
+            gods = []
+            for god in TEN_GODS:
+                if god in gods_text:
+                    gods.append(god)
+            # 解析比例（三分之二 = 2/3）
+            if "三分之二" in ratio_text or "2/3" in ratio_text:
+                ratio = 2/3
+            elif "一半" in ratio_text or "1/2" in ratio_text or "50%" in ratio_text:
+                ratio = 0.5
+            else:
+                ratio = 0.5  # 默认
+            
+            if gods:
+                return ParseResult(True, conditions={
+                    "ten_gods_ratio": {"names": gods, "min_ratio": ratio}
+                })
+        
+        # "数量占比十神总数的一半以上" - 修复格式
+        ratio_half_match = re.search(r"(.+?)数量占比十神总数的一半以上", cond2)
+        if ratio_half_match:
+            gods_text = ratio_half_match.group(1)
+            gods = [g for g in TEN_GODS if g in gods_text]
+            if gods:
+                return ParseResult(True, conditions={
+                    "ten_gods_ratio": {"names": gods, "min_ratio": 0.5}
+                })
+        
+        # ========== 新增：命格判断 ==========
+        # "伤官格" - 命格类型判断
+        mingge_match = re.search(r"(.+?)格", cond2)
+        if mingge_match:
+            mingge_type = mingge_match.group(1).strip()
+            if mingge_type in TEN_GODS:
+                return ParseResult(True, conditions={
+                    "mingge_type": mingge_type
+                })
+        
+        # ========== 新增：五行相生关系 ==========
+        # "十神X的五行与地支中的Y形成生的关系" - 五行相生
+        element_sheng_match = re.search(r"(.+?)的五行与地支中的(.+?)形成生的关系", cond2)
+        if element_sheng_match:
+            god_text = element_sheng_match.group(1).strip()
+            branches_text = element_sheng_match.group(2)
+            branches = [b.strip() for b in re.split(r"[、，,]", branches_text) if b.strip() in BRANCHES]
+            # 提取十神（支持多个，用逗号分隔）
+            gods = [g for g in TEN_GODS if g in god_text]
+            if gods and branches:
+                # 使用any组合：任一十神与任一地支形成相生关系
+                return ParseResult(True, conditions={
+                    "any": [
+                        {"ten_gods_element_sheng": {"ten_god": god, "branches": branches}}
+                        for god in gods
+                    ]
+                })
+        
+        # ========== 新增：天干地支混合条件 ==========
+        # "四柱中八字出现X，Y，Z，没有出现W" - 天干地支混合
+        if "四柱中八字出现" in cond2 and "没有出现" in cond2:
+            # 提取出现的天干地支
+            appear_part = cond2.split("没有出现")[0].replace("四柱中八字出现", "").strip()
+            not_appear_part = cond2.split("没有出现")[1].strip().replace("这个字", "").strip()
+            
+            appear_items = []
+            for item in re.split(r"[，,]", appear_part):
+                item = item.strip()
+                if item in STEMS or item in BRANCHES:
+                    appear_items.append(item)
+            
+            not_appear_items = []
+            for item in re.split(r"[，,]", not_appear_part):
+                item = item.strip()
+                if item in STEMS or item in BRANCHES:
+                    not_appear_items.append(item)
+            
+            if appear_items or not_appear_items:
+                conds = []
+                if appear_items:
+                    # 使用stems_branches_count
+                    conds.append({"stems_branches_count": {"names": appear_items, "min": len(appear_items)}})
+                if not_appear_items:
+                    # 使用not条件
+                    for item in not_appear_items:
+                        if item in STEMS:
+                            conds.append({"not": {"stems_count": {"names": [item], "min": 1}}})
+                        elif item in BRANCHES:
+                            conds.append({"not": {"branches_count": {"names": [item], "min": 1}}})
+                
+                if conds:
+                    return ParseResult(True, conditions=conds if len(conds) > 1 else conds[0])
+        
+        # "四柱中年干，月干或日出现两个X" - 天干重复出现
+        two_stem_match = re.search(r"(年干|月干|日干|时干|年干，月干或日)(?:出现|有)两个(.+?)或者两个(.+?)", cond2)
+        if two_stem_match:
+            stem1 = two_stem_match.group(2).strip()
+            stem2 = two_stem_match.group(3).strip()
+            if stem1 in STEMS and stem2 in STEMS:
+                return ParseResult(True, conditions={
+                    "any": [
+                        {"stems_count": {"names": [stem1], "min": 2}},
+                        {"stems_count": {"names": [stem2], "min": 2}}
+                    ]
+                })
+        
+        # "四柱天干中有X，Y，Z，地支有A，B，C" - 天干地支组合
+        if "四柱天干中有" in cond2 and "地支有" in cond2:
+            stems_part = cond2.split("地支有")[0].replace("四柱天干中有", "").strip()
+            branches_part = cond2.split("地支有")[1].strip().rstrip("者")
+            
+            stems = [s.strip() for s in re.split(r"[，,]", stems_part) if s.strip() in STEMS]
+            branches = [b.strip() for b in re.split(r"[，,]", branches_part) if b.strip() in BRANCHES]
+            
+            if stems and branches:
+                conds = [
+                    {"stems_count": {"names": stems, "min": len(stems)}},
+                    {"branches_count": {"names": branches, "min": len(branches)}}
+                ]
+                return ParseResult(True, conditions={"all": conds})
+        
+        # ========== 新增：地支本气 ==========
+        # "正财出现在天干或地支本气" - 地支本气判断
+        if "地支本气" in cond2:
+            for god in TEN_GODS:
+                if god in cond2:
+                    return ParseResult(True, conditions={
+                        "any": [
+                            {"ten_gods_main": {"names": [god], "min": 1}},
+                            {"ten_gods_branch_benqi": {"names": [god], "min": 1}}
+                        ]
+                    })
+        
+        # ========== 新增：五合、三合、三会、六合统计 ==========
+        # "四柱天干出现五合，地支出现三合，三会和六合总数数量3个以上"
+        if "五合" in cond2 and "三合" in cond2 and ("三会" in cond2 or "六合" in cond2):
+            count_match = re.search(r"总数数量(\d+)个以上", cond2)
+            if count_match:
+                min_count = int(count_match.group(1))
+                return ParseResult(True, conditions={
+                    "relations_count": {"min": min_count, "include": ["wuhe", "sanhe", "sanhui", "liuhe"]}
+                })
+        
+        # ========== 新增：金神判断 ==========
+        # "金神带正印偏印" - 金神判断
+        if "金神" in cond2:
+            for god in ["正印", "偏印"]:
+                if god in cond2:
+                    return ParseResult(True, conditions={
+                        "all": [
+                            {"jinshen": True},
+                            {"ten_gods_total": {"names": [god], "min": 1}}
+                        ]
+                    })
+        
+        # ========== 新增：羊刃判断 ==========
+        # "四柱中有七杀遇到神煞羊刃" - 羊刃判断
+        if "羊刃" in cond2:
+            for god in TEN_GODS:
+                if god in cond2:
+                    return ParseResult(True, conditions={
+                        "all": [
+                            {"ten_gods_total": {"names": [god], "min": 1}},
+                            {"yangren": True}
+                        ]
+                    })
+        
+        # "羊刃持权" - 羊刃判断
+        if "羊刃持权" in cond2:
+            return ParseResult(True, conditions={"yangren": True})
+        
+        # ========== 新增：刑冲破害 ==========
+        # "正财，偏财和正印，偏印都受到了刑冲破害" - 十神被破坏
+        if "受到了刑冲破害" in cond2 or "被破坏" in cond2:
+            gods = [g for g in TEN_GODS if g in cond2]
+            if gods:
+                return ParseResult(True, conditions={
+                    "ten_gods_destroyed": {"names": gods}
+                })
+        
+        # ========== 新增：其他复杂条件 ==========
+        # "八字中X的数量有Y个及以上，Z的数量少于W个" - 五行数量混合
+        if "八字中" in cond2 and "的数量" in cond2:
+            # 提取五行
+            element_pattern = r"([木火土金水])的数量有(\d+)个及以上"
+            element_matches = re.findall(element_pattern, cond2)
+            if element_matches:
+                conds = []
+                for element, count in element_matches:
+                    conds.append({"element_total": {"names": [element], "min": int(count)}})
+                
+                # 提取"少于"条件
+                less_pattern = r"([木火土金水])的数量少于(\d+)个"
+                less_matches = re.findall(less_pattern, cond2)
+                for element, count in less_matches:
+                    conds.append({"element_total": {"names": [element], "max": int(count) - 1}})
+                
+                if conds:
+                    return ParseResult(True, conditions=conds if len(conds) > 1 else conds[0])
+        
+        # "四柱中X或Y数量出现Z个及以上，且地支出现A，B，C，D" - 十神+地支组合
+        if "数量出现" in cond2 and "且地支出现" in cond2:
+            # 提取十神数量条件
+            ten_god_count_match = re.search(r"(.+?)或(.+?)数量出现(\d+)个及以上", cond2)
+            if ten_god_count_match:
+                god1 = ten_god_count_match.group(1).strip()
+                god2 = ten_god_count_match.group(2).strip()
+                count = int(ten_god_count_match.group(3))
+                
+                # 提取地支
+                branches_part = cond2.split("且地支出现")[1].strip()
+                branches = [b.strip() for b in re.split(r"[，,]", branches_part) if b.strip() in BRANCHES]
+                
+                if (god1 in TEN_GODS or god2 in TEN_GODS) and branches:
+                    conds = []
+                    if god1 in TEN_GODS:
+                        conds.append({"ten_gods_total": {"names": [god1], "min": count}})
+                    if god2 in TEN_GODS:
+                        conds.append({"ten_gods_total": {"names": [god2], "min": count}})
+                    if len(conds) == 2:
+                        conds = [{"any": conds}]
+                    conds.append({"branches_count": {"names": branches, "min": len(branches)}})
+                    return ParseResult(True, conditions={"all": conds})
+        
+        # "四柱中八字五行X数量达Y个及以上，地支中A，B，C，D数量Z个及以上" - 五行+地支组合
+        if "八字五行" in cond2 and "地支中" in cond2:
+            element_count_match = re.search(r"五行([木火土金水])数量达(\d+)个及以上", cond2)
+            branch_count_match = re.search(r"地支中(.+?)数量(\d+)个及以上", cond2)
+            
+            if element_count_match and branch_count_match:
+                element = element_count_match.group(1)
+                element_count = int(element_count_match.group(2))
+                branches_text = branch_count_match.group(1)
+                branch_count = int(branch_count_match.group(2))
+                
+                branches = [b.strip() for b in re.split(r"[，,]", branches_text) if b.strip() in BRANCHES]
+                
+                conds = [
+                    {"element_total": {"names": [element], "min": element_count}},
+                    {"branches_count": {"names": branches, "min": branch_count}}
+                ]
+                return ParseResult(True, conditions={"all": conds})
+        
+        # "天干中出现X，Y，Z" - 天干出现（在十神条件中）
+        if "天干中出现" in cond2:
+            stems = [s for s in STEMS if s in cond2]
+            if stems:
+                return ParseResult(True, conditions={
+                    "stems_count": {"names": stems, "min": len(stems)}
+                })
+        
+        # "十神有X或Y，且地支出现A、B、C、D任何一个" - 十神+地支组合
+        if "十神有" in cond2 and "且地支出现" in cond2:
+            gods = [g for g in TEN_GODS if g in cond2.split("且地支出现")[0]]
+            branches_part = cond2.split("且地支出现")[1].strip()
+            branches = [b.strip() for b in re.split(r"[、，,]", branches_part.replace("任何一个", "")) if b.strip() in BRANCHES]
+            
+            if gods and branches:
+                return ParseResult(True, conditions={
+                    "all": [
+                        {"ten_gods_total": {"names": gods, "min": 1}},
+                        {"branches_count": {"names": branches, "min": 1}}
+                    ]
+                })
+        
+        # "天干十神出现X或者Y，且地支见A，B，C，D任何一个" - 天干十神+地支
+        if "天干十神出现" in cond2 and "且地支见" in cond2:
+            gods = [g for g in TEN_GODS if g in cond2.split("且地支见")[0]]
+            branches_part = cond2.split("且地支见")[1].strip()
+            branches = [b.strip() for b in re.split(r"[、，,]", branches_part.replace("任何一个", "")) if b.strip() in BRANCHES]
+            
+            if gods and branches:
+                return ParseResult(True, conditions={
+                    "all": [
+                        {"ten_gods_main": {"names": gods, "min": 1}},
+                        {"branches_count": {"names": branches, "min": 1}}
+                    ]
+                })
+        
+        # "四柱中天干十神有X和Y" - 天干十神组合
+        if "四柱中天干十神有" in cond2:
+            gods = [g for g in TEN_GODS if g in cond2]
+            if gods:
+                return ParseResult(True, conditions={
+                    "ten_gods_main": {"names": gods, "min": len(gods)}
+                })
+        
+        # "四柱中主星出现X和Y" - 主星组合
+        if "四柱中主星出现" in cond2:
+            gods = [g for g in TEN_GODS if g in cond2]
+            if gods:
+                return ParseResult(True, conditions={
+                    "ten_gods_main": {"names": gods, "min": len(gods)}
+                })
+        
+        # "四柱中有X和Y" - 十神组合
+        if "四柱中有" in cond2 and any(g in cond2 for g in TEN_GODS):
+            gods = [g for g in TEN_GODS if g in cond2]
+            if gods:
+                return ParseResult(True, conditions={
+                    "ten_gods_total": {"names": gods, "min": len(gods)}
+                })
+        
+        # "四柱地支X，Y，Z，W" - 地支组合（在十神条件中）
+        if "四柱地支" in cond2:
+            branches = [b for b in BRANCHES if b in cond2]
+            if branches:
+                return ParseResult(True, conditions={
+                    "branches_count": {"names": branches, "min": len(branches)}
+                })
+        
+        # "女命八字，四柱中十神X，Y，Z的数量多于A，B的数量" - 性别+十神数量比较
+        if "女命" in cond2 and "数量多于" in cond2:
+            more_part = cond2.split("数量多于")[0]
+            less_part = cond2.split("数量多于")[1]
+            
+            more_gods = [g for g in TEN_GODS if g in more_part]
+            less_gods = [g for g in TEN_GODS if g in less_part]
+            
+            if more_gods and less_gods:
+                return ParseResult(True, conditions={
+                    "all": [
+                        {"gender": "female"},
+                        {"ten_gods_compare_group": {"more": more_gods, "less": less_gods}}
+                    ]
+                })
+        
+        # "四柱中十神X和Y的数量多" - 数量多（简化处理为至少2个）
+        if "的数量多" in cond2:
+            gods = [g for g in TEN_GODS if g in cond2]
+            if gods:
+                return ParseResult(True, conditions={
+                    "ten_gods_total": {"names": gods, "min": 2}
+                })
+        
+        # "四柱中十神X出现Y，Z" - 十神出现
+        if "四柱中十神出现" in cond2:
+            gods = [g for g in TEN_GODS if g in cond2]
+            if gods:
+                return ParseResult(True, conditions={
+                    "ten_gods_total": {"names": gods, "min": len(gods)}
+                })
+        
+        # "四柱中十神X，Y，Z数量有W个以上" - 十神数量
+        count_above_match = re.search(r"四柱中十神(.+?)数量有(\d+)个以上", cond2)
+        if count_above_match:
+            gods_text = count_above_match.group(1)
+            count = int(count_above_match.group(2))
+            gods = [g for g in TEN_GODS if g in gods_text]
+            if gods:
+                return ParseResult(True, conditions={
+                    "ten_gods_total": {"names": gods, "min": count}
+                })
+        
+        # "四柱中十神X数量为Y-Z" - 十神数量范围
+        range_match = re.search(r"四柱中十神(.+?)数量为(\d+)-(\d+)", cond2)
+        if range_match:
+            god = range_match.group(1).strip()
+            min_count = int(range_match.group(2))
+            max_count = int(range_match.group(3))
+            if god in TEN_GODS:
+                return ParseResult(True, conditions={
+                    "ten_gods_total": {"names": [god], "min": min_count, "max": max_count}
+                })
+        
+        # "四柱中十神X数量为Y-Z，Y出现在Z或W" - 复杂组合
+        if "数量为" in cond2 and "出现在" in cond2:
+            # 先解析数量条件
+            count_part = cond2.split("，")[0]
+            appear_part = cond2.split("，")[1] if "，" in cond2 else ""
+            
+            count_match = re.search(r"(.+?)数量为(\d+)-(\d+)", count_part)
+            if count_match:
+                god = count_match.group(1).strip()
+                min_count = int(count_match.group(2))
+                max_count = int(count_match.group(3))
+                
+                if god in TEN_GODS:
+                    conds = [{"ten_gods_total": {"names": [god], "min": min_count, "max": max_count}}]
+                    
+                    # 解析"出现在"条件
+                    if "出现在" in appear_part:
+                        if "天干" in appear_part:
+                            conds.append({"ten_gods_main": {"names": [god], "min": 1}})
+                        elif "地支本气" in appear_part:
+                            conds.append({"ten_gods_branch_benqi": {"names": [god], "min": 1}})
+                    
+                    # 解析"多于"条件
+                    if "多于" in appear_part:
+                        more_gods = [g for g in TEN_GODS if g in appear_part.split("多于")[1]]
+                        if more_gods:
+                            conds.append({"ten_gods_compare_group": {"more": [god], "less": more_gods}})
+                    
+                    return ParseResult(True, conditions={"all": conds})
+        
+        # "四柱十神中X，Y数量有Z个及以上，A，B数量为0" - 多条件组合
+        if "数量有" in cond2 and "数量为0" in cond2:
+            # 解析"数量有"条件
+            have_part = cond2.split("，且")[0] if "，且" in cond2 else cond2.split("数量为0")[0]
+            zero_part = cond2.split("数量为0")[1] if "数量为0" in cond2 else ""
+            
+            have_match = re.search(r"(.+?)数量有(\d+)个及以上", have_part)
+            if have_match:
+                gods_text = have_match.group(1)
+                count = int(have_match.group(2))
+                gods = [g for g in TEN_GODS if g in gods_text]
+                
+                conds = []
+                if gods:
+                    conds.append({"ten_gods_total": {"names": gods, "min": count}})
+                
+                # 解析"数量为0"条件
+                zero_gods = [g for g in TEN_GODS if g in zero_part]
+                if zero_gods:
+                    conds.append({"ten_gods_total": {"names": zero_gods, "eq": 0}})
+                
+                if conds:
+                    return ParseResult(True, conditions={"all": conds})
+        
+        # "四柱天干出现五合" - 五合判断
+        if "天干出现五合" in cond2:
+            return ParseResult(True, conditions={
+                "stem_wuhe_pairs": {"min": 1}
+            })
+        
+        # "地支出现三合，三会和六合" - 三合三会六合判断
+        if "地支出现三合" in cond2 or "三会" in cond2 or "六合" in cond2:
+            return ParseResult(True, conditions={
+                "branch_liuhe_sanhe_count": {"min": 1}
+            })
+        
+        # "军人身份流年大小运五行是X" - 流年大运五行（需要动态数据，暂时标记）
+        if "军人身份" in cond2 or "流年大小运" in cond2:
+            # 这是动态数据，需要从fortune中获取，暂时返回False
+            return ParseResult(False, reason=f"需要动态数据（流年大运）: {cond2}")
+        
+        # "华盖数量3个及以上" - 神煞数量（在十神条件中）
+        if "华盖数量" in cond2:
+            count_match = re.search(r"华盖数量(\d+)个及以上", cond2)
+            if count_match:
+                count = int(count_match.group(1))
+                return ParseResult(True, conditions={
+                    "deities_count": {"name": "华盖", "min": count}
+                })
+        
+        # "正印生沐浴" - 神煞特殊条件（在十神条件中）
+        if "正印生沐浴" in cond2:
+            return ParseResult(True, conditions={
+                "all": [
+                    {"ten_gods_total": {"names": ["正印"], "min": 1}},
+                    {"deities_in_any_pillar": "沐浴"}
+                ]
+            })
+        
         return ParseResult(False, reason=f"未识别的十神条件: {cond2}")
     
     @classmethod
@@ -828,6 +1628,14 @@ class RuleParser:
     @classmethod
     def _parse_branch(cls, cond2: str) -> ParseResult:
         """解析地支条件"""
+        # "四柱中有寅，申，巳，亥" - 地支出现
+        if "四柱中有" in cond2:
+            branches = [b for b in BRANCHES if b in cond2]
+            if branches:
+                return ParseResult(True, conditions={
+                    "branches_count": {"names": branches, "min": len(branches)}
+                })
+        
         # 地支内有X，并且有Y
         if "四柱地支内有" in cond2:
             branches = []
@@ -912,7 +1720,152 @@ class RuleParser:
         if "极旺" in cond2:
             return ParseResult(True, conditions={"wangshuai": ["极旺"]})
         
+        # ========== 新增：旺相条件解析（增强） ==========
+        # "旺相" 等同于 "身旺" 或 "极旺"
+        if "旺相" in cond2:
+            return ParseResult(True, conditions={"wangshuai": ["身旺", "极旺"]})
+        
+        # "且旺" 等同于 "身旺" 或 "极旺"
+        if "且旺" in cond2:
+            return ParseResult(True, conditions={"wangshuai": ["身旺", "极旺"]})
+        
+        # "并且旺相"
+        if "并且旺相" in cond2:
+            return ParseResult(True, conditions={"wangshuai": ["身旺", "极旺"]})
+        
+        # "日主身旺"
+        if "日主身旺" in cond2:
+            return ParseResult(True, conditions={"wangshuai": ["身旺"]})
+        
         return ParseResult(False, reason=f"未识别的旺衰条件: {cond2}")
+    
+    @classmethod
+    def _parse_wuxing(cls, cond2: str) -> ParseResult:
+        """解析五行条件"""
+        conds = []
+        
+        # "五行金的数量为0-1" 或 "五行金的数量为0-1，没有火为0"
+        # 解析五行数量条件
+        element_pattern = r"五行([木火土金水])的数量为(\d+)(?:-(\d+))?"
+        element_match = re.search(element_pattern, cond2)
+        if element_match:
+            element = element_match.group(1)
+            min_count = int(element_match.group(2))
+            max_count = int(element_match.group(3)) if element_match.group(3) else None
+            
+            if max_count is not None:
+                # 范围条件
+                conds.append({"element_total": {"names": [element], "min": min_count, "max": max_count}})
+            else:
+                # 单个数量条件
+                conds.append({"element_total": {"names": [element], "eq": min_count}})
+        
+        # "没有X为0" - 五行数量为0
+        no_element_pattern = r"没有([木火土金水])为0"
+        no_element_match = re.search(no_element_pattern, cond2)
+        if no_element_match:
+            element = no_element_match.group(1)
+            conds.append({"element_total": {"names": [element], "eq": 0}})
+        
+        # "五行X的数量为Y个及以上"
+        element_min_pattern = r"五行([木火土金水])的数量为(\d+)个及以上"
+        element_min_match = re.search(element_min_pattern, cond2)
+        if element_min_match:
+            element = element_min_match.group(1)
+            min_count = int(element_min_match.group(2))
+            conds.append({"element_total": {"names": [element], "min": min_count}})
+        
+        # "五行X的数量少于Y个"
+        element_max_pattern = r"五行([木火土金水])的数量少于(\d+)个"
+        element_max_match = re.search(element_max_pattern, cond2)
+        if element_max_match:
+            element = element_max_match.group(1)
+            max_count = int(element_max_match.group(2))
+            conds.append({"element_total": {"names": [element], "max": max_count - 1}})
+        
+        if conds:
+            return ParseResult(True, conditions=conds if len(conds) > 1 else conds[0])
+        
+        return ParseResult(False, reason=f"未识别的五行条件: {cond2}")
+    
+    @classmethod
+    def _parse_nayin(cls, cond2: str) -> ParseResult:
+        """解析纳音条件"""
+        conds = []
+        
+        # "年命纳音刑克日柱或时柱纳音"
+        if "年命纳音" in cond2 and ("刑克" in cond2 or "克" in cond2):
+            # 解析目标柱
+            target_pillars = []
+            if "日柱" in cond2:
+                target_pillars.append("day")
+            if "时柱" in cond2:
+                target_pillars.append("hour")
+            if "月柱" in cond2:
+                target_pillars.append("month")
+            
+            if target_pillars:
+                # 使用nayin_relation条件（需要在规则引擎中实现）
+                if len(target_pillars) == 1:
+                    return ParseResult(True, conditions={
+                        "nayin_relation": {"pillar_a": "year", "pillar_b": target_pillars[0], "relation": "ke"}
+                    })
+                else:
+                    # 多个目标柱，使用any组合
+                    any_conds = []
+                    for target_pillar in target_pillars:
+                        any_conds.append({
+                            "nayin_relation": {"pillar_a": "year", "pillar_b": target_pillar, "relation": "ke"}
+                        })
+                    return ParseResult(True, conditions={"any": any_conds})
+        
+        # "年柱纳音是X，日柱纳音是Y"
+        nayin_pillar_match = re.search(r"(年柱|月柱|日柱|时柱)纳音(?:是|为)(.+?)(?:，|$)", cond2)
+        if nayin_pillar_match:
+            pillar_name = nayin_pillar_match.group(1)
+            nayin_name = nayin_pillar_match.group(2).strip()
+            pillar_key = cls._pillar_to_key(pillar_name)
+            return ParseResult(True, conditions={
+                "nayin_equals": {"pillar": pillar_key, "nayin": nayin_name}
+            })
+        
+        return ParseResult(False, reason=f"未识别的纳音条件: {cond2}")
+    
+    @classmethod
+    def _parse_stem(cls, cond2: str) -> ParseResult:
+        """解析天干条件"""
+        conds = []
+        
+        # "四柱中戊和辛总数3个及以上"
+        stem_count_pattern = r"四柱中([甲乙丙丁戊己庚辛壬癸])(?:和([甲乙丙丁戊己庚辛壬癸]))?总数(\d+)个(?:及以上|以上)?"
+        stem_count_match = re.search(stem_count_pattern, cond2)
+        if stem_count_match:
+            stem1 = stem_count_match.group(1)
+            stem2 = stem_count_match.group(2)
+            count = int(stem_count_match.group(3))
+            
+            stems = [stem1]
+            if stem2:
+                stems.append(stem2)
+            
+            conds.append({"stems_count": {"names": stems, "min": count}})
+        
+        # "天干中出现X，Y，Z"
+        if "天干中出现" in cond2:
+            stems = [s for s in STEMS if s in cond2]
+            if stems:
+                conds.append({"stems_count": {"names": stems, "min": len(stems)}})
+        
+        # "天干中有X，Y，Z"
+        if "天干中有" in cond2:
+            stems = [s for s in STEMS if s in cond2]
+            if stems:
+                conds.append({"stems_count": {"names": stems, "min": len(stems)}})
+        
+        if conds:
+            return ParseResult(True, conditions=conds if len(conds) > 1 else conds[0])
+        
+        return ParseResult(False, reason=f"未识别的天干条件: {cond2}")
     
     @classmethod
     def _parse_minggge(cls, cond2: str) -> ParseResult:
@@ -1000,6 +1953,15 @@ class RuleParser:
     def _parse_composite(cls, cond1: str, cond2: str, qty: str) -> ParseResult:
         """解析复合条件"""
         conds = []
+        
+        # "女命四柱都有十神X" - 神煞十神条件
+        if "四柱都有十神" in cond2:
+            gods = [g for g in TEN_GODS if g in cond2]
+            if gods:
+                # 检查每个柱都有该十神
+                return ParseResult(True, conditions={
+                    "ten_gods_in_all_pillars": {"names": gods}
+                })
         
         # 四柱，十神：四柱的天干出现正财和偏财
         if "四柱" in cond1 and "十神" in cond1:
@@ -1100,6 +2062,47 @@ class RuleParser:
                 conds.append({"deities_in_any_pillar": "空亡"})
             if conds:
                 return ParseResult(True, conditions=conds)
+        
+        # ========== 新增：神煞十神复合条件 ==========
+        if cond1 == "神煞十神":
+            # "女命四柱都有十神七杀"
+            if "女命" in cond2:
+                conds.append({"gender": "female"})
+            
+            # 提取十神
+            for god in TEN_GODS:
+                if god in cond2:
+                    # 检查是否有"四柱都有"或"四柱都有十神"
+                    if "四柱都有" in cond2 or "四柱都有十神" in cond2:
+                        conds.append({"ten_gods_main": {"names": [god], "min": 4}})
+                    elif "四柱" in cond2:
+                        # 默认至少1个
+                        conds.append({"ten_gods_main": {"names": [god], "min": 1}})
+                    else:
+                        conds.append({"ten_gods_total": {"names": [god], "min": 1}})
+                    break
+            
+            # 提取神煞
+            # 这里需要从cond2中提取神煞名称，暂时使用通用匹配
+            if conds:
+                return ParseResult(True, conditions=conds if len(conds) > 1 else conds[0])
+        
+        # ========== 新增：处理"神煞十神"复合条件类型 ==========
+        if "神煞" in cond1 and "十神" in cond1:
+            # 解析十神部分
+            for god in TEN_GODS:
+                if god in cond2:
+                    if "四柱都有" in cond2:
+                        conds.append({"ten_gods_main": {"names": [god], "min": 4}})
+                    else:
+                        conds.append({"ten_gods_total": {"names": [god], "min": 1}})
+                    break
+            
+            # 解析神煞部分（如果有）
+            # 这里可以添加神煞解析逻辑
+            
+            if conds:
+                return ParseResult(True, conditions=conds if len(conds) > 1 else conds[0])
         
         # 自坐，十二长生：日柱的十二长生自坐是墓库
         if "自坐" in cond1:

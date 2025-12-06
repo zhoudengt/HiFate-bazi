@@ -1,0 +1,197 @@
+# ACR 配置测试工作流
+# 用于验证 GitHub Secrets 中的 ACR 配置是否正确
+# 手动触发：在 GitHub Actions 页面点击 "Run workflow"
+
+name: 🧪 Test ACR Configuration
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: '测试类型'
+        required: true
+        type: choice
+        options:
+          - login_only
+          - build_and_push
+        default: 'login_only'
+
+jobs:
+  test-acr:
+    name: 测试 ACR 配置
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🔍 Check ACR secrets configuration
+        id: check_secrets
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          echo "=========================================="
+          echo "🔍 检查 ACR Secrets 配置"
+          echo "=========================================="
+          echo ""
+          
+          # 检查 secrets 是否存在
+          if [ -n "${ACR_REGISTRY}" ]; then
+            echo "✅ ACR_REGISTRY: 已配置"
+            echo "   值: ${ACR_REGISTRY}"
+          else
+            echo "❌ ACR_REGISTRY: 未配置"
+            echo "acr_configured=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          if [ -n "${ACR_NAMESPACE}" ]; then
+            echo "✅ ACR_NAMESPACE: 已配置"
+            echo "   值: ${ACR_NAMESPACE}"
+          else
+            echo "❌ ACR_NAMESPACE: 未配置"
+            echo "acr_configured=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          if [ -n "${ACR_USERNAME}" ]; then
+            echo "✅ ACR_USERNAME: 已配置"
+            echo "   值: ${ACR_USERNAME}"
+          else
+            echo "❌ ACR_USERNAME: 未配置"
+            echo "acr_configured=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          if [ -n "${ACR_PASSWORD}" ]; then
+            echo "✅ ACR_PASSWORD: 已配置（隐藏）"
+            PASSWORD_LEN=${#ACR_PASSWORD}
+            echo "   长度: ${PASSWORD_LEN} 字符"
+          else
+            echo "❌ ACR_PASSWORD: 未配置"
+            echo "acr_configured=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          echo ""
+          echo "✅ 所有 ACR Secrets 已配置"
+          echo "acr_configured=true" >> $GITHUB_OUTPUT
+          
+          # 显示镜像名称格式
+          echo ""
+          echo "=========================================="
+          echo "📦 镜像名称格式"
+          echo "=========================================="
+          IMAGE_BASE="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
+          echo "完整镜像名称: ${IMAGE_BASE}:<tag>"
+          echo "示例:"
+          echo "  - ${IMAGE_BASE}:master"
+          echo "  - ${IMAGE_BASE}:latest"
+          echo "  - ${IMAGE_BASE}:abc1234"
+          echo ""
+      
+      - name: 🔐 Test Docker login to ACR
+        id: test_login
+        if: steps.check_secrets.outputs.acr_configured == 'true'
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          echo "=========================================="
+          echo "🔐 测试 Docker 登录到 ACR"
+          echo "=========================================="
+          echo ""
+          
+          echo "尝试登录到: ${ACR_REGISTRY}"
+          echo "用户名: ${ACR_USERNAME}"
+          echo ""
+          
+          if echo "${ACR_PASSWORD}" | docker login "${ACR_REGISTRY}" -u "${ACR_USERNAME}" --password-stdin; then
+            echo ""
+            echo "✅ Docker 登录成功！"
+            echo "login_success=true" >> $GITHUB_OUTPUT
+          else
+            echo ""
+            echo "❌ Docker 登录失败！"
+            echo ""
+            echo "可能的原因："
+            echo "1. ACR_USERNAME 或 ACR_PASSWORD 不正确"
+            echo "2. 如果使用 AccessKey，请确认："
+            echo "   - AccessKey 已启用"
+            echo "   - AccessKey 有 ACR 访问权限"
+            echo "3. 如果使用访问凭证，请确认："
+            echo "   - 访问密码已设置"
+            echo "   - ACR_USERNAME 是阿里云账号（不是 AccessKey ID）"
+            echo ""
+            echo "login_success=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+      
+      - name: 🐳 Build and push test image
+        if: steps.check_secrets.outputs.acr_configured == 'true' && steps.test_login.outputs.login_success == 'true' && github.event.inputs.test_type == 'build_and_push'
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+        run: |
+          echo "=========================================="
+          echo "🐳 构建并推送测试镜像"
+          echo "=========================================="
+          echo ""
+          
+          IMAGE_NAME="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
+          TEST_TAG="test-$(date +%s)"
+          
+          echo "创建测试 Dockerfile..."
+          cat > /tmp/Dockerfile << 'EOF'
+          FROM alpine:latest
+          RUN echo "ACR 配置测试成功" > /test.txt
+          CMD cat /test.txt
+          EOF
+          
+          echo "构建测试镜像..."
+          docker build -t "${IMAGE_NAME}:${TEST_TAG}" -t "${IMAGE_NAME}:test-latest" -f /tmp/Dockerfile /tmp
+          
+          echo "推送测试镜像..."
+          docker push "${IMAGE_NAME}:${TEST_TAG}"
+          docker push "${IMAGE_NAME}:test-latest"
+          
+          echo ""
+          echo "✅ 测试镜像构建并推送成功！"
+          echo "镜像标签:"
+          echo "  - ${IMAGE_NAME}:${TEST_TAG}"
+          echo "  - ${IMAGE_NAME}:test-latest"
+          echo ""
+      
+      - name: 📊 Test summary
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "📊 测试总结"
+          echo "=========================================="
+          echo ""
+          
+          if [ "${{ steps.check_secrets.outputs.acr_configured }}" == "true" ]; then
+            echo "✅ ACR Secrets 配置: 完整"
+          else
+            echo "❌ ACR Secrets 配置: 不完整"
+          fi
+          
+          if [ "${{ steps.test_login.outputs.login_success }}" == "true" ]; then
+            echo "✅ Docker 登录: 成功"
+          else
+            echo "❌ Docker 登录: 失败"
+          fi
+          
+          echo ""
+          echo "=========================================="
+          echo ""
+          echo "📝 下一步："
+          echo "1. 如果登录失败，请检查 ACR_USERNAME 和 ACR_PASSWORD"
+          echo "2. 如果登录成功，可以触发 build-and-push.yml 测试完整流程"
+          echo "3. 查看详细文档: docs/ACR配置说明.md"
+          echo ""
+
