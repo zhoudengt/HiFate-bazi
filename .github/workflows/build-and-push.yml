@@ -76,19 +76,34 @@ jobs:
         run: |
           IMAGE_NAME="${{ steps.check_acr.outputs.image_name }}"
           
-          # 生成标签
+          # 验证镜像名称格式（不能包含 ***）
+          if echo "${IMAGE_NAME}" | grep -q "\*\*\*"; then
+            echo "❌ 错误: 镜像名称包含无效字符: ${IMAGE_NAME}"
+            echo "❌ 这通常意味着 ACR secrets 未正确配置"
+            exit 1
+          fi
+          
+          # 生成标签（使用换行符分隔，docker/build-push-action 支持）
           BRANCH="${{ github.ref_name }}"
           SHA="${{ github.sha }}"
-          TAGS="${IMAGE_NAME}:${BRANCH} ${IMAGE_NAME}:${SHA:0:7} ${IMAGE_NAME}:latest"
+          TAGS="${IMAGE_NAME}:${BRANCH}
+${IMAGE_NAME}:${SHA:0:7}
+${IMAGE_NAME}:latest"
           
           # 生成标签 JSON（docker/build-push-action 需要的格式）
           LABELS_JSON="{\"org.opencontainers.image.title\":\"HiFate-bazi\",\"org.opencontainers.image.version\":\"${BRANCH}\",\"org.opencontainers.image.revision\":\"${SHA}\"}"
           
-          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
-          echo "labels=${LABELS_JSON}" >> $GITHUB_OUTPUT
+          # 使用多行输出格式（EOF）
+          {
+            echo "tags<<EOF"
+            echo "${TAGS}"
+            echo "EOF"
+            echo "labels=${LABELS_JSON}"
+          } >> $GITHUB_OUTPUT
           
           echo "✅ 镜像名称: ${IMAGE_NAME}"
-          echo "✅ 标签: ${TAGS}"
+          echo "✅ 标签:"
+          echo "${TAGS}" | sed 's/^/  - /'
       
       # 6. 构建并推送 Docker 镜像
       - name: 🐳 Build and push Docker image
