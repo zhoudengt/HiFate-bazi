@@ -5,6 +5,7 @@ on:
     branches: [ master, develop ]
   pull_request:
     branches: [ master, develop ]
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
   # 代码质量检查
