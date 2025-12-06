@@ -80,30 +80,25 @@ jobs:
             PUSH_IMAGE=true
           fi
           
-          # 设置缓存配置
-          if [ "$PUSH_IMAGE" = "true" ]; then
-            CACHE_FROM="type=registry,ref=${IMAGE_BASE}:buildcache"
-            CACHE_TO="type=registry,ref=${IMAGE_BASE}:buildcache,mode=max"
-          else
-            CACHE_FROM="type=gha"
-            CACHE_TO="type=gha,mode=max"
-          fi
+          # 注意：ACR 不支持 registry 类型缓存，使用 GHA 缓存或不使用缓存
+          echo "ℹ️  使用 GitHub Actions 缓存加速构建"
           
-          # 构建镜像（使用 BuildKit）
-          echo "🏗️ 开始构建镜像（使用 BuildKit 缓存）..."
+          # 构建镜像（使用 BuildKit，禁用 ACR 不支持的特性）
+          echo "🏗️ 开始构建镜像..."
           export DOCKER_BUILDKIT=1
           
+          # 禁用 provenance 和 sbom（ACR 不支持这些特性）
           docker buildx build \
             --platform linux/amd64 \
             --file ./Dockerfile \
             --tag "${IMAGE_BASE}:${BRANCH}" \
             --tag "${IMAGE_BASE}:${SHA:0:7}" \
             --tag "${IMAGE_BASE}:latest" \
-            --cache-from "${CACHE_FROM}" \
-            --cache-to "${CACHE_TO}" \
             --build-arg BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
             --build-arg VCS_REF=${SHA} \
             --build-arg VERSION=${BRANCH} \
+            --provenance=false \
+            --sbom=false \
             --output type=docker,dest=/tmp/image.tar \
             --progress=plain \
             .

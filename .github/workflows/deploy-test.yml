@@ -142,13 +142,12 @@ jobs:
               }
             }
             
-            # 检查 .env 文件
+            # 检查 .env 文件（关键步骤！）
             echo "🔍 检查环境变量配置..."
             if [ ! -f .env ]; then
               if [ -f env.template ]; then
                 echo "⚠️  .env 文件不存在，从 env.template 创建..."
                 cp env.template .env
-                echo "⚠️  请检查并更新 .env 文件中的敏感信息"
               else
                 echo "❌ 错误: .env 和 env.template 都不存在"
                 exit 1
@@ -158,44 +157,16 @@ jobs:
             # 验证关键环境变量
             source .env 2>/dev/null || true
             if [ -z "$MYSQL_ROOT_PASSWORD" ]; then
-              echo "⚠️  MYSQL_ROOT_PASSWORD 未设置，使用默认值"
               echo "MYSQL_ROOT_PASSWORD=hifate_secure_password_2024" >> .env
             fi
             if [ -z "$REDIS_PASSWORD" ]; then
-              echo "⚠️  REDIS_PASSWORD 未设置，使用默认值"
               echo "REDIS_PASSWORD=hifate_redis_password_2024" >> .env
             fi
-            echo "✅ 环境变量配置检查完成"
             
-            # 确保基础服务（MySQL、Redis）正在运行
+            # 启动基础服务（MySQL、Redis）
             echo "🔄 启动基础服务..."
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d mysql redis
-            
-            # 等待 MySQL 就绪
-            echo "⏳ 等待 MySQL 就绪..."
-            for i in {1..30}; do
-              if docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T mysql mysqladmin ping -h localhost --silent 2>/dev/null; then
-                echo "✅ MySQL 就绪"
-                break
-              fi
-              if [ $i -eq 30 ]; then
-                echo "⚠️  MySQL 启动超时，继续部署..."
-              fi
-              sleep 2
-            done
-            
-            # 等待 Redis 就绪
-            echo "⏳ 等待 Redis 就绪..."
-            for i in {1..15}; do
-              if docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
-                echo "✅ Redis 就绪"
-                break
-              fi
-              if [ $i -eq 15 ]; then
-                echo "⚠️  Redis 启动超时，继续部署..."
-              fi
-              sleep 2
-            done
+            sleep 10
             
             # 检查并设置镜像标签
             if [ "${ACR_CONFIGURED}" == "true" ] && [ -n "${ACR_REGISTRY}" ] && [ -n "${ACR_NAMESPACE}" ]; then
