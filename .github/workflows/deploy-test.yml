@@ -125,8 +125,7 @@ jobs:
             
             echo "🔄 开始部署到测试环境..."
             
-            # 清理磁盘空间
-            echo "🧹 清理磁盘..."
+            # 清理磁盘
             docker system prune -af 2>/dev/null || true
             docker image prune -af 2>/dev/null || true
             
