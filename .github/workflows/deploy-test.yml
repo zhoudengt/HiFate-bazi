@@ -1,10 +1,10 @@
 # HiFate-bazi 测试环境自动部署
 # 触发条件：推送到 master 分支（测试环境：123.57.216.15）
-# 功能：从 GitHub Container Registry 拉取镜像并部署到测试服务器
+# 功能：从阿里云容器镜像服务 (ACR) 拉取镜像并部署到测试服务器
 # 
 # 标准流程：
-#   1. build-and-push.yml 构建镜像并推送到 GHCR
-#   2. 本 workflow 从 GHCR 拉取镜像
+#   1. build-and-push.yml 构建镜像并推送到 ACR
+#   2. 本 workflow 从 ACR 拉取镜像
 #   3. 部署到测试服务器（零停机滚动更新）
 
 name: 🧪 Deploy to Test Environment
@@ -62,25 +62,23 @@ jobs:
               }
             }
             
-            # 登录到 GitHub Container Registry
-            echo "🔐 登录到 GitHub Container Registry..."
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin || {
-              echo "❌ 无法登录到 GitHub Container Registry"
+            # 登录到阿里云容器镜像服务
+            echo "🔐 登录到阿里云容器镜像服务..."
+            echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ secrets.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin || {
+              echo "❌ 无法登录到 ACR"
               exit 1
             }
             
             # 拉取最新镜像
             echo "📥 拉取最新镜像..."
-            # Docker 镜像名称必须全小写
-            REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-            IMAGE_TAG="ghcr.io/${REPO_LOWER}/hifate-bazi:master"
+            IMAGE_TAG="${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:master"
             
             # 拉取镜像（不使用 timeout，让 SSH 保活机制处理）
             if docker pull ${IMAGE_TAG} 2>&1; then
               echo "✅ 镜像拉取成功: ${IMAGE_TAG}"
             else
               echo "⚠️  拉取 master 标签失败，尝试 latest 标签"
-              IMAGE_TAG="ghcr.io/${REPO_LOWER}/hifate-bazi:latest"
+              IMAGE_TAG="${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:latest"
               if docker pull ${IMAGE_TAG} 2>&1; then
                 echo "✅ 镜像拉取成功: ${IMAGE_TAG}"
               else
@@ -154,6 +152,6 @@ jobs:
           echo "分支：master"
           echo "提交：${{ github.sha }}"
           echo "提交者：${{ github.actor }}"
-          echo "镜像：ghcr.io/zhoudengt/hifate-bazi:master"
+          echo "镜像：${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:master"
           echo "访问：http://${{ secrets.TEST_SERVER_HOST }}:8001"
           echo "=========================================="

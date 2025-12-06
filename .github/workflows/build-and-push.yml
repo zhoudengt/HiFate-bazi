@@ -1,12 +1,12 @@
 # HiFate-bazi 标准 CI/CD 流程
 # 触发条件：推送到 master 或 develop 分支
-# 功能：构建 Docker 镜像并推送到 GitHub Container Registry
+# 功能：构建 Docker 镜像并推送到阿里云容器镜像服务 (ACR)
 # 
 # 标准流程：
 #   1. 本地开发 → 推送到 GitHub
 #   2. GitHub Actions 自动构建镜像
-#   3. 推送到 GHCR
-#   4. 服务器从 GHCR 拉取镜像部署
+#   3. 推送到 ACR
+#   4. 服务器从 ACR 拉取镜像部署
 
 name: 🐳 Build and Push Docker Image
 
@@ -26,7 +26,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
     
     steps:
       # 1. 检出代码
@@ -39,20 +38,20 @@ jobs:
         with:
           platforms: linux/amd64
       
-      # 3. 登录到 GitHub Container Registry
-      - name: 🔐 Login to GitHub Container Registry
+      # 3. 登录到阿里云容器镜像服务
+      - name: 🔐 Login to ACR
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ secrets.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
       
       # 4. 提取元数据（标签等）
       - name: 📋 Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/hifate-bazi
+          images: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi
           tags: |
             type=ref,event=branch
             type=sha,prefix={{branch}}-
@@ -85,5 +84,5 @@ jobs:
           echo "${{ steps.meta.outputs.tags }}" | tr ' ' '\n'
           echo "=========================================="
           echo "拉取命令："
-          echo "docker pull ghcr.io/${{ github.repository }}/hifate-bazi:latest"
+          echo "docker pull ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:latest"
           echo "=========================================="
