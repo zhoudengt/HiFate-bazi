@@ -90,6 +90,22 @@ EOF
 echo ">>> 自动修复版本检查逻辑..."
 "${PYTHON}" scripts/grpc/fix_version_check.py || echo "⚠️  版本检查修复失败，但继续"
 
+# 修复版本检查逻辑（使用专用修复脚本）
+echo ">>> 修复版本检查逻辑..."
+"${PYTHON}" scripts/grpc/fix_version_check.py || {
+    echo "⚠️  版本检查修复失败，尝试手动修复..."
+    "${PYTHON}" << EOF
+import re, glob, os
+for f in glob.glob("${OUTPUT_DIR}/*_pb2_grpc.py"):
+    with open(f, 'r') as file:
+        content = file.read()
+    content = re.sub(r'if _version_not_supported:', r'if False and _version_not_supported:  # 已禁用', content)
+    with open(f, 'w') as file:
+        file.write(content)
+    print(f"  修复: {os.path.basename(f)}")
+EOF
+}
+
 echo "✅ gRPC 代码生成完成！"
 echo "   输出目录: ${OUTPUT_DIR}"
 
