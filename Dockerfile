@@ -66,17 +66,29 @@ COPY services/desk_fengshui/requirements.txt /tmp/desk_fengshui_requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -r /tmp/desk_fengshui_requirements.txt && \
     pip install --no-cache-dir pyarmor && \
-    rm -f /tmp/desk_fengshui_requirements.txt
+    rm -f /tmp/desk_fengshui_requirements.txt && \
+    # 立即清理 pip 缓存和临时文件
+    pip cache purge || true && \
+    rm -rf /root/.cache/pip /tmp/pip-* /var/tmp/* && \
+    # 清理 Python 字节码缓存
+    find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.11 -name "*.pyc" -delete 2>/dev/null || true
 
 # ============================================
 # PyArmor 混淆保护阶段
 # ============================================
 
-# 复制应用代码到临时目录
+# 复制应用代码到临时目录（只复制需要的文件，减少空间占用）
 COPY . /tmp/source
 
 # 创建混淆输出目录
-RUN mkdir -p /tmp/obfuscated
+RUN mkdir -p /tmp/obfuscated && \
+    # 清理不必要的文件，减少磁盘占用
+    find /tmp/source -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /tmp/source -name "*.pyc" -delete 2>/dev/null || true && \
+    find /tmp/source -name "*.pyo" -delete 2>/dev/null || true && \
+    find /tmp/source -name ".pytest_cache" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    find /tmp/source -name "*.egg-info" -type d -exec rm -rf {} + 2>/dev/null || true
 
 # 使用 PyArmor 最高保护级别混淆所有 Python 代码
 # 保护选项说明：
@@ -137,8 +149,15 @@ RUN mv /tmp/obfuscated/* ${APP_HOME}/ && \
     # 如果文件不包含 pyarmor 相关标记，可能是原始文件，需要删除
     find ${APP_HOME} -type f -name "*.py" ! -path "*/pyarmor_runtime/*" ! -path "*/site-packages/*" \
         -exec sh -c 'grep -q "pyarmor\|__pyarmor__\|PyArmor" "$1" || rm -f "$1"' _ {} \; 2>/dev/null || true && \
-    # 删除临时目录
-    rm -rf /tmp/source /tmp/obfuscated
+    # 删除临时目录并清理空间
+    rm -rf /tmp/source /tmp/obfuscated && \
+    # 清理系统临时文件
+    rm -rf /tmp/* /var/tmp/* && \
+    # 清理 apt 缓存（如果还有）
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/* && \
+    # 清理 Python 缓存
+    find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.11 -name "*.pyc" -delete 2>/dev/null || true
 
 # 验证混淆后的模块可以导入（在删除 PyArmor 之前验证）
 RUN python -c "\
@@ -189,8 +208,16 @@ except Exception as e: \
 
 # 删除 PyArmor 构建工具（减小镜像体积，但保留运行时）
 RUN pip uninstall -y pyarmor && \
-    # 清理缓存
-    rm -rf /root/.cache/pip /root/.pyarmor /tmp/* /var/tmp/*
+    # 清理所有缓存和临时文件
+    pip cache purge || true && \
+    rm -rf /root/.cache/pip /root/.pyarmor /root/.cache/* /tmp/* /var/tmp/* && \
+    # 清理 Python 字节码
+    find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.11 -name "*.pyc" -delete 2>/dev/null || true && \
+    find /app -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    find /app -name "*.pyc" -delete 2>/dev/null || true && \
+    # 清理系统日志
+    rm -rf /var/log/* /var/lib/apt/lists/* /var/cache/apt/*
 
 # 设置文件权限（保护混淆后的文件）
 RUN chmod -R 755 ${APP_HOME} && \
