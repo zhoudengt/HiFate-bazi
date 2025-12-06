@@ -1,12 +1,6 @@
 # HiFate-bazi 标准 CI/CD 流程
 # 触发条件：推送到 master 或 develop 分支
 # 功能：构建 Docker 镜像并推送到阿里云容器镜像服务 (ACR)
-# 
-# 标准流程：
-#   1. 本地开发 → 推送到 GitHub
-#   2. GitHub Actions 自动构建镜像
-#   3. 推送到 ACR
-#   4. 服务器从 ACR 拉取镜像部署
 
 name: 🐳 Build and Push Docker Image
 
@@ -28,105 +22,57 @@ jobs:
       contents: read
     
     steps:
-      # 1. 检出代码
       - name: 📥 Checkout code
         uses: actions/checkout@v4
       
-      # 2. 设置 Docker Buildx（支持多平台构建和缓存）
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
           platforms: linux/amd64
       
-      # 3. 检查 ACR secrets 是否配置
-      - name: 🔍 Check ACR configuration
-        id: check_acr
+      - name: 🐳 Build and Push Docker image
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
         run: |
-          # 检查 secrets 是否配置（通过检查长度，而不是检查值）
-          if [ -n "${{ secrets.ACR_REGISTRY }}" ] && [ -n "${{ secrets.ACR_NAMESPACE }}" ] && \
-             [ -n "${{ secrets.ACR_USERNAME }}" ] && [ -n "${{ secrets.ACR_PASSWORD }}" ]; then
-            echo "acr_configured=true" >> $GITHUB_OUTPUT
-            echo "✅ ACR secrets 已配置"
-          else
-            echo "acr_configured=false" >> $GITHUB_OUTPUT
-            echo "⚠️  ACR secrets 未配置，将跳过镜像推送"
+          # 检查 ACR secrets 是否配置
+          if [ -z "$ACR_REGISTRY" ] || [ -z "$ACR_NAMESPACE" ] || [ -z "$ACR_USERNAME" ] || [ -z "$ACR_PASSWORD" ]; then
+            echo "⚠️  ACR secrets 未配置，仅构建本地镜像"
+            docker build --platform linux/amd64 -t hifate-bazi:${BRANCH} -t hifate-bazi:latest .
+            echo "✅ 本地镜像构建完成"
+            exit 0
           fi
-      
-      # 4. 登录到阿里云容器镜像服务（如果配置了 secrets）
-      - name: 🔐 Login to ACR
-        if: steps.check_acr.outputs.acr_configured == 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ secrets.ACR_REGISTRY }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-      
-      # 5. 构建并推送 Docker 镜像（ACR 已配置）
-      # 注意：直接在 tags 中使用 secrets，避免通过中间变量传递导致掩码问题
-      - name: 🐳 Build and push Docker image (ACR)
-        if: steps.check_acr.outputs.acr_configured == 'true'
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          # 直接构建 tags，不使用 docker/metadata-action
-          tags: |
-            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:${{ github.ref_name }}
-            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:${{ github.sha }}
-            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:latest
-          labels: |
-            org.opencontainers.image.title=HiFate-bazi
-            org.opencontainers.image.description=HiFate 八字系统
-            org.opencontainers.image.vendor=HiFate Team
-            org.opencontainers.image.version=${{ github.ref_name }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64
-          build-args: |
-            BUILD_DATE=${{ github.event.head_commit.timestamp }}
-            VCS_REF=${{ github.sha }}
-            VERSION=${{ github.ref_name }}
-      
-      # 6. 仅构建 Docker 镜像（ACR 未配置）
-      - name: 🐳 Build Docker image (Local)
-        if: steps.check_acr.outputs.acr_configured != 'true'
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          push: false
-          tags: |
-            hifate-bazi:${{ github.ref_name }}
-            hifate-bazi:${{ github.sha }}
-            hifate-bazi:latest
-          labels: |
-            org.opencontainers.image.title=HiFate-bazi
-            org.opencontainers.image.description=HiFate 八字系统
-            org.opencontainers.image.vendor=HiFate Team
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64
-          build-args: |
-            BUILD_DATE=${{ github.event.head_commit.timestamp }}
-            VCS_REF=${{ github.sha }}
-            VERSION=${{ github.ref_name }}
-      
-      # 7. 显示镜像信息
-      - name: 📊 Image info
-        run: |
-          echo "=========================================="
-          echo "✅ 镜像构建完成！"
-          if [ "${{ steps.check_acr.outputs.acr_configured }}" == "true" ]; then
-            echo "✅ 镜像已推送到 ACR！"
-            echo "=========================================="
-            echo "镜像标签："
-            echo "  - ${{ github.ref_name }}"
-            echo "  - ${{ github.sha }}"
-            echo "  - latest"
-            echo "=========================================="
-          else
-            echo "⚠️  ACR secrets 未配置，跳过镜像推送。"
-          fi
-          echo "=========================================="
+          
+          # 登录到 ACR
+          echo "🔐 登录到阿里云容器镜像服务..."
+          echo "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" -u "$ACR_USERNAME" --password-stdin
+          
+          # 构建完整镜像名称
+          IMAGE_BASE="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
+          
+          # 构建镜像
+          echo "🏗️ 开始构建镜像..."
+          docker build --platform linux/amd64 \
+            -t "${IMAGE_BASE}:${BRANCH}" \
+            -t "${IMAGE_BASE}:${SHA:0:7}" \
+            -t "${IMAGE_BASE}:latest" \
+            --build-arg BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+            --build-arg VCS_REF=${SHA} \
+            --build-arg VERSION=${BRANCH} \
+            .
+          
+          # 推送镜像
+          echo "📤 推送镜像到 ACR..."
+          docker push "${IMAGE_BASE}:${BRANCH}"
+          docker push "${IMAGE_BASE}:${SHA:0:7}"
+          docker push "${IMAGE_BASE}:latest"
+          
+          echo "✅ 镜像构建并推送完成！"
+          echo "镜像标签："
+          echo "  - ${IMAGE_BASE}:${BRANCH}"
+          echo "  - ${IMAGE_BASE}:${SHA:0:7}"
+          echo "  - ${IMAGE_BASE}:latest"

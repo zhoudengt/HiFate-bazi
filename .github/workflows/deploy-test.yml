@@ -1,11 +1,5 @@
 # HiFate-bazi 测试环境自动部署
-# 触发条件：推送到 master 分支（测试环境：123.57.216.15）
-# 功能：从阿里云容器镜像服务 (ACR) 拉取镜像并部署到测试服务器
-# 
-# 标准流程：
-#   1. build-and-push.yml 构建镜像并推送到 ACR
-#   2. 本 workflow 从 ACR 拉取镜像
-#   3. 部署到测试服务器（零停机滚动更新）
+# 触发条件：推送到 master 分支
 
 name: 🧪 Deploy to Test Environment
 
@@ -21,8 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    outputs:
-      acr_configured: ${{ steps.check_acr.outputs.acr_configured }}
     
     steps:
       - name: 📥 Checkout code
@@ -33,44 +25,41 @@ jobs:
         with:
           platforms: linux/amd64
       
-      - name: 🔍 Check ACR configuration
-        id: check_acr
+      - name: 🐳 Build and Push Docker image
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
         run: |
-          if [ -n "${{ secrets.ACR_REGISTRY }}" ] && [ -n "${{ secrets.ACR_NAMESPACE }}" ] && \
-             [ -n "${{ secrets.ACR_USERNAME }}" ] && [ -n "${{ secrets.ACR_PASSWORD }}" ]; then
-            echo "acr_configured=true" >> $GITHUB_OUTPUT
-            echo "✅ ACR secrets 已配置"
-          else
-            echo "acr_configured=false" >> $GITHUB_OUTPUT
-            echo "⚠️  ACR secrets 未配置"
+          # 检查 ACR secrets 是否配置
+          if [ -z "$ACR_REGISTRY" ] || [ -z "$ACR_NAMESPACE" ] || [ -z "$ACR_USERNAME" ] || [ -z "$ACR_PASSWORD" ]; then
+            echo "⚠️  ACR secrets 未配置，跳过推送"
+            exit 0
           fi
-      
-      - name: 🔐 Login to ACR
-        if: steps.check_acr.outputs.acr_configured == 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ secrets.ACR_REGISTRY }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-      
-      - name: 🐳 Build and push Docker image
-        if: steps.check_acr.outputs.acr_configured == 'true'
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: |
-            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:${{ github.ref_name }}
-            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:${{ github.sha }}
-            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64
-          build-args: |
-            BUILD_DATE=${{ github.event.head_commit.timestamp }}
-            VCS_REF=${{ github.sha }}
-            VERSION=${{ github.ref_name }}
+          
+          # 登录到 ACR
+          echo "🔐 登录到阿里云容器镜像服务..."
+          echo "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" -u "$ACR_USERNAME" --password-stdin
+          
+          # 构建完整镜像名称
+          IMAGE_BASE="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
+          
+          # 构建镜像
+          echo "🏗️ 开始构建镜像..."
+          docker build --platform linux/amd64 \
+            -t "${IMAGE_BASE}:${BRANCH}" \
+            -t "${IMAGE_BASE}:latest" \
+            .
+          
+          # 推送镜像
+          echo "📤 推送镜像到 ACR..."
+          docker push "${IMAGE_BASE}:${BRANCH}"
+          docker push "${IMAGE_BASE}:latest"
+          
+          echo "✅ 镜像构建并推送完成！"
 
   # 部署到测试服务器
   deploy:
@@ -99,149 +88,88 @@ jobs:
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
           IMAGE_TAG: ${{ github.ref_name }}
-          ACR_CONFIGURED: ${{ needs.build.outputs.acr_configured }}
+          SERVER_USER: ${{ secrets.TEST_SERVER_USER }}
+          SERVER_HOST: ${{ secrets.TEST_SERVER_HOST }}
         run: |
-          # 将部署脚本复制到服务器并执行
           ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o ConnectTimeout=30 \
-            ${{ secrets.TEST_SERVER_USER }}@${{ secrets.TEST_SERVER_HOST }} \
-            "ACR_REGISTRY='${ACR_REGISTRY}' ACR_NAMESPACE='${ACR_NAMESPACE}' ACR_USERNAME='${ACR_USERNAME}' ACR_PASSWORD='${ACR_PASSWORD}' IMAGE_TAG='${IMAGE_TAG}' ACR_CONFIGURED='${ACR_CONFIGURED}'" bash << 'DEPLOY_SCRIPT'
+            "${SERVER_USER}@${SERVER_HOST}" \
+            "ACR_REGISTRY='${ACR_REGISTRY}' ACR_NAMESPACE='${ACR_NAMESPACE}' ACR_USERNAME='${ACR_USERNAME}' ACR_PASSWORD='${ACR_PASSWORD}' IMAGE_TAG='${IMAGE_TAG}'" bash << 'DEPLOY_SCRIPT'
             set -e
             
             echo "🔄 开始部署到测试环境..."
             
-            # 进入项目目录
             cd /opt/HiFate-bazi
             
-            # 拉取最新代码（使用 Gitee，国内服务器访问更快）
+            # 拉取最新代码
             echo "📥 拉取最新代码..."
-            # 如果 remote 是 GitHub，添加 Gitee 作为备用
             if ! git remote | grep -q gitee; then
               git remote add gitee https://gitee.com/zhoudengtang/hifate-prod.git || true
             fi
-            # 强制从 Gitee 重置到最新代码
             git fetch gitee master --force 2>/dev/null && git checkout master && git reset --hard gitee/master || {
-              git fetch origin master --force 2>/dev/null && git checkout master && git reset --hard origin/master || {
-                echo "⚠️  Git 拉取失败，使用现有代码继续部署"
-                git checkout master 2>/dev/null || true
-              }
+              echo "⚠️  Git 拉取失败，使用现有代码"
             }
             
-            # 检查并设置镜像标签
-            if [ "${ACR_CONFIGURED}" == "true" ] && [ -n "${ACR_REGISTRY}" ] && [ -n "${ACR_NAMESPACE}" ]; then
+            # 设置镜像标签
+            if [ -n "${ACR_REGISTRY}" ] && [ -n "${ACR_NAMESPACE}" ]; then
               FULL_IMAGE="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi:${IMAGE_TAG}"
               
-              # 登录到阿里云容器镜像服务
-              echo "🔐 登录到阿里云容器镜像服务..."
+              echo "🔐 登录到 ACR..."
               echo "${ACR_PASSWORD}" | docker login ${ACR_REGISTRY} -u ${ACR_USERNAME} --password-stdin || {
-                echo "⚠️  ACR 登录失败，将使用本地构建"
+                echo "⚠️  ACR 登录失败，使用本地构建"
                 FULL_IMAGE="hifate-bazi:latest"
               }
               
-              # 拉取最新镜像
               if [ "${FULL_IMAGE}" != "hifate-bazi:latest" ]; then
-                echo "📥 拉取最新镜像: ${FULL_IMAGE}..."
+                echo "📥 拉取镜像: ${FULL_IMAGE}..."
                 if docker pull ${FULL_IMAGE} 2>&1; then
                   echo "✅ 镜像拉取成功"
                 else
-                  echo "⚠️  拉取 ${IMAGE_TAG} 标签失败，尝试 latest 标签"
+                  echo "⚠️  拉取失败，尝试 latest"
                   FULL_IMAGE="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi:latest"
-                  if docker pull ${FULL_IMAGE} 2>&1; then
-                    echo "✅ 镜像拉取成功"
-                  else
-                    echo "⚠️  无法拉取远程镜像，将使用本地构建"
+                  docker pull ${FULL_IMAGE} 2>&1 || {
+                    echo "⚠️  使用本地构建"
                     FULL_IMAGE="hifate-bazi:latest"
-                  fi
+                  }
                 fi
               fi
             else
-              echo "⚠️  ACR 未配置，使用本地构建"
+              echo "⚠️  ACR 未配置，本地构建"
               FULL_IMAGE="hifate-bazi:latest"
-              
-              # 本地构建镜像
-              echo "🔨 本地构建镜像..."
-              docker build -t hifate-bazi:latest . || {
-                echo "❌ 本地构建失败"
-                exit 1
-              }
+              docker build -t hifate-bazi:latest . || exit 1
             fi
             
             echo "📦 使用镜像: ${FULL_IMAGE}"
             
-            # 只清理已停止的容器（零停机部署）
-            echo "🧹 清理已停止的容器..."
+            # 清理旧容器
             docker compose -f docker-compose.yml -f docker-compose.prod.yml rm -f web 2>/dev/null || true
             
-            # 清理可能存在的同名僵尸容器
-            CONTAINER_IDS=$(docker ps -a --filter "name=hifate-web" --filter "status=exited" --format "{{.ID}}" 2>/dev/null || true)
-            if [ -n "$CONTAINER_IDS" ]; then
-              echo "🧹 清理僵尸容器..."
-              echo "$CONTAINER_IDS" | xargs -r docker rm -f 2>/dev/null || true
-            fi
-            
-            # 设置环境变量并启动服务
+            # 启动服务
             export DOCKER_IMAGE=${FULL_IMAGE}
-            
-            # 滚动更新（零停机部署）
-            echo "🔄 滚动更新服务（零停机）..."
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps web
             
-            # 等待新容器启动
-            echo "⏳ 等待新容器启动..."
+            # 健康检查
+            echo "⏳ 等待启动..."
             sleep 20
             
-            # 健康检查（重试机制）
-            echo "🏥 健康检查..."
             MAX_RETRIES=5
-            RETRY_COUNT=0
-            HEALTH_CHECK_PASSED=false
-            
-            while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            for i in $(seq 1 $MAX_RETRIES); do
               if curl -f -s http://localhost:8001/health > /dev/null 2>&1; then
-                HEALTH_CHECK_PASSED=true
-                break
+                echo "✅ 部署成功！"
+                docker image prune -f
+                exit 0
               fi
-              RETRY_COUNT=$((RETRY_COUNT + 1))
-              echo "⏳ 健康检查失败，重试 $RETRY_COUNT/$MAX_RETRIES..."
+              echo "⏳ 重试 $i/$MAX_RETRIES..."
               sleep 5
             done
             
-            if [ "$HEALTH_CHECK_PASSED" = true ]; then
-              echo "✅ 测试环境部署成功！服务运行正常"
-              
-              # 更新其他微服务
-              docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps bazi-analyzer 2>/dev/null || true
-              sleep 5
-              docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps fortune-analyzer 2>/dev/null || true
-              sleep 5
-              docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps rule-service 2>/dev/null || true
-              
-              echo "✅ 所有服务更新完成"
-            else
-              echo "❌ 测试环境部署失败！服务未响应"
-              echo "📋 查看服务日志："
-              docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100 web
-              echo "📋 查看容器状态："
-              docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
-              exit 1
-            fi
-            
-            # 清理未使用的镜像
-            echo "🧹 清理旧镜像..."
-            docker image prune -f
-            
-            echo "🎉 测试环境部署完成！"
+            echo "❌ 部署失败！"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=50 web
+            exit 1
           DEPLOY_SCRIPT
       
       - name: 📊 Deployment summary
         if: success()
         run: |
-          echo "=========================================="
           echo "🎉 测试环境部署成功！"
-          echo "=========================================="
-          echo "环境：测试环境 (Test)"
           echo "服务器：${{ secrets.TEST_SERVER_HOST }}"
-          echo "分支：master"
           echo "提交：${{ github.sha }}"
-          echo "提交者：${{ github.actor }}"
-          echo "访问：http://${{ secrets.TEST_SERVER_HOST }}:8001"
-          echo "=========================================="
