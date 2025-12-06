@@ -104,9 +104,21 @@ jobs:
             
             echo "📦 使用镜像: ${IMAGE_TAG}"
             
+            # 停止并删除旧容器（避免名称冲突）
+            echo "🛑 停止旧容器..."
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml stop web 2>/dev/null || true
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml rm -f web 2>/dev/null || true
+            
+            # 清理可能存在的同名容器（通过容器名称查找）
+            CONTAINER_IDS=$(docker ps -a --filter "name=hifate-web" --format "{{.ID}}" 2>/dev/null || true)
+            if [ -n "$CONTAINER_IDS" ]; then
+              echo "🧹 清理同名容器..."
+              echo "$CONTAINER_IDS" | xargs -r docker rm -f 2>/dev/null || true
+            fi
+            
             # 滚动更新（零停机部署）
             echo "🔄 滚动更新服务..."
-            DOCKER_IMAGE=${IMAGE_TAG} docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml up -d --no-deps web
+            DOCKER_IMAGE=${IMAGE_TAG} docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml up -d --force-recreate --no-deps web
             
             # 等待新容器启动
             echo "⏳ 等待新容器启动..."
