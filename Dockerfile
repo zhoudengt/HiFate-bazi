@@ -66,23 +66,33 @@ RUN pip install --no-cache-dir -r requirements.txt && \
         torch torchvision --no-deps && \
     pip install --no-cache-dir -r /tmp/desk_fengshui_requirements.txt && \
     rm -f /tmp/desk_fengshui_requirements.txt && \
+    # 验证关键依赖是否正确安装
+    echo "🔍 验证关键依赖..." && \
+    python -c "import uvicorn; print('✅ uvicorn:', uvicorn.__version__)" && \
+    python -c "import fastapi; print('✅ fastapi:', fastapi.__version__)" && \
+    python -c "import pymysql; print('✅ pymysql:', pymysql.__version__)" && \
+    python -c "import redis; print('✅ redis:', redis.__version__)" && \
+    python -c "import grpc; print('✅ grpc:', grpc.__version__)" && \
+    echo "✅ 关键依赖验证通过" && \
     # 立即清理所有缓存和临时文件
     pip cache purge || true && \
     rm -rf /root/.cache/pip /root/.cache/torch /root/.cache/huggingface /tmp/pip-* /var/tmp/* && \
-    # 清理 Python 字节码缓存
+    # 清理 Python 字节码缓存（不影响包功能）
     find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
     find /usr/local/lib/python3.11 -name "*.pyc" -delete 2>/dev/null || true && \
-    # 清理大型库的测试、文档和示例文件（减少空间）
+    # 清理大型库的测试、文档和示例文件（减少空间，但不删除包元数据）
     find /usr/local/lib/python3.11/site-packages -name "test" -type d -exec rm -rf {} + 2>/dev/null || true && \
     find /usr/local/lib/python3.11/site-packages -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    find /usr/local/lib/python3.11/site-packages -name "*.md" -delete 2>/dev/null || true && \
-    find /usr/local/lib/python3.11/site-packages -name "*.txt" -not -path "*/dist-info/*" -delete 2>/dev/null || true && \
-    find /usr/local/lib/python3.11/site-packages -name "*.rst" -delete 2>/dev/null || true && \
-    find /usr/local/lib/python3.11/site-packages -name "*.html" -delete 2>/dev/null || true && \
-    find /usr/local/lib/python3.11/site-packages -name "*.css" -delete 2>/dev/null || true && \
-    find /usr/local/lib/python3.11/site-packages -name "*.js" -delete 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages -name "*.md" -not -path "*/dist-info/*" -delete 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages -name "*.rst" -not -path "*/dist-info/*" -delete 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages -name "*.html" -not -path "*/dist-info/*" -delete 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages -name "*.css" -not -path "*/dist-info/*" -delete 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages -name "*.js" -not -path "*/dist-info/*" -delete 2>/dev/null || true && \
     find /usr/local/lib/python3.11/site-packages -name "examples" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    find /usr/local/lib/python3.11/site-packages -name "example" -type d -exec rm -rf {} + 2>/dev/null || true
+    find /usr/local/lib/python3.11/site-packages -name "example" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    # 注意：不删除 .txt 文件，因为可能包含包的重要元数据
+    # 不删除 dist-info 目录中的任何文件（包元数据）
+    echo "✅ 依赖安装和清理完成"
 
 # ============================================
 # 复制应用代码
@@ -111,15 +121,16 @@ RUN cp -r /tmp/source/* ${APP_HOME}/ && \
     find /usr/local/lib/python3.11 -name "*.pyc" -delete 2>/dev/null || true && \
     find ${APP_HOME} -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
     find ${APP_HOME} -name "*.pyc" -delete 2>/dev/null || true && \
-    # 清理构建工具（如果不再需要）
-    apt-get purge -y gcc g++ make 2>/dev/null || true && \
-    apt-get autoremove -y 2>/dev/null || true && \
+    # 注意：不删除构建工具（gcc、g++、make），因为某些包在运行时可能需要
+    # 只清理 apt 缓存
     apt-get clean && \
     # 显示最终镜像大小
-    du -sh /usr/local/lib/python3.11/site-packages 2>/dev/null || true
+    du -sh /usr/local/lib/python3.11/site-packages 2>/dev/null || true && \
+    # 列出已安装的关键包
+    pip list | grep -E "uvicorn|fastapi|pymysql|redis|grpc" || true
 
 # 验证关键文件存在
-RUN echo "验证关键文件..." && \
+RUN echo "🔍 验证关键文件..." && \
     if [ ! -f "${APP_HOME}/server/start.py" ]; then \
         echo "❌ 错误: server/start.py 不存在"; \
         ls -la ${APP_HOME}/ || true; \
@@ -131,6 +142,11 @@ RUN echo "验证关键文件..." && \
         exit 1; \
     fi && \
     echo "✅ 关键文件验证通过"
+
+# 验证依赖模块可以导入（最终验证）
+RUN echo "🔍 最终验证依赖模块..." && \
+    python -c "import uvicorn; import fastapi; import pymysql; import redis; import grpc; print('✅ 所有关键模块可以正常导入')" && \
+    echo "✅ 依赖模块验证通过"
 
 # 注意：不在此处验证模块导入，因为：
 # 1. 模块导入问题会在运行时暴露
