@@ -89,21 +89,26 @@ jobs:
       - name: 📋 Extract metadata
         id: meta
         run: |
-          IMAGE_NAME="${{ steps.check_acr.outputs.image_name }}"
+          # 直接从 check_acr 步骤获取镜像名称
+          RAW_IMAGE_NAME="${{ steps.check_acr.outputs.image_name }}"
           
           # 验证镜像名称格式（不能包含 ***）
           # 如果包含 ***，说明 secrets 未正确配置，使用本地镜像名称
-          if echo "${IMAGE_NAME}" | grep -q "\*\*\*"; then
-            echo "⚠️  警告: 镜像名称包含无效字符: ${IMAGE_NAME}"
+          if echo "${RAW_IMAGE_NAME}" | grep -q "\*\*\*" || [ -z "${RAW_IMAGE_NAME}" ]; then
+            echo "⚠️  警告: 镜像名称无效或包含 ***: '${RAW_IMAGE_NAME}'"
             echo "⚠️  这通常意味着 ACR secrets 未正确配置，使用本地镜像名称"
             IMAGE_NAME="hifate-bazi"
+          else
+            IMAGE_NAME="${RAW_IMAGE_NAME}"
           fi
           
-          # 最终验证：确保镜像名称有效
+          # 最终验证：确保镜像名称有效且不包含 ***
           if [ -z "${IMAGE_NAME}" ] || echo "${IMAGE_NAME}" | grep -q "\*\*\*"; then
-            echo "❌ 错误: 无法确定有效的镜像名称"
+            echo "❌ 错误: 无法确定有效的镜像名称，最终值: '${IMAGE_NAME}'"
             exit 1
           fi
+          
+          echo "✅ 最终镜像名称: ${IMAGE_NAME}"
           
           # 生成标签（使用换行符分隔，docker/build-push-action 支持）
           BRANCH="${{ github.ref_name }}"
