@@ -101,7 +101,51 @@ jobs:
       - name: 修复 gRPC 版本检查
         run: |
           # 直接修复所有已生成的 gRPC 文件（确保版本检查被禁用）
-          python3 scripts/grpc/fix_version_check.py
+          python3 scripts/grpc/fix_version_check.py || echo "⚠️ 修复脚本执行失败，尝试手动修复"
+          
+          # 手动修复所有 gRPC 文件（双重保险）
+          python3 << 'EOF'
+          import re
+          import glob
+          import os
+          
+          output_dir = 'proto/generated'
+          grpc_files = glob.glob(os.path.join(output_dir, '*_pb2_grpc.py'))
+          
+          print(f">>> 手动修复 {len(grpc_files)} 个 gRPC 文件...")
+          fixed = 0
+          for grpc_file in grpc_files:
+              try:
+                  with open(grpc_file, 'r', encoding='utf-8') as f:
+                      content = f.read()
+                  
+                  original = content
+                  
+                  # 修复版本检查：允许版本相等
+                  content = re.sub(
+                      r'_version_not_supported = first_version_is_lower\(GRPC_VERSION, GRPC_GENERATED_VERSION\)',
+                      r'_version_not_supported = first_version_is_lower(GRPC_VERSION, GRPC_GENERATED_VERSION) if GRPC_VERSION != GRPC_GENERATED_VERSION else False',
+                      content
+                  )
+                  
+                  # 直接禁用版本检查
+                  content = re.sub(
+                      r'if _version_not_supported:',
+                      r'if False and _version_not_supported:  # 版本检查已禁用',
+                      content
+                  )
+                  
+                  if content != original:
+                      with open(grpc_file, 'w', encoding='utf-8') as f:
+                          f.write(content)
+                      fixed += 1
+                      print(f"  ✅ 修复: {os.path.basename(grpc_file)}")
+              except Exception as e:
+                  print(f"  ❌ 修复失败 {os.path.basename(grpc_file)}: {e}")
+          
+          print(f"\n✅ 手动修复完成！共修复 {fixed}/{len(grpc_files)} 个文件")
+          EOF
+          
           # 验证修复结果
           echo "验证修复后的版本检查逻辑..."
           python3 -c "
@@ -116,9 +160,32 @@ jobs:
                       fixed += 1
                       print(f'✅ {os.path.basename(f)} 已修复')
           print(f'修复统计: {fixed}/{len(grpc_files)} 个文件已修复')
+          if fixed < len(grpc_files):
+              print('⚠️ 警告：部分文件可能未修复')
+              exit(1)
           "
-          # 验证生成的代码可以导入
-          python3 -c "import sys; sys.path.insert(0, 'proto/generated'); import bazi_core_pb2_grpc; print('✅ gRPC 代码验证通过')" || echo "⚠️ gRPC 代码验证失败"
+          
+          # 验证生成的代码可以导入（测试所有关键文件）
+          echo "验证 gRPC 代码可以导入..."
+          python3 -c "
+          import sys
+          sys.path.insert(0, 'proto/generated')
+          try:
+              import bazi_core_pb2_grpc
+              print('✅ bazi_core_pb2_grpc 导入成功')
+          except Exception as e:
+              print(f'❌ bazi_core_pb2_grpc 导入失败: {e}')
+              exit(1)
+          try:
+              import bazi_rule_pb2_grpc
+              print('✅ bazi_rule_pb2_grpc 导入成功')
+          except Exception as e:
+              print(f'❌ bazi_rule_pb2_grpc 导入失败: {e}')
+              exit(1)
+          " || {
+              echo "❌ gRPC 代码验证失败"
+              exit 1
+          }
       
       - name: 运行单元测试
         env:
