@@ -84,16 +84,25 @@ jobs:
       - name: 📋 Extract metadata
         id: meta
         run: |
-          # 直接从 check_acr 步骤获取镜像名称（已在 check_acr 步骤中验证和设置）
-          IMAGE_NAME="${{ steps.check_acr.outputs.image_name }}"
+          # 从 check_acr 步骤获取镜像名称
+          RAW_IMAGE_NAME="${{ steps.check_acr.outputs.image_name }}"
+          
+          # 验证镜像名称不包含 ***（GitHub Actions 可能将 secrets 隐藏为 ***）
+          if echo "${RAW_IMAGE_NAME}" | grep -q "\*\*\*" || [ -z "${RAW_IMAGE_NAME}" ]; then
+            echo "⚠️  警告: 镜像名称包含 *** 或为空: '${RAW_IMAGE_NAME}'"
+            echo "⚠️  强制使用本地镜像名称"
+            IMAGE_NAME="hifate-bazi"
+          else
+            IMAGE_NAME="${RAW_IMAGE_NAME}"
+          fi
           
           # 最终验证：确保镜像名称有效且不包含 ***
           if [ -z "${IMAGE_NAME}" ] || echo "${IMAGE_NAME}" | grep -q "\*\*\*"; then
             echo "❌ 错误: 无法确定有效的镜像名称，最终值: '${IMAGE_NAME}'"
             echo "❌ 调试信息:"
             echo "   acr_configured: ${{ steps.check_acr.outputs.acr_configured }}"
-            echo "   image_name from check_acr: ${{ steps.check_acr.outputs.image_name }}"
-            # 如果镜像名称无效，强制使用本地镜像名称
+            echo "   raw_image_name: ${RAW_IMAGE_NAME}"
+            # 如果镜像名称仍然无效，强制使用本地镜像名称
             IMAGE_NAME="hifate-bazi"
             echo "⚠️  强制使用本地镜像名称: ${IMAGE_NAME}"
           fi
