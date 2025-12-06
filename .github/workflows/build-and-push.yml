@@ -38,16 +38,27 @@ jobs:
         with:
           platforms: linux/amd64
       
-      # 3. 检查 ACR secrets 是否配置
-      - name: 🔍 Check ACR secrets
+      # 3. 检查 ACR secrets 是否配置并设置镜像名称
+      - name: 🔍 Check ACR secrets and set image name
         id: check_acr
         run: |
-          if [ -n "${{ secrets.ACR_REGISTRY }}" ] && [ -n "${{ secrets.ACR_USERNAME }}" ] && [ -n "${{ secrets.ACR_PASSWORD }}" ] && [ -n "${{ secrets.ACR_NAMESPACE }}" ]; then
+          ACR_REGISTRY="${{ secrets.ACR_REGISTRY }}"
+          ACR_NAMESPACE="${{ secrets.ACR_NAMESPACE }}"
+          ACR_USERNAME="${{ secrets.ACR_USERNAME }}"
+          ACR_PASSWORD="${{ secrets.ACR_PASSWORD }}"
+          
+          if [ -n "$ACR_REGISTRY" ] && [ -n "$ACR_NAMESPACE" ] && [ -n "$ACR_USERNAME" ] && [ -n "$ACR_PASSWORD" ] && [ "$ACR_REGISTRY" != "***" ] && [ "$ACR_NAMESPACE" != "***" ]; then
             echo "acr_configured=true" >> $GITHUB_OUTPUT
+            IMAGE_NAME="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
+            echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
             echo "✅ ACR secrets 已配置"
+            echo "✅ 镜像名称: ${IMAGE_NAME}"
           else
             echo "acr_configured=false" >> $GITHUB_OUTPUT
+            IMAGE_NAME="hifate-bazi"
+            echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
             echo "⚠️  ACR secrets 未配置，将跳过镜像推送"
+            echo "✅ 使用本地镜像名称: ${IMAGE_NAME}"
           fi
       
       # 4. 登录到阿里云容器镜像服务（如果配置了 secrets）
@@ -63,13 +74,7 @@ jobs:
       - name: 📋 Extract metadata
         id: meta
         run: |
-          if [ "${{ steps.check_acr.outputs.acr_configured }}" == "true" ]; then
-            # ACR 已配置，使用 ACR 镜像名称
-            IMAGE_NAME="${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/hifate-bazi"
-          else
-            # ACR 未配置，使用本地镜像名称
-            IMAGE_NAME="hifate-bazi"
-          fi
+          IMAGE_NAME="${{ steps.check_acr.outputs.image_name }}"
           
           # 生成标签
           BRANCH="${{ github.ref_name }}"
@@ -79,7 +84,6 @@ jobs:
           # 生成标签 JSON（docker/build-push-action 需要的格式）
           LABELS_JSON="{\"org.opencontainers.image.title\":\"HiFate-bazi\",\"org.opencontainers.image.version\":\"${BRANCH}\",\"org.opencontainers.image.revision\":\"${SHA}\"}"
           
-          echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
           echo "labels=${LABELS_JSON}" >> $GITHUB_OUTPUT
           
