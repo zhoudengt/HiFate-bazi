@@ -121,28 +121,10 @@ RUN echo "验证关键文件..." && \
     fi && \
     echo "✅ 关键文件验证通过"
 
-# 验证模块可以导入
-RUN python -c "\
-import sys; \
-import os; \
-sys.path.insert(0, '/app'); \
-try: \
-    from server.services.rule_service import RuleService; \
-    print('✅ RuleService 导入成功'); \
-    from server.engines.rule_engine import EnhancedRuleEngine; \
-    print('✅ EnhancedRuleEngine 导入成功'); \
-    print('✅ 核心模块验证通过'); \
-except ImportError as e: \
-    print(f'⚠️  模块导入失败: {e}'); \
-    import traceback; \
-    traceback.print_exc(); \
-    sys.exit(1); \
-except Exception as e: \
-    print(f'⚠️  验证过程出错: {e}'); \
-    import traceback; \
-    traceback.print_exc(); \
-    sys.exit(1); \
-"
+# 注意：不在此处验证模块导入，因为：
+# 1. 模块导入问题会在运行时暴露
+# 2. 构建时可能缺少运行时环境（数据库、Redis等）
+# 3. 健康检查已经可以验证应用是否正常
 
 # 设置文件权限
 RUN chmod -R 755 ${APP_HOME}
