@@ -63,16 +63,32 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 # 复制并安装依赖（包括 PyArmor）
 COPY requirements.txt .
 COPY services/desk_fengshui/requirements.txt /tmp/desk_fengshui_requirements.txt
+
+# 先安装基础依赖（不包含 ultralytics）
 RUN pip install --no-cache-dir -r requirements.txt && \
+    # 清理缓存
+    pip cache purge || true && \
+    rm -rf /root/.cache/pip /tmp/pip-* /var/tmp/*
+
+# 安装 ultralytics（YOLOv8）及其依赖（使用 CPU 版本的 torch 以减少空间）
+# 注意：ultralytics 会自动安装 torch，我们使用环境变量强制使用 CPU 版本
+RUN TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu \
+    pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        torch torchvision --no-deps && \
     pip install --no-cache-dir -r /tmp/desk_fengshui_requirements.txt && \
+    # 安装 PyArmor
     pip install --no-cache-dir pyarmor && \
     rm -f /tmp/desk_fengshui_requirements.txt && \
-    # 立即清理 pip 缓存和临时文件
+    # 立即清理 pip 缓存和临时文件（关键：在安装 torch 后立即清理）
     pip cache purge || true && \
-    rm -rf /root/.cache/pip /tmp/pip-* /var/tmp/* && \
+    rm -rf /root/.cache/pip /root/.cache/torch /tmp/pip-* /var/tmp/* && \
     # 清理 Python 字节码缓存
     find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
-    find /usr/local/lib/python3.11 -name "*.pyc" -delete 2>/dev/null || true
+    find /usr/local/lib/python3.11 -name "*.pyc" -delete 2>/dev/null || true && \
+    # 清理 torch 的测试和文档文件（减少空间）
+    find /usr/local/lib/python3.11/site-packages/torch -name "test" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.11/site-packages/torch -name "*.md" -delete 2>/dev/null || true
 
 # ============================================
 # PyArmor 混淆保护阶段
