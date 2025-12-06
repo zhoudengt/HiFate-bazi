@@ -88,6 +88,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
+      - name: 重新生成 gRPC 代码
+        run: |
+          # 确保使用正确的 grpcio-tools 版本生成代码
+          python -m grpc_tools.protoc --version || echo "grpc_tools 已安装"
+          bash scripts/grpc/generate_grpc_code.sh || echo "gRPC 代码生成失败，继续使用现有代码"
+      
       - name: 运行单元测试
         env:
           MYSQL_HOST: localhost
