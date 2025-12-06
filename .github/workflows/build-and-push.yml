@@ -38,8 +38,8 @@ jobs:
         with:
           platforms: linux/amd64
       
-      # 3. 检查 ACR secrets 是否配置
-      - name: 🔍 Check ACR secrets
+      # 3. 检查 ACR secrets 是否配置并设置镜像名称
+      - name: 🔍 Check ACR secrets and set image name
         id: check_acr
         env:
           ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
@@ -51,10 +51,24 @@ jobs:
           if echo "${ACR_REGISTRY}" | grep -q "\*\*\*" || echo "${ACR_NAMESPACE}" | grep -q "\*\*\*" || \
              [ -z "${ACR_REGISTRY}" ] || [ -z "${ACR_NAMESPACE}" ] || [ -z "${ACR_USERNAME}" ] || [ -z "${ACR_PASSWORD}" ]; then
             echo "acr_configured=false" >> $GITHUB_OUTPUT
+            echo "image_name=hifate-bazi" >> $GITHUB_OUTPUT
             echo "⚠️  ACR secrets 未配置，将跳过镜像推送"
+            echo "✅ 使用本地镜像名称: hifate-bazi"
           else
-            echo "acr_configured=true" >> $GITHUB_OUTPUT
-            echo "✅ ACR secrets 已配置"
+            # ACR 已配置，构建镜像名称
+            IMAGE_NAME="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
+            
+            # 验证镜像名称不包含 ***
+            if echo "${IMAGE_NAME}" | grep -q "\*\*\*"; then
+              echo "⚠️  警告: 镜像名称包含 ***，使用本地镜像名称"
+              echo "acr_configured=false" >> $GITHUB_OUTPUT
+              echo "image_name=hifate-bazi" >> $GITHUB_OUTPUT
+            else
+              echo "acr_configured=true" >> $GITHUB_OUTPUT
+              echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+              echo "✅ ACR secrets 已配置"
+              echo "✅ 镜像名称: ${IMAGE_NAME}"
+            fi
           fi
       
       # 4. 登录到阿里云容器镜像服务（如果配置了 secrets）
@@ -69,36 +83,19 @@ jobs:
       # 5. 提取元数据（标签等）
       - name: 📋 Extract metadata
         id: meta
-        env:
-          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
-          ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
         run: |
-          # 根据 acr_configured 标志决定镜像名称
-          if [ "${{ steps.check_acr.outputs.acr_configured }}" == "true" ]; then
-            # ACR 已配置，先验证环境变量不包含 ***
-            if echo "${ACR_REGISTRY}" | grep -q "\*\*\*" || echo "${ACR_NAMESPACE}" | grep -q "\*\*\*" || \
-               [ -z "${ACR_REGISTRY}" ] || [ -z "${ACR_NAMESPACE}" ]; then
-              echo "⚠️  警告: ACR 环境变量包含 *** 或为空，使用本地镜像名称"
-              IMAGE_NAME="hifate-bazi"
-            else
-              # 构建 ACR 镜像名称
-              IMAGE_NAME="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
-              
-              # 再次验证镜像名称不包含 ***
-              if echo "${IMAGE_NAME}" | grep -q "\*\*\*"; then
-                echo "⚠️  警告: 构建的镜像名称包含 ***，使用本地镜像名称"
-                IMAGE_NAME="hifate-bazi"
-              fi
-            fi
-          else
-            # ACR 未配置，使用本地镜像名称
-            IMAGE_NAME="hifate-bazi"
-          fi
+          # 直接从 check_acr 步骤获取镜像名称（已在 check_acr 步骤中验证和设置）
+          IMAGE_NAME="${{ steps.check_acr.outputs.image_name }}"
           
           # 最终验证：确保镜像名称有效且不包含 ***
           if [ -z "${IMAGE_NAME}" ] || echo "${IMAGE_NAME}" | grep -q "\*\*\*"; then
             echo "❌ 错误: 无法确定有效的镜像名称，最终值: '${IMAGE_NAME}'"
-            exit 1
+            echo "❌ 调试信息:"
+            echo "   acr_configured: ${{ steps.check_acr.outputs.acr_configured }}"
+            echo "   image_name from check_acr: ${{ steps.check_acr.outputs.image_name }}"
+            # 如果镜像名称无效，强制使用本地镜像名称
+            IMAGE_NAME="hifate-bazi"
+            echo "⚠️  强制使用本地镜像名称: ${IMAGE_NAME}"
           fi
           
           echo "✅ 最终镜像名称: ${IMAGE_NAME}"
