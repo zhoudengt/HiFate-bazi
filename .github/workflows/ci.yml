@@ -194,6 +194,14 @@ jobs:
           MYSQL_USER: root
           MYSQL_PASSWORD: test_password
           MYSQL_DATABASE: test_db
+          # 设置 gRPC 服务 URL（避免导入时出错）
+          BAZI_CORE_SERVICE_URL: localhost:9001
+          BAZI_RULE_SERVICE_URL: localhost:9004
+          BAZI_FORTUNE_SERVICE_URL: localhost:9002
+          BAZI_ANALYZER_SERVICE_URL: localhost:9003
+          # 非严格模式（允许服务不可用）
+          BAZI_CORE_SERVICE_STRICT: "0"
+          BAZI_RULE_SERVICE_STRICT: "0"
           REDIS_HOST: localhost
           REDIS_PORT: 6379
         run: |
