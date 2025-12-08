@@ -43,7 +43,11 @@ class DeskFengshuiEngine:
         """获取默认数据库配置"""
         try:
             from server.config.mysql_config import MYSQL_CONFIG
-            return MYSQL_CONFIG
+            # 确保字符集配置正确
+            config = MYSQL_CONFIG.copy()
+            config['charset'] = 'utf8mb4'
+            config['use_unicode'] = True
+            return config
         except:
             return {
                 'host': os.getenv('MYSQL_HOST', '127.0.0.1'),
@@ -51,7 +55,8 @@ class DeskFengshuiEngine:
                 'user': os.getenv('MYSQL_USER', 'root'),
                 'password': os.getenv('MYSQL_PASSWORD', '123456'),
                 'database': os.getenv('MYSQL_DATABASE', 'hifate_bazi'),
-                'charset': 'utf8mb4'
+                'charset': 'utf8mb4',
+                'use_unicode': True
             }
     
     def _get_builtin_rules(self) -> List[Dict]:
@@ -235,7 +240,16 @@ class DeskFengshuiEngine:
         try:
             import pymysql
             
-            conn = pymysql.connect(**self.db_config)
+            # 确保连接配置包含字符集设置
+            db_config = self.db_config.copy()
+            if 'charset' not in db_config:
+                db_config['charset'] = 'utf8mb4'
+            if 'use_unicode' not in db_config:
+                db_config['use_unicode'] = True
+            
+            conn = pymysql.connect(**db_config)
+            # 设置连接字符集
+            conn.set_charset('utf8mb4')
             cursor = conn.cursor(pymysql.cursors.DictCursor)
             
             # 查询启用的规则
@@ -348,9 +362,9 @@ class DeskFengshuiEngine:
             current_relative = current_position.get('relative', '')
             current_direction = current_position.get('direction', '')
             
-            # 查找该物品的规则（支持position和basic类型）
+            # 查找该物品的规则（支持所有规则类型）
             for rule in rules:
-                if rule['rule_type'] not in ['position', 'basic', 'taboo']:
+                if rule['rule_type'] not in ['position', 'basic', 'taboo', 'wealth', 'career', 'love', 'protection', 'health', 'study', 'relationship', 'general']:
                     continue
                 
                 # 匹配物品名称
@@ -386,8 +400,8 @@ class DeskFengshuiEngine:
                         'element': rule.get('related_element', '')
                     })
                     break
-                # 如果是position规则且位置不匹配
-                elif rule['rule_type'] == 'position' and not is_in_ideal and ideal_directions:
+                # 如果是position规则或新规则类型且位置不匹配
+                elif rule['rule_type'] in ['position', 'wealth', 'career', 'love', 'protection', 'health', 'study', 'relationship'] and not is_in_ideal and ideal_directions:
                     adjustments.append({
                         'item': item_label,
                         'item_label': item_label,
@@ -447,7 +461,7 @@ class DeskFengshuiEngine:
         
         # 1. 基于规则的增加建议（检查缺失的重要物品）
         for rule in rules:
-            if rule['rule_type'] not in ['position', 'element', 'general']:
+            if rule['rule_type'] not in ['position', 'element', 'general', 'wealth', 'career', 'love', 'protection', 'health', 'study', 'relationship']:
                 continue
             
             rule_item_name = rule.get('item_name', '')
@@ -490,7 +504,7 @@ class DeskFengshuiEngine:
                 continue
             
             # 通用物品建议（基于规则）
-            if rule['rule_type'] == 'position' and not has_item:
+            if rule['rule_type'] in ['position', 'wealth', 'career', 'love', 'protection', 'health', 'study', 'relationship'] and not has_item:
                 # 检查是否应该推荐（基于位置）
                 ideal_pos = rule.get('ideal_position', {})
                 ideal_directions = ideal_pos.get('directions', [])
@@ -764,30 +778,50 @@ class DeskFengshuiEngine:
         return None
     
     @staticmethod
-    def _safe_decode(self, text: str) -> str:
+    @staticmethod
+    def _safe_decode(text: str) -> str:
         """安全解码字符串，处理可能的编码问题"""
         if not text:
             return text
+        
+        # 如果是bytes，先解码
         if isinstance(text, bytes):
             try:
                 return text.decode('utf-8')
-            except:
+            except UnicodeDecodeError:
                 try:
+                    # 尝试latin1 -> utf-8的修复（pymysql常见问题）
                     return text.decode('latin1').encode('latin1').decode('utf-8')
-                except:
-                    return str(text)
+                except (UnicodeDecodeError, UnicodeEncodeError):
+                    try:
+                        # 尝试gbk编码
+                        return text.decode('gbk').encode('utf-8').decode('utf-8')
+                    except:
+                        return str(text, errors='ignore')
+        
+        # 如果是字符串，检查是否有乱码
         if isinstance(text, str):
-            # 检查是否有乱码（常见的中文乱码模式）
+            # 检查是否已经是正确的UTF-8
             try:
-                # 尝试重新编码解码
                 text.encode('utf-8').decode('utf-8')
+                # 检查是否有常见的乱码模式（如：ä¸æ、ç§等）
+                if any(ord(c) > 0x7F and 0x80 <= ord(c) <= 0xFF for c in text[:100]):
+                    # 可能是latin1编码的中文，尝试修复
+                    try:
+                        fixed = text.encode('latin1').decode('utf-8')
+                        # 验证修复后的文本是否包含中文字符
+                        if any('\u4e00' <= c <= '\u9fff' for c in fixed):
+                            return fixed
+                    except (UnicodeEncodeError, UnicodeDecodeError):
+                        pass
                 return text
-            except:
-                # 如果有问题，尝试修复
+            except UnicodeEncodeError:
+                # 如果无法编码，尝试修复
                 try:
                     return text.encode('latin1').decode('utf-8')
-                except:
+                except (UnicodeEncodeError, UnicodeDecodeError):
                     return text
+        
         return str(text)
     
     @staticmethod
