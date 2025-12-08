@@ -183,6 +183,25 @@ jobs:
             
             echo "📦 使用镜像: ${FULL_IMAGE}"
             
+            # 先启动 MySQL 和 Redis 服务（如果未运行）
+            echo "🔧 确保 MySQL 和 Redis 服务运行..."
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d mysql redis
+            
+            # 等待 MySQL 和 Redis 健康检查通过
+            echo "⏳ 等待 MySQL 和 Redis 就绪..."
+            MAX_WAIT=60
+            WAIT_COUNT=0
+            while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+              if docker compose -f docker-compose.yml -f docker-compose.prod.yml ps mysql | grep -q "healthy" && \
+                 docker compose -f docker-compose.yml -f docker-compose.prod.yml ps redis | grep -q "healthy"; then
+                echo "✅ MySQL 和 Redis 已就绪"
+                break
+              fi
+              WAIT_COUNT=$((WAIT_COUNT + 1))
+              echo "⏳ 等待中... ($WAIT_COUNT/$MAX_WAIT)"
+              sleep 2
+            done
+            
             # 只清理已停止的容器（零停机部署）
             echo "🧹 清理已停止的容器..."
             docker compose -f docker-compose.yml -f docker-compose.prod.yml rm -f web 2>/dev/null || true

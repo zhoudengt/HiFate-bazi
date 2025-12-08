@@ -1,8 +1,6 @@
 # HiFate-bazi Docker Compose 生产环境配置
 # 使用方式：docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
-version: '3.8'
-
 services:
   # 主服务 - 生产模式
   web:

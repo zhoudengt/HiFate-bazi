@@ -1,8 +1,6 @@
 # HiFate-bazi Docker Compose 基础配置
 # 适用于：本地开发 + 生产部署
 
-version: '3.8'
-
 services:
   # MySQL 数据库
   mysql:

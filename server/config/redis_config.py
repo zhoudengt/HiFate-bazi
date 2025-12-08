@@ -7,13 +7,14 @@ Redis 配置模块
 import redis
 from redis.connection import ConnectionPool
 from typing import Optional
+import os
 
-# Redis 连接配置
+# Redis 连接配置（从环境变量读取）
 REDIS_CONFIG = {
-    'host': 'localhost',
-    'port': 6379,
-    'db': 0,
-    'password': None,  # 如果设置了密码，在这里填写
+    'host': os.getenv('REDIS_HOST', 'localhost'),
+    'port': int(os.getenv('REDIS_PORT', '6379')),
+    'db': int(os.getenv('REDIS_DB', '0')),
+    'password': os.getenv('REDIS_PASSWORD', None),  # 如果设置了密码，从环境变量读取
     'max_connections': 100,  # 增加到100以支持更高并发（优化方案1）
     'decode_responses': False  # 存储二进制数据，需要手动序列化/反序列化
 }
@@ -82,7 +83,14 @@ def get_redis_client() -> Optional[redis.Redis]:
 
 # 自动初始化（如果 Redis 可用）
 try:
-    init_redis()
+    # 从环境变量读取配置
+    init_redis(
+        host=os.getenv('REDIS_HOST', 'localhost'),
+        port=int(os.getenv('REDIS_PORT', '6379')),
+        db=int(os.getenv('REDIS_DB', '0')),
+        password=os.getenv('REDIS_PASSWORD', None),
+        max_connections=100
+    )
 except Exception as e:
     print(f"Redis 初始化失败（可选依赖）: {e}")
     redis_client = None
