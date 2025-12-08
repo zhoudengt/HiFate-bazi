@@ -319,10 +319,9 @@ class DeskFengshuiEngine:
             # 3. 匹配忌讳规则
             removals = self._match_taboo_rules(detected_items, rules)
             
-            # 4. 基于喜神生成增加建议
+            # 4. 基于喜神生成增加建议（即使没有八字信息也生成通用建议）
             additions = []
-            if bazi_info and bazi_info.get('xishen'):
-                additions = self._generate_additions(detected_items, bazi_info, rules)
+            additions = self._generate_additions(detected_items, bazi_info, rules)
             
             # 5. 计算评分
             score = self._calculate_score(detected_items, adjustments, additions, removals)
@@ -330,13 +329,24 @@ class DeskFengshuiEngine:
             # 6. 生成总结
             summary = self._generate_summary(detected_items, adjustments, additions, removals, score)
             
+            # 按规则类型分类建议
+            categorized_additions = self._categorize_suggestions(additions)
+            
             return {
                 'success': True,
                 'adjustments': adjustments,
                 'additions': additions,
                 'removals': removals,
+                'categorized_additions': categorized_additions,  # 新增：分类建议
                 'score': score,
-                'summary': summary
+                'summary': summary,
+                'statistics': {  # 新增：统计数据
+                    'total_items': len(detected_items),
+                    'adjustments_count': len(adjustments),
+                    'additions_count': len(additions),
+                    'removals_count': len(removals),
+                    'categories_count': len(categorized_additions)
+                }
             }
             
         except Exception as e:
@@ -499,34 +509,90 @@ class DeskFengshuiEngine:
                     'priority': 'high',
                     'action': 'add',
                     'element': xishen,
+                    'rule_type': rule.get('rule_type', 'element'),  # 添加规则类型
                     'is_xishen': True  # 标记为喜神建议
                 })
                 continue
             
-            # 通用物品建议（基于规则）
-            if rule['rule_type'] in ['position', 'wealth', 'career', 'love', 'protection', 'health', 'study', 'relationship'] and not has_item:
-                # 检查是否应该推荐（基于位置）
+            # 通用物品建议（基于规则）- 支持所有新规则类型
+            if rule['rule_type'] in ['position', 'wealth', 'career', 'love', 'protection', 'health', 'study', 'relationship', 'general'] and not has_item:
+                # 检查是否应该推荐（基于位置和规则优先级）
                 ideal_pos = rule.get('ideal_position', {})
                 ideal_directions = ideal_pos.get('directions', [])
                 if isinstance(ideal_directions, str):
                     ideal_directions = [ideal_directions]
                 
-                # 如果理想位置在左侧，且左侧物品较少，推荐
-                if 'left' in str(ideal_directions) and len(detected_left_items) < 2:
-                    position_name = '左侧（青龙位）'
-                    suggestion = rule.get('suggestion', '')
-                    if not suggestion.startswith('✅') and not suggestion.startswith('💡'):
-                        suggestion = f"💡 {suggestion}"
-                    
+                # 对于爆点规则（wealth, career, love等），优先推荐
+                is_highlight_rule = rule['rule_type'] in ['wealth', 'career', 'love', 'protection']
+                priority = 'high' if is_highlight_rule else 'medium'
+                
+                # 确定推荐位置
+                if ideal_directions:
+                    position_name = self._get_direction_name(ideal_directions[0])
+                else:
+                    # 根据规则类型默认位置
+                    if rule['rule_type'] == 'wealth':
+                        position_name = '左侧（青龙位）或前方'
+                    elif rule['rule_type'] == 'career':
+                        position_name = '左侧（青龙位）'
+                    elif rule['rule_type'] == 'love':
+                        position_name = '前方（朱雀位）'
+                    else:
+                        position_name = '合适位置'
+                
+                suggestion = self._safe_decode(rule.get('suggestion', ''))
+                if not suggestion:
+                    suggestion = self._safe_decode(rule.get('reason', ''))
+                
+                # 确保建议有表情符号前缀
+                if not any(suggestion.startswith(emoji) for emoji in ['💰', '📈', '💕', '🛡️', '🏥', '📚', '🤝', '💡', '✅', '⭐', '🌟']):
+                    emoji_map = {
+                        'wealth': '💰',
+                        'career': '📈',
+                        'love': '💕',
+                        'protection': '🛡️',
+                        'health': '🏥',
+                        'study': '📚',
+                        'relationship': '🤝',
+                        'general': '💡'
+                    }
+                    emoji = emoji_map.get(rule['rule_type'], '💡')
+                    suggestion = f"{emoji} {suggestion}"
+                
+                # 对于爆点规则，无条件推荐（不限制位置条件）
+                # 对于普通规则，根据位置条件推荐
+                should_recommend = False
+                if is_highlight_rule:
+                    # 爆点规则无条件推荐
+                    should_recommend = True
+                elif ideal_directions:
+                    # 检查位置条件
+                    if 'left' in str(ideal_directions) and len(detected_left_items) < 3:
+                        should_recommend = True
+                    elif 'right' in str(ideal_directions) and len(detected_right_items) < 2:
+                        should_recommend = True
+                    elif 'front' in str(ideal_directions):
+                        should_recommend = True
+                    elif 'back' in str(ideal_directions):
+                        should_recommend = True
+                    else:
+                        should_recommend = True  # 默认推荐
+                else:
+                    # 没有位置限制，推荐
+                    should_recommend = True
+                
+                if should_recommend:
                     additions.append({
                         'item': rule_item_name,
                         'item_label': rule_item_label,
                         'position': position_name,
+                        'ideal_position': position_name,
                         'reason': suggestion,
                         'suggestion': suggestion,
-                        'priority': 'medium',
+                        'priority': priority,
                         'action': 'add',
-                        'element': rule.get('related_element')
+                        'element': rule.get('related_element'),
+                        'rule_type': rule.get('rule_type', 'general')  # 添加规则类型
                     })
         
         # 2. 通用风水建议（基于四象布局）
@@ -540,7 +606,8 @@ class DeskFengshuiEngine:
                 'suggestion': '💡 建议在左侧（青龙位）摆放绿植（宽叶植物如发财树、富贵竹）或文件架，提升贵人运',
                 'priority': 'high',
                 'action': 'add',
-                'element': '木'
+                'element': '木',
+                'rule_type': 'career'  # 青龙位属于升职加薪类
             })
         
         # 玄武位建议
@@ -552,7 +619,8 @@ class DeskFengshuiEngine:
             'suggestion': '💡 确保后方（玄武位）有靠山，可放褐色/咖啡色靠枕或挂衣服营造"虚拟靠山"',
             'priority': 'high',
             'action': 'add',
-            'element': '水'
+            'element': '水',
+            'rule_type': 'career'  # 靠山属于升职加薪类
         })
         
         # 3. 按优先级排序：喜神建议优先，然后按priority排序
@@ -778,7 +846,6 @@ class DeskFengshuiEngine:
         return None
     
     @staticmethod
-    @staticmethod
     def _safe_decode(text: str) -> str:
         """安全解码字符串，处理可能的编码问题"""
         if not text:
@@ -823,6 +890,51 @@ class DeskFengshuiEngine:
                     return text
         
         return str(text)
+    
+    def _categorize_suggestions(self, additions: List[Dict]) -> Dict[str, Dict]:
+        """
+        按规则类型分类建议
+        
+        Args:
+            additions: 增加建议列表
+        
+        Returns:
+            分类后的建议字典
+        """
+        categories = {
+            'wealth': {'name': '💰 财运爆棚', 'icon': '💰', 'color': '#ffd700', 'items': []},
+            'career': {'name': '📈 升职加薪', 'icon': '📈', 'color': '#4caf50', 'items': []},
+            'love': {'name': '💕 桃花运', 'icon': '💕', 'color': '#e91e63', 'items': []},
+            'protection': {'name': '🛡️ 防小人', 'icon': '🛡️', 'color': '#9c27b0', 'items': []},
+            'health': {'name': '🏥 健康运势', 'icon': '🏥', 'color': '#00bcd4', 'items': []},
+            'study': {'name': '📚 学业考试', 'icon': '📚', 'color': '#3f51b5', 'items': []},
+            'relationship': {'name': '🤝 人际关系', 'icon': '🤝', 'color': '#ff9800', 'items': []},
+            'general': {'name': '💡 通用建议', 'icon': '💡', 'color': '#607d8b', 'items': []}
+        }
+        
+        for addition in additions:
+            # 根据规则类型或元素判断分类
+            rule_type = addition.get('rule_type', 'general')
+            element = addition.get('element', '')
+            is_xishen = addition.get('is_xishen', False)
+            
+            # 喜神建议优先显示在对应分类
+            if is_xishen and element:
+                element_map = {'木': 'career', '火': 'career', '土': 'wealth', '金': 'career', '水': 'wealth'}
+                category_key = element_map.get(element, 'general')
+            elif rule_type in categories:
+                category_key = rule_type
+            elif element:
+                element_map = {'木': 'career', '火': 'career', '土': 'wealth', '金': 'career', '水': 'wealth'}
+                category_key = element_map.get(element, 'general')
+            else:
+                category_key = 'general'
+            
+            if category_key in categories:
+                categories[category_key]['items'].append(addition)
+        
+        # 移除空分类
+        return {k: v for k, v in categories.items() if v['items']}
     
     @staticmethod
     def _get_direction_name(direction: str) -> str:

@@ -95,6 +95,8 @@ class DeskFengshuiAnalyzer:
                 'adjustments': rule_result.get('adjustments', []),
                 'additions': rule_result.get('additions', []),
                 'removals': rule_result.get('removals', []),
+                'categorized_additions': rule_result.get('categorized_additions', {}),  # 新增：分类建议
+                'statistics': rule_result.get('statistics', {}),  # 新增：统计数据
                 'score': rule_result.get('score', 0),
                 'summary': rule_result.get('summary', ''),
                 'duration': duration

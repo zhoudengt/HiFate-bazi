@@ -248,14 +248,31 @@ class DeskFengshuiAnalyzer {
         // 显示检测到的物品
         this.displayItems(data.items || []);
         
+        // 显示物品位置可视化（如果有物品）
+        if (data.items && data.items.length > 0) {
+            this.displayItemsVisualization(data.items);
+        }
+        
         // 显示调整建议
         this.displaySuggestions('adjustments', data.adjustments || []);
         
-        // 显示增加建议
-        this.displaySuggestions('additions', data.additions || []);
+        // 显示增加建议（优先使用分类展示）
+        if (data.categorized_additions && Object.keys(data.categorized_additions).length > 0) {
+            this.displayCategorizedSuggestions(data.categorized_additions);
+            // 隐藏传统的additions列表
+            document.getElementById('additionsList').style.display = 'none';
+        } else {
+            this.displaySuggestions('additions', data.additions || []);
+            document.getElementById('categorizedSuggestions').style.display = 'none';
+        }
         
         // 显示删除建议
         this.displaySuggestions('removals', data.removals || []);
+        
+        // 显示统计数据（如果有）
+        if (data.statistics) {
+            this.displayStatistics(data.statistics);
+        }
     }
     
     displayWarning(warning) {
@@ -358,6 +375,96 @@ class DeskFengshuiAnalyzer {
             `;
             grid.appendChild(itemEl);
         });
+    }
+    
+    displayItemsVisualization(items) {
+        const itemsCard = document.querySelector('.items-card');
+        if (!itemsCard) return;
+        
+        // 检查是否已存在可视化
+        let existingViz = document.getElementById('itemsVisualization');
+        if (existingViz) {
+            existingViz.remove();
+        }
+        
+        const vizDiv = document.createElement('div');
+        vizDiv.id = 'itemsVisualization';
+        vizDiv.className = 'items-visualization';
+        vizDiv.innerHTML = `
+            <h4 style="margin-bottom: 15px; color: #333;">📍 物品位置分布图</h4>
+            <div class="desk-layout" id="deskLayout"></div>
+        `;
+        
+        itemsCard.appendChild(vizDiv);
+        
+        // 绘制物品位置
+        const layout = document.getElementById('deskLayout');
+        items.forEach((item, index) => {
+            const position = item.position || {};
+            const relative = position.relative || 'center';
+            const vertical = position.vertical || 'center';
+            
+            // 根据位置创建标记点
+            const marker = document.createElement('div');
+            marker.className = 'item-marker';
+            marker.style.position = 'absolute';
+            marker.style.width = '30px';
+            marker.style.height = '30px';
+            marker.style.borderRadius = '50%';
+            marker.style.background = '#667eea';
+            marker.style.border = '2px solid white';
+            marker.style.display = 'flex';
+            marker.style.alignItems = 'center';
+            marker.style.justifyContent = 'center';
+            marker.style.color = 'white';
+            marker.style.fontSize = '0.8em';
+            marker.style.fontWeight = 'bold';
+            marker.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
+            marker.style.cursor = 'pointer';
+            marker.textContent = index + 1;
+            marker.title = `${item.label} - ${position.relative_name || relative}`;
+            
+            // 计算位置
+            let left = 50, top = 50;
+            if (relative === 'left') left = 20;
+            else if (relative === 'right') left = 80;
+            
+            if (vertical === 'front') top = 20;
+            else if (vertical === 'back') top = 80;
+            
+            marker.style.left = `${left}%`;
+            marker.style.top = `${top}%`;
+            marker.style.transform = 'translate(-50%, -50%)';
+            
+            layout.appendChild(marker);
+        });
+        
+        // 添加图例
+        const legend = document.createElement('div');
+        legend.style.marginTop = '15px';
+        legend.style.display = 'flex';
+        legend.style.gap = '15px';
+        legend.style.flexWrap = 'wrap';
+        legend.style.justifyContent = 'center';
+        legend.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <div style="width: 12px; height: 12px; background: #4caf50; border-radius: 50%;"></div>
+                <span style="font-size: 0.9em;">青龙位（左侧）</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <div style="width: 12px; height: 12px; background: #ff9800; border-radius: 50%;"></div>
+                <span style="font-size: 0.9em;">白虎位（右侧）</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <div style="width: 12px; height: 12px; background: #e91e63; border-radius: 50%;"></div>
+                <span style="font-size: 0.9em;">朱雀位（前方）</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <div style="width: 12px; height: 12px; background: #00bcd4; border-radius: 50%;"></div>
+                <span style="font-size: 0.9em;">玄武位（后方）</span>
+            </div>
+        `;
+        vizDiv.appendChild(legend);
     }
     
     displaySuggestions(type, suggestions) {
