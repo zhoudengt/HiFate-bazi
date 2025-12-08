@@ -15,6 +15,13 @@ from .models.feature_mapper import FeatureMapper
 from .analyzers.gongwei_analyzer import GongweiAnalyzer
 from .utils.geometry import GeometryCalculator
 
+# 导入规则匹配服务
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+from services.face_knowledge_v2.service import FaceKnowledgeService
+
 
 class FaceAnalysisService:
     """面相分析服务"""
@@ -24,6 +31,7 @@ class FaceAnalysisService:
         self.feature_mapper = FeatureMapper()
         self.gongwei_analyzer = GongweiAnalyzer()
         self.geometry_calculator = GeometryCalculator()
+        self.knowledge_service = FaceKnowledgeService()  # 规则匹配服务
     
     def detect_landmarks(self, image_data: bytes, image_format: str = 'jpg') -> Dict:
         """
@@ -116,14 +124,67 @@ class FaceAnalysisService:
             )
         
         if 'liuqin' in analysis_types:
-            result['liuqin_list'] = self.gongwei_analyzer.analyze_liuqin(
+            liuqin_list = self.gongwei_analyzer.analyze_liuqin(
                 mapped_features, landmarks
             )
+            # 为每个六亲宫位填充interpretations
+            for liuqin_item in liuqin_list:
+                position = liuqin_item.get('relation', '')
+                features = liuqin_item.get('features', {})
+                # 调用规则匹配器获取interpretations
+                interpretations = self.knowledge_service.get_interpretation(
+                    rule_type='liuqin',
+                    position=position,
+                    features=features
+                )
+                liuqin_item['interpretations'] = interpretations
+            result['liuqin_list'] = liuqin_list
         
         if 'shishen' in analysis_types:
-            result['shishen_list'] = self.gongwei_analyzer.analyze_shishen(
+            shishen_list = self.gongwei_analyzer.analyze_shishen(
                 mapped_features, landmarks
             )
+            # 为每个十神宫位填充interpretations
+            for shishen_item in shishen_list:
+                shishen_name = shishen_item.get('shishen', '')
+                features = shishen_item.get('features', {})
+                # 构建十神位置名称（格式：宫位-十神，如"印堂-正官"）
+                # 需要根据十神名称和对应的宫位来匹配规则
+                # 从规则配置来看，位置格式是"宫位-十神"
+                position = None
+                # 尝试匹配十神规则的位置
+                # 这里需要根据十神名称找到对应的位置
+                # 简化处理：直接使用十神名称作为位置的一部分
+                if '正官' in shishen_name:
+                    position = '印堂-正官'
+                elif '偏官' in shishen_name or '七杀' in shishen_name:
+                    position = '司空-偏官'
+                elif '正财' in shishen_name:
+                    position = '准头-正财'
+                elif '偏财' in shishen_name:
+                    position = '鼻翼-偏财'
+                elif '食神' in shishen_name:
+                    position = '上唇-食神'
+                elif '伤官' in shishen_name:
+                    position = '下唇-伤官'
+                elif '正印' in shishen_name:
+                    position = '天庭-正印'
+                elif '偏印' in shishen_name:
+                    position = '额角-偏印'
+                elif '比肩' in shishen_name:
+                    position = '颧骨-比肩'
+                elif '劫财' in shishen_name:
+                    position = '下颌-劫财'
+                
+                if position:
+                    # 调用规则匹配器获取interpretations
+                    interpretations = self.knowledge_service.get_interpretation(
+                        rule_type='shishen',
+                        position=position,
+                        features=features
+                    )
+                    shishen_item['interpretations'] = interpretations
+            result['shishen_list'] = shishen_list
         
         return result
     

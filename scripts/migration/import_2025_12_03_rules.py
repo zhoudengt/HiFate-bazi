@@ -753,7 +753,23 @@ class RuleParser:
                     "ten_gods_compare": {"god_a": god1, "god_b": god2, "relation": "more_than"}
                 })
         
-        # "X数量少于Y个" - 数量少于
+        # ========== 新增：多十神总数量限制（高优先级） ==========
+        # "四柱中正官，七杀，正印，偏印数量少于3个" - 多个十神总数量限制
+        multi_gods_less_match = re.search(r"(?:四柱中|四柱中十神)([\u4e00-\u9fa5，,、]+)(?:数量|的数量)(?:少于|少)(\d+)(?:个|三个)", cond2)
+        if multi_gods_less_match:
+            gods_text = multi_gods_less_match.group(1)
+            count = int(multi_gods_less_match.group(2))
+            # 提取十神名称
+            gods = []
+            for god in TEN_GODS:
+                if god in gods_text:
+                    gods.append(god)
+            if len(gods) >= 2:  # 至少2个十神才使用总数量限制
+                return ParseResult(True, conditions={
+                    "ten_gods_total_group": {"names": gods, "max": count - 1}
+                })
+        
+        # "X数量少于Y个" - 数量少于（单个十神）
         less_than_match = re.search(r"(.+?)(?:数量|的数量)少于(\d+)个", cond2)
         if less_than_match:
             god = less_than_match.group(1).strip()
@@ -1068,21 +1084,35 @@ class RuleParser:
                         ]
                     })
         
-        # "四柱出现X或者Y，并且与Z同柱" - 修复格式
-        appear_and_same_match = re.search(r"四柱出现(.+?)或者(.+?)，并且与(.+?)中任何一个字同柱", cond2)
-        if appear_and_same_match:
-            god1 = appear_and_same_match.group(1).strip()
-            god2 = appear_and_same_match.group(2).strip()
-            branches_text = appear_and_same_match.group(3).strip()
-            branches = [b.strip() for b in re.split(r"[、，,]", branches_text) if b.strip() in BRANCHES]
-            
-            if (god1 in TEN_GODS or god2 in TEN_GODS) and branches:
-                conds = []
-                if god1 in TEN_GODS:
-                    conds.append({"ten_gods_same_pillar_branch": {"ten_god": god1, "branches": branches}})
-                if god2 in TEN_GODS:
-                    conds.append({"ten_gods_same_pillar_branch": {"ten_god": god2, "branches": branches}})
-                if conds:
+        # ========== 优化：同柱关系正则表达式（高优先级） ==========
+        # "四柱出现X或者Y，并且与Z同柱" - 优化格式匹配，支持多种表达
+        appear_and_same_patterns = [
+            r"四柱出现(.+?)(?:或者|或)(.+?)，(?:并且|且)与([子丑寅卯辰巳午未申酉戌亥、，,]+)中任何一个字同柱",
+            r"四柱出现(.+?)(?:或者|或)(.+?)，(?:并且|且)与([子丑寅卯辰巳午未申酉戌亥、，,]+)同柱",
+            r"四柱出现(.+?)(?:或者|或)(.+?)，与([子丑寅卯辰巳午未申酉戌亥、，,]+)中任何一个字同柱",
+        ]
+        
+        for pattern in appear_and_same_patterns:
+            appear_and_same_match = re.search(pattern, cond2)
+            if appear_and_same_match:
+                god1 = appear_and_same_match.group(1).strip()
+                god2 = appear_and_same_match.group(2).strip()
+                branches_text = appear_and_same_match.group(3).strip()
+                
+                # 提取地支
+                branches = [b.strip() for b in re.split(r"[、，,]", branches_text) if b.strip() in BRANCHES]
+                
+                # 提取十神（支持多个十神）
+                gods = []
+                for god in TEN_GODS:
+                    if god in god1 or god in god2:
+                        gods.append(god)
+                
+                if gods and branches:
+                    # 使用any组合：任一十神与任一地支同柱
+                    conds = []
+                    for god in gods:
+                        conds.append({"ten_gods_same_pillar_branch": {"ten_god": god, "branches": branches}})
                     return ParseResult(True, conditions={"any": conds})
         
         # "同一柱出现神煞X与Y" - 神煞同柱
@@ -1428,6 +1458,47 @@ class RuleParser:
                     "branches_count": {"names": branches, "min": len(branches)}
                 })
         
+        # ========== 新增：多十神组合比较（增强，支持反向比较） ==========
+        # "伤官、偏财数量多于食神、正财数量" - 多十神组合比较（正向）
+        if "数量多于" in cond2 and "，" in cond2:
+            parts = cond2.split("数量多于")
+            if len(parts) == 2:
+                more_part = parts[0]
+                less_part = parts[1]
+                
+                # 提取多个十神（支持顿号、逗号分隔）
+                more_gods = []
+                less_gods = []
+                
+                for god in TEN_GODS:
+                    if god in more_part:
+                        more_gods.append(god)
+                    if god in less_part:
+                        less_gods.append(god)
+                
+                if len(more_gods) >= 2 and len(less_gods) >= 2:
+                    return ParseResult(True, conditions={
+                        "ten_gods_compare_group": {"more": more_gods, "less": less_gods}
+                    })
+        
+        # "食神，偏财比伤官，正财数量少" - 多十神组合比较（反向）
+        if "比" in cond2 and "数量少" in cond2:
+            # 提取"X，Y比Z，W数量少"格式
+            compare_match = re.search(r"([\u4e00-\u9fa5，,、]+)比([\u4e00-\u9fa5，,、]+)数量少", cond2)
+            if compare_match:
+                less_part = compare_match.group(1)
+                more_part = compare_match.group(2)
+                
+                # 提取十神
+                less_gods = [g for g in TEN_GODS if g in less_part]
+                more_gods = [g for g in TEN_GODS if g in more_part]
+                
+                if len(less_gods) >= 2 and len(more_gods) >= 2:
+                    # 反向比较：less_gods 应该少于 more_gods
+                    return ParseResult(True, conditions={
+                        "ten_gods_compare_group": {"more": more_gods, "less": less_gods}
+                    })
+        
         # "女命八字，四柱中十神X，Y，Z的数量多于A，B的数量" - 性别+十神数量比较
         if "女命" in cond2 and "数量多于" in cond2:
             more_part = cond2.split("数量多于")[0]
@@ -1548,10 +1619,27 @@ class RuleParser:
                 "branch_liuhe_sanhe_count": {"min": 1}
             })
         
-        # "军人身份流年大小运五行是X" - 流年大运五行（需要动态数据，暂时标记）
-        if "军人身份" in cond2 or "流年大小运" in cond2:
-            # 这是动态数据，需要从fortune中获取，暂时返回False
-            return ParseResult(False, reason=f"需要动态数据（流年大运）: {cond2}")
+        # ========== 新增：流年大运支持（低优先级） ==========
+        # "军人身份流年大小运五行是金土" - 流年大运五行
+        liunian_dayun_element_match = re.search(r"流年(?:大小运|大运)(?:五行是|五行为)([木火土金水、，,]+)", cond2)
+        if liunian_dayun_element_match:
+            elements_text = liunian_dayun_element_match.group(1)
+            # 提取五行
+            elements = [e.strip() for e in re.split(r"[、，,]", elements_text) if e.strip() in ["木", "火", "土", "金", "水"]]
+            
+            if elements:
+                # 注意：军人身份条件暂时忽略，因为需要额外的用户信息
+                return ParseResult(True, conditions={
+                    "liunian_dayun_element": {"elements": elements}
+                })
+        
+        # "流年大小运五行是X" - 简化格式
+        if "流年大小运五行" in cond2 or "流年大运五行" in cond2:
+            elements = [e for e in ["木", "火", "土", "金", "水"] if e in cond2]
+            if elements:
+                return ParseResult(True, conditions={
+                    "liunian_dayun_element": {"elements": elements}
+                })
         
         # "华盖数量3个及以上" - 神煞数量（在十神条件中）
         if "华盖数量" in cond2:
@@ -1560,6 +1648,59 @@ class RuleParser:
                 count = int(count_match.group(1))
                 return ParseResult(True, conditions={
                     "deities_count": {"name": "华盖", "min": count}
+                })
+        
+        # ========== 优化：身旺+十神组合正则表达式（高优先级） ==========
+        # "身旺，同时有七杀，正印，偏印" - 身旺+十神组合
+        wangshuai_ten_gods_patterns = [
+            r"身旺，同时有([\u4e00-\u9fa5，,、]+)",
+            r"身强，同时有([\u4e00-\u9fa5，,、]+)",
+            r"身旺，有([\u4e00-\u9fa5，,、]+)",
+            r"身强，有([\u4e00-\u9fa5，,、]+)",
+        ]
+        
+        for pattern in wangshuai_ten_gods_patterns:
+            wangshuai_match = re.search(pattern, cond2)
+            if wangshuai_match:
+                gods_text = wangshuai_match.group(1)
+                # 提取十神
+                gods = [g for g in TEN_GODS if g in gods_text]
+                if gods:
+                    # 组合旺衰条件和十神存在条件
+                    conds = [{"wangshuai": ["身旺"]}]
+                    for god in gods:
+                        conds.append({"ten_gods_total": {"names": [god], "min": 1}})
+                    return ParseResult(True, conditions={"all": conds})
+        
+        # ========== 新增：十神能量量化功能（低优先级） ==========
+        # "伤官食神强于正七官杀者" - 十神能量比较
+        energy_compare_match = re.search(r"(.+?)(?:强于|能量强于|能量大于)(.+?)(?:者|，|$)", cond2)
+        if energy_compare_match:
+            group_a_text = energy_compare_match.group(1).strip()
+            group_b_text = energy_compare_match.group(2).strip().rstrip("者").rstrip("，")
+            
+            # 提取十神（支持多个十神）
+            group_a = [g for g in TEN_GODS if g in group_a_text]
+            group_b = [g for g in TEN_GODS if g in group_b_text]
+            
+            if len(group_a) >= 1 and len(group_b) >= 1:
+                return ParseResult(True, conditions={
+                    "ten_gods_energy_compare": {"group_a": group_a, "group_b": group_b, "relation": "stronger"}
+                })
+        
+        # ========== 新增：地支+五行组合条件（中优先级） ==========
+        # "辰戌土旺为狱官" - 地支+五行组合
+        branch_element_match = re.search(r"([子丑寅卯辰巳午未申酉戌亥、，,]+)([木火土金水])旺", cond2)
+        if branch_element_match:
+            branches_text = branch_element_match.group(1)
+            element = branch_element_match.group(2)
+            
+            # 提取地支
+            branches = [b.strip() for b in re.split(r"[、，,]", branches_text) if b.strip() in BRANCHES]
+            
+            if branches and element:
+                return ParseResult(True, conditions={
+                    "branch_element_combination": {"branches": branches, "element": element, "wang": True}
                 })
         
         # "正印生沐浴" - 神煞特殊条件（在十神条件中）

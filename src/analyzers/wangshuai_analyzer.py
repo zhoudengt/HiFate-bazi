@@ -127,9 +127,13 @@ class WangShuaiAnalyzer:
         logger.info(f"   第一喜神: {final_xi_ji.get('first_xi_shen')}")
         logger.info(f"   调候优先级: {final_xi_ji.get('tiaohou_priority')}")
         
+        # 计算旺衰程度量化评分（0-100分）
+        wangshuai_degree = self._calculate_wangshuai_degree(total_score, wangshuai)
+        
         result = {
             'wangshuai': wangshuai,
             'total_score': total_score,
+            'wangshuai_degree': wangshuai_degree,  # 新增：旺衰程度量化（0-100）
             'scores': {
                 'de_ling': de_ling_score,
                 'de_di': de_di_score,
@@ -475,6 +479,50 @@ class WangShuaiAnalyzer:
             'xi_shen': xi_elements,
             'ji_shen': ji_elements
         }
+    
+    def _calculate_wangshuai_degree(self, total_score: int, wangshuai: str) -> float:
+        """
+        计算旺衰程度量化评分（0-100分）
+        
+        评分规则：
+        - 极旺：80-100分（总分越高，分数越高）
+        - 身旺：60-79分
+        - 平衡：40-60分
+        - 身弱：20-39分
+        - 极弱：0-19分（总分越低，分数越低）
+        
+        Args:
+            total_score: 总分
+            wangshuai: 旺衰状态
+            
+        Returns:
+            旺衰程度评分（0-100）
+        """
+        if wangshuai == '极旺':
+            # 总分 > 40，映射到 80-100
+            # 假设最高分约为100，最低极旺为40分
+            degree = 80 + min(20, (total_score - 40) / 3.0)  # 每3分增加1度
+            return min(100, max(80, degree))
+        elif wangshuai == '身旺':
+            # 10 <= 总分 <= 40，映射到 60-79
+            degree = 60 + ((total_score - 10) / 30.0) * 19  # 30分范围映射到19度
+            return min(79, max(60, degree))
+        elif wangshuai == '平衡':
+            # -10 < 总分 < 10，映射到 40-60
+            # 以0分为中心，±10分映射到40-60
+            degree = 50 + (total_score / 10.0) * 10  # 0分=50度，±10分=40或60度
+            return min(60, max(40, degree))
+        elif wangshuai == '身弱':
+            # -40 <= 总分 <= -10，映射到 20-39
+            degree = 39 - ((total_score + 10) / 30.0) * 19  # 30分范围映射到19度
+            return min(39, max(20, degree))
+        elif wangshuai == '极弱':
+            # 总分 < -40，映射到 0-19
+            degree = 19 - min(19, (abs(total_score) - 40) / 3.0)  # 每3分减少1度
+            return min(19, max(0, degree))
+        else:
+            # 未知状态，返回中性值
+            return 50.0
     
     @staticmethod
     def calculate_tiaohou(month_branch: str) -> Dict[str, Any]:

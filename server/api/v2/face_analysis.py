@@ -77,40 +77,9 @@ async def analyze_face(
             raise HTTPException(status_code=400, detail=result['message'])
         
         # 获取宫位断语
+        # 注意：analyze_face_features 内部调用了 analyze_gongwei，
+        # 而 analyze_gongwei 已经填充了 interpretations，所以这里不需要再次调用
         gongwei_result = result.get('gongwei', {})
-        
-        # 为每个宫位添加断语（传入实际识别到的特征）
-        knowledge = get_knowledge_service()
-        if 'gongwei_list' in gongwei_result:
-            for gw in gongwei_result['gongwei_list']:
-                # 传入实际识别到的特征，避免互斥
-                features = gw.get('features', {})
-                interpretations = knowledge.get_interpretation(
-                    'gongwei',
-                    gw['name'],
-                    features=features  # 【关键】传入实际特征
-                )
-                gw['interpretations'] = interpretations  # 不限制数量，由规则匹配器控制
-        
-        if 'liuqin_list' in gongwei_result:
-            for lq in gongwei_result['liuqin_list']:
-                features = lq.get('features', {})
-                interpretations = knowledge.get_interpretation(
-                    'liuqin',
-                    lq['relation'],
-                    features=features
-                )
-                lq['interpretations'] = interpretations
-        
-        if 'shishen_list' in gongwei_result:
-            for ss in gongwei_result['shishen_list']:
-                features = ss.get('features', {})
-                interpretations = knowledge.get_interpretation(
-                    'shishen',
-                    ss['shishen'],
-                    features=features
-                )
-                ss['interpretations'] = interpretations
         
         # 构建响应
         response_data = {

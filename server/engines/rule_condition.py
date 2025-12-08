@@ -1032,6 +1032,47 @@ class EnhancedRuleCondition:
                     return liunian_branch in target_branches
                 return False
             
+            elif key == "liunian_dayun_element":
+                """流年大运五行条件
+                格式: {"liunian_dayun_element": {"elements": ["金", "土"]}}
+                判断流年和大运的五行是否都在指定列表中
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                elements = ensure_list(value.get('elements', []))
+                if not elements:
+                    return False
+                
+                fortune = bazi_data.get('fortune', {})
+                current_dayun = fortune.get('current_dayun', {})
+                current_liunian = fortune.get('current_liunian', {})
+                
+                if not current_dayun or not current_liunian:
+                    return False
+                
+                # 获取流年和大运的干支
+                dayun_stem = current_dayun.get('stem', '')
+                dayun_branch = current_dayun.get('branch', '')
+                liunian_stem = current_liunian.get('stem', '')
+                liunian_branch = current_liunian.get('branch', '')
+                
+                # 获取五行
+                dayun_stem_element = STEM_ELEMENTS.get(dayun_stem, '')
+                dayun_branch_element = BRANCH_ELEMENTS.get(dayun_branch, '')
+                liunian_stem_element = STEM_ELEMENTS.get(liunian_stem, '')
+                liunian_branch_element = BRANCH_ELEMENTS.get(liunian_branch, '')
+                
+                # 收集所有五行
+                dayun_elements = [e for e in [dayun_stem_element, dayun_branch_element] if e]
+                liunian_elements = [e for e in [liunian_stem_element, liunian_branch_element] if e]
+                
+                # 检查流年和大运的五行是否都在指定列表中
+                dayun_match = all(e in elements for e in dayun_elements) if dayun_elements else False
+                liunian_match = all(e in elements for e in liunian_elements) if liunian_elements else False
+                
+                return dayun_match and liunian_match
+            
             elif key == "nayin_count_in_pillars":
                 """统计指定纳音在多个柱中出现的次数"""
                 nayin_name = value.get('nayin_name', '')
@@ -1185,6 +1226,116 @@ class EnhancedRuleCondition:
                 less_count = sum(totals.get(god, 0) for god in less_gods)
                 
                 return more_count > less_count
+            
+            elif key == "ten_gods_total_group":
+                """多十神总数量限制条件
+                格式: {"ten_gods_total_group": {"names": ["正官", "七杀", "正印", "偏印"], "max": 2}}
+                计算多个十神的总数量，然后判断是否满足限制
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                names = ensure_list(value.get('names', []))
+                if not names:
+                    return False
+                
+                # 统计多个十神的总数量
+                ten_gods_stats = bazi_data.get('ten_gods_stats', {})
+                totals = ten_gods_stats.get('totals', {})
+                
+                total_count = sum(totals.get(god, 0) for god in names)
+                
+                # 支持 min, max, eq 三种限制
+                if 'min' in value:
+                    return total_count >= value['min']
+                elif 'max' in value:
+                    return total_count <= value['max']
+                elif 'eq' in value:
+                    return total_count == value['eq']
+                
+                return False
+            
+            elif key == "branch_element_combination":
+                """地支+五行组合条件
+                格式: {"branch_element_combination": {"branches": ["辰", "戌"], "element": "土", "wang": true}}
+                判断：1) 四柱中有指定的地支；2) 该五行旺（数量多或得令）
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                branches = ensure_list(value.get('branches', []))
+                element = value.get('element', '')
+                wang = value.get('wang', False)
+                
+                if not branches or not element:
+                    return False
+                
+                # 1. 检查四柱中是否有指定的地支
+                bazi_pillars = bazi_data.get('bazi_pillars', {})
+                has_branches = False
+                for pillar_type in ['year', 'month', 'day', 'hour']:
+                    pillar_branch = bazi_pillars.get(pillar_type, {}).get('branch', '')
+                    if pillar_branch in branches:
+                        has_branches = True
+                        break
+                
+                if not has_branches:
+                    return False
+                
+                # 2. 如果要求"旺"，检查五行数量或得令
+                if wang:
+                    # 统计该五行的数量
+                    element_counts = bazi_data.get('element_counts', {})
+                    if isinstance(element_counts, str):
+                        try:
+                            import json
+                            element_counts = json.loads(element_counts)
+                        except:
+                            element_counts = {}
+                    
+                    element_count = element_counts.get(element, 0)
+                    # 如果五行数量 >= 3，认为"旺"
+                    if element_count >= 3:
+                        return True
+                    
+                    # 或者检查是否在月令得令（简化处理，这里只检查数量）
+                    return False
+                
+                return True
+            
+            elif key == "ten_gods_energy_compare":
+                """十神能量比较条件
+                格式: {"ten_gods_energy_compare": {"group_a": ["伤官", "食神"], "group_b": ["正官", "七杀"], "relation": "stronger"}}
+                比较两组十神的能量，考虑月令、相克关系、生扶关系
+                """
+                if not isinstance(value, dict):
+                    return False
+                
+                group_a = ensure_list(value.get('group_a', []))
+                group_b = ensure_list(value.get('group_b', []))
+                relation = value.get('relation', 'stronger')
+                
+                if not group_a or not group_b:
+                    return False
+                
+                try:
+                    from src.analyzers.ten_gods_energy_analyzer import TenGodsEnergyAnalyzer
+                    analyzer = TenGodsEnergyAnalyzer()
+                    
+                    ten_gods_stats = bazi_data.get('ten_gods_stats', {})
+                    result = analyzer.compare_energy(group_a, group_b, bazi_data, ten_gods_stats)
+                    
+                    if relation == 'stronger':
+                        return result['group_a_stronger']
+                    elif relation == 'weaker':
+                        return not result['group_a_stronger']
+                    elif relation == 'equal':
+                        return abs(result['difference']) < 0.1  # 能量差小于0.1认为相等
+                    
+                    return False
+                except Exception as e:
+                    logger.warning(f"十神能量比较失败: {e}", exc_info=True)
+                    return False
             
             # ========== 新增：不被克判断 ==========
             elif key == "ten_gods_not_ke":

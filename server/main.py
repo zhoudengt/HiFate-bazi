@@ -194,6 +194,15 @@ except ImportError as e:
     formula_analysis_router = None
     FORMULA_ANALYSIS_ROUTER_AVAILABLE = False
 
+# 新增：用户反馈路由
+try:
+    from server.api.v1.feedback import router as feedback_router
+    FEEDBACK_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"用户反馈路由导入失败（可选功能）: {e}")
+    feedback_router = None
+    FEEDBACK_ROUTER_AVAILABLE = False
+
 # 新增：算法公式分析路由（基于2025.11.20规则）
 try:
     from server.api.v1.formula_analysis import router as formula_analysis_router
@@ -406,6 +415,25 @@ if MONTHLY_FORTUNE_ROUTER_AVAILABLE and monthly_fortune_router:
 # 算法公式规则分析路由（808条规则）
 if FORMULA_ANALYSIS_ROUTER_AVAILABLE and formula_analysis_router:
     app.include_router(formula_analysis_router, prefix="/api/v1", tags=["算法公式规则"])
+
+# 注册用户反馈路由
+if FEEDBACK_ROUTER_AVAILABLE and feedback_router:
+    app.include_router(feedback_router, prefix="/api/v1", tags=["用户反馈"])
+    logger.info("✓ 用户反馈路由已注册")
+
+# 新增：流年大运增强分析路由
+try:
+    from server.api.v1.liunian_enhanced import router as liunian_enhanced_router
+    LIUNIAN_ENHANCED_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"流年大运增强分析路由导入失败（可选功能）: {e}")
+    liunian_enhanced_router = None
+    LIUNIAN_ENHANCED_ROUTER_AVAILABLE = False
+
+# 注册流年大运增强分析路由
+if LIUNIAN_ENHANCED_ROUTER_AVAILABLE and liunian_enhanced_router:
+    app.include_router(liunian_enhanced_router, prefix="/api/v1", tags=["流年大运增强分析"])
+    logger.info("✓ 流年大运增强分析路由已注册")
     logger.info("✓ 算法公式规则分析路由已注册")
 
 if FORMULA_ANALYSIS_ROUTER_AVAILABLE and formula_analysis_router:

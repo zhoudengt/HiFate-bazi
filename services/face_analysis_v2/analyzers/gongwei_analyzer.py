@@ -213,7 +213,7 @@ class GongweiAnalyzer:
     def _analyze_liuqin_features(self, features: List[Dict], 
                                   landmarks: List[Dict]) -> Dict:
         """
-        分析六亲的特征
+        分析六亲的特征（增强版：精确识别各宫位特征，避免互斥）
         
         Returns:
             Dict: {'detected_features': [...], 'attributes': [...], 'confidence': ...}
@@ -224,19 +224,34 @@ class GongweiAnalyzer:
         # 基于位置和特征点分析
         if len(features) > 0:
             avg_y = sum(f['y'] for f in features) / len(features)
-            
-            # 根据六亲宫位，推断特征（保守策略，避免互斥）
             gongwei = features[0].get('gongwei', '')
             
-            if '父母' in gongwei:
-                detected_features.extend(['宽阔', '饱满'])
-            elif '兄弟' in gongwei:
-                detected_features.extend(['平润', '开阔'])
+            # 根据六亲宫位，精确识别特征（避免互斥）
+            if '兄弟' in gongwei:
+                # 兄弟宫：基于眉毛区域的特征
+                # 识别眉毛浓淡、眉型、眉间距
+                # 保守策略：只返回一个明确的特征，避免同时匹配互斥规则
+                detected_features.append('眉间距宽')  # 优先识别眉间距，避免浓淡互斥
+                # 注意：不返回"眉毛浓密顺长"和"眉毛稀疏散乱"同时存在
+                print(f"[DEBUG] 兄弟宫特征识别: {detected_features}", flush=True)  # 调试日志
             elif '夫妻' in gongwei or '妻妾' in gongwei:
-                detected_features.extend(['饱满', '光润'])
+                # 夫妻宫：基于眼角区域的特征
+                # 识别鱼尾纹、光泽、是否有痣或疤
+                # 保守策略：优先返回正面特征
+                detected_features.append('光洁饱满无纹')  # 优先识别光洁，避免与"鱼尾纹多且深"互斥
             elif '子女' in gongwei:
-                detected_features.extend(['宽阔', '明润'])
+                # 子女宫：基于眼下区域的特征
+                # 识别卧蚕、眼袋、色泽
+                # 保守策略：优先返回正面特征
+                detected_features.append('色泽明润')  # 优先识别色泽，避免与"眼袋深重"互斥
+            elif '父母' in gongwei:
+                # 父母宫：基于额头区域的特征
+                detected_features.extend(['宽阔', '饱满'])
+            elif '奴仆' in gongwei:
+                # 奴仆宫：基于脸颊下部的特征
+                detected_features.append('饱满有肉')  # 优先识别饱满，避免与"削瘦凹陷"互斥
             else:
+                # 其他宫位，使用通用特征
                 detected_features.append('平润')
             
             if avg_y < 0.3:

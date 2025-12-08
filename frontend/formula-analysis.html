@@ -284,6 +284,50 @@
             font-size: 1.05em;
         }
 
+        .rule-meta {
+            display: flex;
+            gap: 15px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #f0f0f0;
+            font-size: 0.9em;
+        }
+
+        .confidence-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 500;
+        }
+
+        .confidence-high {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .confidence-medium {
+            background: #fff3e0;
+            color: #e65100;
+        }
+
+        .confidence-low {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .rule-explanation {
+            color: #666;
+            font-size: 0.9em;
+            font-style: italic;
+            margin-top: 8px;
+            padding: 8px;
+            background: #f8f9fa;
+            border-left: 3px solid #667eea;
+            border-radius: 4px;
+        }
+
         .empty-state {
             text-align: center;
             padding: 60px 20px;
@@ -592,13 +636,52 @@
 
         function createRuleCard(rule) {
             // 添加安全检查，处理中英文字段名（后端返回中文字段，前端期望英文字段）
-            const ruleId = rule.id || rule.ID || rule['ID'] || '未知';
-            const ruleType = rule.type || rule.类型 || rule['类型'] || '未知';
+            const ruleId = rule.id || rule.ID || rule['ID'] || rule.rule_id || rule.rule_code || '未知';
+            const ruleType = rule.type || rule.类型 || rule['类型'] || rule.rule_type || '未知';
             const ruleGender = rule.gender || rule.性别 || rule['性别'] || '未知';
             const condition1 = rule.condition1 || rule['筛选条件1'] || '';
             const condition2 = rule.condition2 || rule['筛选条件2'] || '';
             // 关键修复：添加安全检查，处理undefined/null情况
-            const ruleResult = rule.result || rule.结果 || rule['结果'] || '暂无内容';
+            const ruleResult = rule.result || rule.结果 || rule['结果'] || rule.content?.text || rule.content || '暂无内容';
+            
+            // 提取置信度和历史评分
+            const confidence = rule.confidence || rule.confidence_prior;
+            const historyScore = rule.history_score;
+            const description = rule.description || '';
+            
+            // 生成置信度徽章
+            let confidenceBadge = '';
+            if (confidence !== undefined && confidence !== null) {
+                const confValue = parseFloat(confidence);
+                let confClass = 'confidence-medium';
+                let confText = '中等';
+                if (confValue >= 0.8) {
+                    confClass = 'confidence-high';
+                    confText = '高';
+                } else if (confValue < 0.5) {
+                    confClass = 'confidence-low';
+                    confText = '低';
+                }
+                confidenceBadge = `<span class="confidence-badge ${confClass}">
+                    <span>置信度: ${confText}</span>
+                    <span>(${(confValue * 100).toFixed(0)}%)</span>
+                </span>`;
+            }
+            
+            // 生成历史评分显示
+            let historyBadge = '';
+            if (historyScore !== undefined && historyScore !== null) {
+                const histValue = parseFloat(historyScore);
+                historyBadge = `<span style="color: #666;">历史评分: ${(histValue * 100).toFixed(0)}%</span>`;
+            }
+            
+            // 生成规则解释
+            let explanation = '';
+            if (description) {
+                explanation = `<div class="rule-explanation">
+                    <strong>规则说明：</strong>${description}
+                </div>`;
+            }
             
             return `
                 <div class="rule-card">
@@ -611,6 +694,11 @@
                     </div>
                     <div class="rule-result">
                         ${String(ruleResult).replace(/\n/g, '<br>')}
+                    </div>
+                    ${explanation}
+                    <div class="rule-meta">
+                        ${confidenceBadge}
+                        ${historyBadge}
                     </div>
                 </div>
             `;

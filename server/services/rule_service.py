@@ -140,7 +140,15 @@ class RuleService:
                             'conditions': conditions,
                             'content': content,
                             'enabled': rule['enabled'],
-                            'description': rule.get('description', '')
+                            'description': rule.get('description', ''),
+                            # 置信度和权重字段
+                            'confidence_prior': float(rule.get('confidence_prior', 0.6)) if rule.get('confidence_prior') is not None else 0.6,
+                            'mutually_exclusive_group': rule.get('mutually_exclusive_group'),
+                            'contradicts': rule.get('contradicts', []),
+                            'tags': rule.get('tags', []),
+                            'segment_weights': rule.get('segment_weights', {}),
+                            'biz_impact_weight': float(rule.get('biz_impact_weight', 1.0)) if rule.get('biz_impact_weight') is not None else 1.0,
+                            'history_score': float(rule.get('history_score', 0.5)) if rule.get('history_score') is not None else 0.5,
                         }
                         cls._engine.add_rule(rule_dict)
                     
@@ -247,7 +255,7 @@ class RuleService:
                         # 查询失败，使用默认内容
                         rule_content = rule_content.get('default_content', {})
             
-            formatted_rules.append({
+            formatted_rule = {
                 "rule_id": rule.get('rule_id', ''),
                 "rule_code": rule.get('rule_id', ''),
                 "rule_name": rule.get('rule_name', ''),
@@ -255,7 +263,17 @@ class RuleService:
                 "priority": rule.get('priority', 100),
                 "content": rule_content,
                 "description": rule.get('description', '')
-            })
+            }
+            
+            # 添加置信度和权重信息
+            if rule.get('confidence_prior') is not None:
+                formatted_rule['confidence'] = float(rule.get('confidence_prior', 0.6))
+            if rule.get('history_score') is not None:
+                formatted_rule['history_score'] = float(rule.get('history_score', 0.5))
+            if rule.get('tags'):
+                formatted_rule['tags'] = rule.get('tags')
+            
+            formatted_rules.append(formatted_rule)
         
         # 缓存结果
         if use_cache and formatted_rules:
