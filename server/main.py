@@ -176,6 +176,15 @@ except ImportError as e:
     fortune_api_router = None
     FORTUNE_API_ROUTER_AVAILABLE = False
 
+# 新增：万年历API路由（调用第三方API）
+try:
+    from server.api.v1.calendar_api import router as calendar_api_router
+    CALENDAR_API_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"万年历API路由导入失败（可选功能）: {e}")
+    calendar_api_router = None
+    CALENDAR_API_ROUTER_AVAILABLE = False
+
 # 新增：月运势分析路由（基于八字）
 try:
     from server.api.v1.monthly_fortune import router as monthly_fortune_router
@@ -259,6 +268,15 @@ except ImportError:
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时执行
+    try:
+        # 打印所有已注册的 gRPC 端点
+        from server.api.grpc_gateway import SUPPORTED_ENDPOINTS
+        logger.info(f"✓ 已注册 {len(SUPPORTED_ENDPOINTS)} 个 gRPC 端点:")
+        for endpoint in sorted(SUPPORTED_ENDPOINTS.keys()):
+            logger.info(f"  - {endpoint}")
+    except Exception as e:
+        logger.warning(f"⚠ 打印 gRPC 端点失败: {e}")
+    
     try:
         # 启动统一的热更新管理器（替代原来的规则热加载）
         from server.hot_reload.hot_reload_manager import HotReloadManager
@@ -344,6 +362,16 @@ app.add_middleware(
 # 添加GZip压缩中间件
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+# ✅ 添加统一异常处理中间件（最后添加，确保能捕获所有异常）
+try:
+    from server.utils.exception_handler import ExceptionHandlerMiddleware
+    app.add_middleware(ExceptionHandlerMiddleware)
+    logger.info("✓ 统一异常处理中间件已启用")
+except ImportError as e:
+    logger.warning(f"⚠ 异常处理中间件导入失败（可选功能）: {e}")
+except Exception as e:
+    logger.warning(f"⚠ 异常处理中间件启用失败: {e}")
+
 # 注册路由
 app.include_router(bazi_router, prefix="/api/v1", tags=["八字计算"])
 app.include_router(bazi_ai_router, prefix="/api/v1", tags=["AI分析"])
@@ -406,6 +434,11 @@ if DAILY_FORTUNE_ROUTER_AVAILABLE and daily_fortune_router:
 # 注册运势API路由（新增，调用第三方API）
 if FORTUNE_API_ROUTER_AVAILABLE and fortune_api_router:
     app.include_router(fortune_api_router, prefix="/api/v1", tags=["运势API"])
+
+# 注册万年历API路由（新增，调用第三方API）
+if CALENDAR_API_ROUTER_AVAILABLE and calendar_api_router:
+    app.include_router(calendar_api_router, prefix="/api/v1", tags=["万年历API"])
+    logger.info("✓ 万年历API路由已注册")
 
 # 注册月运势分析路由（新增，基于八字）
 if MONTHLY_FORTUNE_ROUTER_AVAILABLE and monthly_fortune_router:
@@ -512,6 +545,22 @@ try:
     logger.info("✓ 办公桌风水分析路由已注册")
 except ImportError as e:
     logger.warning(f"办公桌风水分析路由导入失败: {e}")
+
+# 注册服务治理路由
+try:
+    from server.api.v1.service_governance import router as governance_router
+    app.include_router(governance_router, prefix="/api/v1", tags=["服务治理"])
+    logger.info("✓ 服务治理路由已注册")
+except ImportError as e:
+    logger.warning(f"服务治理路由导入失败: {e}")
+
+# 注册可观测性路由
+try:
+    from server.api.v1.observability import router as observability_router
+    app.include_router(observability_router, prefix="/api/v1", tags=["可观测性"])
+    logger.info("✓ 可观测性路由已注册")
+except ImportError as e:
+    logger.warning(f"可观测性路由导入失败: {e}")
 
 # 挂载静态文件目录（前端文件）
 frontend_dir = os.path.join(project_root, "frontend")

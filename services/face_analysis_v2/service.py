@@ -119,9 +119,21 @@ class FaceAnalysisService:
         }
         
         if 'gongwei' in analysis_types:
-            result['gongwei_list'] = self.gongwei_analyzer.analyze_shisan_gongwei(
+            gongwei_list = self.gongwei_analyzer.analyze_shisan_gongwei(
                 mapped_features, landmarks
             )
+            # 为每个十三宫位填充interpretations
+            for gongwei_item in gongwei_list:
+                position = gongwei_item.get('name', '')
+                features = gongwei_item.get('features', {})
+                # 调用规则匹配器获取interpretations
+                interpretations = self.knowledge_service.get_interpretation(
+                    rule_type='gongwei',
+                    position=position,
+                    features=features
+                )
+                gongwei_item['interpretations'] = interpretations
+            result['gongwei_list'] = gongwei_list
         
         if 'liuqin' in analysis_types:
             liuqin_list = self.gongwei_analyzer.analyze_liuqin(

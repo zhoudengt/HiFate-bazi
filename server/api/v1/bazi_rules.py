@@ -21,6 +21,7 @@ from server.services.rule_service import RuleService
 from server.services import selector_service
 from server.services import nlg_service
 from server.utils.auth import get_current_user
+from server.utils.data_validator import validate_bazi_data
 
 # 尝试导入限流器（可选功能）
 try:
@@ -115,28 +116,37 @@ class BaziRulesRequest(BaseModel):
     @validator('solar_date')
     def validate_date(cls, v):
         """验证日期格式"""
+        from server.utils.api_helpers import validate_bazi_request
         try:
-            from datetime import datetime
-            datetime.strptime(v, '%Y-%m-%d')
-        except ValueError:
-            raise ValueError('日期格式错误，应为 YYYY-MM-DD')
+            validate_bazi_request(v, "00:00", "male")  # 只验证日期格式
+        except ValueError as e:
+            if "日期格式" in str(e):
+                raise ValueError('日期格式错误，应为 YYYY-MM-DD')
+            raise
         return v
     
     @validator('solar_time')
     def validate_time(cls, v):
         """验证时间格式"""
+        from server.utils.api_helpers import validate_bazi_request
         try:
-            from datetime import datetime
-            datetime.strptime(v, '%H:%M')
-        except ValueError:
-            raise ValueError('时间格式错误，应为 HH:MM')
+            validate_bazi_request("2000-01-01", v, "male")  # 只验证时间格式
+        except ValueError as e:
+            if "时间格式" in str(e):
+                raise ValueError('时间格式错误，应为 HH:MM')
+            raise
         return v
     
     @validator('gender')
     def validate_gender(cls, v):
         """验证性别"""
-        if v not in ['male', 'female']:
-            raise ValueError('性别必须为 male 或 female')
+        from server.utils.api_helpers import validate_bazi_request
+        try:
+            validate_bazi_request("2000-01-01", "00:00", v)  # 只验证性别
+        except ValueError as e:
+            if "性别" in str(e):
+                raise ValueError('性别必须为 male 或 female')
+            raise
         return v
 
 
@@ -181,29 +191,8 @@ async def match_bazi_rules(request: BaziRulesRequest, http_request: Request):
             calculator.build_rule_input
         )
         
-        # 确保 bazi_data 是字典类型，并验证关键字段
-        if not isinstance(bazi_data, dict):
-            raise ValueError(f"build_rule_input 返回了非字典类型: {type(bazi_data)}, 值: {bazi_data}")
-        
-        # 验证关键字段的类型
-        details = bazi_data.get('details')
-        if details is not None and not isinstance(details, dict):
-            raise ValueError(f"bazi_data['details'] 应该是字典类型，但实际是: {type(details)}, 值: {details}")
-        
-        bazi_pillars = bazi_data.get('bazi_pillars')
-        if bazi_pillars is not None and not isinstance(bazi_pillars, dict):
-            raise ValueError(f"bazi_data['bazi_pillars'] 应该是字典类型，但实际是: {type(bazi_pillars)}, 值: {bazi_pillars}")
-        
-        basic_info = bazi_data.get('basic_info')
-        if basic_info is not None and not isinstance(basic_info, dict):
-            raise ValueError(f"bazi_data['basic_info'] 应该是字典类型，但实际是: {type(basic_info)}, 值: {basic_info}")
-        
-        # 确保 details 中的每个柱也是字典类型
-        if isinstance(details, dict):
-            for pillar_type in ['year', 'month', 'day', 'hour']:
-                pillar_detail = details.get(pillar_type)
-                if pillar_detail is not None and not isinstance(pillar_detail, dict):
-                    raise ValueError(f"bazi_data['details']['{pillar_type}'] 应该是字典类型，但实际是: {type(pillar_detail)}, 值: {pillar_detail}")
+        # ✅ 统一类型验证：确保所有字段类型正确（防止gRPC序列化问题）
+        bazi_data = validate_bazi_data(bazi_data)
 
         # 2. 如果需要返回完整八字结果，继续调用服务层
         # 注意：如果只需要规则匹配，可以设置 include_bazi=false 来跳过这一步，提高性能
@@ -216,6 +205,9 @@ async def match_bazi_rules(request: BaziRulesRequest, http_request: Request):
                 request.solar_time,
                 request.gender
             )
+            # ✅ 统一类型验证：确保返回的八字数据也经过验证
+            if bazi_result and isinstance(bazi_result, dict):
+                bazi_result = validate_bazi_data(bazi_result.get('bazi', bazi_result))
         
         if not bazi_data:
             raise ValueError("八字计算失败，请检查输入参数")
@@ -281,8 +273,8 @@ async def curated_bazi_rules(
             calculator.build_rule_input
         )
 
-        if not isinstance(bazi_data, dict):
-            raise ValueError(f"build_rule_input 返回了非字典类型: {type(bazi_data)}")
+        # ✅ 统一类型验证：确保所有字段类型正确（防止gRPC序列化问题）
+        bazi_data = validate_bazi_data(bazi_data)
 
         # 匹配候选
         candidates = await loop.run_in_executor(

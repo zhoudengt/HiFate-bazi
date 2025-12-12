@@ -78,7 +78,11 @@ def import_rules_from_sql_file(sql_file_path, dry_run=True):
     # 执行导入
     conn = get_mysql_connection()
     try:
+        # 确保连接使用utf8mb4字符集
+        conn.set_charset('utf8mb4')
         cursor = conn.cursor()
+        # 执行SET NAMES确保会话级别字符集
+        cursor.execute("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci")
         
         success_count = 0
         error_count = 0

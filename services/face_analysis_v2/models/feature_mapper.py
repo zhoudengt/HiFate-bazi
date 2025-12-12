@@ -54,8 +54,8 @@ class FeatureMapper:
             
             # 46-60: 鼻子区域（财帛宫、疾厄宫）
             46: {'name': '山根', 'method': 'single', 'indices': [6], 'gongwei': '山根', 'type': 'shisan_gongwei'},
-            47: {'name': '鼻梁上段', 'method': 'single', 'indices': [197], 'gongwei': '年上', 'type': 'shisan_gongwei'},
-            48: {'name': '鼻梁中段', 'method': 'single', 'indices': [195], 'gongwei': '寿上', 'type': 'shisan_gongwei'},
+            47: {'name': '鼻梁上段', 'method': 'single', 'indices': [197], 'gongwei': '年上寿上', 'type': 'shisan_gongwei'},
+            48: {'name': '鼻梁中段', 'method': 'single', 'indices': [195], 'gongwei': '年上寿上', 'type': 'shisan_gongwei'},
             49: {'name': '鼻梁下段', 'method': 'single', 'indices': [5], 'gongwei': '准头', 'type': 'shisan_gongwei'},
             50: {'name': '鼻头（准头）', 'method': 'single', 'indices': [4], 'gongwei': '准头', 'type': 'shisan_gongwei'},
             51: {'name': '左鼻翼', 'method': 'single', 'indices': [129], 'gongwei': '偏财', 'type': 'shishen'},

@@ -13,6 +13,7 @@ import json
 
 from server.services.bazi_service import BaziService
 from server.services.rule_service import RuleService
+from server.utils.data_validator import validate_bazi_data
 # ⚠️ FormulaRuleService 已完全废弃，所有规则匹配统一使用 RuleService
 
 router = APIRouter()
@@ -69,6 +70,9 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
         if not bazi_data:
             raise HTTPException(status_code=400, detail='八字数据为空')
         
+        # ✅ 统一类型验证：确保所有字段类型正确（防止gRPC序列化问题）
+        bazi_data = validate_bazi_data(bazi_data)
+        
         # 2. 匹配规则（使用RuleService，已迁移到数据库）
         # 构建规则匹配数据
         rule_data = {
@@ -80,35 +84,22 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
             'element_counts': bazi_data.get('element_counts', {}),
             'relationships': bazi_data.get('relationships', {})
         }
+        # ✅ 统一类型验证：确保规则匹配数据也经过验证
+        rule_data = validate_bazi_data(rule_data)
         
         # 转换规则类型（前端传入的是英文，RuleService也使用英文）
         rule_types = request.rule_types if request.rule_types else ['wealth', 'marriage', 'career', 'children', 'character', 'summary', 'health', 'peach_blossom', 'shishen', 'parents']
         
         # ✅ 统一使用RuleService匹配所有规则（包括十神命格）
         # 十神命格规则已迁移到数据库，使用JSON条件格式，RuleService已支持
+        # ✅ 优化：规则类型已统一为标准格式（wealth, marriage等），无需兼容formula_*格式
         migrated_rules = []
         
-        # ⚠️ 修复：数据库中存在两种格式的 rule_type（wealth 和 formula_wealth）
-        # 需要同时匹配两种格式，确保所有规则都能匹配到
-        rule_types_for_match = []
-        for rt in rule_types:
-            # 如果已经是 formula_ 开头，只添加它
-            if rt.startswith('formula_'):
-                rule_types_for_match.append(rt)
-            else:
-                # 否则同时添加两种格式：原始格式和 formula_ 前缀格式
-                # 例如：wealth -> [wealth, formula_wealth]
-                rule_types_for_match.append(rt)  # 原始格式
-                rule_types_for_match.append(f'formula_{rt}')  # formula_ 前缀格式
-        
-        # 去重（避免重复匹配）
-        rule_types_for_match = list(set(rule_types_for_match))
-        
         # 使用RuleService匹配所有规则（只匹配迁移的FORMULA_规则）
-        # ⚠️ 修复：禁用缓存，确保规则匹配结果是最新的
-        if rule_types_for_match:
-            rule_matched = RuleService.match_rules(rule_data, rule_types=rule_types_for_match, use_cache=False)
-        # 筛选迁移的规则（FORMULA_前缀）
+        # ✅ 优化：启用缓存，提升性能（规则更新时会自动刷新缓存）
+        if rule_types:
+            rule_matched = RuleService.match_rules(rule_data, rule_types=rule_types, use_cache=True)
+            # 筛选迁移的规则（FORMULA_前缀）
             migrated_rules.extend([r for r in rule_matched if r.get('rule_id', '').startswith('FORMULA_')])
         
         # 3. 转换为前端期望的响应格式（保持API兼容性）
@@ -202,9 +193,8 @@ def _convert_rule_service_to_formula_format(migrated_rules: list, rule_types: Op
         rule_id = rule.get('rule_id', '')
         rule_type = rule.get('rule_type', '')
         
-        # 处理 rule_type 格式（可能是 formula_parents 或 parents）
-        if rule_type.startswith('formula_'):
-            rule_type = rule_type.replace('formula_', '')
+        # ✅ 优化：规则类型已统一为标准格式，无需处理formula_前缀
+        # rule_type 现在统一为标准格式（wealth, marriage等）
         
         # 提取原始规则ID（去掉FORMULA_前缀）
         if rule_id.startswith('FORMULA_'):

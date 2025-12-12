@@ -1,0 +1,65 @@
+# Node1 专用配置（MySQL 主 + Redis 主）
+# 使用方式：docker-compose -f docker-compose.prod.yml -f docker-compose.node1.yml up -d
+
+version: '3.8'
+
+services:
+  # ============================================
+  # MySQL 主库
+  # ============================================
+  mysql:
+    image: mysql:8.0
+    container_name: hifate-mysql-master
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../mysql/master.cnf:/etc/mysql/conf.d/master.cnf:ro
+      - ../../scripts/db:/docker-entrypoint-initdb.d:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    restart: always
+    networks:
+      - hifate-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ============================================
+  # Redis 主库
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: hifate-redis-master
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ../redis/master.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
+    restart: always
+    networks:
+      - hifate-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ============================================
+  # Nginx - 负载均衡到本机和远程节点
+  # ============================================
+  nginx:
+    environment:
+      NODE_ROLE: master
+      LOCAL_IP: ${NODE1_IP:-127.0.0.1}
+      REMOTE_IP: ${NODE2_IP:-127.0.0.1}

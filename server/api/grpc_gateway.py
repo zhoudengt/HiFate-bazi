@@ -59,6 +59,10 @@ from server.api.v1.unified_payment import (
     verify_unified_payment,
     get_payment_providers,
 )
+from server.api.v1.calendar_api import (
+    CalendarRequest,
+    query_calendar,
+)
 
 # 文件上传相关
 import base64
@@ -80,6 +84,7 @@ def _register(endpoint: str):
 
     def decorator(func: Callable[[Dict[str, Any]], Any]):
         SUPPORTED_ENDPOINTS[endpoint] = func
+        logger.debug(f"注册 gRPC 端点: {endpoint}")
         return func
 
     return decorator
@@ -212,6 +217,13 @@ async def _handle_payment_providers(payload: Dict[str, Any]):
     # payment/providers 是 GET 接口，但 gRPC-Web 只支持 POST
     # 这里忽略 payload，直接调用原函数
     return get_payment_providers()
+
+
+@_register("/calendar/query")
+async def _handle_calendar_query(payload: Dict[str, Any]):
+    """处理万年历查询请求"""
+    request_model = CalendarRequest(**payload)
+    return await query_calendar(request_model)
 
 
 @_register("/api/v2/face/analyze")

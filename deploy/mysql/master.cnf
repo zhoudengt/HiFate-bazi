@@ -1,0 +1,38 @@
+# MySQL 主库配置
+[mysqld]
+# 服务器 ID（主库为 1）
+server-id = 1
+
+# 开启二进制日志（主从复制必须）
+log-bin = mysql-bin
+binlog-format = ROW
+binlog-row-image = FULL
+expire_logs_days = 7
+max_binlog_size = 100M
+
+# GTID 模式（推荐）
+gtid-mode = ON
+enforce-gtid-consistency = ON
+
+# 字符集
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+
+# 连接数
+max_connections = 500
+max_user_connections = 400
+
+# InnoDB 优化（2C8G 机器）
+innodb_buffer_pool_size = 2G
+innodb_log_file_size = 256M
+innodb_flush_log_at_trx_commit = 1
+innodb_flush_method = O_DIRECT
+
+# 慢查询
+slow_query_log = ON
+slow_query_log_file = /var/lib/mysql/slow.log
+long_query_time = 2
+
+# 其他
+skip-name-resolve
+default-time-zone = '+08:00'

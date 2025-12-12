@@ -8,12 +8,17 @@ import cv2
 import numpy as np
 from typing import List, Dict, Tuple, Optional
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
+# 全局模型缓存（单例模式）
+_model_cache = {}
+_model_lock = threading.Lock()
+
 
 class DeskItemDetector:
-    """办公桌物品检测器"""
+    """办公桌物品检测器（支持模型缓存）"""
     
     # 办公桌相关物品映射表（COCO数据集类别 -> 中文名称）
     ITEM_MAP = {
@@ -50,7 +55,7 @@ class DeskItemDetector:
     
     def __init__(self, model_path: str = 'yolov8n.pt', confidence_threshold: float = 0.15):
         """
-        初始化检测器
+        初始化检测器（支持模型缓存）
         
         Args:
             model_path: YOLO模型路径
@@ -60,16 +65,29 @@ class DeskItemDetector:
         self.confidence_threshold = confidence_threshold
         self.model = None
         
-        try:
-            from ultralytics import YOLO
-            self.model = YOLO(model_path)
-            logger.info(f"✅ YOLO模型加载成功: {model_path}")
-        except ImportError as e:
-            logger.warning(f"⚠️ ultralytics 未安装，将使用OpenCV备用方案: {e}")
-            self.model = None
-        except Exception as e:
-            logger.error(f"❌ YOLO模型加载失败: {e}")
-            self.model = None
+        # 使用模型缓存（单例模式）
+        global _model_cache, _model_lock
+        
+        with _model_lock:
+            # 检查缓存中是否已有该模型
+            if model_path in _model_cache:
+                self.model = _model_cache[model_path]
+                logger.info(f"✅ 使用缓存的YOLO模型: {model_path}")
+            else:
+                # 加载新模型并缓存
+                try:
+                    from ultralytics import YOLO
+                    self.model = YOLO(model_path)
+                    _model_cache[model_path] = self.model
+                    logger.info(f"✅ YOLO模型加载成功并已缓存: {model_path}")
+                except ImportError as e:
+                    logger.warning(f"⚠️ ultralytics 未安装，将使用OpenCV备用方案: {e}")
+                    self.model = None
+                    _model_cache[model_path] = None  # 缓存None表示使用备用方案
+                except Exception as e:
+                    logger.error(f"❌ YOLO模型加载失败: {e}")
+                    self.model = None
+                    _model_cache[model_path] = None
     
     def detect(self, image_bytes: bytes) -> Dict:
         """

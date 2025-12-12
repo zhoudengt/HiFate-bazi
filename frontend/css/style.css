@@ -550,3 +550,606 @@ header h1 {
     }
 }
 
+/* 万年历样式 */
+.calendar-container {
+    margin-bottom: 30px;
+}
+
+.calendar-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 16px;
+    padding: 25px;
+    box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+    color: white;
+}
+
+.calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.calendar-title {
+    font-size: 24px;
+    font-weight: bold;
+    margin: 0;
+    color: white;
+}
+
+.calendar-date-picker {
+    padding: 8px 12px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.calendar-date-picker::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    cursor: pointer;
+}
+
+.calendar-content {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+/* 日期区域 */
+.calendar-date-section {
+    text-align: center;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+}
+
+.calendar-solar-date {
+    font-size: 36px;
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+.calendar-weekday {
+    font-size: 18px;
+    margin-bottom: 8px;
+    opacity: 0.9;
+}
+
+.calendar-lunar-date {
+    font-size: 22px;
+    font-weight: 500;
+    margin-bottom: 12px;
+}
+
+.calendar-extra-info {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.info-tag {
+    padding: 4px 12px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 20px;
+    font-size: 14px;
+}
+
+.info-tag.jieqi {
+    background: rgba(76, 175, 80, 0.3);
+}
+
+/* 节日 */
+.calendar-festivals-section {
+    text-align: center;
+}
+
+.festivals-items {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.festival-tag {
+    padding: 6px 14px;
+    background: rgba(255, 193, 7, 0.3);
+    border-radius: 20px;
+    font-size: 14px;
+    color: #fff3cd;
+}
+
+/* 通用 Section 标题 */
+.section-title {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+/* 干支八字 */
+.calendar-ganzhi-section {
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+}
+
+.ganzhi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.ganzhi-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+}
+
+.ganzhi-label {
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+.ganzhi-value {
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.nayin-value {
+    font-size: 11px;
+    opacity: 0.7;
+    text-align: center;
+}
+
+.wuxing-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.wuxing-label {
+    font-size: 13px;
+    opacity: 0.8;
+}
+
+.wuxing-value {
+    padding: 3px 8px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+/* 宜忌 */
+.calendar-yiji-section {
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.yi-section,
+.ji-section {
+    flex: 1;
+    min-width: 200px;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+}
+
+.yiji-label {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    display: inline-block;
+}
+
+.yi-label {
+    background: rgba(76, 175, 80, 0.4);
+    color: #a5d6a7;
+}
+
+.ji-label {
+    background: rgba(244, 67, 54, 0.4);
+    color: #ef9a9a;
+}
+
+.yiji-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.yiji-item {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.yi-item {
+    background: rgba(76, 175, 80, 0.25);
+    color: #c8e6c9;
+}
+
+.ji-item {
+    background: rgba(244, 67, 54, 0.25);
+    color: #ffcdd2;
+}
+
+/* 吉凶等级 */
+.calendar-luck-section {
+    text-align: center;
+    padding: 10px;
+}
+
+.luck-level {
+    font-size: 32px;
+    font-weight: bold;
+    padding: 12px 30px;
+    border-radius: 10px;
+    display: inline-block;
+}
+
+.luck-good {
+    background: rgba(76, 175, 80, 0.4);
+    color: #a5d6a7;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.luck-bad {
+    background: rgba(244, 67, 54, 0.4);
+    color: #ef9a9a;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* 神煞方位 */
+.calendar-deities-section {
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+}
+
+.deities-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 10px;
+}
+
+.deity-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+}
+
+.deity-label {
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+.deity-value {
+    font-size: 16px;
+    font-weight: bold;
+}
+
+/* 冲合煞 */
+.calendar-chonghesha-section {
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+}
+
+.chonghesha-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.chonghesha-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+}
+
+.chonghesha-label {
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+.chonghesha-value {
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.chong-value {
+    color: #ffcdd2;
+}
+
+.he-value {
+    color: #c8e6c9;
+}
+
+.sha-value {
+    color: #ffe0b2;
+}
+
+/* 吉神凶煞 */
+.calendar-shensha-section {
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+}
+
+.shensha-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.shensha-row:last-child {
+    margin-bottom: 0;
+}
+
+.shensha-label {
+    font-size: 14px;
+    font-weight: bold;
+    padding: 4px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.jishen-label {
+    background: rgba(76, 175, 80, 0.4);
+    color: #a5d6a7;
+}
+
+.xiongsha-label {
+    background: rgba(244, 67, 54, 0.4);
+    color: #ef9a9a;
+}
+
+.shensha-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.shensha-tag {
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.jishen-tag {
+    background: rgba(76, 175, 80, 0.2);
+    color: #c8e6c9;
+}
+
+.xiongsha-tag {
+    background: rgba(244, 67, 54, 0.2);
+    color: #ffcdd2;
+}
+
+/* 星宿 */
+.calendar-xingxiu-section {
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+}
+
+.xingxiu-info {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.xingxiu-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.xingxiu-name {
+    font-size: 20px;
+    font-weight: bold;
+}
+
+.xingxiu-luck {
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.xingxiu-luck.luck-good {
+    background: rgba(76, 175, 80, 0.3);
+}
+
+.xingxiu-luck.luck-bad {
+    background: rgba(244, 67, 54, 0.3);
+}
+
+.xingxiu-zheng,
+.xingxiu-animal {
+    padding: 3px 8px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.xingxiu-song {
+    font-size: 13px;
+    line-height: 1.6;
+    opacity: 0.85;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 6px;
+    border-left: 3px solid rgba(255, 255, 255, 0.3);
+}
+
+/* 彭祖百忌 */
+.calendar-pengzu-section {
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+}
+
+.pengzu-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pengzu-item {
+    font-size: 14px;
+    padding: 8px 12px;
+    background: rgba(255, 193, 7, 0.15);
+    border-radius: 6px;
+    border-left: 3px solid rgba(255, 193, 7, 0.5);
+}
+
+/* 九星 */
+.calendar-jiuxing-section {
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+}
+
+.jiuxing-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.jiuxing-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+}
+
+.jiuxing-label {
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+.jiuxing-value {
+    font-size: 13px;
+    font-weight: 500;
+    text-align: center;
+}
+
+/* 其他信息 */
+.calendar-other-section {
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+}
+
+.other-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.other-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+}
+
+.other-label {
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+.other-value {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.wuhou-desc {
+    font-size: 13px;
+    opacity: 0.8;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 6px;
+    text-align: center;
+}
+
+/* 加载和错误状态 */
+.calendar-loading,
+.calendar-error {
+    text-align: center;
+    padding: 40px;
+    font-size: 18px;
+    color: white;
+}
+
+.calendar-error {
+    color: #ffebee;
+}
+
+/* 响应式设计 - 万年历 */
+@media (max-width: 768px) {
+    .calendar-card {
+        padding: 15px;
+    }
+
+    .calendar-solar-date {
+        font-size: 28px;
+    }
+
+    .ganzhi-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .calendar-yiji-section {
+        flex-direction: column;
+    }
+
+    .chonghesha-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .jiuxing-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .xingxiu-song {
+        font-size: 12px;
+    }
+}
+

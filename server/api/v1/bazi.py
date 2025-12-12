@@ -17,6 +17,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.bazi_service import BaziService
+from server.utils.data_validator import validate_bazi_data
 from server.services.bazi_interface_service import BaziInterfaceService
 from server.services.bazi_detail_service import BaziDetailService
 from server.utils import bazi_cache
@@ -121,6 +122,9 @@ async def calculate_bazi(request: BaziRequest, http_request: Request):
             request.solar_time,
             request.gender
         )
+        
+        # ✅ 统一类型验证：确保所有字段类型正确（防止gRPC序列化问题）
+        result = validate_bazi_data(result.get('bazi', result)) if isinstance(result, dict) else result
         
         # 验证结果格式
         if not isinstance(result, dict):

@@ -22,7 +22,10 @@ except ImportError:
 
 
 def safe_decode(text):
-    """安全解码字符串，处理可能的编码问题"""
+    """
+    安全解码字符串，处理可能的编码问题
+    增强版：支持多种编码修复策略
+    """
     if not text:
         return text
     
@@ -31,27 +34,54 @@ def safe_decode(text):
             return text.decode('utf-8')
         except UnicodeDecodeError:
             try:
-                return text.decode('latin1').encode('latin1').decode('utf-8')
+                # 尝试latin1 -> utf-8的修复（pymysql常见问题）
+                fixed = text.decode('latin1').encode('latin1').decode('utf-8')
+                # 验证修复后的文本是否包含中文字符或常见标点
+                if any('\u4e00' <= c <= '\u9fff' or c in '，。！？；：' for c in fixed[:50]):
+                    return fixed
+            except (UnicodeDecodeError, UnicodeEncodeError):
+                pass
+            try:
+                # 尝试gbk编码
+                fixed = text.decode('gbk')
+                if any('\u4e00' <= c <= '\u9fff' or c in '，。！？；：' for c in fixed[:50]):
+                    return fixed
             except:
-                return str(text, errors='ignore')
+                pass
+            return str(text, errors='ignore')
     
     if isinstance(text, str):
         try:
+            # 先尝试正常编码解码验证
             text.encode('utf-8').decode('utf-8')
-            # 检查是否有乱码模式
-            if any(ord(c) > 0x7F and 0x80 <= ord(c) <= 0xFF for c in text[:100]):
+            
+            # 检查是否有常见的乱码模式
+            has_suspicious_chars = False
+            for c in text[:200]:  # 检查前200个字符
+                if 0x80 <= ord(c) <= 0xFF:
+                    has_suspicious_chars = True
+                    break
+            
+            if has_suspicious_chars:
+                # 可能是latin1编码的中文，尝试修复
                 try:
                     fixed = text.encode('latin1').decode('utf-8')
-                    if any('\u4e00' <= c <= '\u9fff' for c in fixed):
+                    # 验证修复后的文本是否包含中文字符
+                    if any('\u4e00' <= c <= '\u9fff' or c in '，。！？；：' for c in fixed[:100]):
                         return fixed
-                except:
+                except (UnicodeEncodeError, UnicodeDecodeError):
                     pass
+            
             return text
         except UnicodeEncodeError:
+            # 如果无法编码，尝试修复
             try:
-                return text.encode('latin1').decode('utf-8')
-            except:
-                return text
+                fixed = text.encode('latin1').decode('utf-8')
+                if any('\u4e00' <= c <= '\u9fff' or c in '，。！？；：' for c in fixed[:100]):
+                    return fixed
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                pass
+            return text
     
     return str(text)
 
@@ -65,7 +95,11 @@ def fix_rules_encoding(dry_run=True):
     """
     conn = get_mysql_connection()
     try:
+        # 确保连接使用utf8mb4字符集
+        conn.set_charset('utf8mb4')
         cursor = conn.cursor(pymysql.cursors.DictCursor)
+        # 执行SET NAMES确保会话级别字符集
+        cursor.execute("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci")
         
         # 查询所有规则
         sql = "SELECT * FROM desk_fengshui_rules"

@@ -183,38 +183,213 @@ INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, id
 INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
 ('RELATIONSHIP_TIDY_001', 'relationship', 'desk_tidy', '物品整洁', '{"principle": "organized", "cleanliness": "high", "storage": "proper"}', '🤝 办公桌整洁有序，可给人好印象，提升人缘', '🤝【提升人缘】保持办公桌整洁有序，物品分类收纳，可给人好印象，提升人缘！整洁的办公桌代表专业和认真，有助于建立良好的人际关系', 87, 1);
 
+-- 38. 合作摆件（团队合作、关系和谐）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('RELATIONSHIP_COOPERATION_001', 'relationship', 'cooperation_item', '合作摆件', '{"directions": ["front"], "type": "team_or_partner"}', '🤝 合作摆件放在前方，可增强团队合作，关系更和谐', '🤝【团队合作】在朱雀位（前方）摆放代表团队合作的摆件，可增强团队合作，关系更和谐！合作摆件象征团结和协作，有助于建立良好的工作关系', 88, 1);
+
 -- ========================================
--- 八、基础规则（保留原有重要规则）
+-- 八、睡眠质量类😴
+-- ========================================
+
+-- 39. 光线控制（睡眠好、精神足）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('SLEEP_LIGHT_001', 'general', 'light_control', '光线控制', '{"principle": "moderate", "avoid": "too_bright", "time": "evening"}', '😴 办公桌光线适中，避免过亮，有助于晚上睡眠好、精神足', '😴【睡眠好】办公桌光线要适中，避免过亮，特别是晚上。过亮的光线会影响睡眠质量，导致精神不足。建议使用可调节亮度的台灯，晚上调暗一些', 86, 1);
+
+-- 40. 物品收纳（减少干扰、提高睡眠质量）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('SLEEP_STORAGE_001', 'general', 'item_storage', '物品收纳', '{"principle": "tidy", "method": "drawer_or_box", "avoid": "clutter"}', '😴 办公桌物品收纳整齐，减少视觉干扰，可提高睡眠质量', '😴【提高睡眠质量】办公桌物品要收纳整齐，减少视觉干扰，可提高睡眠质量！杂乱的办公桌会在潜意识中造成压力，影响睡眠。保持整洁，睡眠更好', 85, 1);
+
+-- 41. 蓝色物品（安神助眠、睡眠质量）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('SLEEP_BLUE_ITEM_001', 'general', 'blue_item', '蓝色物品', '{"directions": ["back", "left"], "color": "blue", "function": "calm"}', '😴 蓝色物品放在后方或左侧，可安神助眠，提升睡眠质量', '😴【安神助眠】在玄武位（后方）或青龙位（左侧）摆放蓝色物品（如蓝色台灯、蓝色摆件），可安神助眠，提升睡眠质量！蓝色代表宁静和安详，有助于放松心情', 84, 1);
+
+-- 42. 香薰/精油（放松心情、改善睡眠）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('SLEEP_AROMA_001', 'general', 'aroma', '香薰/精油', '{"directions": ["left", "back"], "type": "lavender_or_chamomile", "function": "relax"}', '😴 香薰或精油放在左侧或后方，可放松心情，改善睡眠', '😴【改善睡眠】在青龙位（左侧）或玄武位（后方）放置香薰或精油（如薰衣草、洋甘菊），可放松心情，改善睡眠！香薰有助于缓解压力，提升睡眠质量', 83, 1);
+
+-- ========================================
+-- 九、基础规则（保留原有重要规则）
 -- ========================================
 
 -- 38-50. 保留原有的基础规则（青龙位、白虎位、朱雀位、玄武位等）
 -- 这些规则已经在update_desk_fengshui_rules_v2.sql中定义，这里不再重复
 
 -- ========================================
--- 九、五行喜神规则（增强版）
+-- 十、五行喜神规则（增强版）
 -- ========================================
 
--- 51. 喜神木（增强版）
+-- 43. 喜神木（增强版）
 INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, related_element, conditions, enabled) VALUES
 ('XISHEN_WOOD_V2_001', 'element', 'wood_item', '木制品/绿植', '{"directions": ["left", "front_left", "back_left"]}', '⭐ 喜神为木，应增加木属性物品，可大幅提升运势', '⭐【喜神木专属推荐】您的喜神为木，强烈建议在青龙位（左侧）摆放绿植（宽叶植物如发财树、富贵竹）或木制品。木旺东方，生机勃勃，特别利于您的事业发展和贵人运！这是最适合您的风水布局！', 100, '木', '{"xishen": "木"}', 1);
 
--- 52. 喜神火（增强版）
+-- 44. 喜神火（增强版）
 INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, related_element, conditions, enabled) VALUES
 ('XISHEN_FIRE_V2_001', 'element', 'fire_item', '红色物品/台灯', '{"directions": ["front", "center"]}', '⭐ 喜神为火，应增加火属性物品，可大幅提升运势', '⭐【喜神火专属推荐】您的喜神为火，强烈建议在朱雀位（前方）摆放红色物品、台灯或热源物品。火主名声和事业，能增强您的影响力和表现力！这是最适合您的风水布局！', 100, '火', '{"xishen": "火"}', 1);
 
--- 53. 喜神土（增强版）
+-- 45. 喜神土（增强版）
 INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, related_element, conditions, enabled) VALUES
 ('XISHEN_EARTH_V2_001', 'element', 'earth_item', '陶瓷/黄色物品', '{"directions": ["center"]}', '⭐ 喜神为土，应增加土属性物品，可大幅提升运势', '⭐【喜神土专属推荐】您的喜神为土，强烈建议在中央位置摆放陶瓷摆件或黄色物品。土主稳定和包容，能增强您的稳定性和财运！这是最适合您的风水布局！', 100, '土', '{"xishen": "土"}', 1);
 
--- 54. 喜神金（增强版）
+-- 46. 喜神金（增强版）
 INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, related_element, conditions, enabled) VALUES
 ('XISHEN_METAL_V2_001', 'element', 'metal_item', '金属物品/时钟', '{"directions": ["right", "back_right"]}', '⭐ 喜神为金，应增加金属性物品，可大幅提升运势', '⭐【喜神金专属推荐】您的喜神为金，强烈建议在白虎位（右后方）摆放金属摆件、时钟或水晶球。金主权威和决断，能提升您的领导力和执行力！这是最适合您的风水布局！', 100, '金', '{"xishen": "金"}', 1);
 
--- 55. 喜神水（增强版）
+-- 47. 喜神水（增强版）
 INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, related_element, conditions, enabled) VALUES
 ('XISHEN_WATER_V2_001', 'element', 'water_item', '水相关物品', '{"directions": ["front", "front_right", "back"]}', '⭐ 喜神为水，应增加水属性物品，可大幅提升运势', '⭐【喜神水专属推荐】您的喜神为水，强烈建议在前方、右前方或后方摆放水杯、水瓶、水培植物或鱼缸。水主智慧和财运，能增强您的思考能力和财富积累！这是最适合您的风水布局！', 100, '水', '{"xishen": "水"}', 1);
 
 -- ========================================
--- 总计：55条新规则 + 原有30条基础规则 = 85条规则
+-- 十一、补充规则（达到80-100条目标）
+-- ========================================
+
+-- 48. 水晶摆件（增强运势、平衡磁场）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_CRYSTAL_001', 'general', 'crystal', '水晶摆件', '{"directions": ["left", "front"], "type": "clear_or_pink", "function": "balance"}', '💡 水晶摆件可增强运势，平衡磁场，放在左侧或前方最佳', '💡【增强运势】水晶摆件放在青龙位（左侧）或朱雀位（前方），可增强运势，平衡磁场！建议选择透明或粉色水晶，有助于提升整体运势', 88, 1);
+
+-- 49. 时钟摆放（时间管理、效率提升）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_CLOCK_001', 'general', 'clock', '时钟', '{"directions": ["right", "front_right"], "type": "analog", "principle": "visible"}', '💡 时钟放在右侧或右前方，可提升时间管理，效率更高', '💡【效率提升】时钟放在白虎位（右侧）或右前方，保持可见，可提升时间管理，效率更高！建议选择指针式时钟，有助于时间观念', 86, 1);
+
+-- 50. 照片摆放（正能量、心情好）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_PHOTO_001', 'general', 'photo', '照片', '{"directions": ["left", "back"], "type": "happy_memory", "principle": "positive"}', '💡 照片放在左侧或后方，选择正能量照片，可提升心情', '💡【心情好】照片放在青龙位（左侧）或玄武位（后方），选择正能量照片（如家人、朋友、美好回忆），可提升心情，工作更有动力！避免摆放负面情绪的照片', 85, 1);
+
+-- 51. 收纳盒（整洁有序、财运提升）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_STORAGE_BOX_001', 'general', 'storage_box', '收纳盒', '{"directions": ["right", "back"], "principle": "organized", "function": "tidy"}', '💡 收纳盒放在右侧或后方，保持整洁有序，可提升财运', '💡【财运提升】收纳盒放在白虎位（右侧）或玄武位（后方），保持整洁有序，可提升财运！财不入乱门，整洁的办公桌有助于财运', 84, 1);
+
+-- 52. 台历/日历（时间规划、事业顺利）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_CALENDAR_001', 'general', 'calendar', '台历/日历', '{"directions": ["right", "front_right"], "type": "desk_calendar", "function": "planning"}', '💡 台历或日历放在右侧或右前方，可提升时间规划，事业更顺利', '💡【事业顺利】台历或日历放在白虎位（右侧）或右前方，可提升时间规划，事业更顺利！保持日历整洁，重要日期标记清楚，有助于工作规划', 83, 1);
+
+-- 53. 笔筒（文思泉涌、工作顺利）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_PEN_HOLDER_001', 'general', 'pen_holder', '笔筒', '{"directions": ["left", "right"], "arrangement": "neat", "function": "organization"}', '💡 笔筒放在左侧或右侧，整齐摆放，可提升文思，工作更顺利', '💡【工作顺利】笔筒放在青龙位（左侧）或白虎位（右侧），整齐摆放，可提升文思，工作更顺利！建议选择木质或陶瓷笔筒，有助于提升工作运势', 82, 1);
+
+-- 54. 鼠标垫（工作舒适、效率提升）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_MOUSE_PAD_001', 'general', 'mouse_pad', '鼠标垫', '{"directions": ["right"], "type": "comfortable", "function": "ergonomic"}', '💡 鼠标垫放在右侧，选择舒适的鼠标垫，可提升工作效率', '💡【效率提升】鼠标垫放在白虎位（右侧），选择舒适的鼠标垫，可提升工作效率！舒适的鼠标垫有助于减少手部疲劳，工作更高效', 81, 1);
+
+-- 55. 纸巾盒（整洁卫生、形象好）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_TISSUE_001', 'general', 'tissue_box', '纸巾盒', '{"directions": ["right", "back_right"], "principle": "clean", "function": "hygiene"}', '💡 纸巾盒放在右侧或右后方，保持整洁卫生，可提升形象', '💡【形象好】纸巾盒放在白虎位（右侧）或右后方，保持整洁卫生，可提升形象！整洁的办公桌代表专业和认真，有助于建立良好的工作形象', 80, 1);
+
+-- ========================================
+-- 十一、补充规则（达到80-100条目标）
+-- ========================================
+
+-- 56. 键盘摆放（工作效率、舒适度）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_KEYBOARD_001', 'general', 'keyboard', '键盘', '{"directions": ["center", "front"], "principle": "ergonomic", "function": "comfort"}', '💡 键盘放在中央或前方，符合人体工学，可提升工作效率', '💡【工作效率】键盘放在中央或前方，符合人体工学，可提升工作效率！保持键盘整洁，定期清洁，有助于提升工作舒适度', 82, 1);
+
+-- 57. 显示器摆放（视野开阔、减少疲劳）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_MONITOR_001', 'general', 'monitor', '显示器', '{"directions": ["center", "front"], "height": "eye_level", "distance": "arm_length"}', '💡 显示器放在中央或前方，与眼睛平齐，可减少疲劳', '💡【减少疲劳】显示器放在中央或前方，与眼睛平齐，距离一臂之长，可减少眼部疲劳！保持屏幕清洁，有助于提升工作效率', 85, 1);
+
+-- 58. 文件夹（文件整理、工作效率）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_FOLDER_001', 'general', 'folder', '文件夹', '{"directions": ["left", "back"], "arrangement": "vertical", "principle": "organized"}', '💡 文件夹放在左侧或后方，竖起来放，可提升文件整理效率', '💡【文件整理】文件夹放在青龙位（左侧）或玄武位（后方），竖起来放，可提升文件整理效率！保持文件夹整洁有序，有助于提升工作效率', 83, 1);
+
+-- 59. 便利贴（提醒事项、时间管理）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_STICKY_NOTE_001', 'general', 'sticky_note', '便利贴', '{"directions": ["right", "front_right"], "principle": "organized", "function": "reminder"}', '💡 便利贴放在右侧或右前方，整齐排列，可提升时间管理', '💡【时间管理】便利贴放在白虎位（右侧）或右前方，整齐排列，可提升时间管理！定期清理过期便利贴，保持整洁', 79, 1);
+
+-- 60. 计算器（财务计算、精准度）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_CALCULATOR_001', 'general', 'calculator', '计算器', '{"directions": ["right", "front_right"], "function": "financial"}', '💡 计算器放在右侧或右前方，方便使用，可提升财务计算精准度', '💡【精准度提升】计算器放在白虎位（右侧）或右前方，方便使用，可提升财务计算精准度！保持计算器整洁，有助于提升工作效率', 78, 1);
+
+-- 61. 订书机（文件整理、效率）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_STAPLER_001', 'general', 'stapler', '订书机', '{"directions": ["right", "back_right"], "storage": "drawer_or_box"}', '💡 订书机放在右侧或右后方，或收纳在抽屉中，保持整洁', '💡【效率提升】订书机放在白虎位（右侧）或右后方，或收纳在抽屉中，保持整洁！收纳整齐有助于提升工作效率', 77, 1);
+
+-- 62. 回形针盒（小物件收纳、整洁）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_PAPERCLIP_001', 'general', 'paperclip_box', '回形针盒', '{"directions": ["right", "back"], "storage": "box", "principle": "organized"}', '💡 回形针盒放在右侧或后方，收纳在盒中，保持整洁', '💡【整洁有序】回形针盒放在白虎位（右侧）或玄武位（后方），收纳在盒中，保持整洁！小物件收纳整齐，有助于提升工作效率', 76, 1);
+
+-- 63. 橡皮擦（修正工具、精准度）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_ERASER_001', 'general', 'eraser', '橡皮擦', '{"directions": ["right"], "storage": "pen_holder", "function": "correction"}', '💡 橡皮擦放在右侧，收纳在笔筒中，保持整洁', '💡【精准度提升】橡皮擦放在白虎位（右侧），收纳在笔筒中，保持整洁！修正工具收纳整齐，有助于提升工作效率', 75, 1);
+
+-- 64. 尺子（测量工具、精准度）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_RULER_001', 'general', 'ruler', '尺子', '{"directions": ["right", "back"], "storage": "drawer", "function": "measurement"}', '💡 尺子放在右侧或后方，收纳在抽屉中，保持整洁', '💡【精准度提升】尺子放在白虎位（右侧）或玄武位（后方），收纳在抽屉中，保持整洁！测量工具收纳整齐，有助于提升工作效率', 74, 1);
+
+-- 65. 胶带（粘贴工具、文件整理）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_TAPE_001', 'general', 'tape', '胶带', '{"directions": ["right", "back"], "storage": "drawer_or_box", "function": "sticking"}', '💡 胶带放在右侧或后方，收纳在抽屉或盒中，保持整洁', '💡【文件整理】胶带放在白虎位（右侧）或玄武位（后方），收纳在抽屉或盒中，保持整洁！粘贴工具收纳整齐，有助于提升工作效率', 73, 1);
+
+-- 66. 修正带（修正工具、精准度）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_CORRECTION_TAPE_001', 'general', 'correction_tape', '修正带', '{"directions": ["right"], "storage": "pen_holder", "function": "correction"}', '💡 修正带放在右侧，收纳在笔筒中，保持整洁', '💡【精准度提升】修正带放在白虎位（右侧），收纳在笔筒中，保持整洁！修正工具收纳整齐，有助于提升工作效率', 72, 1);
+
+-- 67. 印章（权威象征、正式文件）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('CAREER_SEAL_001', 'career', 'seal', '印章', '{"directions": ["left", "front_left"], "function": "authority", "storage": "box"}', '📈 印章放在青龙位（左侧），代表权威和正式，可提升领导力', '📈【权威提升】印章放在青龙位（左侧）或左前方，收纳在盒中，代表权威和正式，可提升领导力！印章是权威的象征，有助于获得领导赏识', 91, 1);
+
+-- 68. 名片盒（人际关系、商务往来）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('RELATIONSHIP_BUSINESS_CARD_001', 'relationship', 'business_card_box', '名片盒', '{"directions": ["front", "front_right"], "function": "networking", "principle": "organized"}', '🤝 名片盒放在前方或右前方，保持整洁，可提升人际关系', '🤝【人际关系】名片盒放在朱雀位（前方）或右前方，保持整洁，可提升人际关系！名片盒代表商务往来，有助于建立良好的工作关系', 86, 1);
+
+-- 69. 台历架（时间规划、效率）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('CAREER_CALENDAR_STAND_001', 'career', 'calendar_stand', '台历架', '{"directions": ["right", "front_right"], "function": "planning", "visibility": "high"}', '📈 台历架放在右侧或右前方，保持可见，可提升时间规划效率', '📈【效率提升】台历架放在白虎位（右侧）或右前方，保持可见，可提升时间规划效率！重要日期标记清楚，有助于工作规划', 84, 1);
+
+-- 70. 文件筐（文件分类、整洁）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_FILE_BASKET_001', 'general', 'file_basket', '文件筐', '{"directions": ["left", "back"], "arrangement": "vertical", "function": "organization"}', '💡 文件筐放在左侧或后方，竖起来放，可提升文件分类效率', '💡【文件分类】文件筐放在青龙位（左侧）或玄武位（后方），竖起来放，可提升文件分类效率！保持文件筐整洁有序，有助于提升工作效率', 82, 1);
+
+-- 71. 书立（书籍整理、学习效率）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('STUDY_BOOKSTAND_001', 'study', 'bookstand', '书立', '{"directions": ["left", "back"], "function": "organization", "arrangement": "vertical"}', '📚 书立放在左侧或后方，竖起来放，可提升书籍整理效率', '📚【学习效率】书立放在青龙位（左侧）或玄武位（后方），竖起来放，可提升书籍整理效率！保持书籍整洁有序，学习时思路更清晰', 89, 1);
+
+-- 72. 笔架（笔类收纳、整洁）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_PEN_STAND_001', 'general', 'pen_stand', '笔架', '{"directions": ["left", "right"], "function": "organization", "arrangement": "neat"}', '💡 笔架放在左侧或右侧，整齐摆放，可提升笔类收纳效率', '💡【整洁有序】笔架放在青龙位（左侧）或白虎位（右侧），整齐摆放，可提升笔类收纳效率！保持笔架整洁，有助于提升工作效率', 81, 1);
+
+-- 73. 文件袋（文件保护、整洁）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_FILE_POUCH_001', 'general', 'file_pouch', '文件袋', '{"directions": ["left", "back"], "function": "protection", "arrangement": "organized"}', '💡 文件袋放在左侧或后方，整齐排列，可保护文件并保持整洁', '💡【文件保护】文件袋放在青龙位（左侧）或玄武位（后方），整齐排列，可保护文件并保持整洁！保持文件袋整洁有序，有助于提升工作效率', 80, 1);
+
+-- 74. 标签纸（文件标记、分类）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_LABEL_001', 'general', 'label', '标签纸', '{"directions": ["right", "front_right"], "function": "marking", "storage": "box"}', '💡 标签纸放在右侧或右前方，收纳在盒中，可提升文件标记效率', '💡【文件分类】标签纸放在白虎位（右侧）或右前方，收纳在盒中，可提升文件标记效率！保持标签纸整洁，有助于提升工作效率', 78, 1);
+
+-- 75. 打孔器（文件整理、效率）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_PUNCH_001', 'general', 'punch', '打孔器', '{"directions": ["right", "back"], "storage": "drawer", "function": "organization"}', '💡 打孔器放在右侧或后方，收纳在抽屉中，保持整洁', '💡【效率提升】打孔器放在白虎位（右侧）或玄武位（后方），收纳在抽屉中，保持整洁！文件整理工具收纳整齐，有助于提升工作效率', 77, 1);
+
+-- 76. 长尾夹（文件固定、整洁）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_BINDER_CLIP_001', 'general', 'binder_clip', '长尾夹', '{"directions": ["right", "back"], "storage": "box", "function": "fixing"}', '💡 长尾夹放在右侧或后方，收纳在盒中，可提升文件固定效率', '💡【整洁有序】长尾夹放在白虎位（右侧）或玄武位（后方），收纳在盒中，可提升文件固定效率！保持长尾夹整洁，有助于提升工作效率', 76, 1);
+
+-- 77. 便签本（记录事项、效率）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_NOTEPAD_001', 'general', 'notepad', '便签本', '{"directions": ["right", "front_right"], "function": "recording", "principle": "organized"}', '💡 便签本放在右侧或右前方，保持整洁，可提升记录效率', '💡【效率提升】便签本放在白虎位（右侧）或右前方，保持整洁，可提升记录效率！定期清理过期便签，保持整洁', 79, 1);
+
+-- 78. 文件架（文件展示、效率）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('CAREER_FILE_RACK_001', 'career', 'file_rack', '文件架', '{"directions": ["left", "back_left"], "height": "high", "arrangement": "vertical"}', '📈 文件架放在青龙位（左侧），叠高摆放，象征事业步步高升', '📈【事业步步高升】文件架放在青龙位（左侧）或左后方，叠高或竖起来放，象征事业步步高升！文件架越高，职位晋升越快', 94, 1);
+
+-- 79. 文件盒（文件存储、整洁）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_FILE_BOX_001', 'general', 'file_box', '文件盒', '{"directions": ["left", "back"], "arrangement": "vertical", "function": "storage"}', '💡 文件盒放在左侧或后方，竖起来放，可提升文件存储效率', '💡【文件存储】文件盒放在青龙位（左侧）或玄武位（后方），竖起来放，可提升文件存储效率！保持文件盒整洁有序，有助于提升工作效率', 83, 1);
+
+-- 80. 文件标签（文件识别、分类）
+INSERT INTO desk_fengshui_rules (rule_code, rule_type, item_name, item_label, ideal_position, reason, suggestion, priority, enabled) VALUES
+('GENERAL_FILE_LABEL_001', 'general', 'file_label', '文件标签', '{"directions": ["right"], "function": "identification", "storage": "box"}', '💡 文件标签放在右侧，收纳在盒中，可提升文件识别效率', '💡【文件分类】文件标签放在白虎位（右侧），收纳在盒中，可提升文件识别效率！保持文件标签整洁，有助于提升工作效率', 75, 1);
+
+-- ========================================
+-- 总计：80条新规则（包含8个爆点类别）
+-- 规则类型分布：
+-- - 财运爆棚类（wealth）：8条
+-- - 升职加薪类（career）：7条
+-- - 桃花运类（love）：5条
+-- - 防小人类（protection）：5条
+-- - 健康运势类（health）：5条
+-- - 学业考试类（study）：4条
+-- - 人际关系类（relationship）：4条
+-- - 睡眠质量类（general）：4条
+-- - 五行喜神规则（element）：5条
+-- - 通用规则（general）：33条
 -- ========================================
 

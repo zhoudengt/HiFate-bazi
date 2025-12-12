@@ -889,7 +889,8 @@ async def smart_analyze_stream(
                     llm_client = get_fortune_llm_client()
                     
                     logger.info(f"[smart_fortune_stream] 📞 调用 analyze_fortune(stream=True)")
-                    logger.debug(f"[smart_fortune_stream] 参数: intent={main_intent}, question={question[:100]}, fortune_context={'有' if fortune_context else '无'}, matched_rules={len(matched_rules) if matched_rules else 0}")
+                    # ✅ 优化：移除生产环境不需要的debug日志
+                    # logger.debug(f"[smart_fortune_stream] 参数: intent={main_intent}, question={question[:100]}, fortune_context={'有' if fortune_context else '无'}, matched_rules={len(matched_rules) if matched_rules else 0}")
                     
                     # ⭐ 调用LLM并检查返回值类型
                     llm_result = llm_client.analyze_fortune(
@@ -921,13 +922,15 @@ async def smart_analyze_stream(
                     logger.info(f"[smart_fortune_stream] 🔄 开始迭代生成器...")
                     
                     for chunk in llm_result:
-                        logger.debug(f"[smart_fortune_stream] 📨 收到chunk: type={type(chunk)}, is_dict={isinstance(chunk, dict)}, keys={list(chunk.keys()) if isinstance(chunk, dict) else 'N/A'}")
+                        # ✅ 优化：移除生产环境不需要的debug日志
+                        # logger.debug(f"[smart_fortune_stream] 📨 收到chunk: type={type(chunk)}, is_dict={isinstance(chunk, dict)}, keys={list(chunk.keys()) if isinstance(chunk, dict) else 'N/A'}")
                         
                         chunk_received = True
                         chunk_count += 1
                         chunk_type = chunk.get('type') if isinstance(chunk, dict) else None
                         
-                        logger.debug(f"[smart_fortune_stream] 📦 chunk #{chunk_count}: type={chunk_type}, full_chunk={json.dumps(chunk, ensure_ascii=False)[:200] if isinstance(chunk, dict) else str(chunk)[:200]}")
+                        # ✅ 优化：移除生产环境不需要的debug日志
+                        # logger.debug(f"[smart_fortune_stream] 📦 chunk #{chunk_count}: type={chunk_type}, full_chunk={json.dumps(chunk, ensure_ascii=False)[:200] if isinstance(chunk, dict) else str(chunk)[:200]}")
                         
                         if chunk_type == 'start':
                             logger.info(f"[smart_fortune_stream] ✅ LLM流式输出开始")
@@ -936,7 +939,8 @@ async def smart_analyze_stream(
                             content = chunk.get('content', '')
                             if content:
                                 total_content_length += len(content)
-                                logger.debug(f"[smart_fortune_stream] 📝 发送chunk #{chunk_count}: {len(content)}字符, 内容预览: {content[:50]}...")
+                                # ✅ 优化：移除生产环境不需要的debug日志
+                                # logger.debug(f"[smart_fortune_stream] 📝 发送chunk #{chunk_count}: {len(content)}字符, 内容预览: {content[:50]}...")
                                 yield _sse_message("llm_chunk", {"content": content})
                             else:
                                 logger.warning(f"[smart_fortune_stream] ⚠️ chunk #{chunk_count} 类型为chunk但content为空")

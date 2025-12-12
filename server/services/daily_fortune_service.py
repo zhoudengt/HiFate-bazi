@@ -17,6 +17,7 @@ sys.path.insert(0, project_root)
 from server.services.bazi_service import BaziService
 from server.services.bazi_detail_service import BaziDetailService
 from server.services.rule_service import RuleService
+from server.utils.data_validator import validate_bazi_data
 
 
 class DailyFortuneService:
@@ -69,6 +70,9 @@ class DailyFortuneService:
             # 历史教训：2025-11-20 因错误使用 .get('bazi', {}) 导致 bazi_data 为空字典
             bazi_data = bazi_result.get('bazi', bazi_result)  # 如果没有 'bazi' 键，使用整个结果
             
+            # ✅ 统一类型验证：确保所有字段类型正确（防止gRPC序列化问题）
+            bazi_data = validate_bazi_data(bazi_data)
+            
             # 3. 计算详细八字信息（包含流年流月流日）
             detail_result = BaziDetailService.calculate_detail_full(
                 solar_date,
@@ -86,46 +90,6 @@ class DailyFortuneService:
             
             # 4. 提取流日信息
             liuri_info = DailyFortuneService._extract_liuri_info(detail_result, target)
-            
-            # 【防御性代码】确保 bazi_data 是字典类型
-            import logging
-            logger = logging.getLogger(__name__)
-            
-            if not isinstance(bazi_data, dict):
-                logger.error(f"bazi_data 类型错误: {type(bazi_data)}, 尝试修复")
-                # 如果是字符串，尝试解析
-                if isinstance(bazi_data, str):
-                    try:
-                        import ast
-                        bazi_data = ast.literal_eval(bazi_data)
-                        logger.info("成功从字符串解析 bazi_data")
-                    except (ValueError, SyntaxError):
-                        try:
-                            import json
-                            bazi_data = json.loads(bazi_data)
-                            logger.info("成功使用JSON解析 bazi_data")
-                        except (json.JSONDecodeError, TypeError):
-                            logger.error(f"无法解析 bazi_data: {str(bazi_data)[:100]}")
-                            return {
-                                "success": False,
-                                "error": f"八字数据格式错误: bazi_data 是 {type(bazi_data).__name__}",
-                                "fortune": None
-                            }
-                else:
-                    logger.error(f"bazi_data 类型异常: {type(bazi_data)}")
-                    return {
-                        "success": False,
-                        "error": f"八字数据类型错误: 期望 dict，实际 {type(bazi_data).__name__}",
-                        "fortune": None
-                    }
-            
-            # 最终检查
-            if not isinstance(bazi_data, dict):
-                return {
-                    "success": False,
-                    "error": "八字数据格式错误",
-                    "fortune": None
-                }
             
             # 5. 匹配今日相关规则
             matched_rules = RuleService.match_rules(

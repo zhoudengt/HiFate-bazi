@@ -1,0 +1,346 @@
+# HiFate 生产环境 Docker Compose 主配置
+# 使用方式：
+#   Node1: docker-compose -f docker-compose.prod.yml -f docker-compose.node1.yml up -d
+#   Node2: docker-compose -f docker-compose.prod.yml -f docker-compose.node2.yml up -d
+
+version: '3.8'
+
+services:
+  # ============================================
+  # Nginx 负载均衡
+  # ============================================
+  nginx:
+    image: nginx:alpine
+    container_name: hifate-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../nginx/conf.d:/etc/nginx/conf.d:ro
+      - ../../frontend:/usr/share/nginx/html/frontend:ro
+      - nginx_logs:/var/log/nginx
+    environment:
+      TZ: Asia/Shanghai
+    restart: always
+    networks:
+      - hifate-network
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      web:
+        condition: service_healthy
+
+  # ============================================
+  # 主 Web 服务
+  # ============================================
+  web:
+    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
+    container_name: hifate-web
+    ports:
+      - "8001:8001"
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+      NODE_ID: ${NODE_ID:-node1}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SECRET_KEY: ${SECRET_KEY}
+      COZE_ACCESS_TOKEN: ${COZE_ACCESS_TOKEN:-}
+      COZE_BOT_ID: ${COZE_BOT_ID:-}
+      TZ: Asia/Shanghai
+    volumes:
+      - web_logs:/app/logs
+    restart: always
+    networks:
+      - hifate-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ============================================
+  # 微服务
+  # ============================================
+  bazi-core:
+    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
+    container_name: hifate-bazi-core
+    ports:
+      - "9001:9001"
+    environment:
+      APP_ENV: production
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SERVICE_PORT: 9001
+      TZ: Asia/Shanghai
+    command: python services/bazi_core/grpc_server.py --port 9001
+    restart: always
+    networks:
+      - hifate-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  bazi-fortune:
+    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
+    container_name: hifate-bazi-fortune
+    ports:
+      - "9002:9002"
+    environment:
+      APP_ENV: production
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SERVICE_PORT: 9002
+      TZ: Asia/Shanghai
+    command: python services/bazi_fortune/grpc_server.py --port 9002
+    restart: always
+    networks:
+      - hifate-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  bazi-analyzer:
+    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
+    container_name: hifate-bazi-analyzer
+    ports:
+      - "9003:9003"
+    environment:
+      APP_ENV: production
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SERVICE_PORT: 9003
+      TZ: Asia/Shanghai
+    command: python services/bazi_analyzer/grpc_server.py --port 9003
+    restart: always
+    networks:
+      - hifate-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  rule-service:
+    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
+    container_name: hifate-rule-service
+    ports:
+      - "9004:9004"
+    environment:
+      APP_ENV: production
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SERVICE_PORT: 9004
+      TZ: Asia/Shanghai
+    command: python services/bazi_rule/grpc_server.py --port 9004
+    restart: always
+    networks:
+      - hifate-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  fortune-analyzer:
+    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
+    container_name: hifate-fortune-analyzer
+    ports:
+      - "9005:9005"
+    environment:
+      APP_ENV: production
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SERVICE_PORT: 9005
+      TZ: Asia/Shanghai
+    command: python services/fortune_analysis/grpc_server.py --port 9005
+    restart: always
+    networks:
+      - hifate-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  payment-service:
+    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
+    container_name: hifate-payment-service
+    ports:
+      - "9006:9006"
+    environment:
+      APP_ENV: production
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SERVICE_PORT: 9006
+      TZ: Asia/Shanghai
+    command: python services/payment_service/grpc_server.py --port 9006
+    restart: always
+    networks:
+      - hifate-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  fortune-rule:
+    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
+    container_name: hifate-fortune-rule
+    ports:
+      - "9007:9007"
+    environment:
+      APP_ENV: production
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SERVICE_PORT: 9007
+      TZ: Asia/Shanghai
+    command: python services/fortune_rule/grpc_server.py --port 9007
+    restart: always
+    networks:
+      - hifate-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  intent-service:
+    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
+    container_name: hifate-intent-service
+    ports:
+      - "9008:9008"
+    environment:
+      APP_ENV: production
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SERVICE_PORT: 9008
+      SERVICE_HOST: 0.0.0.0
+      COZE_ACCESS_TOKEN: ${COZE_ACCESS_TOKEN:-}
+      INTENT_BOT_ID: ${INTENT_BOT_ID:-}
+      TZ: Asia/Shanghai
+    command: python services/intent_service/grpc_server.py
+    restart: always
+    networks:
+      - hifate-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  prompt-optimizer:
+    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
+    container_name: hifate-prompt-optimizer
+    ports:
+      - "9009:9009"
+    environment:
+      APP_ENV: production
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SERVICE_PORT: 9009
+      SERVICE_HOST: 0.0.0.0
+      COZE_ACCESS_TOKEN: ${COZE_ACCESS_TOKEN:-}
+      COZE_BOT_ID: ${COZE_BOT_ID:-}
+      TZ: Asia/Shanghai
+    command: python services/prompt_optimizer/grpc_server.py
+    restart: always
+    networks:
+      - hifate-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  desk-fengshui:
+    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
+    container_name: hifate-desk-fengshui
+    ports:
+      - "9010:9010"
+    environment:
+      APP_ENV: production
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SERVICE_PORT: 9010
+      TZ: Asia/Shanghai
+    command: python services/desk_fengshui/grpc_server.py --port 9010
+    restart: always
+    networks:
+      - hifate-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  nginx_logs:
+  web_logs:
+  mysql_data:
+  redis_data:
+
+networks:
+  hifate-network:
+    driver: bridge

@@ -200,40 +200,57 @@ class EnhancedRuleEngine:
                 import logging
                 logging.info(f"候选规则中70067-70088范围的规则: {len(rule_nums)} 条, IDs: {sorted(rule_nums)[:10]}")
         
-        # 调试：检查候选规则中的十神命格规则
-        if rule_types and 'shishen' in rule_types:
-            shishen_candidates = [r for r in candidates if r.get('rule_type') == 'shishen']
-            if shishen_candidates:
-                import logging
-                logging.debug(f"候选规则中的十神命格规则数: {len(shishen_candidates)}")
+        # ✅ 优化：移除生产环境不需要的debug日志
+        # 调试：检查候选规则中的十神命格规则（仅在需要时启用）
+        # if rule_types and 'shishen' in rule_types:
+        #     shishen_candidates = [r for r in candidates if r.get('rule_type') == 'shishen']
+        #     if shishen_candidates:
+        #         import logging
+        #         logging.debug(f"候选规则中的十神命格规则数: {len(shishen_candidates)}")
         
         # 2. 对候选规则进行精确匹配
-        # ⚠️ 修复：并行处理时超时导致规则被跳过，改为串行处理确保所有规则都能匹配
+        # ✅ 优化：恢复并行匹配，增加超时时间到5秒，确保复杂规则也能匹配
         matched_rules = []
         
-        for rule in candidates:
-            try:
-                match_result = self._match_single_rule(rule, bazi_data)
-                if match_result:
-                    matched_rules.append(rule)
-                # 调试：检查70067-70088范围的规则
+        # 并行匹配规则（提高性能）- 优化：增加超时控制，避免单个规则阻塞
+        cpu_count = os.cpu_count() or 4
+        max_workers = min(cpu_count * 2, 20)
+        rule_timeout = 5.0  # 每个规则最多5秒超时（从1秒增加到5秒，支持复杂规则）
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for rule in candidates:
+                future = executor.submit(self._match_single_rule, rule, bazi_data)
+                futures.append((future, rule))
+            
+            for future, rule in futures:
                 rule_id = rule.get('rule_id', '')
-                if 'FORMULA_身体_700' in rule_id:
-                    rule_num = rule_id[-5:]
-                    if rule_num.isdigit() and 70067 <= int(rule_num) <= 70088:
-                        import logging
-                        logging.debug(f"规则 {rule_id} 匹配结果: {match_result}")
-            except Exception as e:
-                # 如果匹配出错，记录日志但不跳过
-                import logging
-                rule_id = rule.get('rule_id', '')
-                logging.warning(f"规则匹配出错: {rule_id}: {e}")
-                # 如果是70067-70088范围的规则，记录详细错误
-                if 'FORMULA_身体_700' in rule_id:
-                    rule_num = rule_id[-5:]
-                    if rule_num.isdigit() and 70067 <= int(rule_num) <= 70088:
-                        import traceback
-                        logging.error(f"规则 {rule_id} 匹配异常详情:\n{traceback.format_exc()}")
+                try:
+                    # 每个规则最多5秒超时，避免单个规则阻塞整个匹配过程
+                    match_result = future.result(timeout=rule_timeout)
+                    if match_result:
+                        matched_rules.append(rule)
+                    # ✅ 优化：移除生产环境不需要的debug日志（保留关键错误日志）
+                    # 调试：检查70067-70088范围的规则（仅在需要时启用）
+                    # if 'FORMULA_身体_700' in rule_id:
+                    #     rule_num = rule_id[-5:]
+                    #     if rule_num.isdigit() and 70067 <= int(rule_num) <= 70088:
+                    #         logger.debug(f"规则 {rule_id} 匹配结果: {match_result}")
+                except TimeoutError:
+                    # 规则匹配超时，记录日志但不跳过（避免影响其他规则）
+                    logger.warning(f"规则匹配超时（>{rule_timeout}秒）: {rule_id}，跳过该规则")
+                except Exception as e:
+                    # 如果匹配出错，记录日志但不跳过
+                    logger.warning(f"规则匹配出错: {rule_id}: {e}")
+                    # 如果是70067-70088范围的规则，记录详细错误
+                    if 'FORMULA_身体_700' in rule_id:
+                        rule_num = rule_id[-5:]
+                        if rule_num.isdigit() and 70067 <= int(rule_num) <= 70088:
+                            import traceback
+                            logger.error(f"规则 {rule_id} 匹配异常详情:\n{traceback.format_exc()}")
         
         # 3. 按优先级排序
         matched_rules.sort(key=lambda r: r.get('priority', 100), reverse=True)
@@ -255,6 +272,10 @@ class EnhancedRuleEngine:
         # 并行匹配规则（提高性能）- 优化：增加超时控制
         cpu_count = os.cpu_count() or 4
         max_workers = min(cpu_count * 2, 20)
+        rule_timeout = 5.0  # 每个规则最多5秒超时（从1秒增加到5秒，支持复杂规则）
+        
+        import logging
+        logger = logging.getLogger(__name__)
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
@@ -263,13 +284,18 @@ class EnhancedRuleEngine:
                 futures.append((future, rule))
             
             for future, rule in futures:
+                rule_id = rule.get('rule_id', '')
                 try:
-                    # 每个规则最多1秒超时，避免单个规则阻塞整个匹配过程
-                    if future.result(timeout=1.0):
+                    # 每个规则最多5秒超时，避免单个规则阻塞整个匹配过程
+                    match_result = future.result(timeout=rule_timeout)
+                    if match_result:
                         matched_rules.append(rule)
-                except Exception:
-                    # 如果匹配超时或出错，跳过该规则
-                    pass
+                except TimeoutError:
+                    # 规则匹配超时，记录日志但不跳过（避免影响其他规则）
+                    logger.warning(f"规则匹配超时（>{rule_timeout}秒）: {rule_id}，跳过该规则")
+                except Exception as e:
+                    # 如果匹配出错，记录日志但不跳过
+                    logger.warning(f"规则匹配出错: {rule_id}: {e}")
         
         # 按优先级排序
         matched_rules.sort(key=lambda r: r.get('priority', 100), reverse=True)

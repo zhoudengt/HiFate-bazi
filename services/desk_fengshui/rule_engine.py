@@ -8,6 +8,7 @@ import sys
 import os
 import json
 import logging
+import hashlib
 from typing import List, Dict, Optional
 
 # 添加项目根目录到路径
@@ -15,6 +16,14 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 sys.path.insert(0, BASE_DIR)
 
 logger = logging.getLogger(__name__)
+
+# 尝试导入Redis（可选依赖）
+try:
+    from server.config.redis_config import get_redis_client
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+    get_redis_client = None
 
 
 class DeskFengshuiEngine:
@@ -29,15 +38,290 @@ class DeskFengshuiEngine:
         '水': ['cup', 'bottle', 'water feature', 'fish_tank']
     }
     
+    # 物品详细风水配置（核心：物品级精准分析）
+    ITEM_FENGSHUI_CONFIG = {
+        'cup': {
+            'label': '水杯',
+            'element': '水',
+            'ideal_positions': ['right', 'front_right', 'front'],
+            'avoid_positions': [],
+            'position_reasons': {
+                'right': '水杯放在右侧（白虎位）符合静态原则，便于取用',
+                'front_right': '右前方位置取用方便，不影响工作',
+                'front': '前方放置便于取用，保持工作区整洁',
+                'left': '左侧（青龙位）可以放置，但注意不要遮挡动态物品'
+            },
+            'fengshui_benefit': '水主财运和智慧，水杯保持有水状态可增强财运',
+            'tips': '建议水杯常保有水，象征财源不断；选用圆润造型更佳'
+        },
+        'kettle': {
+            'label': '烧水壶/养生壶',
+            'element': '火',
+            'ideal_positions': ['left', 'front_left', 'back_left'],
+            'avoid_positions': ['right', 'front_right', 'back_right'],
+            'position_reasons': {
+                'left': '烧水壶属"动"象，放在青龙位（左侧）符合"左动右静"原则，有助提升贵人运',
+                'front_left': '左前方位置方便取用，且保持动态在青龙位',
+                'back_left': '左后方位置稍远但符合风水原则',
+                'right': '⚠️ 白虎位忌动！烧水沸腾属动象，放右侧易惹是非口舌',
+                'front_right': '⚠️ 右前方仍属白虎位，不宜放置烧水壶',
+                'back_right': '⚠️ 右后方属白虎位，烧水壶在此位置不利'
+            },
+            'fengshui_benefit': '烧水壶代表活力和动力，正确摆放可提升事业运',
+            'tips': '如果右侧有烧水壶，强烈建议移至左侧'
+        },
+        'laptop': {
+            'label': '笔记本电脑',
+            'element': '火',
+            'ideal_positions': ['center', 'front'],
+            'avoid_positions': [],
+            'position_reasons': {
+                'center': '电脑放在正中央便于工作，符合主位原则',
+                'front': '电脑在前方（朱雀位）视野开阔，利于工作',
+                'left': '偏左放置也可，不影响风水',
+                'right': '偏右放置也可，不影响风水'
+            },
+            'fengshui_benefit': '电脑是现代办公核心，保持屏幕整洁可提升事业运',
+            'tips': '电脑壁纸建议使用开阔风景或山水图，象征前程似锦'
+        },
+        'mouse': {
+            'label': '鼠标',
+            'element': '金',
+            'ideal_positions': ['right', 'front_right'],
+            'avoid_positions': [],
+            'position_reasons': {
+                'right': '鼠标放在右侧符合使用习惯（右手用户），也符合白虎位静态原则',
+                'front_right': '右前方便于操作，位置合适',
+                'left': '左手用户可放左侧，不影响风水'
+            },
+            'fengshui_benefit': '鼠标属于执行工具，正确摆放有助提升执行力',
+            'tips': '保持鼠标垫整洁，避免杂乱'
+        },
+        'potted plant': {
+            'label': '绿植/盆栽',
+            'element': '木',
+            'ideal_positions': ['left', 'front_left', 'back_left'],
+            'avoid_positions': [],
+            'position_reasons': {
+                'left': '绿植放在青龙位（左侧）最佳，木旺东方，增强贵人运和生机',
+                'front_left': '左前方也是青龙位范围，适合摆放绿植',
+                'back_left': '左后方可以摆放较高的绿植，增强青龙位气势',
+                'right': '右侧可以放小型绿植，但高度应低于左侧',
+                'front': '前方可放小型绿植，但不要遮挡视线'
+            },
+            'fengshui_benefit': '绿植代表生机和贵人运，是办公桌必备风水物品',
+            'tips': '选择宽叶植物如发财树、富贵竹，避免仙人掌等带刺植物'
+        },
+        'plant': {
+            'label': '绿植',
+            'element': '木',
+            'ideal_positions': ['left', 'front_left', 'back_left'],
+            'avoid_positions': [],
+            'position_reasons': {
+                'left': '绿植放在青龙位（左侧）最佳，木旺东方，增强贵人运和生机',
+                'front_left': '左前方也是青龙位范围，适合摆放绿植',
+                'back_left': '左后方可以摆放较高的绿植，增强青龙位气势'
+            },
+            'fengshui_benefit': '绿植代表生机和贵人运，是办公桌必备风水物品',
+            'tips': '选择宽叶植物如发财树、富贵竹，避免仙人掌等带刺植物'
+        },
+        'cell phone': {
+            'label': '手机',
+            'element': '火',
+            'ideal_positions': ['left', 'front_left'],
+            'avoid_positions': ['right', 'front_right'],
+            'position_reasons': {
+                'left': '手机经常响铃，属"动"象，放在青龙位（左侧）符合风水原则',
+                'front_left': '左前方便于查看和接听',
+                'right': '⚠️ 手机在白虎位经常响动，易惹口舌是非',
+                'front_right': '⚠️ 右前方仍属白虎位，不宜放手机'
+            },
+            'fengshui_benefit': '手机代表沟通和人脉，正确摆放有助人际关系',
+            'tips': '手机建议放在左侧，工作时可静音减少干扰'
+        },
+        'book': {
+            'label': '书籍',
+            'element': '木',
+            'ideal_positions': ['left', 'back_left', 'back'],
+            'avoid_positions': [],
+            'position_reasons': {
+                'left': '书籍放在青龙位可增强学业运和贵人运',
+                'back_left': '左后方适合摆放较多书籍，增强靠山',
+                'back': '后方放书籍可形成"书山"，增强靠山运'
+            },
+            'fengshui_benefit': '书籍代表知识和智慧，也可作为靠山象征',
+            'tips': '书籍可以竖起来或叠放在左侧，增强青龙位高度'
+        },
+        'scissors': {
+            'label': '剪刀',
+            'element': '金',
+            'ideal_positions': ['drawer', 'pen_holder'],
+            'avoid_positions': ['visible', 'desk_surface'],
+            'position_reasons': {
+                'drawer': '剪刀等利器应收纳在抽屉里，不宜外露',
+                'pen_holder': '可以放在笔筒里，刀尖朝下，有防小人作用',
+                'visible': '⚠️ 利器外露易招惹是非和小人'
+            },
+            'fengshui_benefit': '剪刀收纳得当可防小人，外露则招是非',
+            'tips': '剪刀、指甲钳等利器一定要收纳起来，不要散放桌面'
+        },
+        'clock': {
+            'label': '时钟',
+            'element': '金',
+            'ideal_positions': ['left', 'front'],
+            'avoid_positions': ['back'],
+            'position_reasons': {
+                'left': '时钟放在青龙位可以，但不要太大',
+                'front': '前方可以放时钟，便于查看时间',
+                'back': '⚠️ 后方不宜放时钟，有"背后有人催"的寓意'
+            },
+            'fengshui_benefit': '时钟代表时间管理，正确摆放有助提升效率',
+            'tips': '办公桌上的时钟不宜太大，以小巧为佳'
+        },
+        'bottle': {
+            'label': '水瓶',
+            'element': '水',
+            'ideal_positions': ['right', 'front_right', 'front'],
+            'avoid_positions': [],
+            'position_reasons': {
+                'right': '水瓶放在右侧便于取用，符合静态原则',
+                'front_right': '右前方位置取用方便',
+                'front': '前方放置也可以'
+            },
+            'fengshui_benefit': '水瓶保持有水可增强财运',
+            'tips': '建议水瓶常保有水，选用透明或蓝色更佳'
+        },
+        'vase': {
+            'label': '花瓶',
+            'element': '水',
+            'ideal_positions': ['left', 'front_left'],
+            'avoid_positions': [],
+            'position_reasons': {
+                'left': '花瓶放在青龙位可增强贵人运，尤其是插鲜花时',
+                'front_left': '左前方适合放小型花瓶'
+            },
+            'fengshui_benefit': '花瓶插鲜花可增强桃花运和人缘',
+            'tips': '注意勤换水，不要让花枯萎；不建议放假花'
+        },
+        'teddy bear': {
+            'label': '玩偶',
+            'element': '土',
+            'ideal_positions': ['left', 'front_left'],
+            'avoid_positions': ['right'],
+            'position_reasons': {
+                'left': '玩偶放在青龙位可增添温馨感',
+                'front_left': '左前方适合放小型玩偶',
+                'right': '白虎位不宜放太多装饰品'
+            },
+            'fengshui_benefit': '适量玩偶可缓解工作压力',
+            'tips': '玩偶不宜太多，1-2个即可，保持桌面整洁'
+        },
+        'tv': {
+            'label': '显示器',
+            'element': '火',
+            'ideal_positions': ['front', 'center'],
+            'avoid_positions': [],
+            'position_reasons': {
+                'front': '显示器放在正前方（朱雀位）最佳，视野开阔',
+                'center': '居中放置符合工作需求'
+            },
+            'fengshui_benefit': '显示器保持整洁，壁纸选择开阔风景可提升运势',
+            'tips': '屏幕壁纸建议用山水或开阔风景，象征前程远大'
+        },
+        'keyboard': {
+            'label': '键盘',
+            'element': '金',
+            'ideal_positions': ['front', 'center'],
+            'avoid_positions': [],
+            'position_reasons': {
+                'front': '键盘放在正前方便于打字',
+                'center': '居中放置符合人体工学'
+            },
+            'fengshui_benefit': '键盘是输入工具，保持整洁有助思路清晰',
+            'tips': '定期清洁键盘，保持整洁'
+        }
+    }
+    
+    # 五行-物品-建议映射（用于喜神忌神分析）
+    WUXING_RECOMMENDATIONS = {
+        '木': {
+            'items': ['绿植', '木制品', '书籍', '文件架'],
+            'colors': ['绿色', '青色'],
+            'position': '左侧（青龙位/东方）',
+            'benefit': '生机、贵人运、事业发展、学业进步',
+            'specific_suggestions': [
+                {'item': '发财树/富贵竹', 'position': '左侧', 'reason': '木旺东方，绿植增强贵人运'},
+                {'item': '木质笔筒', 'position': '左前方', 'reason': '木制品增强木气'},
+                {'item': '书籍/文件', 'position': '左侧叠放', 'reason': '增强青龙位高度'}
+            ]
+        },
+        '火': {
+            'items': ['红色物品', '台灯', '烧水壶'],
+            'colors': ['红色', '紫色', '橙色'],
+            'position': '南方或左侧',
+            'benefit': '名声、事业、影响力、表现力',
+            'specific_suggestions': [
+                {'item': '红色台灯', 'position': '左侧', 'reason': '火主名声，增强影响力'},
+                {'item': '红色装饰', 'position': '前方', 'reason': '朱雀属火，红色增强气场'}
+            ]
+        },
+        '土': {
+            'items': ['陶瓷摆件', '黄色物品', '水晶'],
+            'colors': ['黄色', '棕色', '米色'],
+            'position': '中央或西南方',
+            'benefit': '稳定、包容、财运、人际关系',
+            'specific_suggestions': [
+                {'item': '陶瓷摆件', 'position': '桌面中央偏右', 'reason': '土主稳定，增强根基'},
+                {'item': '黄水晶', 'position': '右前方', 'reason': '黄水晶招财，土生金'}
+            ]
+        },
+        '金': {
+            'items': ['金属笔筒', '白色物品', '金属摆件'],
+            'colors': ['白色', '金色', '银色'],
+            'position': '西方或右侧',
+            'benefit': '权威、决断力、领导力、执行力',
+            'specific_suggestions': [
+                {'item': '金属笔筒', 'position': '右侧', 'reason': '金主权威，增强决断力'},
+                {'item': '白色装饰', 'position': '右前方', 'reason': '白色属金，增强气场'}
+            ]
+        },
+        '水': {
+            'items': ['水杯', '鱼缸', '水培植物', '蓝色物品'],
+            'colors': ['蓝色', '黑色', '深灰色'],
+            'position': '北方或前方',
+            'benefit': '智慧、财运、人脉、思考能力',
+            'specific_suggestions': [
+                {'item': '水杯（常保有水）', 'position': '右前方', 'reason': '水主财运，水满则财旺'},
+                {'item': '小型鱼缸', 'position': '前方', 'reason': '活水招财，增强财运'},
+                {'item': '水培绿萝', 'position': '左前方', 'reason': '水木相生，同时增强木和水'}
+            ]
+        }
+    }
+    
     def __init__(self, db_config: Optional[Dict] = None):
         """
-        初始化规则引擎
+        初始化规则引擎（支持Redis缓存）
         
         Args:
             db_config: 数据库配置
         """
         self.db_config = db_config or self._get_default_db_config()
-        self.rules_cache = None
+        self.rules_cache = None  # 内存缓存
+        self.redis_client = None  # Redis客户端（可选）
+        
+        # 尝试初始化Redis客户端
+        if REDIS_AVAILABLE:
+            try:
+                self.redis_client = get_redis_client()
+                if self.redis_client:
+                    # 测试连接
+                    self.redis_client.ping()
+                    logger.info("✅ Redis缓存已启用，规则将缓存到Redis")
+                else:
+                    logger.warning("⚠️ Redis客户端不可用，将使用内存缓存")
+            except Exception as e:
+                logger.warning(f"⚠️ Redis连接失败，将使用内存缓存: {e}")
+                self.redis_client = None
     
     def _get_default_db_config(self) -> Dict:
         """获取默认数据库配置"""
@@ -224,9 +508,54 @@ class DeskFengshuiEngine:
             }
         ]
     
+    def _get_cache_key(self) -> str:
+        """生成缓存键"""
+        return "desk_fengshui_rules:all"
+    
+    def _get_rules_from_cache(self) -> Optional[List[Dict]]:
+        """从缓存获取规则"""
+        cache_key = self._get_cache_key()
+        
+        # 1. 先检查内存缓存
+        if self.rules_cache:
+            return self.rules_cache
+        
+        # 2. 检查Redis缓存
+        if self.redis_client:
+            try:
+                cached_data = self.redis_client.get(cache_key)
+                if cached_data:
+                    if isinstance(cached_data, bytes):
+                        cached_data = cached_data.decode('utf-8')
+                    rules = json.loads(cached_data)
+                    # 回填内存缓存
+                    self.rules_cache = rules
+                    logger.info(f"✅ 从Redis缓存加载了 {len(rules)} 条规则")
+                    return rules
+            except Exception as e:
+                logger.warning(f"⚠️ Redis缓存读取失败: {e}")
+        
+        return None
+    
+    def _save_rules_to_cache(self, rules: List[Dict], ttl: int = 3600):
+        """保存规则到缓存"""
+        cache_key = self._get_cache_key()
+        
+        # 1. 保存到内存缓存
+        self.rules_cache = rules
+        
+        # 2. 保存到Redis缓存
+        if self.redis_client:
+            try:
+                rules_json = json.dumps(rules, ensure_ascii=False)
+                self.redis_client.setex(cache_key, ttl, rules_json)
+                logger.info(f"✅ 规则已缓存到Redis（TTL: {ttl}秒）")
+            except Exception as e:
+                logger.warning(f"⚠️ Redis缓存写入失败: {e}")
+    
     def load_rules(self, force_reload: bool = False) -> List[Dict]:
         """
-        加载风水规则
+        加载风水规则（支持Redis缓存）
         
         Args:
             force_reload: 是否强制重新加载
@@ -234,23 +563,35 @@ class DeskFengshuiEngine:
         Returns:
             规则列表
         """
-        if self.rules_cache and not force_reload:
-            return self.rules_cache
+        # 如果不强制重新加载，先尝试从缓存获取
+        if not force_reload:
+            cached_rules = self._get_rules_from_cache()
+            if cached_rules:
+                return cached_rules
         
         try:
             import pymysql
             
-            # 确保连接配置包含字符集设置
-            db_config = self.db_config.copy()
-            if 'charset' not in db_config:
-                db_config['charset'] = 'utf8mb4'
-            if 'use_unicode' not in db_config:
-                db_config['use_unicode'] = True
+            # 优先使用连接池（性能优化）
+            try:
+                from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+                conn = get_mysql_connection()
+                use_pool = True
+            except ImportError:
+                # 回退到直接连接
+                db_config = self.db_config.copy()
+                if 'charset' not in db_config:
+                    db_config['charset'] = 'utf8mb4'
+                if 'use_unicode' not in db_config:
+                    db_config['use_unicode'] = True
+                conn = pymysql.connect(**db_config)
+                use_pool = False
             
-            conn = pymysql.connect(**db_config)
-            # 设置连接字符集
+            # 设置连接字符集（双重保险）
             conn.set_charset('utf8mb4')
+            # 执行SET NAMES确保会话级别字符集
             cursor = conn.cursor(pymysql.cursors.DictCursor)
+            cursor.execute("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci")
             
             # 查询启用的规则
             sql = """
@@ -285,9 +626,18 @@ class DeskFengshuiEngine:
                         pass
             
             cursor.close()
-            conn.close()
             
-            self.rules_cache = rules
+            # 使用连接池时返回连接，否则关闭
+            if use_pool:
+                try:
+                    return_mysql_connection(conn)
+                except:
+                    conn.close()
+            else:
+                conn.close()
+            
+            # 保存到缓存
+            self._save_rules_to_cache(rules, ttl=3600)  # 缓存1小时
             logger.info(f"加载了 {len(rules)} 条风水规则")
             
             return rules
@@ -297,6 +647,496 @@ class DeskFengshuiEngine:
             logger.warning("⚠️ 使用内置规则作为fallback")
             # 使用内置规则作为fallback
             return self._get_builtin_rules()
+    
+    def analyze_item_fengshui(self, item: Dict, bazi_info: Optional[Dict] = None) -> Dict:
+        """
+        为单个物品进行详细的风水分析
+        
+        Args:
+            item: 检测到的物品（含位置信息）
+            bazi_info: 八字信息（含喜神忌神）
+        
+        Returns:
+            物品的详细风水分析
+        """
+        if not item:
+            return {
+                'name': '',
+                'label': '未知物品',
+                'current_position': '',
+                'is_position_ideal': True,
+                'analysis': {},
+                'suggestion': None
+            }
+        
+        item_name = item.get('name', '') or ''
+        item_label = item.get('label', item_name) or item_name
+        current_position = item.get('position') or {}
+        current_relative = current_position.get('relative', '') if current_position else ''
+        current_direction = current_position.get('direction', '') if current_position else ''
+        
+        # 获取物品配置
+        config = self.ITEM_FENGSHUI_CONFIG.get(item_name, {})
+        
+        if not config:
+            # 未配置的物品，使用通用分析
+            return {
+                'name': item_name,
+                'label': item_label,
+                'current_position': current_position.get('relative_name', current_relative),
+                'is_position_ideal': True,  # 未配置则认为位置可以
+                'analysis': {
+                    'current_assessment': f'{item_label}位于{current_position.get("relative_name", "当前位置")}',
+                    'ideal_positions': [],
+                    'avoid_positions': [],
+                    'fengshui_element': '',
+                    'bazi_relevance': ''
+                },
+                'suggestion': None
+            }
+        
+        # 分析位置是否理想
+        ideal_positions = config.get('ideal_positions', [])
+        avoid_positions = config.get('avoid_positions', [])
+        position_reasons = config.get('position_reasons', {})
+        
+        # 判断当前位置
+        is_in_ideal = current_relative in ideal_positions or current_direction in ideal_positions
+        is_in_avoid = current_relative in avoid_positions or current_direction in avoid_positions
+        
+        # 获取当前位置的评估
+        current_assessment = position_reasons.get(current_relative, '')
+        if not current_assessment:
+            current_assessment = position_reasons.get(current_direction, '')
+        if not current_assessment:
+            if is_in_ideal:
+                current_assessment = f'{item_label}位于{current_position.get("relative_name", current_relative)}，位置合适'
+            elif is_in_avoid:
+                current_assessment = f'⚠️ {item_label}位于{current_position.get("relative_name", current_relative)}，建议调整位置'
+            else:
+                current_assessment = f'{item_label}位于{current_position.get("relative_name", current_relative)}'
+        
+        # 八字相关性分析
+        bazi_relevance = ''
+        item_element = config.get('element', '')
+        if bazi_info and item_element:
+            xishen = bazi_info.get('xishen', '')
+            jishen = bazi_info.get('jishen', '')
+            
+            if item_element == xishen:
+                bazi_relevance = f'🌟 您的喜神为{xishen}，{item_label}属{item_element}，与您八字相合，有助增强运势'
+            elif item_element == jishen:
+                bazi_relevance = f'⚠️ 您的忌神为{jishen}，{item_label}属{item_element}，建议减少或调整位置'
+        
+        # 生成建议
+        suggestion = None
+        if is_in_avoid:
+            ideal_pos_name = self._get_direction_name(ideal_positions[0]) if ideal_positions else '其他位置'
+            suggestion = {
+                'action': 'move',
+                'from': current_position.get('relative_name', current_relative),
+                'to': ideal_pos_name,
+                'reason': current_assessment,
+                'priority': 'high'
+            }
+        elif not is_in_ideal and ideal_positions:
+            # 不在理想位置，但也不在禁忌位置
+            ideal_pos_name = self._get_direction_name(ideal_positions[0])
+            suggestion = {
+                'action': 'optimize',
+                'from': current_position.get('relative_name', current_relative),
+                'to': ideal_pos_name,
+                'reason': f'建议将{item_label}移至{ideal_pos_name}效果更佳',
+                'priority': 'medium'
+            }
+        
+        return {
+            'name': item_name,
+            'label': config.get('label', item_label),
+            'current_position': current_position.get('relative_name', current_relative),
+            'is_position_ideal': is_in_ideal and not is_in_avoid,
+            'is_position_avoid': is_in_avoid,
+            'analysis': {
+                'current_assessment': current_assessment,
+                'ideal_positions': [self._get_direction_name(p) for p in ideal_positions],
+                'avoid_positions': [self._get_direction_name(p) for p in avoid_positions],
+                'fengshui_element': item_element,
+                'fengshui_benefit': config.get('fengshui_benefit', ''),
+                'tips': config.get('tips', ''),
+                'bazi_relevance': bazi_relevance
+            },
+            'suggestion': suggestion
+        }
+    
+    def analyze_all_items(self, detected_items: List[Dict], bazi_info: Optional[Dict] = None) -> List[Dict]:
+        """
+        分析所有检测到的物品
+        
+        Args:
+            detected_items: 检测到的物品列表
+            bazi_info: 八字信息
+        
+        Returns:
+            所有物品的详细分析列表
+        """
+        analyzed_items = []
+        for item in detected_items:
+            analysis = self.analyze_item_fengshui(item, bazi_info)
+            analyzed_items.append(analysis)
+        return analyzed_items
+    
+    def generate_recommendations(self, detected_items: List[Dict], bazi_info: Optional[Dict] = None) -> Dict:
+        """
+        生成三级建议体系
+        
+        Args:
+            detected_items: 检测到的物品列表
+            bazi_info: 八字信息（含喜神忌神）
+        
+        Returns:
+            三级建议结构：must_adjust, should_add, optional_optimize
+        """
+        recommendations = {
+            'must_adjust': [],  # 必须调整（违反禁忌）
+            'should_add': [],   # 建议添加（基于八字喜神）
+            'optional_optimize': []  # 可选优化
+        }
+        
+        # 确保 detected_items 不为 None
+        if not detected_items:
+            detected_items = []
+        
+        # 1. 分析每个物品，找出必须调整的（违反禁忌）
+        for item in detected_items:
+            if not item:
+                continue
+            analysis = self.analyze_item_fengshui(item, bazi_info)
+            if not analysis:
+                continue
+            if analysis.get('is_position_avoid'):
+                # 必须调整
+                suggestion = analysis.get('suggestion') or {}
+                if suggestion:
+                    item_name = item.get('name', '') if item else ''
+                    analysis_data = analysis.get('analysis') or {}
+                    recommendations['must_adjust'].append({
+                        'item': analysis.get('label', item_name),
+                        'action': suggestion.get('action', 'move'),
+                        'from': suggestion.get('from', '当前位置'),
+                        'to': suggestion.get('to', '其他位置'),
+                        'reason': suggestion.get('reason', '违反风水禁忌'),
+                        'priority': 'high',
+                        'fengshui_element': analysis_data.get('fengshui_element', '')
+                    })
+            elif not analysis.get('is_position_ideal') and analysis.get('suggestion'):
+                # 可选优化
+                suggestion = analysis.get('suggestion') or {}
+                item_name = item.get('name', '') if item else ''
+                recommendations['optional_optimize'].append({
+                    'item': analysis.get('label', item_name),
+                    'action': suggestion.get('action', 'optimize'),
+                    'from': suggestion.get('from', '当前位置'),
+                    'to': suggestion.get('to', '更佳位置'),
+                    'reason': suggestion.get('reason', '位置可优化'),
+                    'priority': 'low'
+                })
+        
+        # 2. 基于四象布局检测缺失物品
+        detected_item_names = [(item.get('name', '') or '').lower() for item in detected_items if item]
+        detected_positions = {}
+        for item in detected_items:
+            if not item:
+                continue
+            pos = item.get('position') or {}
+            relative = pos.get('relative', '') if pos else ''
+            if relative not in detected_positions:
+                detected_positions[relative] = []
+            detected_positions[relative].append(item.get('name', '') or '')
+        
+        # 检查青龙位（左侧）是否有高物/绿植
+        left_items = detected_positions.get('left', []) + detected_positions.get('front_left', []) + detected_positions.get('back_left', [])
+        has_left_plant = any(item in ['plant', 'potted plant', 'vase'] for item in left_items)
+        has_left_high_item = any(item in ['book', 'file', 'plant', 'potted plant'] for item in left_items)
+        
+        if not has_left_plant:
+            recommendations['should_add'].append({
+                'item': '绿植（发财树/富贵竹）',
+                'position': '左侧（青龙位）',
+                'reason': '青龙位宜高宜动，绿植可增强贵人运和生机',
+                'priority': 'high',
+                'fengshui_element': '木'
+            })
+        
+        if not has_left_high_item and not has_left_plant:
+            recommendations['optional_optimize'].append({
+                'item': '书籍/文件架',
+                'position': '左侧叠放',
+                'reason': '增强青龙位高度，有助提升事业运',
+                'priority': 'medium'
+            })
+        
+        # 检查玄武位（后方）是否有靠山
+        back_items = detected_positions.get('back', []) + detected_positions.get('back_left', []) + detected_positions.get('back_right', [])
+        has_back_support = len(back_items) > 0
+        
+        if not has_back_support:
+            recommendations['optional_optimize'].append({
+                'item': '靠垫/背靠物品',
+                'position': '后方（玄武位）',
+                'reason': '增强靠山运，工作有依靠',
+                'priority': 'medium'
+            })
+        
+        # 3. 基于八字喜神推荐物品
+        if bazi_info:
+            xishen = bazi_info.get('xishen', '')
+            jishen = bazi_info.get('jishen', '')
+            
+            if xishen and xishen in self.WUXING_RECOMMENDATIONS:
+                wuxing_rec = self.WUXING_RECOMMENDATIONS[xishen]
+                # 检查是否已有喜神对应物品
+                xishen_items = self.ELEMENT_ITEMS.get(xishen, [])
+                has_xishen_item = any(item in detected_item_names for item in xishen_items)
+                
+                if not has_xishen_item:
+                    # 推荐喜神物品
+                    for suggestion in wuxing_rec.get('specific_suggestions', [])[:2]:
+                        recommendations['should_add'].append({
+                            'item': suggestion.get('item', ''),
+                            'position': suggestion.get('position', wuxing_rec.get('position', '')),
+                            'reason': f"🌟 您的喜神为{xishen}，{suggestion.get('reason', '')}",
+                            'priority': 'high',
+                            'fengshui_element': xishen,
+                            'bazi_based': True
+                        })
+            
+            # 检查是否有忌神物品需要调整
+            if jishen and jishen in self.ELEMENT_ITEMS:
+                jishen_items = self.ELEMENT_ITEMS[jishen]
+                for item in detected_items:
+                    if not item:
+                        continue
+                    item_name = (item.get('name', '') or '').lower()
+                    if item_name in jishen_items:
+                        label = self.ITEM_FENGSHUI_CONFIG.get(item_name, {}).get('label', item_name)
+                        # 检查是否已在must_adjust中
+                        already_in_must = any(adj.get('item') == label for adj in recommendations['must_adjust'])
+                        if not already_in_must:
+                            recommendations['optional_optimize'].append({
+                                'item': label,
+                                'action': 'reduce_or_move',
+                                'reason': f"⚠️ 您的忌神为{jishen}，{label}属{jishen}，建议减少外露或收纳起来",
+                                'priority': 'medium',
+                                'fengshui_element': jishen,
+                                'bazi_based': True
+                            })
+        
+        # 4. 检查是否有利器外露
+        sharp_items = ['scissors', 'knife', 'letter opener']
+        for item in detected_items:
+            if not item:
+                continue
+            item_name = (item.get('name', '') or '').lower()
+            if item_name in sharp_items:
+                pos = item.get('position') or {}
+                relative = pos.get('relative', '') if pos else ''
+                if relative not in ['drawer', 'pen_holder']:
+                    recommendations['must_adjust'].append({
+                        'item': self.ITEM_FENGSHUI_CONFIG.get(item_name, {}).get('label', item_name),
+                        'action': 'store',
+                        'from': pos.get('relative_name', '桌面') if pos else '桌面',
+                        'to': '抽屉或笔筒内',
+                        'reason': '利器外露易招惹是非和小人，建议收纳',
+                        'priority': 'high'
+                    })
+        
+        # 5. 通用建议（如果没有其他建议）
+        if not recommendations['should_add'] and not recommendations['must_adjust']:
+            recommendations['optional_optimize'].append({
+                'item': '水杯（常保有水）',
+                'position': '右前方',
+                'reason': '水主财运，水杯保持有水象征财源不断',
+                'priority': 'low'
+            })
+        
+        # 添加统计信息
+        recommendations['statistics'] = {
+            'must_adjust_count': len(recommendations['must_adjust']),
+            'should_add_count': len(recommendations['should_add']),
+            'optional_optimize_count': len(recommendations['optional_optimize']),
+            'total_count': len(recommendations['must_adjust']) + len(recommendations['should_add']) + len(recommendations['optional_optimize'])
+        }
+        
+        return recommendations
+    
+    def generate_bazi_analysis(self, detected_items: List[Dict], bazi_info: Optional[Dict] = None) -> Dict:
+        """
+        生成深度八字融合分析
+        
+        Args:
+            detected_items: 检测到的物品列表
+            bazi_info: 八字信息
+        
+        Returns:
+            八字深度融合分析结果
+        """
+        if not bazi_info:
+            return {
+                'has_bazi': False,
+                'message': '未提供八字信息，无法进行个性化分析'
+            }
+        
+        xishen = bazi_info.get('xishen', '')
+        jishen = bazi_info.get('jishen', '')
+        
+        analysis = {
+            'has_bazi': True,
+            'xishen': xishen,
+            'jishen': jishen,
+            'xishen_analysis': {},
+            'jishen_analysis': {},
+            'element_balance': {},
+            'personalized_tips': [],
+            'color_recommendations': [],
+            'overall_compatibility': 0
+        }
+        
+        # 统计桌面五行分布
+        element_counts = {'木': 0, '火': 0, '土': 0, '金': 0, '水': 0}
+        
+        # 确保 detected_items 不为 None
+        if not detected_items:
+            detected_items = []
+        
+        for item in detected_items:
+            if not item:
+                continue
+            item_name = (item.get('name', '') or '').lower()
+            for element, items in self.ELEMENT_ITEMS.items():
+                if item_name in items:
+                    element_counts[element] += 1
+                    break
+            # 也从配置中查找
+            config = self.ITEM_FENGSHUI_CONFIG.get(item_name, {})
+            if config.get('element'):
+                element_counts[config['element']] += 1
+        
+        analysis['element_balance'] = element_counts
+        
+        # 喜神分析
+        if xishen:
+            xishen_count = element_counts.get(xishen, 0)
+            xishen_rec = self.WUXING_RECOMMENDATIONS.get(xishen, {})
+            
+            if xishen_count >= 2:
+                status = 'excellent'
+                message = f'🌟 您的喜神为{xishen}，桌面{xishen}元素充足（{xishen_count}个），运势加成明显'
+            elif xishen_count == 1:
+                status = 'good'
+                message = f'✅ 您的喜神为{xishen}，桌面有{xishen_count}个{xishen}元素，建议适当增加'
+            else:
+                status = 'weak'
+                message = f'⚠️ 您的喜神为{xishen}，桌面缺少{xishen}元素，建议添加相关物品'
+            
+            analysis['xishen_analysis'] = {
+                'element': xishen,
+                'count': xishen_count,
+                'status': status,
+                'message': message,
+                'benefit': xishen_rec.get('benefit', ''),
+                'recommended_items': xishen_rec.get('items', []),
+                'recommended_colors': xishen_rec.get('colors', []),
+                'recommended_position': xishen_rec.get('position', '')
+            }
+            
+            # 喜神对应的颜色推荐
+            for color in xishen_rec.get('colors', []):
+                analysis['color_recommendations'].append({
+                    'color': color,
+                    'reason': f'{color}属{xishen}，与您的喜神相合',
+                    'usage': f'可用于桌面装饰、文件夹、鼠标垫等',
+                    'priority': 'high'
+                })
+        
+        # 忌神分析
+        if jishen:
+            jishen_count = element_counts.get(jishen, 0)
+            jishen_items_on_desk = []
+            
+            for item in detected_items:
+                item_name = item.get('name', '').lower()
+                config = self.ITEM_FENGSHUI_CONFIG.get(item_name, {})
+                if config.get('element') == jishen:
+                    jishen_items_on_desk.append(config.get('label', item_name))
+            
+            if jishen_count == 0:
+                status = 'excellent'
+                message = f'✅ 您的忌神为{jishen}，桌面没有{jishen}元素物品，很好'
+            elif jishen_count == 1:
+                status = 'caution'
+                message = f'⚠️ 您的忌神为{jishen}，桌面有{jishen_count}个{jishen}元素物品（{", ".join(jishen_items_on_desk)}），建议减少外露'
+            else:
+                status = 'warning'
+                message = f'❌ 您的忌神为{jishen}，桌面{jishen}元素过多（{jishen_count}个），建议收纳或移除部分物品'
+            
+            analysis['jishen_analysis'] = {
+                'element': jishen,
+                'count': jishen_count,
+                'status': status,
+                'message': message,
+                'items_on_desk': jishen_items_on_desk,
+                'suggestion': f'建议将{jishen}元素物品收纳起来或减少摆放' if jishen_count > 0 else ''
+            }
+        
+        # 计算整体相容度
+        compatibility_score = 50  # 基础分
+        
+        # 喜神加分
+        xishen_count = element_counts.get(xishen, 0) if xishen else 0
+        compatibility_score += min(xishen_count * 15, 30)  # 最多加30分
+        
+        # 忌神减分
+        jishen_count = element_counts.get(jishen, 0) if jishen else 0
+        compatibility_score -= min(jishen_count * 10, 20)  # 最多减20分
+        
+        # 五行平衡加分
+        non_zero_elements = sum(1 for count in element_counts.values() if count > 0)
+        if non_zero_elements >= 3:
+            compatibility_score += 10
+        
+        analysis['overall_compatibility'] = max(0, min(100, compatibility_score))
+        
+        # 个性化建议
+        if xishen:
+            xishen_rec = self.WUXING_RECOMMENDATIONS.get(xishen, {})
+            analysis['personalized_tips'].append({
+                'type': 'xishen_enhance',
+                'title': f'增强{xishen}元素',
+                'tip': f"您的喜神为{xishen}，可增加{xishen_rec.get('position', '')}的相关物品：{', '.join(xishen_rec.get('items', [])[:3])}",
+                'priority': 'high'
+            })
+        
+        if jishen and element_counts.get(jishen, 0) > 0:
+            analysis['personalized_tips'].append({
+                'type': 'jishen_reduce',
+                'title': f'减少{jishen}元素',
+                'tip': f"您的忌神为{jishen}，建议减少或收纳桌面上的{jishen}元素物品",
+                'priority': 'high'
+            })
+        
+        # 五行相生建议
+        wuxing_sheng = {'木': '火', '火': '土', '土': '金', '金': '水', '水': '木'}
+        if xishen:
+            sheng_element = wuxing_sheng.get(xishen, '')
+            if sheng_element:
+                analysis['personalized_tips'].append({
+                    'type': 'wuxing_sheng',
+                    'title': f'五行相生：{xishen}生{sheng_element}',
+                    'tip': f"{xishen}生{sheng_element}，可同时摆放{xishen}和{sheng_element}元素物品，形成相生局",
+                    'priority': 'medium'
+                })
+        
+        return analysis
     
     def match_rules(self, detected_items: List[Dict], bazi_info: Optional[Dict] = None) -> Dict:
         """
@@ -847,7 +1687,10 @@ class DeskFengshuiEngine:
     
     @staticmethod
     def _safe_decode(text: str) -> str:
-        """安全解码字符串，处理可能的编码问题"""
+        """
+        安全解码字符串，处理可能的编码问题
+        增强版：支持多种编码修复策略
+        """
         if not text:
             return text
         
@@ -858,36 +1701,56 @@ class DeskFengshuiEngine:
             except UnicodeDecodeError:
                 try:
                     # 尝试latin1 -> utf-8的修复（pymysql常见问题）
-                    return text.decode('latin1').encode('latin1').decode('utf-8')
+                    fixed = text.decode('latin1').encode('latin1').decode('utf-8')
+                    # 验证修复后的文本是否包含中文字符或常见标点
+                    if any('\u4e00' <= c <= '\u9fff' or c in '，。！？；：' for c in fixed[:50]):
+                        return fixed
                 except (UnicodeDecodeError, UnicodeEncodeError):
-                    try:
-                        # 尝试gbk编码
-                        return text.decode('gbk').encode('utf-8').decode('utf-8')
-                    except:
-                        return str(text, errors='ignore')
+                    pass
+                try:
+                    # 尝试gbk编码
+                    fixed = text.decode('gbk')
+                    if any('\u4e00' <= c <= '\u9fff' or c in '，。！？；：' for c in fixed[:50]):
+                        return fixed
+                except:
+                    pass
+                return str(text, errors='ignore')
         
         # 如果是字符串，检查是否有乱码
         if isinstance(text, str):
             # 检查是否已经是正确的UTF-8
             try:
+                # 先尝试正常编码解码验证
                 text.encode('utf-8').decode('utf-8')
+                
                 # 检查是否有常见的乱码模式（如：ä¸æ、ç§等）
-                if any(ord(c) > 0x7F and 0x80 <= ord(c) <= 0xFF for c in text[:100]):
+                # 这些是latin1编码的中文字符被错误解释的结果
+                has_suspicious_chars = False
+                for c in text[:200]:  # 检查前200个字符
+                    if 0x80 <= ord(c) <= 0xFF:
+                        has_suspicious_chars = True
+                        break
+                
+                if has_suspicious_chars:
                     # 可能是latin1编码的中文，尝试修复
                     try:
                         fixed = text.encode('latin1').decode('utf-8')
                         # 验证修复后的文本是否包含中文字符
-                        if any('\u4e00' <= c <= '\u9fff' for c in fixed):
+                        if any('\u4e00' <= c <= '\u9fff' or c in '，。！？；：' for c in fixed[:100]):
                             return fixed
                     except (UnicodeEncodeError, UnicodeDecodeError):
                         pass
+                
                 return text
             except UnicodeEncodeError:
                 # 如果无法编码，尝试修复
                 try:
-                    return text.encode('latin1').decode('utf-8')
+                    fixed = text.encode('latin1').decode('utf-8')
+                    if any('\u4e00' <= c <= '\u9fff' or c in '，。！？；：' for c in fixed[:100]):
+                        return fixed
                 except (UnicodeEncodeError, UnicodeDecodeError):
-                    return text
+                    pass
+                return text
         
         return str(text)
     
@@ -947,12 +1810,22 @@ class DeskFengshuiEngine:
             'center': '中央',
             'left-front': '左前方',
             'right-front': '右前方',
+            'front_left': '左前方',
+            'front_right': '右前方',
+            'back_left': '左后方',
+            'back_right': '右后方',
             'east': '东方',
             'west': '西方',
             'south': '南方',
             'north': '北方',
             'northeast': '东北方',
-            'northwest': '西北方'
+            'northwest': '西北方',
+            'southeast': '东南方',
+            'southwest': '西南方',
+            'drawer': '抽屉内',
+            'pen_holder': '笔筒内',
+            'visible': '桌面可见处',
+            'desk_surface': '桌面'
         }
         return direction_map.get(direction, direction)
 

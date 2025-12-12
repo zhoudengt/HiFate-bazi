@@ -1,0 +1,47 @@
+# MySQL 从库配置
+[mysqld]
+# 服务器 ID（从库为 2）
+server-id = 2
+
+# 开启二进制日志（从库也开启，方便故障切换）
+log-bin = mysql-bin
+binlog-format = ROW
+binlog-row-image = FULL
+expire_logs_days = 7
+max_binlog_size = 100M
+
+# 中继日志
+relay-log = mysql-relay-bin
+relay-log-index = mysql-relay-bin.index
+log-slave-updates = ON
+
+# GTID 模式
+gtid-mode = ON
+enforce-gtid-consistency = ON
+
+# 只读（从库默认只读，故障切换时改为读写）
+read-only = ON
+# super-read-only = ON  # 如果需要更严格的只读
+
+# 字符集
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+
+# 连接数
+max_connections = 500
+max_user_connections = 400
+
+# InnoDB 优化（2C8G 机器）
+innodb_buffer_pool_size = 2G
+innodb_log_file_size = 256M
+innodb_flush_log_at_trx_commit = 2
+innodb_flush_method = O_DIRECT
+
+# 慢查询
+slow_query_log = ON
+slow_query_log_file = /var/lib/mysql/slow.log
+long_query_time = 2
+
+# 其他
+skip-name-resolve
+default-time-zone = '+08:00'

@@ -1,0 +1,628 @@
+# HiFate-bazi 生产环境双节点部署配置
+# 使用方式：
+#   节点1（主节点）: NODE_ROLE=master docker-compose -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.image.yml --profile master up -d
+#   节点2（从节点）: NODE_ROLE=slave docker-compose -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.image.yml --profile slave up -d
+#
+# 功能：
+#   - 支持双节点高可用部署
+#   - MySQL主从复制（主节点写，从节点读）
+#   - Redis主从复制（主节点写，从节点读）
+#   - 通过 NODE_ROLE 环境变量和 profiles 区分主从节点
+#   - 零停机滚动更新
+#   - 健康检查和自动重启
+
+version: '3.8'
+
+services:
+  # ============================================
+  # MySQL 主从配置
+  # ============================================
+  
+  # MySQL 主节点（仅在 --profile master 时启动）
+  mysql-master:
+    image: mysql:8.0
+    container_name: hifate-mysql-master
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      MYSQL_USER: ${MYSQL_USER:-bazi_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - ./mysql/master/data:/var/lib/mysql
+      - ./mysql/master/conf:/etc/mysql/conf.d
+      - ./mysql/master/init:/docker-entrypoint-initdb.d
+    command: >
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max_connections=500
+      --innodb_buffer_pool_size=1G
+      --innodb_log_file_size=256M
+    expose:
+      - "3306"
+    restart: always
+    networks:
+      - hifate-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 3G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    profiles:
+      - master
+
+  # MySQL 从节点（仅在 --profile slave 时启动）
+  mysql-slave:
+    image: mysql:8.0
+    container_name: hifate-mysql-slave
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      MYSQL_USER: ${MYSQL_USER:-bazi_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - ./mysql/slave/data:/var/lib/mysql
+      - ./mysql/slave/conf:/etc/mysql/conf.d
+    command: >
+      --server-id=2
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --read-only=1
+      --relay-log=mysql-relay-bin
+      --relay-log-index=mysql-relay-bin.index
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max_connections=500
+      --innodb_buffer_pool_size=1G
+      --innodb_log_file_size=256M
+    expose:
+      - "3306"
+    restart: always
+    networks:
+      - hifate-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 3G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    profiles:
+      - slave
+
+  # 注意：基础配置中的 mysql 服务会被覆盖
+  # 主节点启动时，使用 mysql-master（通过 --profile master）
+  # 从节点启动时，使用 mysql-slave（通过 --profile slave）
+  # 应用服务通过 MYSQL_HOST 环境变量连接（在启动脚本中设置）
+  # 启动脚本会根据 NODE_ROLE 设置：
+  #   - 主节点：MYSQL_HOST=mysql-master
+  #   - 从节点：MYSQL_HOST=mysql-slave
+
+  # ============================================
+  # Redis 主从配置
+  # ============================================
+  
+  # Redis 主节点（仅在 --profile master 时启动）
+  redis-master:
+    image: redis:7-alpine
+    container_name: hifate-redis-master
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - ./redis/master/data:/data
+      - ./redis/master/conf:/usr/local/etc/redis
+    expose:
+      - "6379"
+    restart: always
+    networks:
+      - hifate-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping", "-a", "${REDIS_PASSWORD}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    profiles:
+      - master
+
+  # Redis 从节点（仅在 --profile slave 时启动）
+  redis-slave:
+    image: redis:7-alpine
+    container_name: hifate-redis-slave
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --replicaof ${REDIS_MASTER_HOST:-172.16.0.10} 6379
+      --masterauth ${REDIS_PASSWORD}
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - ./redis/slave/data:/data
+      - ./redis/slave/conf:/usr/local/etc/redis
+    expose:
+      - "6379"
+    restart: always
+    networks:
+      - hifate-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping", "-a", "${REDIS_PASSWORD}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    depends_on:
+      - redis-master
+    profiles:
+      - slave
+
+  # 注意：基础配置中的 redis 服务会被覆盖
+  # 主节点启动时，使用 redis-master（通过 --profile master）
+  # 从节点启动时，使用 redis-slave（通过 --profile slave）
+  # 应用服务通过 REDIS_HOST 环境变量连接（在启动脚本中设置）
+
+  # ============================================
+  # 应用服务配置（主从节点都部署）
+  # ============================================
+  
+  # Web 服务 - 生产模式
+  web:
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+      NODE_ROLE: ${NODE_ROLE:-master}
+      # 数据库配置（根据 NODE_ROLE 环境变量，在启动脚本中设置正确的 MYSQL_HOST 和 REDIS_HOST）
+      # 主节点：MYSQL_HOST=mysql-master, REDIS_HOST=redis-master
+      # 从节点：MYSQL_HOST=mysql-slave, REDIS_HOST=redis-slave
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-bazi_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      # Redis 配置
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      # 微服务地址（内网）
+      BAZI_CORE_SERVICE_URL: bazi-core:9001
+      BAZI_FORTUNE_SERVICE_URL: bazi-fortune:9002
+      BAZI_ANALYZER_SERVICE_URL: bazi-analyzer:9003
+      BAZI_RULE_SERVICE_URL: rule-service:9004
+      FORTUNE_ANALYSIS_SERVICE_URL: fortune-analyzer:9005
+      PAYMENT_SERVICE_URL: payment-service:9006
+      FORTUNE_RULE_SERVICE_URL: fortune-rule:9007
+      INTENT_SERVICE_URL: intent-service:9008
+      PROMPT_OPTIMIZER_SERVICE_URL: prompt-optimizer:9009
+      DESK_FENGSHUI_SERVICE_URL: desk-fengshui:9010
+      # 其他配置
+      COZE_ACCESS_TOKEN: ${COZE_ACCESS_TOKEN:-}
+      COZE_BOT_ID: ${COZE_BOT_ID:-}
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      TZ: Asia/Shanghai
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    restart: always
+    volumes:
+      - ./logs/web:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # 八字核心服务
+  bazi-core:
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+      NODE_ROLE: ${NODE_ROLE:-master}
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-bazi_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      SERVICE_PORT: 9001
+      TZ: Asia/Shanghai
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+    volumes:
+      - ./logs/bazi-core:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 大运流年服务
+  bazi-fortune:
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+      NODE_ROLE: ${NODE_ROLE:-master}
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-bazi_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      SERVICE_PORT: 9002
+      TZ: Asia/Shanghai
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+    volumes:
+      - ./logs/bazi-fortune:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 八字分析服务
+  bazi-analyzer:
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+      NODE_ROLE: ${NODE_ROLE:-master}
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-bazi_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      SERVICE_PORT: 9003
+      TZ: Asia/Shanghai
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+    volumes:
+      - ./logs/bazi-analyzer:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 规则服务
+  rule-service:
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+      NODE_ROLE: ${NODE_ROLE:-master}
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-bazi_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      SERVICE_PORT: 9004
+      TZ: Asia/Shanghai
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+    volumes:
+      - ./logs/bazi-rule:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 运势分析服务
+  fortune-analyzer:
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+      NODE_ROLE: ${NODE_ROLE:-master}
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-bazi_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      SERVICE_PORT: 9005
+      TZ: Asia/Shanghai
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+    volumes:
+      - ./logs/fortune-analyzer:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 支付服务
+  payment-service:
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+      NODE_ROLE: ${NODE_ROLE:-master}
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-bazi_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      SERVICE_PORT: 9006
+      TZ: Asia/Shanghai
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+    volumes:
+      - ./logs/payment-service:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 运势规则服务
+  fortune-rule:
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+      NODE_ROLE: ${NODE_ROLE:-master}
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-bazi_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      SERVICE_PORT: 9007
+      TZ: Asia/Shanghai
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+    volumes:
+      - ./logs/fortune-rule:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 意图识别服务
+  intent-service:
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+      NODE_ROLE: ${NODE_ROLE:-master}
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-bazi_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      SERVICE_PORT: 9008
+      SERVICE_HOST: 0.0.0.0
+      COZE_ACCESS_TOKEN: ${COZE_ACCESS_TOKEN:-}
+      INTENT_BOT_ID: ${INTENT_BOT_ID:-}
+      TZ: Asia/Shanghai
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+    volumes:
+      - ./logs/intent-service:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 提示优化服务
+  prompt-optimizer:
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+      NODE_ROLE: ${NODE_ROLE:-master}
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-bazi_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      SERVICE_PORT: 9009
+      SERVICE_HOST: 0.0.0.0
+      COZE_ACCESS_TOKEN: ${COZE_ACCESS_TOKEN:-}
+      COZE_BOT_ID: ${COZE_BOT_ID:-}
+      TZ: Asia/Shanghai
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+    volumes:
+      - ./logs/prompt-optimizer:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 办公桌风水服务
+  desk-fengshui:
+    environment:
+      APP_ENV: production
+      DEBUG: "False"
+      LOG_LEVEL: WARNING
+      NODE_ROLE: ${NODE_ROLE:-master}
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-bazi_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      SERVICE_PORT: 9010
+      TZ: Asia/Shanghai
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+    volumes:
+      - ./logs/desk-fengshui:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+networks:
+  hifate-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
