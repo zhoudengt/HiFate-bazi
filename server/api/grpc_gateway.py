@@ -118,12 +118,32 @@ def _reload_endpoints():
     try:
         import importlib
         import server.api.grpc_gateway as gateway_module
+        
+        # ⭐ 关键修复：重新加载模块前，先确保模块在 sys.modules 中
+        # 如果模块不在 sys.modules 中，装饰器不会执行
+        import sys
+        if 'server.api.grpc_gateway' not in sys.modules:
+            import server.api.grpc_gateway
+        
+        # 重新加载模块（触发装饰器 @_register 重新执行）
         importlib.reload(gateway_module)
+        
         # 重新获取 SUPPORTED_ENDPOINTS（装饰器已执行）
         endpoint_count = len(SUPPORTED_ENDPOINTS)
         logger.info(f"✅ gRPC 端点已重新注册，当前端点数量: {endpoint_count}")
+        
         if endpoint_count > 0:
             logger.debug(f"已注册的端点: {list(SUPPORTED_ENDPOINTS.keys())[:10]}...")
+            # 验证关键端点
+            key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong']
+            missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
+            if missing:
+                logger.warning(f"⚠️  关键端点未注册: {missing}")
+            else:
+                logger.info(f"✅ 关键端点验证通过: {key_endpoints}")
+        else:
+            logger.error("❌ 端点重新注册后数量为0，可能存在模块加载问题")
+        
         return endpoint_count > 0
     except Exception as e:
         logger.error(f"❌ gRPC 端点重新注册失败: {e}", exc_info=True)
