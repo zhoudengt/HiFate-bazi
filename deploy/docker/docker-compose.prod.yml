@@ -61,7 +61,9 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - web_logs:/app/logs
-      - /opt/HiFate-bazi:/opt/HiFate-bazi:ro  # 挂载代码目录，支持热更新
+      - /opt/HiFate-bazi/server:/app/server:ro  # 挂载 server 目录，支持热更新
+      - /opt/HiFate-bazi/src:/app/src:ro  # 挂载 src 目录，支持热更新
+      - /opt/HiFate-bazi/services:/app/services:ro  # 挂载 services 目录，支持热更新
     restart: always
     networks:
       - hifate-network
