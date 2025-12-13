@@ -243,7 +243,11 @@ echo "----------------------------------------"
 
 # 在 Node1 上拉取代码
 echo "📥 在 Node1 上拉取代码..."
-ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git fetch origin && git checkout $GIT_BRANCH && git pull origin $GIT_BRANCH" || {
+ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && \
+    git fetch origin && \
+    git checkout $GIT_BRANCH && \
+    (git stash || true) && \
+    git pull origin $GIT_BRANCH" || {
     echo -e "${RED}❌ Node1 代码拉取失败${NC}"
     exit 1
 }
@@ -251,7 +255,11 @@ echo -e "${GREEN}✅ Node1 代码拉取完成${NC}"
 
 # 在 Node2 上拉取代码
 echo "📥 在 Node2 上拉取代码..."
-ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git fetch origin && git checkout $GIT_BRANCH && git pull origin $GIT_BRANCH" || {
+ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && \
+    git fetch origin && \
+    git checkout $GIT_BRANCH && \
+    (git stash || true) && \
+    git pull origin $GIT_BRANCH" || {
     echo -e "${RED}❌ Node2 代码拉取失败${NC}"
     exit 1
 }
