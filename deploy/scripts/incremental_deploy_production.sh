@@ -278,7 +278,13 @@ ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && \
     NODE1_IP=\${NODE1_IP:-$NODE1_PRIVATE_IP} && \
     NODE2_IP=\${NODE2_IP:-$NODE2_PRIVATE_IP} && \
     sed -i \"s/NODE1_IP/\$NODE1_IP/g\" deploy/nginx/conf.d/hifate.conf && \
-    sed -i \"s/NODE2_IP/\$NODE2_IP/g\" deploy/nginx/conf.d/hifate.conf && \
+    sed -i \"s/NODE2_IP/\$NODE2_IP/g\" deploy/nginx/conf.d/hifate.conf"
+
+# 重启 Nginx 容器以应用配置变更（如果需要）
+echo "🔄 重启 Node1 Nginx 容器（应用配置变更）..."
+ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR/deploy/docker && \
+    source ../.env 2>/dev/null || source ../../.env 2>/dev/null || true && \
+    docker-compose -f docker-compose.prod.yml -f docker-compose.node1.yml up -d nginx --no-deps 2>/dev/null || \
     docker restart hifate-nginx 2>/dev/null || true"
 
 echo -e "${GREEN}✅ Node1 代码拉取完成${NC}"
@@ -319,7 +325,13 @@ ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && \
     NODE1_IP=\${NODE1_IP:-$NODE1_PRIVATE_IP} && \
     NODE2_IP=\${NODE2_IP:-$NODE2_PRIVATE_IP} && \
     sed -i \"s/NODE1_IP/\$NODE1_IP/g\" deploy/nginx/conf.d/hifate.conf && \
-    sed -i \"s/NODE2_IP/\$NODE2_IP/g\" deploy/nginx/conf.d/hifate.conf && \
+    sed -i \"s/NODE2_IP/\$NODE2_IP/g\" deploy/nginx/conf.d/hifate.conf"
+
+# 重启 Nginx 容器以应用配置变更（如果需要）
+echo "🔄 重启 Node2 Nginx 容器（应用配置变更）..."
+ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR/deploy/docker && \
+    source ../.env 2>/dev/null || source ../../.env 2>/dev/null || true && \
+    docker-compose -f docker-compose.prod.yml -f docker-compose.node2.yml up -d nginx --no-deps 2>/dev/null || \
     docker restart hifate-nginx 2>/dev/null || true"
 
 echo -e "${GREEN}✅ Node2 代码拉取完成${NC}"

@@ -869,6 +869,69 @@ echo "✅ 代码一致性验证通过"
 
 ---
 
+### 🔧 容器重启处理规范 【特殊情况】
+
+**适用场景**：需要重启容器才能生效的配置变更（如 Nginx 配置、Docker volume 挂载等）
+
+**处理原则**：
+- ✅ **允许操作**：重启容器以应用配置变更
+- ❌ **禁止操作**：直接修改容器内的文件或配置
+- ✅ **必须操作**：确保配置变更已提交到 GitHub
+
+**标准流程**：
+
+```
+1. 本地修改配置（docker-compose.yml、Nginx配置等）
+   ↓
+2. 提交到 Git 并推送到 GitHub
+   ↓
+3. 增量部署（拉取代码到服务器）
+   ↓
+4. 重启相关容器（应用配置变更）
+   ↓
+5. 验证功能正常
+   ↓
+6. 确保服务器代码与 GitHub 一致
+```
+
+**示例：修复 Nginx 容器挂载问题**：
+
+```bash
+# 1. 本地修改 docker-compose.prod.yml（使用绝对路径）
+# volumes:
+#   - /opt/HiFate-bazi/local_frontend:/usr/share/nginx/html/local_frontend:ro
+
+# 2. 提交到 GitHub
+git add deploy/docker/docker-compose.prod.yml
+git commit -m "fix: 修复Nginx容器挂载路径"
+git push origin master
+
+# 3. 增量部署
+bash deploy/scripts/incremental_deploy_production.sh
+
+# 4. 重启 Nginx 容器（应用配置变更）
+ssh root@server "cd /opt/HiFate-bazi/deploy/docker && \
+    source /opt/HiFate-bazi/.env && \
+    docker-compose -f docker-compose.prod.yml -f docker-compose.node1.yml up -d nginx --no-deps"
+
+# 5. 验证功能
+curl http://8.210.52.217/fortune.html
+
+# 6. 确保代码一致性
+bash scripts/check_code_consistency.sh
+```
+
+**容器重启检查清单**：
+
+- [ ] 配置变更已提交到 Git
+- [ ] 配置变更已推送到 GitHub
+- [ ] 服务器代码已拉取最新版本
+- [ ] 容器重启命令已执行
+- [ ] 功能验证通过
+- [ ] 代码一致性检查通过
+
+---
+
 ### 📋 代码一致性检查工具
 
 **创建一致性检查脚本**：
