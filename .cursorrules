@@ -346,6 +346,42 @@ curl -X POST http://localhost:8001/api/v1/hot-reload/reload/microservice
 - [ ] 锁机制存在
 - [ ] DynamicServicer 方法转发正常
 
+#### 微服务热更新测试流程
+
+**标准测试流程**：
+```bash
+# 1. 运行完整测试套件
+python3 scripts/hot_reload/test_microservice_hot_reload.py
+
+# 2. 验证测试结果
+# 应该看到：🎉 所有测试通过！（7/7 通过）
+
+# 3. 测试实际热更新（可选）
+# a. 修改微服务代码
+vim services/bazi_core/grpc_server.py
+
+# b. 等待自动更新（30秒）或手动触发
+curl -X POST http://localhost:8001/api/v1/hot-reload/reload/microservice
+
+# c. 验证更新成功
+curl http://localhost:8001/api/v1/hot-reload/microservices
+
+# d. 测试回滚（如果需要）
+curl -X POST http://localhost:8001/api/v1/hot-reload/rollback
+```
+
+**测试覆盖范围**：
+- ✅ 基本热更新功能
+- ✅ 回滚机制（备份和 Git 回滚）
+- ✅ 依赖关系管理
+- ✅ 错误处理和日志
+- ✅ 性能优化
+- ✅ 并发安全
+- ✅ DynamicServicer 方法转发
+
+**测试文件位置**：
+- `scripts/hot_reload/test_microservice_hot_reload.py` - 完整测试套件
+
 #### 热更新监控告警
 
 **监控指标**：
