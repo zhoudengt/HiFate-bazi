@@ -189,19 +189,16 @@ class SourceCodeReloader:
                         print(f"     📝 功能: {description}")
                         print(f"     🕒 修改时间: {mtime_str}")
                         
-                        # 重新加载模块
-                        importlib.reload(module)
-                        
-                        # ⭐ 特殊处理：如果是 grpc_gateway 模块，需要重新注册端点
+                        # ⭐ 特殊处理：如果是 grpc_gateway 模块，需要先处理端点注册
                         if module_name == 'server.api.grpc_gateway':
                             try:
                                 # 1. 先获取当前的端点字典
                                 from server.api.grpc_gateway import SUPPORTED_ENDPOINTS
                                 old_count = len(SUPPORTED_ENDPOINTS)
+                                print(f"     🔄 重新注册前端点数量: {old_count}")
                                 
                                 # 2. 清空端点字典（避免残留旧端点）
                                 SUPPORTED_ENDPOINTS.clear()
-                                print(f"     🔄 已清空 gRPC 端点注册表（旧端点数: {old_count}）")
                                 
                                 # 3. 重新加载模块（触发装饰器 @_register 重新执行）
                                 importlib.reload(module)
@@ -209,12 +206,15 @@ class SourceCodeReloader:
                                 # 4. 重新获取端点字典（装饰器已执行）
                                 from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as NEW_ENDPOINTS
                                 new_count = len(NEW_ENDPOINTS)
+                                print(f"     🔄 重新加载后端点数量: {new_count}")
                                 
                                 # 5. 如果端点仍未注册，手动触发重新注册函数
                                 if new_count == 0:
                                     print(f"     ⚠️  装饰器未注册端点，尝试手动重新注册...")
-                                    if hasattr(module, '_reload_endpoints'):
-                                        success = module._reload_endpoints()
+                                    # 重新获取模块对象（因为 reload 后模块对象已更新）
+                                    import server.api.grpc_gateway as gateway_module
+                                    if hasattr(gateway_module, '_reload_endpoints'):
+                                        success = gateway_module._reload_endpoints()
                                         if success:
                                             from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_ENDPOINTS
                                             final_count = len(FINAL_ENDPOINTS)
@@ -239,6 +239,9 @@ class SourceCodeReloader:
                                 print(f"     ❌ gRPC 端点重新注册失败: {e}")
                                 import traceback
                                 traceback.print_exc()
+                        else:
+                            # 普通模块：直接重新加载
+                            importlib.reload(module)
                         
                         reloaded_modules.append({
                             'module': module_name,
