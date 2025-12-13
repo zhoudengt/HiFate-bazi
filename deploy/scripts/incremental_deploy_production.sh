@@ -270,6 +270,17 @@ if [ "$NODE1_COMMIT" != "$LOCAL_COMMIT" ]; then
     echo "  本地:  $LOCAL_COMMIT"
     echo -e "${YELLOW}⚠️  请确保已推送到 GitHub：git push origin master${NC}"
 fi
+
+# 修复 Node1 Nginx 配置（确保IP占位符被替换）
+echo "🔧 修复 Node1 Nginx 配置..."
+ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && \
+    source .env 2>/dev/null || true && \
+    NODE1_IP=\${NODE1_IP:-$NODE1_PRIVATE_IP} && \
+    NODE2_IP=\${NODE2_IP:-$NODE2_PRIVATE_IP} && \
+    sed -i \"s/NODE1_IP/\$NODE1_IP/g\" deploy/nginx/conf.d/hifate.conf && \
+    sed -i \"s/NODE2_IP/\$NODE2_IP/g\" deploy/nginx/conf.d/hifate.conf && \
+    docker restart hifate-nginx 2>/dev/null || true"
+
 echo -e "${GREEN}✅ Node1 代码拉取完成${NC}"
 
 # 在 Node2 上拉取代码（确保与 GitHub 一致）
@@ -300,6 +311,17 @@ if [ "$NODE2_COMMIT" != "$LOCAL_COMMIT" ]; then
     echo "  本地:  $LOCAL_COMMIT"
     echo -e "${YELLOW}⚠️  请确保已推送到 GitHub：git push origin master${NC}"
 fi
+
+# 修复 Node2 Nginx 配置（确保IP占位符被替换）
+echo "🔧 修复 Node2 Nginx 配置..."
+ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && \
+    source .env 2>/dev/null || true && \
+    NODE1_IP=\${NODE1_IP:-$NODE1_PRIVATE_IP} && \
+    NODE2_IP=\${NODE2_IP:-$NODE2_PRIVATE_IP} && \
+    sed -i \"s/NODE1_IP/\$NODE1_IP/g\" deploy/nginx/conf.d/hifate.conf && \
+    sed -i \"s/NODE2_IP/\$NODE2_IP/g\" deploy/nginx/conf.d/hifate.conf && \
+    docker restart hifate-nginx 2>/dev/null || true"
+
 echo -e "${GREEN}✅ Node2 代码拉取完成${NC}"
 
 echo ""
