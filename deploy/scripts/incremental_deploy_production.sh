@@ -38,12 +38,36 @@ GIT_BRANCH="master"
 # 项目目录
 PROJECT_DIR="/opt/HiFate-bazi"
 
-# SSH 执行函数
+# SSH 密码（从环境变量或默认值读取）
+SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+
+# SSH 执行函数（支持密码登录）
 ssh_exec() {
     local host=$1
     shift
     local cmd="$@"
-    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$host "$cmd"
+    
+    # 检查是否有 sshpass
+    if command -v sshpass &> /dev/null; then
+        sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$host "$cmd"
+    else
+        # 如果没有 sshpass，尝试使用 expect（如果可用）
+        if command -v expect &> /dev/null; then
+            expect << EOF
+spawn ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$host "$cmd"
+expect {
+    "password:" {
+        send "$SSH_PASSWORD\r"
+        exp_continue
+    }
+    eof
+}
+EOF
+        else
+            # 如果都没有，尝试直接 SSH（可能需要手动输入密码或已配置密钥）
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$host "$cmd"
+        fi
+    fi
 }
 
 # 检查命令是否存在
