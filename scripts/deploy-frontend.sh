@@ -14,18 +14,18 @@ if [ "$USER" != "frontend-user" ]; then
 fi
 
 # 检查目录权限
-if [ ! -w "/opt/HiFate-bazi/frontend" ]; then
-    echo "❌ 没有 frontend 目录的写权限"
+if [ ! -w "/opt/HiFate-bazi/local_frontend" ]; then
+    echo "❌ 没有 local_frontend 目录的写权限"
     exit 1
 fi
 
 # 进入项目目录
 cd /opt/HiFate-bazi
 
-# 1. 拉取最新代码（仅前端目录）
-echo "📥 [1/3] 更新前端代码..."
-cd frontend/
-git pull origin master -- frontend/ 2>/dev/null || {
+# 1. 拉取最新代码（仅本地前端目录）
+echo "📥 [1/3] 更新本地前端代码..."
+cd local_frontend/
+git pull origin master -- local_frontend/ 2>/dev/null || {
     echo "   ⚠️  使用 git pull 更新整个仓库（前端用户权限受限）"
     cd ..
     git pull origin master

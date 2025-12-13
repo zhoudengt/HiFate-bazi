@@ -28,9 +28,10 @@ const API_CONFIG = (function() {
         };
     } else {
         // === 开发环境 ===
-        // 使用当前主机名，支持 localhost 和 127.0.0.1
+        // 前端页面可能在 8080 端口，但后端 API 在 8001 端口
+        const apiPort = (hostname === 'localhost' || hostname === '127.0.0.1') ? '8001' : port;
         return {
-            baseURL: `http://${hostname}:${port}/api/v1`,
+            baseURL: `http://${hostname}:${apiPort}/api/v1`,
             timeout: 60000,
             fortuneApiKey: 'fortune_analysis_default_key_2024',
             env: 'development'
@@ -49,8 +50,9 @@ const GRPC_CONFIG = (function() {
     ];
     
     const isProduction = PRODUCTION_HOSTS.includes(hostname);
-    // 开发环境使用当前主机名（支持 localhost 和 127.0.0.1）
-    const baseHost = isProduction ? `http://${hostname}:8001` : `http://${hostname}:${port}`;
+    // 开发环境：前端可能在 8080 端口，但后端 gRPC 在 8001 端口
+    const grpcPort = isProduction ? '8001' : ((hostname === 'localhost' || hostname === '127.0.0.1') ? '8001' : port);
+    const baseHost = `http://${hostname}:${grpcPort}`;
     
     return {
         enabled: true,

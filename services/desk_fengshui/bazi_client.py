@@ -72,7 +72,8 @@ class BaziClient:
                             'jishen': jishen,
                             'jishen_list': jishen_list,
                             'wangshuai_level': data.get('level', ''),
-                            'day_stem': data.get('bazi', {}).get('day_pillar', {}).get('stem', '')
+                            # 🔴 防御性检查：避免链式调用导致 None 错误
+                            'day_stem': (lambda: (lambda b, d: d.get('stem', '') if isinstance(d, dict) else '')(b, b.get('day_pillar') if isinstance(b, dict) else {}))(data.get('bazi') or {})
                         }
                 except Exception as e:
                     logger.warning(f"旺衰服务调用失败，尝试本地计算: {e}")
@@ -118,7 +119,8 @@ class BaziClient:
                 'jishen': jishen,
                 'jishen_list': jishen_list,
                 'wangshuai_level': wangshuai_result.get('level', ''),
-                'day_stem': bazi_result.get('bazi_pillars', {}).get('day_pillar', {}).get('stem', ''),
+                # 🔴 防御性检查：避免链式调用导致 None 错误
+                'day_stem': (lambda: (lambda bp, dp: dp.get('stem', '') if isinstance(dp, dict) else '')(bp, bp.get('day_pillar') if isinstance(bp, dict) else {}))(bazi_result.get('bazi_pillars') or {}),
                 'source': 'local'
             }
             

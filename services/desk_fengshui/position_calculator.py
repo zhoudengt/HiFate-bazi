@@ -178,8 +178,11 @@ class PositionCalculator:
         Returns:
             是否冲突
         """
-        pos1 = item1.get('position', {}).get('normalized', {})
-        pos2 = item2.get('position', {}).get('normalized', {})
+        # 🔴 防御性检查：避免链式调用导致 None 错误
+        pos1_raw = item1.get('position') or {}
+        pos1 = pos1_raw.get('normalized', {}) if isinstance(pos1_raw, dict) else {}
+        pos2_raw = item2.get('position') or {}
+        pos2 = pos2_raw.get('normalized', {}) if isinstance(pos2_raw, dict) else {}
         
         if not pos1 or not pos2:
             return False

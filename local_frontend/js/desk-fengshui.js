@@ -174,8 +174,16 @@ class DeskFengshuiAnalyzer {
                 use_bazi: requestData.use_bazi 
             });
             
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/78526dd9-2af8-4107-b5eb-7335b61d3b69',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'desk-fengshui.js:178',message:'before api.post call',data:{has_image:!!requestData.image_base64,use_bazi:requestData.use_bazi},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+            // #endregion
+            
             // 使用 gRPC-Web 调用
             const result = await api.post('/api/v2/desk-fengshui/analyze', requestData);
+            
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/78526dd9-2af8-4107-b5eb-7335b61d3b69',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'desk-fengshui.js:182',message:'after api.post call',data:{result_is_null:result===null,result_is_undefined:result===undefined,result_type:typeof result,has_success:result?.success,has_error:!!result?.error,has_detail:!!result?.detail},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+            // #endregion
             
             // 安全地打印结果（避免循环引用导致 Maximum call stack exceeded）
             try {
@@ -187,12 +195,18 @@ class DeskFengshuiAnalyzer {
             if (result && result.success) {
                 this.displayResult(result.data);
             } else {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/78526dd9-2af8-4107-b5eb-7335b61d3b69',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'desk-fengshui.js:194',message:'result not success - throwing error',data:{error:result?.error,detail:result?.detail},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+                // #endregion
                 throw new Error(result?.error || result?.detail || '分析失败');
             }
             
         } catch (error) {
             console.error('分析失败:', error);
             console.error('错误堆栈:', error.stack);
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/78526dd9-2af8-4107-b5eb-7335b61d3b69',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'desk-fengshui.js:193',message:'error caught',data:{error_type:error?.constructor?.name,error_message:error?.message,error_stack:error?.stack?.substring(0,200)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+            // #endregion
             const errorMsg = error.message || '未知错误';
             alert(`分析失败: ${errorMsg}\n请检查浏览器控制台获取详细信息`);
         } finally {

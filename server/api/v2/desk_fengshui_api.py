@@ -104,6 +104,11 @@ async def analyze_desk_fengshui(
             analyzer = DeskFengshuiAnalyzer()
             
             # 使用异步方法以提升并发性能
+            # #region agent log
+            import json as json_lib
+            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "desk_fengshui_api.py:107", "message": "before analyze_async call", "data": {"image_size": len(image_bytes), "use_bazi": use_bazi, "has_solar_date": bool(solar_date)}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+            # #endregion
             result = await analyzer.analyze_async(
                 image_bytes=image_bytes,
                 solar_date=solar_date,
@@ -112,8 +117,35 @@ async def analyze_desk_fengshui(
                 use_bazi=use_bazi
             )
             
+            # #region agent log
+            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "desk_fengshui_api.py:115", "message": "after analyze_async call", "data": {"result_is_none": result is None, "result_type": str(type(result)) if result else "None", "is_dict": isinstance(result, dict) if result else False, "has_success": result.get("success") if isinstance(result, dict) else None}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+            # #endregion
+            
+            # 🔴 防御性检查：确保 result 不为 None
+            if result is None:
+                logger.error("分析服务返回 None，可能是服务未就绪或内部错误")
+                raise HTTPException(
+                    status_code=500, 
+                    detail="分析服务返回空结果，请稍后重试。如果问题持续，请联系技术支持。"
+                )
+            
+            # 🔴 防御性检查：确保 result 是字典类型
+            if not isinstance(result, dict):
+                logger.error(f"分析服务返回了非字典类型: {type(result)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"分析服务返回了无效的数据类型: {type(result).__name__}"
+                )
+            
+            # 检查分析是否成功
             if not result.get('success'):
-                raise HTTPException(status_code=500, detail=result.get('error', '分析失败'))
+                error_msg = result.get('error', '分析失败')
+                # 🔴 防御性检查：确保 error_msg 不为 None
+                if error_msg is None:
+                    error_msg = '分析失败'
+                logger.error(f"分析失败: {error_msg}")
+                raise HTTPException(status_code=500, detail=error_msg)
             
             logger.info(f"分析成功，评分: {result.get('score', 0)}")
             
@@ -123,7 +155,7 @@ async def analyze_desk_fengshui(
             )
             
         except ImportError as e:
-            logger.error(f"服务模块导入失败: {e}")
+            logger.error(f"服务模块导入失败: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="服务未就绪，请稍后重试")
         
     except HTTPException:

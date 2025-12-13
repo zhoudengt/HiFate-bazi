@@ -25,10 +25,15 @@ class Sidebar {
                         <a href="fortune.html" class="nav-submenu-item" data-page="fortune">日运日签</a>
                         <a href="fortune.html" class="nav-submenu-item" data-page="year-report">2025乙巳年年运报告</a>
                         <a href="fortune.html" class="nav-submenu-item active" data-page="dayun-liunian">大运流年</a>
+                        <a href="shengong-minggong.html" class="nav-submenu-item" data-page="shengong-minggong">身宫命宫</a>
                     </div>
                     <a href="pan.html" class="nav-item" data-page="pan">
                         <span class="nav-item-icon">📖</span>
                         <span class="nav-item-text">命书</span>
+                    </a>
+                    <a href="basic-info.html" class="nav-item" data-page="basic-info">
+                        <span class="nav-item-icon">📋</span>
+                        <span class="nav-item-text">基本信息</span>
                     </a>
                     <a href="yigua.html" class="nav-item" data-page="yigua">
                         <span class="nav-item-icon">💬</span>
@@ -56,6 +61,11 @@ class Sidebar {
         navItems.forEach(item => {
             if (item.dataset.page === currentPage) {
                 item.classList.add('active');
+                // 如果激活的是子菜单项，也激活父菜单项
+                const parentNavItem = item.closest('.nav-submenu')?.previousElementSibling;
+                if (parentNavItem && parentNavItem.classList.contains('nav-item')) {
+                    parentNavItem.classList.add('active');
+                }
             }
         });
     }
@@ -64,7 +74,9 @@ class Sidebar {
         const path = window.location.pathname;
         const filename = path.split('/').pop() || 'index.html';
         
+        if (filename.includes('basic-info')) return 'basic-info';
         if (filename.includes('pan')) return 'pan';
+        if (filename.includes('shengong-minggong')) return 'shengong-minggong';
         if (filename.includes('fortune')) return 'dayun-liunian';
         if (filename.includes('yigua')) return 'yigua';
         if (filename.includes('dayun')) return 'dayun';

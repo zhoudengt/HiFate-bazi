@@ -60,6 +60,14 @@ class DeskFengshuiAnalyzer:
                 image_bytes
             )
             
+            # 🔴 防御性检查：确保 detection_result 不为 None
+            if detection_result is None:
+                logger.error("物品检测返回 None")
+                return {
+                    'success': False,
+                    'error': '物品检测服务返回空结果，请稍后重试'
+                }
+            
             if not detection_result.get('success'):
                 return {
                     'success': False,
@@ -100,10 +108,12 @@ class DeskFengshuiAnalyzer:
             if bazi_future:
                 try:
                     bazi_result = await bazi_future
-                    if bazi_result.get('success'):
+                    # 🔴 防御性检查：确保 bazi_result 不为 None
+                    if bazi_result is not None and bazi_result.get('success'):
                         bazi_info = bazi_result
                     else:
-                        logger.warning(f"获取八字信息失败: {bazi_result.get('error')}")
+                        error_msg = bazi_result.get('error', '未知错误') if bazi_result else '返回空结果'
+                        logger.warning(f"获取八字信息失败: {error_msg}")
                 except Exception as e:
                     logger.warning(f"获取八字信息异常: {e}")
             
@@ -118,6 +128,14 @@ class DeskFengshuiAnalyzer:
                 enriched_items,
                 bazi_info
             )
+            
+            # 🔴 防御性检查：确保 rule_result 不为 None
+            if rule_result is None:
+                logger.error("规则匹配返回 None")
+                return {
+                    'success': False,
+                    'error': '规则匹配服务返回空结果'
+                }
             
             if not rule_result.get('success'):
                 return {
@@ -134,6 +152,11 @@ class DeskFengshuiAnalyzer:
                 bazi_info
             )
             
+            # 🔴 防御性检查：确保 item_analyses 不为 None
+            if item_analyses is None:
+                logger.warning("物品分析返回 None，使用空列表")
+                item_analyses = []
+            
             # 4.2 生成三级建议体系
             logger.info("生成三级建议体系...")
             recommendations = await asyncio.get_event_loop().run_in_executor(
@@ -143,6 +166,15 @@ class DeskFengshuiAnalyzer:
                 bazi_info
             )
             
+            # 🔴 防御性检查：确保 recommendations 不为 None
+            if recommendations is None:
+                logger.warning("建议生成返回 None，使用默认值")
+                recommendations = {
+                    'must_adjust': [],
+                    'should_add': [],
+                    'optional_optimize': []
+                }
+            
             # 4.3 生成深度八字融合分析
             logger.info("生成八字深度融合分析...")
             bazi_analysis = await asyncio.get_event_loop().run_in_executor(
@@ -151,6 +183,14 @@ class DeskFengshuiAnalyzer:
                 enriched_items,
                 bazi_info
             )
+            
+            # 🔴 防御性检查：确保 bazi_analysis 不为 None
+            if bazi_analysis is None:
+                logger.warning("八字分析返回 None，使用默认值")
+                bazi_analysis = {
+                    'has_bazi': bool(bazi_info),
+                    'message': '八字分析失败' if bazi_info else '未提供八字信息'
+                }
             
             # 5. 构建响应
             duration = int((time.time() - start_time) * 1000)
@@ -207,6 +247,22 @@ class DeskFengshuiAnalyzer:
             logger.info("开始物品检测...")
             detection_result = self.detector.detect(image_bytes)
             
+            # 🔴 防御性检查：确保 detection_result 不为 None
+            if detection_result is None:
+                logger.error("物品检测返回 None")
+                return {
+                    'success': False,
+                    'error': '物品检测服务返回空结果，请稍后重试'
+                }
+            
+            # 🔴 防御性检查：确保 detection_result 是字典类型
+            if not isinstance(detection_result, dict):
+                logger.error(f"物品检测返回了非字典类型: {type(detection_result)}")
+                return {
+                    'success': False,
+                    'error': f'物品检测服务返回了无效的数据类型: {type(detection_result).__name__}'
+                }
+            
             if not detection_result.get('success'):
                 return {
                     'success': False,
@@ -228,14 +284,35 @@ class DeskFengshuiAnalyzer:
                 logger.info("获取八字信息...")
                 bazi_result = self.bazi_client.get_xishen_jishen(solar_date, solar_time, gender)
                 
-                if bazi_result.get('success'):
-                    bazi_info = bazi_result
+                # 🔴 防御性检查：确保 bazi_result 不为 None
+                if bazi_result is not None and isinstance(bazi_result, dict):
+                    if bazi_result.get('success'):
+                        bazi_info = bazi_result
+                    else:
+                        error_msg = bazi_result.get('error', '未知错误')
+                        logger.warning(f"获取八字信息失败: {error_msg}")
                 else:
-                    logger.warning(f"获取八字信息失败: {bazi_result.get('error')}")
+                    logger.warning(f"获取八字信息返回无效结果: {type(bazi_result)}")
             
             # 4. 匹配规则
             logger.info("匹配风水规则...")
             rule_result = self.engine.match_rules(enriched_items, bazi_info)
+            
+            # 🔴 防御性检查：确保 rule_result 不为 None
+            if rule_result is None:
+                logger.error("规则匹配返回 None")
+                return {
+                    'success': False,
+                    'error': '规则匹配服务返回空结果，请稍后重试'
+                }
+            
+            # 🔴 防御性检查：确保 rule_result 是字典类型
+            if not isinstance(rule_result, dict):
+                logger.error(f"规则匹配返回了非字典类型: {type(rule_result)}")
+                return {
+                    'success': False,
+                    'error': f'规则匹配服务返回了无效的数据类型: {type(rule_result).__name__}'
+                }
             
             if not rule_result.get('success'):
                 return {
@@ -247,13 +324,35 @@ class DeskFengshuiAnalyzer:
             logger.info("生成物品级详细分析...")
             item_analyses = self.engine.analyze_all_items(enriched_items, bazi_info)
             
+            # 🔴 防御性检查：确保 item_analyses 不为 None
+            if item_analyses is None:
+                logger.warning("物品分析返回 None，使用空列表")
+                item_analyses = []
+            
             # 4.2 生成三级建议体系
             logger.info("生成三级建议体系...")
             recommendations = self.engine.generate_recommendations(enriched_items, bazi_info)
             
+            # 🔴 防御性检查：确保 recommendations 不为 None
+            if recommendations is None:
+                logger.warning("建议生成返回 None，使用默认值")
+                recommendations = {
+                    'must_adjust': [],
+                    'should_add': [],
+                    'optional_optimize': []
+                }
+            
             # 4.3 生成深度八字融合分析
             logger.info("生成八字深度融合分析...")
             bazi_analysis = self.engine.generate_bazi_analysis(enriched_items, bazi_info)
+            
+            # 🔴 防御性检查：确保 bazi_analysis 不为 None
+            if bazi_analysis is None:
+                logger.warning("八字分析返回 None，使用默认值")
+                bazi_analysis = {
+                    'has_bazi': bool(bazi_info),
+                    'message': '八字分析失败' if bazi_info else '未提供八字信息'
+                }
             
             # 5. 构建响应
             duration = int((time.time() - start_time) * 1000)

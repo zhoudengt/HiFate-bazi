@@ -59,14 +59,33 @@ fi
 echo ""
 echo "[2/5] 登录镜像仓库..."
 if [ -n "$ACR_USERNAME" ] && [ -n "$ACR_PASSWORD" ]; then
-    echo "$ACR_PASSWORD" | docker login ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com} -u $ACR_USERNAME --password-stdin
+    echo "$ACR_PASSWORD" | docker login ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com} -u $ACR_USERNAME --password-stdin 2>&1 || {
+        echo "⚠️  ACR 登录失败，尝试使用本地构建镜像..."
+        # 如果 ACR 登录失败，尝试本地构建
+        if [ -f "Dockerfile" ]; then
+            echo "构建本地镜像..."
+            docker build -t ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest} . || echo "⚠️  本地构建失败，将尝试使用已有镜像"
+        fi
+    }
 fi
 
 # 拉取镜像
 echo ""
 echo "[3/5] 拉取镜像..."
 IMAGE="${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}"
-docker pull ${IMAGE} || echo "镜像拉取失败，使用本地镜像"
+docker pull ${IMAGE} 2>&1 || {
+    echo "⚠️  镜像拉取失败，尝试使用本地镜像或构建..."
+    # 检查是否有本地镜像
+    if docker images | grep -q "hifate-bazi"; then
+        echo "使用本地已有镜像"
+    elif [ -f "Dockerfile" ]; then
+        echo "构建本地镜像..."
+        cd ${PROJECT_DIR}
+        docker build -t ${IMAGE} . || echo "⚠️  构建失败，请检查 Dockerfile"
+    else
+        echo "⚠️  无法获取镜像，部署可能失败"
+    fi
+}
 
 # 启动服务
 echo ""

@@ -780,9 +780,19 @@ class DeskFengshuiEngine:
             所有物品的详细分析列表
         """
         analyzed_items = []
+        # 🔴 防御性检查：确保 detected_items 不为 None
+        if not detected_items:
+            detected_items = []
+        
         for item in detected_items:
+            if not item:
+                continue
             analysis = self.analyze_item_fengshui(item, bazi_info)
-            analyzed_items.append(analysis)
+            # 🔴 防御性检查：确保 analysis 不为 None 且是字典
+            if analysis and isinstance(analysis, dict):
+                analyzed_items.append(analysis)
+            else:
+                logger.warning(f"物品分析返回了无效结果，跳过: {type(analysis)}")
         return analyzed_items
     
     def generate_recommendations(self, detected_items: List[Dict], bazi_info: Optional[Dict] = None) -> Dict:
@@ -811,14 +821,20 @@ class DeskFengshuiEngine:
             if not item:
                 continue
             analysis = self.analyze_item_fengshui(item, bazi_info)
-            if not analysis:
+            # 🔴 防御性检查：确保 analysis 不为 None 且是字典
+            if not analysis or not isinstance(analysis, dict):
+                logger.warning(f"物品分析返回了无效结果: {type(analysis)}")
                 continue
             if analysis.get('is_position_avoid'):
                 # 必须调整
                 suggestion = analysis.get('suggestion') or {}
-                if suggestion:
+                # 🔴 防御性检查：确保 suggestion 是字典类型
+                if suggestion and isinstance(suggestion, dict):
                     item_name = item.get('name', '') if item else ''
                     analysis_data = analysis.get('analysis') or {}
+                    # 🔴 防御性检查：确保 analysis_data 是字典类型
+                    if not isinstance(analysis_data, dict):
+                        analysis_data = {}
                     recommendations['must_adjust'].append({
                         'item': analysis.get('label', item_name),
                         'action': suggestion.get('action', 'move'),
@@ -831,15 +847,17 @@ class DeskFengshuiEngine:
             elif not analysis.get('is_position_ideal') and analysis.get('suggestion'):
                 # 可选优化
                 suggestion = analysis.get('suggestion') or {}
-                item_name = item.get('name', '') if item else ''
-                recommendations['optional_optimize'].append({
-                    'item': analysis.get('label', item_name),
-                    'action': suggestion.get('action', 'optimize'),
-                    'from': suggestion.get('from', '当前位置'),
-                    'to': suggestion.get('to', '更佳位置'),
-                    'reason': suggestion.get('reason', '位置可优化'),
-                    'priority': 'low'
-                })
+                # 🔴 防御性检查：确保 suggestion 是字典类型
+                if suggestion and isinstance(suggestion, dict):
+                    item_name = item.get('name', '') if item else ''
+                    recommendations['optional_optimize'].append({
+                        'item': analysis.get('label', item_name),
+                        'action': suggestion.get('action', 'optimize'),
+                        'from': suggestion.get('from', '当前位置'),
+                        'to': suggestion.get('to', '更佳位置'),
+                        'reason': suggestion.get('reason', '位置可优化'),
+                        'priority': 'low'
+                    })
         
         # 2. 基于四象布局检测缺失物品
         detected_item_names = [(item.get('name', '') or '').lower() for item in detected_items if item]
@@ -893,14 +911,29 @@ class DeskFengshuiEngine:
             jishen = bazi_info.get('jishen', '')
             
             if xishen and xishen in self.WUXING_RECOMMENDATIONS:
-                wuxing_rec = self.WUXING_RECOMMENDATIONS[xishen]
+                wuxing_rec = self.WUXING_RECOMMENDATIONS.get(xishen, {})
+                # 🔴 防御性检查：确保 wuxing_rec 不为 None 且是字典类型
+                if not wuxing_rec or not isinstance(wuxing_rec, dict):
+                    logger.warning(f"WUXING_RECOMMENDATIONS[{xishen}] 返回了无效值: {type(wuxing_rec)}")
+                    wuxing_rec = {}
+                
                 # 检查是否已有喜神对应物品
                 xishen_items = self.ELEMENT_ITEMS.get(xishen, [])
                 has_xishen_item = any(item in detected_item_names for item in xishen_items)
                 
                 if not has_xishen_item:
                     # 推荐喜神物品
-                    for suggestion in wuxing_rec.get('specific_suggestions', [])[:2]:
+                    specific_suggestions = wuxing_rec.get('specific_suggestions', [])
+                    # 🔴 防御性检查：确保 specific_suggestions 是列表
+                    if not isinstance(specific_suggestions, list):
+                        specific_suggestions = []
+                    
+                    for suggestion in specific_suggestions[:2]:
+                        # 🔴 防御性检查：确保 suggestion 不为 None 且是字典类型
+                        if not suggestion or not isinstance(suggestion, dict):
+                            logger.warning(f"建议项不是字典类型: {type(suggestion)}")
+                            continue
+                        
                         recommendations['should_add'].append({
                             'item': suggestion.get('item', ''),
                             'position': suggestion.get('position', wuxing_rec.get('position', '')),
@@ -918,7 +951,9 @@ class DeskFengshuiEngine:
                         continue
                     item_name = (item.get('name', '') or '').lower()
                     if item_name in jishen_items:
-                        label = self.ITEM_FENGSHUI_CONFIG.get(item_name, {}).get('label', item_name)
+                        # 🔴 防御性检查：避免链式调用导致 None 错误
+                        config = self.ITEM_FENGSHUI_CONFIG.get(item_name, {})
+                        label = config.get('label', item_name) if config and isinstance(config, dict) else item_name
                         # 检查是否已在must_adjust中
                         already_in_must = any(adj.get('item') == label for adj in recommendations['must_adjust'])
                         if not already_in_must:
@@ -941,8 +976,12 @@ class DeskFengshuiEngine:
                 pos = item.get('position') or {}
                 relative = pos.get('relative', '') if pos else ''
                 if relative not in ['drawer', 'pen_holder']:
+                    # 🔴 防御性检查：避免链式调用导致 None 错误
+                    config = self.ITEM_FENGSHUI_CONFIG.get(item_name, {})
+                    item_label = config.get('label', item_name) if config and isinstance(config, dict) else item_name
+                    
                     recommendations['must_adjust'].append({
-                        'item': self.ITEM_FENGSHUI_CONFIG.get(item_name, {}).get('label', item_name),
+                        'item': item_label,
                         'action': 'store',
                         'from': pos.get('relative_name', '桌面') if pos else '桌面',
                         'to': '抽屉或笔筒内',
@@ -1018,7 +1057,8 @@ class DeskFengshuiEngine:
                     break
             # 也从配置中查找
             config = self.ITEM_FENGSHUI_CONFIG.get(item_name, {})
-            if config.get('element'):
+            # 🔴 防御性检查：确保 config 不为 None 且是字典类型
+            if config and isinstance(config, dict) and config.get('element'):
                 element_counts[config['element']] += 1
         
         analysis['element_balance'] = element_counts
@@ -1027,6 +1067,11 @@ class DeskFengshuiEngine:
         if xishen:
             xishen_count = element_counts.get(xishen, 0)
             xishen_rec = self.WUXING_RECOMMENDATIONS.get(xishen, {})
+            
+            # 🔴 防御性检查：确保 xishen_rec 不为 None 且是字典类型
+            if not xishen_rec or not isinstance(xishen_rec, dict):
+                logger.warning(f"WUXING_RECOMMENDATIONS[{xishen}] 返回了无效值: {type(xishen_rec)}")
+                xishen_rec = {}
             
             if xishen_count >= 2:
                 status = 'excellent'
@@ -1050,7 +1095,11 @@ class DeskFengshuiEngine:
             }
             
             # 喜神对应的颜色推荐
-            for color in xishen_rec.get('colors', []):
+            colors_list = xishen_rec.get('colors', [])
+            # 🔴 防御性检查：确保 colors_list 是列表类型
+            if not isinstance(colors_list, list):
+                colors_list = []
+            for color in colors_list:
                 analysis['color_recommendations'].append({
                     'color': color,
                     'reason': f'{color}属{xishen}，与您的喜神相合',
@@ -1064,9 +1113,12 @@ class DeskFengshuiEngine:
             jishen_items_on_desk = []
             
             for item in detected_items:
-                item_name = item.get('name', '').lower()
+                if not item:
+                    continue
+                item_name = (item.get('name', '') or '').lower()
                 config = self.ITEM_FENGSHUI_CONFIG.get(item_name, {})
-                if config.get('element') == jishen:
+                # 🔴 防御性检查：确保 config 不为 None 且是字典类型
+                if config and isinstance(config, dict) and config.get('element') == jishen:
                     jishen_items_on_desk.append(config.get('label', item_name))
             
             if jishen_count == 0:
@@ -1109,10 +1161,19 @@ class DeskFengshuiEngine:
         # 个性化建议
         if xishen:
             xishen_rec = self.WUXING_RECOMMENDATIONS.get(xishen, {})
+            # 🔴 防御性检查：确保 xishen_rec 不为 None 且是字典类型
+            if not xishen_rec or not isinstance(xishen_rec, dict):
+                xishen_rec = {}
+            
+            items_list = xishen_rec.get('items', [])
+            # 🔴 防御性检查：确保 items_list 是列表类型
+            if not isinstance(items_list, list):
+                items_list = []
+            
             analysis['personalized_tips'].append({
                 'type': 'xishen_enhance',
                 'title': f'增强{xishen}元素',
-                'tip': f"您的喜神为{xishen}，可增加{xishen_rec.get('position', '')}的相关物品：{', '.join(xishen_rec.get('items', [])[:3])}",
+                'tip': f"您的喜神为{xishen}，可增加{xishen_rec.get('position', '')}的相关物品：{', '.join(items_list[:3])}",
                 'priority': 'high'
             })
         
@@ -1306,8 +1367,19 @@ class DeskFengshuiEngine:
         
         # 检查已检测到的物品类型
         detected_item_names = {item['name'] for item in detected_items}
-        detected_left_items = [item for item in detected_items if item.get('position', {}).get('relative') in ['left', 'front_left', 'back_left']]
-        detected_right_items = [item for item in detected_items if item.get('position', {}).get('relative') in ['right', 'front_right', 'back_right']]
+        # 🔴 防御性检查：避免链式调用导致 None 错误
+        detected_left_items = []
+        detected_right_items = []
+        for item in detected_items:
+            if not item:
+                continue
+            position = item.get('position') or {}
+            if isinstance(position, dict):
+                relative = position.get('relative', '')
+                if relative in ['left', 'front_left', 'back_left']:
+                    detected_left_items.append(item)
+                elif relative in ['right', 'front_right', 'back_right']:
+                    detected_right_items.append(item)
         
         # 1. 基于规则的增加建议（检查缺失的重要物品）
         for rule in rules:
@@ -1580,10 +1652,27 @@ class DeskFengshuiEngine:
         suggestions = []
         
         # 检查是否检测到各个方位的物品
-        has_left_items = any(item.get('position', {}).get('relative') == 'left' for item in detected_items)
-        has_right_items = any(item.get('position', {}).get('relative') == 'right' for item in detected_items)
-        has_front_items = any(item.get('position', {}).get('vertical') == 'front' for item in detected_items)
-        has_back_items = any(item.get('position', {}).get('vertical') == 'back' for item in detected_items)
+        # 🔴 防御性检查：避免链式调用导致 None 错误
+        has_left_items = False
+        has_right_items = False
+        has_front_items = False
+        has_back_items = False
+        
+        for item in detected_items:
+            if not item:
+                continue
+            position = item.get('position') or {}
+            if isinstance(position, dict):
+                relative = position.get('relative', '')
+                vertical = position.get('vertical', '')
+                if relative == 'left':
+                    has_left_items = True
+                elif relative == 'right':
+                    has_right_items = True
+                if vertical == 'front':
+                    has_front_items = True
+                elif vertical == 'back':
+                    has_back_items = True
         
         # 青龙位建议（左侧）
         if not has_left_items or len(detected_items) < 3:

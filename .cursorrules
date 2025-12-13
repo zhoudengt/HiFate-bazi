@@ -1,5 +1,14 @@
 # HiFate-bazi 八字系统 - AI 开发规范
 
+> **🚨 重要提示**：**所有新功能的增加、修改、扩展都必须严格遵守本开发规范！**
+> 
+> - 📋 **开发前必读**：请先阅读"新功能开发强制规范"章节（第 65-200 行）
+> - ✅ **检查清单**：每次开发新功能时必须完成开发规范检查清单
+> - 🔒 **强制遵守**：违反规范的代码将被要求重构，不得合并到主分支
+> - 📚 **规范学习**：新开发者必须学习所有核心规范章节
+
+---
+
 ## 👨‍💻 开发角色定义
 
 ### 角色定位
@@ -62,7 +71,182 @@
 - **前端与后端交互通过 gRPC-Web 网关**
 - REST API 仅作为兼容层，新功能必须同时注册 gRPC 端点
 
+### 🔴 3. 新功能开发强制规范 【最高优先级】
+
+> **所有新功能的增加、修改、扩展都必须严格遵守本开发规范，这是系统稳定性和可维护性的基础。**
+
+#### 3.1 强制遵守原则
+
+**核心要求**：
+- ✅ **所有新功能开发前必须阅读并理解本开发规范**
+- ✅ **所有新功能必须通过开发规范检查清单验证**
+- ✅ **违反规范的代码将被要求重构，不得合并到主分支**
+- ✅ **规范更新时，所有相关代码必须同步更新**
+
+#### 3.2 新功能开发流程
+
+**标准流程**：
+```
+1. 需求分析
+   ├── 明确功能需求
+   ├── 评估影响范围（低/中/高）
+   └── 识别需要遵守的规范章节
+   ↓
+2. 规范检查
+   ├── 阅读相关规范章节
+   ├── 确认架构设计符合规范
+   └── 准备开发规范检查清单
+   ↓
+3. 开发实现
+   ├── 按照规范编写代码
+   ├── 同步编写测试案例
+   └── 记录开发日志
+   ↓
+4. 规范验证
+   ├── 运行开发规范检查清单
+   ├── 验证所有检查项通过
+   └── 修复不符合规范的代码
+   ↓
+5. 代码审查
+   ├── 检查是否符合规范
+   ├── 验证测试覆盖率
+   └── 确认文档已更新
+   ↓
+6. 合并代码
+   ├── 所有检查通过
+   ├── 测试全部通过
+   └── 文档已同步更新
+```
+
+#### 3.3 开发规范检查清单
+
+**每次开发新功能时，必须完成以下检查**：
+
+##### 架构设计检查
+- [ ] 是否遵循 gRPC 优先原则（服务间交互使用 gRPC）
+- [ ] 是否在 `grpc_gateway.py` 中注册了 gRPC 端点
+- [ ] 是否遵循零停机原则（支持热更新）
+- [ ] 是否考虑了负载均衡和故障转移
+
+##### 代码规范检查
+- [ ] 是否使用 Pydantic 模型定义请求/响应
+- [ ] 是否使用 `Field` 提供字段描述和示例
+- [ ] 是否使用 `@validator` 验证关键字段
+- [ ] 是否遵循 JSON 序列化规范（`ensure_ascii=False`）
+- [ ] 是否使用 `DataValidator` 进行数据验证
+
+##### 安全规范检查
+- [ ] 是否验证所有用户输入
+- [ ] 是否使用参数化查询（防止 SQL 注入）
+- [ ] 是否对输出进行编码（防止 XSS）
+- [ ] 是否检查用户权限（如需要）
+- [ ] 是否使用环境变量存储敏感信息
+
+##### 性能规范检查
+- [ ] 是否记录性能监控（使用 `PerformanceMonitor`）
+- [ ] 是否优化了数据库查询（使用索引）
+- [ ] 是否考虑了缓存策略
+- [ ] 是否避免了 N+1 查询问题
+
+##### 测试规范检查
+- [ ] 是否编写了单元测试
+- [ ] 是否编写了集成测试
+- [ ] 是否编写了 API 测试
+- [ ] 测试覆盖率是否 ≥ 50%
+- [ ] 所有测试是否通过
+
+##### 文档规范检查
+- [ ] 是否更新了 API 文档
+- [ ] 是否更新了架构文档（如需要）
+- [ ] 是否更新了部署文档（如需要）
+- [ ] 是否添加了代码注释
+
+##### 规则开发检查（如涉及规则）
+- [ ] 规则是否存储在数据库中（禁止从文件读取）
+- [ ] 是否使用 `RuleService` 匹配规则
+- [ ] 规则条件格式是否符合 JSON 规范
+- [ ] 是否更新了前后端类型映射
+
+##### A/B 测试和灰度发布检查（重要功能）
+- [ ] 是否创建了功能开关
+- [ ] 是否支持 A/B 测试
+- [ ] 是否准备了回滚方案
+- [ ] 是否准备了数据库回滚脚本（如涉及数据库变更）
+
+##### 意图识别检查（如涉及意图识别）
+- [ ] 是否使用混合架构
+- [ ] 响应时间是否 < 1秒
+- [ ] 是否优先使用本地模型/关键词过滤
+- [ ] LLM 是否仅作为兜底
+
+#### 3.4 规范违反处理
+
+**如果发现违反开发规范**：
+
+1. **立即停止开发**
+   - 停止当前开发工作
+   - 阅读相关规范章节
+   - 理解规范要求
+
+2. **修复问题**
+   - 按照规范重构代码
+   - 更新相关文档
+   - 补充缺失的测试
+
+3. **重新验证**
+   - 运行开发规范检查清单
+   - 确保所有检查项通过
+   - 重新进行代码审查
+
+4. **记录问题**
+   - 记录违反的规范章节
+   - 分析违反原因
+   - 更新开发规范（如需要）
+
+**禁止操作**：
+- ❌ 禁止绕过规范检查
+- ❌ 禁止合并不符合规范的代码
+- ❌ 禁止降低规范要求
+- ❌ 禁止跳过测试
+
+#### 3.5 规范更新机制
+
+**当规范更新时**：
+
+1. **通知机制**
+   - 在规范顶部标记更新日期
+   - 在相关章节标记变更内容
+   - 通知所有开发者
+
+2. **代码审查**
+   - 检查现有代码是否符合新规范
+   - 识别需要更新的代码
+   - 制定更新计划
+
+3. **逐步迁移**
+   - 新功能必须符合新规范
+   - 旧功能逐步迁移到新规范
+   - 记录迁移进度
+
+#### 3.6 规范学习资源
+
+**新开发者必须学习**：
+1. **核心原则**（第 30-64 行）
+2. **gRPC 交互规范**（第 67-185 行）
+3. **gRPC 协议与序列化规范**（第 188-542 行）
+4. **规则开发规范**（第 545-1069 行）
+5. **安全规范**（第 1370-1889 行）
+6. **A/B 测试和灰度发布规范**（第 2266-2595 行）
+7. **测试开发规范**（第 2966-3273 行）
+
+**定期复习**：
+- 每月复习一次开发规范
+- 遇到问题时查阅相关章节
+- 规范更新时及时学习
+
 ---
+
+## 🔌 gRPC 交互规范 【重要】
 
 ## 🔌 gRPC 交互规范 【重要】
 
@@ -185,6 +369,363 @@ result = requests.get('http://localhost:9001/api/...')
 
 ---
 
+## 📋 gRPC 协议与序列化规范 【必须遵守】
+
+### 🔴 核心原则
+
+> **所有 gRPC 协议开发、接口服务开发、序列化/反序列化必须遵循统一规范，禁止自作主张各自为政。**
+
+---
+
+### 1. gRPC Protocol Buffers 定义规范
+
+#### 1.1 Proto 文件命名规范
+
+**文件命名**：
+- 使用小写字母和下划线：`bazi_core.proto`、`bazi_fortune.proto`
+- 文件名应反映服务功能
+
+#### 1.2 Proto 文件语法规范
+
+```protobuf
+syntax = "proto3";  // 必须使用 proto3
+
+package bazi.core;  // 包名格式：功能.子功能
+
+// 服务描述注释
+// Bazi Core Service - 八字排盘核心计算服务
+```
+
+#### 1.3 消息定义规范
+
+```protobuf
+// 请求消息命名：ServiceName + Request
+message BaziCoreRequest {
+  string solar_date = 1;  // 字段必须有注释
+  string solar_time = 2;
+  string gender = 3;
+}
+
+// 响应消息命名：ServiceName + Response
+message BaziCoreResponse {
+  map<string, string> basic_info = 1;  // 简单键值对使用 map
+  string metadata_json = 2;             // 复杂结构使用 JSON 字符串
+}
+```
+
+#### 1.4 字段类型使用规范
+
+| 数据类型 | 使用场景 | 示例 |
+|---------|---------|------|
+| `string` | 文本数据 | `solar_date`, `gender` |
+| `int32` | 整数 | `element_counts` |
+| `map<string, string>` | 简单键值对 | `basic_info` |
+| `map<string, int32>` | 计数统计 | `element_counts` |
+| `repeated string` | 字符串列表 | `rule_types` |
+| `string` (JSON) | **复杂嵌套结构** | `metadata_json`, `detail_json` |
+| 自定义 `message` | 固定结构 | `Pillar`, `PillarDetail` |
+
+**重要原则**：
+- ✅ **复杂嵌套结构必须使用 `string` 字段存储 JSON 字符串**
+- ✅ 简单结构优先使用 protobuf 原生类型
+- ❌ 禁止在 proto 中定义深度嵌套的 message
+
+#### 1.5 服务定义规范
+
+```protobuf
+service BaziCoreService {
+  // 方法命名：动词 + 名词，驼峰命名
+  rpc CalculateBazi(BaziCoreRequest) returns (BaziCoreResponse);
+  
+  // 所有服务必须提供健康检查
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+```
+
+**健康检查标准**：
+```protobuf
+message HealthCheckRequest {}
+message HealthCheckResponse {
+  string status = 1;  // 通常为 "ok"
+}
+```
+
+---
+
+### 2. API 接口服务规范
+
+#### 2.1 请求模型规范（Pydantic）
+
+```python
+from pydantic import BaseModel, Field, validator
+
+class BaziRequest(BaseModel):
+    """八字计算请求模型"""
+    solar_date: str = Field(..., description="阳历日期，格式：YYYY-MM-DD", example="1990-05-15")
+    solar_time: str = Field(..., description="出生时间，格式：HH:MM", example="14:30")
+    gender: str = Field(..., description="性别：male(男) 或 female(女)", example="male")
+    
+    @validator('solar_date')
+    def validate_date(cls, v):
+        """验证日期格式"""
+        try:
+            from datetime import datetime
+            datetime.strptime(v, '%Y-%m-%d')
+        except ValueError:
+            raise ValueError('日期格式错误，应为 YYYY-MM-DD')
+        return v
+    
+    @validator('gender')
+    def validate_gender(cls, v):
+        """验证性别"""
+        if v not in ['male', 'female']:
+            raise ValueError('性别必须为 male 或 female')
+        return v
+```
+
+**规范要求**：
+- ✅ 所有字段必须使用 `Field` 提供 `description` 和 `example`
+- ✅ 必须使用 `@validator` 验证关键字段
+- ✅ 模型类必须有文档字符串
+
+#### 2.2 响应模型规范
+
+```python
+class BaziResponse(BaseModel):
+    """八字计算响应模型"""
+    success: bool  # 必须包含 success 字段
+    data: Optional[dict] = None
+    message: Optional[str] = None
+    error: Optional[str] = None  # 错误信息
+```
+
+**规范要求**：
+- ✅ 响应模型必须包含 `success: bool`
+- ✅ 成功时返回 `data`，失败时返回 `error`
+- ✅ 所有可选字段使用 `Optional[...] = None`
+
+#### 2.3 gRPC 网关注册规范
+
+**注册流程**：
+```python
+# 1. 在 server/api/grpc_gateway.py 中导入
+from server.api.v1.bazi import BaziRequest, BaziResponse, calculate_bazi
+
+# 2. 使用 @_register 装饰器注册
+@_register("/bazi/calculate")
+async def _handle_bazi_calculate(payload: Dict[str, Any]):
+    """处理八字计算请求"""
+    # 3. 转换为 Pydantic 模型
+    request_model = BaziRequest(**payload)
+    
+    # 4. 调用原始 API 函数
+    return await calculate_bazi(request_model)
+```
+
+**接口路径规范**：
+- 格式：`/功能模块/操作`
+- 示例：
+  - `/bazi/calculate` - 计算八字
+  - `/bazi/formula-analysis` - 公式分析
+  - `/bazi/shengong-minggong` - 身宫命宫
+  - `/payment/create-session` - 创建支付会话
+
+**规范要求**：
+- ✅ 所有 API 端点必须在 `grpc_gateway.py` 中注册
+- ✅ 注册函数必须使用 `@_register` 装饰器
+- ✅ 函数名格式：`_handle_功能模块_操作`
+- ✅ 必须转换为 Pydantic 模型后再调用
+
+---
+
+### 3. 序列化/反序列化规范
+
+#### 3.1 服务端序列化规范（gRPC Server）
+
+**字典序列化**：
+```python
+# ✅ 正确：复杂字典序列化为 JSON 字符串
+if isinstance(value, dict):
+    response.metadata_json = json.dumps(value, ensure_ascii=False)
+else:
+    response.metadata_json = str(value)
+
+# ✅ 正确：简单键值对直接使用 map
+response.basic_info[key] = str(value)
+
+# ❌ 错误：不要直接将字典赋值给 string 字段
+response.metadata_json = value  # 会导致序列化错误
+```
+
+**特殊字段处理**：
+```python
+# lunar_date 是字典，需要特殊处理
+if key == "lunar_date" and isinstance(value, dict):
+    response.basic_info[key] = json.dumps(value, ensure_ascii=False)
+else:
+    response.basic_info[key] = str(value)
+```
+
+**JSON 序列化标准**：
+```python
+import json
+
+# ✅ 必须使用 ensure_ascii=False 支持中文
+json.dumps(data, ensure_ascii=False)
+
+# ✅ 处理不可序列化对象
+json.dumps(data, ensure_ascii=False, default=str)
+```
+
+**规范要求**：
+- ✅ 所有复杂结构必须使用 `json.dumps(ensure_ascii=False)` 序列化
+- ✅ 必须使用 `default=str` 处理特殊类型（datetime、Decimal 等）
+- ✅ 字符串类型字段只能存储字符串，不能存储对象
+
+#### 3.2 客户端反序列化规范（gRPC Client）
+
+**JSON 字符串反序列化**：
+```python
+# ✅ 正确：安全地反序列化 JSON 字符串
+try:
+    if isinstance(value_json, str):
+        result = json.loads(value_json) if value_json else {}
+    else:
+        result = value_json
+except (json.JSONDecodeError, TypeError):
+    result = {}  # 使用默认值
+```
+
+**类型验证和转换**：
+```python
+from server.utils.data_validator import DataValidator
+
+# ✅ 使用 DataValidator 确保类型正确
+bazi_data = DataValidator.ensure_dict(bazi_data)
+ten_gods = DataValidator.ensure_list(ten_gods)
+
+# ✅ 验证八字数据
+bazi_data = DataValidator.validate_bazi_data(bazi_data)
+```
+
+**防御性编程**：
+```python
+# ✅ 检查字段是否存在
+if response.basic_info:
+    for key, value in response.basic_info.items():
+        # 安全地处理每个字段
+        if key == "lunar_date" and isinstance(value, str):
+            try:
+                parsed = json.loads(value) if value else {}
+            except (json.JSONDecodeError, TypeError):
+                parsed = {}
+```
+
+**规范要求**：
+- ✅ 所有 JSON 反序列化必须使用 try-except
+- ✅ 必须使用 `DataValidator` 进行类型验证
+- ✅ 必须提供默认值，避免 None 导致的错误
+
+#### 3.3 数据验证规范
+
+**使用 DataValidator**：
+```python
+from server.utils.data_validator import (
+    ensure_dict,
+    ensure_list,
+    validate_bazi_data,
+    safe_get_nested
+)
+
+# ✅ 确保字典类型
+data = ensure_dict(data, default={})
+
+# ✅ 确保列表类型
+items = ensure_list(items, default=[])
+
+# ✅ 验证八字数据
+bazi_data = validate_bazi_data(bazi_data)
+
+# ✅ 安全地获取嵌套值
+stem = safe_get_nested(bazi_data, 'bazi_pillars', 'day', 'stem', default='')
+```
+
+**验证时机**：
+- ✅ gRPC 客户端接收响应后立即验证
+- ✅ API 函数处理数据前验证
+- ✅ 缓存数据前验证
+
+---
+
+### 4. 开发规范强制要求
+
+#### 4.1 gRPC 协议开发检查清单
+
+每次开发 gRPC 服务时必须检查：
+- [ ] Proto 文件定义是否符合命名规范
+- [ ] 消息定义是否有完整注释
+- [ ] 复杂结构是否使用 JSON 字符串字段
+- [ ] 是否实现 `HealthCheck` 方法
+- [ ] 服务方法命名是否符合规范
+
+#### 4.2 API 接口开发检查清单
+
+每次开发 API 接口时必须检查：
+- [ ] 是否使用 Pydantic `BaseModel` 定义模型
+- [ ] 所有字段是否使用 `Field` 提供描述和示例
+- [ ] 关键字段是否使用 `@validator` 验证
+- [ ] 响应模型是否包含 `success` 字段
+- [ ] 是否在 `grpc_gateway.py` 中注册端点
+
+#### 4.3 序列化/反序列化检查清单
+
+每次处理数据序列化时必须检查：
+- [ ] 复杂结构是否使用 `json.dumps(ensure_ascii=False)` 序列化
+- [ ] JSON 反序列化是否有 try-except 错误处理
+- [ ] 是否使用 `DataValidator` 进行类型验证
+- [ ] 是否提供默认值，避免 None 错误
+- [ ] 是否进行防御性编程（None 检查、类型检查）
+
+---
+
+### 5. 相关文件和工具
+
+| 文件/工具 | 用途 |
+|----------|------|
+| `proto/*.proto` | gRPC 协议定义文件 |
+| `server/api/grpc_gateway.py` | gRPC-Web 网关，统一注册端点 |
+| `server/utils/data_validator.py` | 数据验证工具类 |
+| `server/api/v1/*.py` | REST API 定义（Pydantic 模型） |
+| `services/*/grpc_server.py` | gRPC 服务端实现 |
+| `src/clients/*_client_grpc.py` | gRPC 客户端实现 |
+
+---
+
+### 6. 违反规范的后果
+
+**禁止行为**：
+- ❌ 禁止在 proto 中定义深度嵌套的 message（应使用 JSON 字符串）
+- ❌ 禁止直接使用 `str()` 序列化字典（应使用 `json.dumps`）
+- ❌ 禁止忽略 JSON 反序列化错误处理
+- ❌ 禁止绕过 `DataValidator` 直接操作数据
+- ❌ 禁止在 `grpc_gateway.py` 外直接处理 gRPC 请求
+
+**违反规范的代码将被要求重构**：
+- 所有不符合规范的代码必须按照本规范重构
+- 重构时必须进行完整的测试验证
+- 重构后必须通过代码审查
+
+---
+
+**核心原则**：
+- 🔒 **严格类型**：所有数据必须有明确的类型定义和验证
+- 🔄 **统一规范**：所有服务遵循相同的序列化/反序列化规范
+- 🛡️ **防御编程**：所有数据操作必须有错误处理和默认值
+- 📝 **完整文档**：所有模型和接口必须有清晰的注释和文档
+- ⚠️ **强制遵守**：所有功能开发必须按照本规范执行，禁止自作主张
+
+---
+
 ## 📜 规则开发规范 【核心】
 
 ### 🔴 规则存储规范 【必须遵守】
@@ -273,7 +814,7 @@ df = pd.read_excel('rules.xlsx')  # 禁止！
 │     └── 验证规则数量和内容                                                   │
 │                                                                             │
 │  7. 前端适配                                                                 │
-│     ├── 检查 frontend/formula-analysis.html 中 typeLabels 是否包含新类型     │
+│     ├── 检查 local_frontend/formula-analysis.html 中 typeLabels 是否包含新类型     │
 │     ├── 检查 statistics 统计是否显示                                         │
 │     └── 测试前端页面展示                                                     │
 │                                                                             │
@@ -877,7 +1418,7 @@ except ValueError:
 
 **症状**：前端页面没有显示新类型的标签页
 
-**原因**：`frontend/formula-analysis.html` 中 `typeLabels` 未定义新类型
+**原因**：`local_frontend/formula-analysis.html` 中 `typeLabels` 未定义新类型
 
 **解决**：在 `typeLabels` 中添加新类型映射（参考上方"类型映射"表格）
 
@@ -922,9 +1463,9 @@ async def _handle_new_feature(payload: Dict[str, Any]):
 
 ## 📁 项目架构
 
-### 前端架构 `frontend/`
+### 前端架构 `local_frontend/`
 ```
-frontend/
+local_frontend/
 ├── js/
 │   ├── api.js                  # gRPC-Web 客户端（核心）
 │   ├── config.js               # API 配置
@@ -934,6 +1475,11 @@ frontend/
 ├── css/                        # 样式文件
 └── *.html                      # 页面文件
 ```
+
+**⚠️ 重要说明**：
+- **`local_frontend/`** 是本地前端目录，用于本地开发、测试环境、双机部署
+- **生产前端**由前端团队独立部署，不在此仓库中
+- 所有配置文件和脚本必须使用 `local_frontend` 路径
 
 ### 后端架构 `server/`
 ```
@@ -1005,7 +1551,7 @@ scripts/
 | `server/engines/rule_condition.py` | 规则条件匹配 | 高 |
 | `server/config/mysql_config.py` | MySQL 配置 | 高 |
 | `src/bazi_calculator.py` | 核心八字计算 | 极高 |
-| `frontend/js/api.js` | 前端 gRPC 客户端 | 高 |
+| `local_frontend/js/api.js` | 前端 gRPC 客户端 | 高 |
 | `proto/*.proto` | gRPC 协议定义 | 高 |
 
 ---
@@ -1891,18 +2437,23 @@ docker rmi hifate-base:20241128
 
 ## 💡 开发原则
 
-1. **🔐 安全优先**：安全是最高优先级，所有代码必须遵循安全最佳实践（见"安全规范"）
-2. **🔴 零停机优先**：所有设计必须支持不停机更新（见"零停机原则"）
-3. **🔌 gRPC 优先**：服务间交互必须使用 gRPC（见"gRPC 交互规范"）
-4. **📜 规则数据库化**：规则存数据库，支持热更新，**禁止从文件读取**（见"规则存储规范"）
-5. **🔄 向后兼容**：只加不删，保持兼容
-6. **✅ 先测试后提交**：修改后立即测试
-7. **📝 规范命名**：类型用英文，ID 统一格式（见"规则编码规范"和"规则类型命名"）
-8. **🔄 问题复盘**：每次问题必须复盘并更新规范（见"问题复盘机制"）
-9. **💾 Token 节省**：只读取相关文件，使用 `offset`/`limit` 限制范围（见"Token 节省原则"）
-10. **🧪 A/B 测试优先**：新功能必须支持 A/B 测试（见"A/B 测试和灰度发布规范"）
-11. **🚀 灰度发布优先**：重要变更必须通过灰度发布（见"A/B 测试和灰度发布规范"）
-12. **🔄 回滚准备**：所有数据库变更必须准备回滚脚本（见"A/B 测试和灰度发布规范"）
+> **⚠️ 重要提示**：所有新功能的增加、修改、扩展都必须严格遵守本开发规范。开发前必须阅读"新功能开发强制规范"章节（第 65-200 行），并完成开发规范检查清单。
+
+1. **📋 规范优先**：**所有新功能必须遵守开发规范**，这是最高优先级（见"新功能开发强制规范"）
+2. **🔐 安全优先**：安全是最高优先级，所有代码必须遵循安全最佳实践（见"安全规范"）
+3. **🔴 零停机优先**：所有设计必须支持不停机更新（见"零停机原则"）
+4. **🔌 gRPC 优先**：服务间交互必须使用 gRPC（见"gRPC 交互规范"）
+5. **📜 规则数据库化**：规则存数据库，支持热更新，**禁止从文件读取**（见"规则存储规范"）
+6. **🔄 向后兼容**：只加不删，保持兼容
+7. **✅ 先测试后提交**：修改后立即测试，测试覆盖率 ≥ 50%（见"测试开发规范"）
+8. **📝 规范命名**：类型用英文，ID 统一格式（见"规则编码规范"和"规则类型命名"）
+9. **🔄 问题复盘**：每次问题必须复盘并更新规范（见"问题复盘机制"）
+10. **💾 Token 节省**：只读取相关文件，使用 `offset`/`limit` 限制范围（见"Token 节省原则"）
+11. **🧪 A/B 测试优先**：新功能必须支持 A/B 测试（见"A/B 测试和灰度发布规范"）
+12. **🚀 灰度发布优先**：重要变更必须通过灰度发布（见"A/B 测试和灰度发布规范"）
+13. **🔄 回滚准备**：所有数据库变更必须准备回滚脚本（见"A/B 测试和灰度发布规范"）
+14. **📊 性能监控**：所有关键流程必须记录性能监控（见"智能运势分析性能监控规范"）
+15. **🎯 意图识别混合架构**：意图识别必须使用混合架构，响应时间 < 1秒（见"意图识别混合架构规范"）
 
 ---
 
@@ -2282,6 +2833,9 @@ COMMIT;
 ---
 
 **核心要点**：
+- **🔴 最高优先级**：**所有新功能必须遵守开发规范**（见"新功能开发强制规范"）
+- **📋 开发前必读**：开发新功能前必须阅读相关规范章节并完成检查清单
+- **✅ 强制检查**：所有新功能必须通过开发规范检查清单验证
 - 新增 API 必须同时注册 gRPC 端点（见"后端注册规范"）
 - 新增规则类型必须同步更新前后端（见"类型映射"和"问题4"）
 - 数据库配置使用 `hifate_bazi` 而非 `bazi_system`（见"数据库配置默认值"）
@@ -2294,6 +2848,8 @@ COMMIT;
 - **重要变更必须通过灰度发布**（见"A/B 测试和灰度发布规范"）
 - **数据库变更必须准备回滚脚本**（见"A/B 测试和灰度发布规范"）
 - **意图识别必须使用混合架构，响应时间 < 1秒**（见"意图识别混合架构规范"）
+- **所有新功能必须同步编写测试案例，测试覆盖率 ≥ 50%**（见"测试开发规范"）
+- **所有关键流程必须记录性能监控**（见"智能运势分析性能监控规范"）
 
 ---
 
@@ -2603,3 +3159,686 @@ result = {
 - **性能摘要必须包含在API响应中**
 - **必须识别并记录性能瓶颈（>1秒）**
 - **必须记录失败的阶段和错误信息**
+
+---
+
+## 🧪 测试开发规范 【必须遵守】
+
+### 🔴 核心原则
+
+> **所有新功能必须同步编写测试案例，测试覆盖率必须达到 50% 以上。**
+
+### 📋 测试要求
+
+#### 1. 新增功能必须同步编写测试
+
+**要求**：
+- ✅ 新增 API 端点必须编写对应的测试案例
+- ✅ 新增服务功能必须编写单元测试
+- ✅ 新增业务逻辑必须编写集成测试
+- ✅ 修改现有功能必须更新相关测试
+
+**检查清单**：
+- [ ] 新功能是否有对应的测试文件
+- [ ] 测试是否覆盖正常流程
+- [ ] 测试是否覆盖异常流程
+- [ ] 测试是否覆盖边界情况
+- [ ] 测试是否通过 CI/CD 验证
+
+#### 2. 测试覆盖率要求
+
+**覆盖率目标**：
+- **单元测试覆盖率**：≥ 50%（核心模块 ≥ 70%）
+- **API 测试覆盖率**：≥ 80%（所有公开 API 必须有测试）
+- **集成测试覆盖率**：≥ 60%（关键业务流程必须有测试）
+
+**检查命令**：
+```bash
+# 运行测试并生成覆盖率报告
+pytest tests/ --cov=server --cov=src --cov-report=html --cov-report=term-missing
+
+# 查看覆盖率报告
+open htmlcov/index.html  # macOS
+# 或访问 htmlcov/index.html
+```
+
+#### 3. 测试分类和命名规范
+
+**测试文件命名**：
+- 单元测试：`tests/unit/test_<module_name>.py`
+- 集成测试：`tests/integration/test_<feature_name>.py`
+- API 测试：`tests/api/test_<api_name>.py`
+- 功能测试：`tests/features/test_<feature_name>.py`
+- 端到端测试：`tests/e2e/test_<scenario_name>.py`
+
+**测试函数命名**：
+```python
+# ✅ 正确：使用 test_ 前缀
+def test_calculate_bazi_success():
+    """测试成功计算八字"""
+    ...
+
+def test_calculate_bazi_invalid_date():
+    """测试无效日期输入"""
+    ...
+
+# ❌ 错误：不使用 test_ 前缀
+def calculate_bazi_test():
+    ...
+```
+
+**测试类命名**：
+```python
+# ✅ 正确：使用 Test 前缀
+class TestBaziService:
+    """八字服务测试类"""
+    ...
+
+# ❌ 错误：不使用 Test 前缀
+class BaziServiceTest:
+    ...
+```
+
+#### 4. 测试标记（Markers）
+
+**使用 pytest markers 分类测试**：
+```python
+import pytest
+
+@pytest.mark.unit
+def test_calculate_bazi():
+    """单元测试"""
+    ...
+
+@pytest.mark.integration
+def test_api_integration():
+    """集成测试"""
+    ...
+
+@pytest.mark.api
+def test_bazi_api():
+    """API 测试"""
+    ...
+
+@pytest.mark.e2e
+def test_end_to_end():
+    """端到端测试"""
+    ...
+
+@pytest.mark.slow
+def test_performance():
+    """慢速测试（性能测试）"""
+    ...
+```
+
+**运行特定类型的测试**：
+```bash
+# 只运行单元测试
+pytest -m unit
+
+# 只运行集成测试
+pytest -m integration
+
+# 只运行 API 测试
+pytest -m api
+
+# 排除慢速测试
+pytest -m "not slow"
+```
+
+#### 5. 测试数据管理
+
+**使用 fixtures 管理测试数据**：
+```python
+# tests/conftest.py
+import pytest
+from server.services.bazi_service import BaziService
+
+@pytest.fixture
+def sample_bazi_data():
+    """示例八字数据"""
+    return {
+        "solar_date": "1990-01-15",
+        "solar_time": "12:00",
+        "gender": "male"
+    }
+
+@pytest.fixture
+def bazi_service():
+    """八字服务实例"""
+    return BaziService()
+```
+
+**使用参数化测试**：
+```python
+import pytest
+
+@pytest.mark.parametrize("solar_date,solar_time,gender,expected", [
+    ("1990-01-15", "12:00", "male", "庚午"),
+    ("1995-05-20", "14:30", "female", "乙亥"),
+])
+def test_calculate_bazi(solar_date, solar_time, gender, expected):
+    """参数化测试"""
+    result = calculate_bazi(solar_date, solar_time, gender)
+    assert result["day_pillar"] == expected
+```
+
+#### 6. 测试执行规范
+
+**本地开发时**：
+```bash
+# 运行所有测试
+pytest
+
+# 运行特定文件
+pytest tests/unit/test_bazi_service.py
+
+# 运行特定测试函数
+pytest tests/unit/test_bazi_service.py::test_calculate_bazi
+
+# 运行并显示覆盖率
+pytest --cov=server --cov=src --cov-report=term-missing
+```
+
+**提交代码前**：
+```bash
+# 必须运行测试，确保通过
+pytest tests/
+
+# 检查覆盖率
+pytest --cov=server --cov=src --cov-report=term-missing --cov-fail-under=50
+```
+
+#### 7. CI/CD 自动测试
+
+**触发条件**：
+- ✅ 推送到 `master` 或 `develop` 分支
+- ✅ 创建 Pull Request
+- ✅ 手动触发（GitHub Actions）
+
+**测试流程**：
+1. **代码质量检查**（lint）
+   - Black 代码格式检查
+   - isort 导入排序检查
+   - pylint 代码质量检查
+   - mypy 类型检查
+
+2. **单元测试**（test）
+   - 运行所有单元测试
+   - 生成覆盖率报告
+   - 上传到 Codecov
+
+3. **集成测试**（integration-test）
+   - 运行集成测试
+   - 验证 API 集成
+
+**测试结果监控**：
+- **GitHub Actions**：`.github/workflows/ci.yml`
+- **Codecov**：覆盖率报告和趋势
+- **测试报告**：`htmlcov/index.html`（本地）
+
+#### 8. 测试失败处理
+
+**测试失败时**：
+1. **查看测试日志**：GitHub Actions 输出
+2. **本地复现**：在本地运行失败的测试
+3. **修复问题**：修复代码或更新测试
+4. **重新提交**：确保所有测试通过
+
+**禁止操作**：
+- ❌ 禁止跳过失败的测试（除非是已知问题）
+- ❌ 禁止降低测试覆盖率要求
+- ❌ 禁止删除失败的测试
+
+#### 9. 测试最佳实践
+
+**编写测试的原则**：
+1. **独立性**：每个测试应该独立运行，不依赖其他测试
+2. **可重复性**：测试结果应该一致，不依赖外部状态
+3. **快速执行**：单元测试应该快速执行（< 1秒）
+4. **清晰命名**：测试名称应该清晰描述测试内容
+5. **单一职责**：每个测试只测试一个功能点
+
+**示例**：
+```python
+# ✅ 好的测试
+def test_calculate_bazi_with_valid_date():
+    """测试：使用有效日期计算八字"""
+    result = calculate_bazi("1990-01-15", "12:00", "male")
+    assert result["success"] == True
+    assert "bazi" in result
+
+# ❌ 不好的测试
+def test_all():
+    """测试所有功能"""
+    # 测试太多内容，难以定位问题
+    ...
+```
+
+#### 10. 测试覆盖率监控
+
+**覆盖率报告位置**：
+- **本地**：`htmlcov/index.html`
+- **CI/CD**：GitHub Actions 输出
+- **在线**：Codecov（如果配置）
+
+**覆盖率要求**：
+- **整体覆盖率**：≥ 50%
+- **核心模块**（server/services/）：≥ 70%
+- **API 端点**（server/api/）：≥ 80%
+- **工具函数**（server/utils/）：≥ 60%
+
+**查看覆盖率**：
+```bash
+# 生成 HTML 报告
+pytest --cov=server --cov=src --cov-report=html
+
+# 查看报告
+open htmlcov/index.html
+```
+
+---
+
+### 📝 测试开发检查清单
+
+每次开发新功能时，必须检查：
+
+- [ ] 是否创建了对应的测试文件
+- [ ] 是否编写了正常流程测试
+- [ ] 是否编写了异常流程测试
+- [ ] 是否编写了边界情况测试
+- [ ] 测试是否通过本地运行
+- [ ] 测试是否通过 CI/CD 验证
+- [ ] 覆盖率是否达到要求（≥ 50%）
+- [ ] 是否更新了测试文档
+
+---
+
+### 🚨 测试规范违反处理
+
+**如果发现违反测试规范**：
+1. **立即修复**：补充缺失的测试
+2. **更新规范**：如果规范不合理，更新规范
+3. **记录问题**：在开发日志中记录问题
+4. **防止再次发生**：更新检查清单
+
+---
+
+**核心要点**：
+- **所有新功能必须同步编写测试案例**
+- **测试覆盖率必须达到 50% 以上**
+- **所有测试必须通过 CI/CD 验证**
+- **测试失败必须修复后才能合并代码**
+
+---
+
+## 🏗️ 生产环境架构规范 【必须遵守】
+
+### 🔴 核心原则
+
+> **生产环境架构信息必须记录在开发规范中，确保系统的继承性、稳定性和可用性。**
+
+### 📋 生产环境架构
+
+#### 双机部署架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        生产环境双机架构                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────────────────┐         ┌──────────────────────┐    │
+│  │      Node1 (主节点)   │         │      Node2 (从节点)   │    │
+│  │  8.210.52.217        │         │  47.243.160.43       │    │
+│  │  172.18.121.222      │         │  172.18.121.223      │    │
+│  ├──────────────────────┤         ├──────────────────────┤    │
+│  │  Nginx (80/443)      │◄───────►│  Nginx (80/443)      │    │
+│  │  Web (8001)          │         │  Web (8001)          │    │
+│  │  MySQL 主库 (3306)   │◄──复制──►│  MySQL 从库 (3306)   │    │
+│  │  Redis 主库 (6379)   │◄──复制──►│  Redis 从库 (6379)   │    │
+│  │  微服务 (9001-9010)  │         │  微服务 (9001-9010)  │    │
+│  └──────────────────────┘         └──────────────────────┘    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 服务器信息
+
+| 节点 | 公网IP | 内网IP | 角色 | 状态 |
+|------|--------|--------|------|------|
+| Node1 | 8.210.52.217 | 172.18.121.222 | 主节点（MySQL主/Redis主） | ✅ 运行中 |
+| Node2 | 47.243.160.43 | 172.18.121.223 | 从节点（MySQL从/Redis从） | ✅ 运行中 |
+| 测试环境 | 123.57.216.15 | - | 测试环境 | ✅ 运行中 |
+
+#### 服务端口清单
+
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| Nginx | 80, 443 | 负载均衡和反向代理 |
+| Web 服务 | 8001 | FastAPI 主服务 |
+| bazi-core | 9001 | 八字核心计算服务 |
+| bazi-fortune | 9002 | 运势计算服务 |
+| bazi-analyzer | 9003 | 八字分析服务 |
+| bazi-rule | 9004 | 规则匹配服务 |
+| fortune-analysis | 9005 | 运势分析服务 |
+| payment-service | 9006 | 支付服务 |
+| fortune-rule | 9007 | 运势规则服务 |
+| intent-service | 9008 | 意图识别服务 |
+| prompt-optimizer | 9009 | 提示优化服务 |
+| desk-fengshui | 9010 | 办公桌风水分析服务 |
+| MySQL | 3306 | 数据库 |
+| Redis | 6379 | 缓存 |
+
+#### 负载均衡配置
+
+**Nginx 负载均衡**：
+- **上游服务器**：使用内网IP（172.18.121.222/223）
+- **负载均衡算法**：轮询（weight=1）
+- **故障转移**：`max_fails=3 fail_timeout=30s`
+- **健康检查**：自动检测服务状态，故障时切换到备用节点
+
+**超时配置**（已优化）：
+```nginx
+proxy_connect_timeout 10s;   # 连接超时：10秒（快速检测服务不可用）
+proxy_send_timeout 30s;      # 发送超时：30秒（适合大多数API）
+proxy_read_timeout 30s;      # 读取超时：30秒（适合大多数API）
+proxy_next_upstream_timeout 5s;  # 故障转移超时：5秒（快速切换）
+```
+
+#### 数据库主从复制
+
+**MySQL 主从复制**：
+- **主库**：Node1 (172.18.121.222:3306)
+- **从库**：Node2 (172.18.121.223:3306)
+- **复制用户**：`repl@%`
+- **复制方式**：GTID 自动定位
+- **状态检查**：
+  ```sql
+  SHOW SLAVE STATUS\G
+  -- Slave_IO_Running: Yes
+  -- Slave_SQL_Running: Yes
+  -- Seconds_Behind_Master: 0
+  ```
+
+**Redis 主从复制**：
+- **主库**：Node1 (172.18.121.222:6379)
+- **从库**：Node2 (172.18.121.223:6379)
+- **复制方式**：自动同步
+
+#### 部署配置信息
+
+**环境变量**：
+- **MySQL 密码**：`Yuanqizhan@163`
+- **MySQL 复制密码**：`Yuanqizhan@163`
+- **SECRET_KEY**：`kx9078L34ZoROnneJu8fMmJ70JImvVan88JYvxiewbE`
+- **ACR 用户名**：从环境变量 `ACR_USERNAME` 或 `ACR_ACCESS_KEY_ID` 读取
+- **ACR 密码**：从环境变量 `ACR_PASSWORD` 或 `ACR_ACCESS_KEY_SECRET` 读取
+- **Git 仓库**：`https://github.com/zhoudengt/HiFate-bazi`
+
+**项目目录**：
+- **代码目录**：`/opt/HiFate-bazi`
+- **部署配置**：`/opt/HiFate-bazi/deploy/docker`
+- **环境变量**：`/opt/HiFate-bazi/.env`
+- **日志目录**：`/opt/HiFate-bazi/logs`
+
+---
+
+### 🔧 生产环境部署规范
+
+#### 部署前检查清单
+
+- [ ] 确认服务器已初始化（Docker 已安装）
+- [ ] 确认代码已克隆到 `/opt/HiFate-bazi`
+- [ ] 确认环境变量已配置（`.env` 文件）
+- [ ] 确认 Nginx 配置中的 IP 已替换为内网 IP
+- [ ] 确认 gRPC 代码已修复（运行 `scripts/grpc/fix_version_check.py`）
+- [ ] 确认 MySQL 主从复制用户已创建
+- [ ] 确认 Redis 主从复制已配置
+
+#### 部署步骤
+
+1. **初始化服务器**（首次部署）：
+   ```bash
+   bash deploy/scripts/init-ecs.sh
+   ```
+
+2. **克隆代码**：
+   ```bash
+   cd /opt/HiFate-bazi
+   git clone https://github.com/zhoudengt/HiFate-bazi .
+   ```
+
+3. **配置环境变量**：
+   ```bash
+   cp deploy/env/env.template .env
+   vim .env  # 编辑配置
+   ```
+
+4. **修复 gRPC 代码**（必须）：
+   ```bash
+   python3 scripts/grpc/fix_version_check.py
+   ```
+
+5. **配置 Nginx**（必须）：
+   ```bash
+   # 替换 IP 占位符
+   sed -i 's/NODE1_IP/172.18.121.222/g' deploy/nginx/conf.d/hifate.conf
+   sed -i 's/NODE2_IP/172.18.121.223/g' deploy/nginx/conf.d/hifate.conf
+   ```
+
+6. **部署服务**：
+   ```bash
+   # Node1
+   bash deploy/scripts/deploy.sh node1
+   
+   # Node2（在 Node1 部署完成后）
+   bash deploy/scripts/deploy.sh node2
+   ```
+
+7. **配置 MySQL 主从复制**（Node2）：
+   ```sql
+   -- 在 Node1 创建复制用户
+   CREATE USER 'repl'@'%' IDENTIFIED BY 'Yuanqizhan@163';
+   GRANT REPLICATION SLAVE ON *.* TO 'repl'@'%';
+   FLUSH PRIVILEGES;
+   
+   -- 在 Node2 配置从库
+   CHANGE MASTER TO
+       MASTER_HOST='172.18.121.222',
+       MASTER_USER='repl',
+       MASTER_PASSWORD='Yuanqizhan@163',
+       MASTER_AUTO_POSITION=1;
+   START SLAVE;
+   ```
+
+8. **验证部署**：
+   ```bash
+   # 检查服务状态
+   docker ps | grep hifate
+   
+   # 检查健康状态
+   curl http://8.210.52.217/health
+   curl http://47.243.160.43/health
+   
+   # 检查 MySQL 主从复制
+   docker exec -it hifate-mysql-slave mysql -uroot -pYuanqizhan@163 -e "SHOW SLAVE STATUS\G"
+   ```
+
+#### 日常运维命令
+
+**查看服务状态**：
+```bash
+# Node1
+ssh root@8.210.52.217 "docker ps | grep hifate"
+
+# Node2
+ssh root@47.243.160.43 "docker ps | grep hifate"
+```
+
+**查看日志**：
+```bash
+# Web 服务日志
+docker logs hifate-web --tail 100
+
+# 微服务日志
+docker logs hifate-bazi-core --tail 100
+
+# Nginx 日志
+docker logs hifate-nginx --tail 100
+```
+
+**重启服务**：
+```bash
+# 重启单个服务
+docker restart hifate-web
+
+# 重启所有服务
+cd /opt/HiFate-bazi/deploy/docker
+docker-compose -f docker-compose.prod.yml -f docker-compose.node1.yml --env-file /opt/HiFate-bazi/.env restart
+```
+
+**更新代码**：
+```bash
+cd /opt/HiFate-bazi
+git pull origin master
+# 如果需要重启服务
+bash deploy/scripts/deploy.sh node1  # 或 node2
+```
+
+---
+
+### ⚠️ 生产环境注意事项
+
+#### 1. 负载均衡配置
+
+**必须使用内网 IP**：
+- ✅ 正确：`server 172.18.121.222:8001`
+- ❌ 错误：`server 8.210.52.217:8001`（公网IP，延迟高）
+- ❌ 错误：`server NODE1_IP:8001`（占位符未替换）
+
+**检查方法**：
+```bash
+docker exec hifate-nginx cat /etc/nginx/conf.d/hifate.conf | grep upstream
+```
+
+#### 2. gRPC 版本兼容性
+
+**部署前必须修复**：
+```bash
+python3 scripts/grpc/fix_version_check.py
+```
+
+**问题现象**：
+- 微服务持续重启
+- 错误：`AttributeError: '_Server' object has no attribute 'add_registered_method_handlers'`
+
+**解决方案**：
+- 运行修复脚本
+- 重启微服务
+
+#### 3. Nginx 超时优化
+
+**已优化配置**（提升用户体验）：
+- 连接超时：10秒（快速检测服务不可用）
+- 发送/读取超时：30秒（适合大多数API）
+- 故障转移超时：5秒（快速切换）
+
+#### 4. 服务健康检查
+
+**定期检查**：
+- 服务状态：`docker ps | grep hifate`
+- 健康检查：`curl http://8.210.52.217/health`
+- MySQL 主从复制：`SHOW SLAVE STATUS\G`
+- Nginx 状态：`curl http://8.210.52.217/nginx_status`
+
+#### 5. 性能监控
+
+**关键指标**：
+- API 响应时间：< 2秒（正常）
+- 服务重启次数：0（正常）
+- MySQL 主从延迟：0秒（正常）
+- 负载均衡状态：两个节点都正常
+
+---
+
+### 📚 相关文档
+
+- **部署文档**：`docs/root_docs/生产环境双机部署指南.md`
+- **部署报告**：`docs/root_docs/生产环境双机部署最终报告.md`
+- **问题诊断**：`docs/root_docs/双机部署问题诊断报告.md`
+
+---
+
+---
+
+## 📁 前端目录规范 【必须遵守】
+
+### 🔴 核心原则
+
+> **本地前端目录命名为 `local_frontend`，与生产前端部署分离。**
+
+### 📋 目录命名规范
+
+| 目录 | 用途 | 说明 |
+|------|------|------|
+| **`local_frontend/`** | ✅ **本地前端目录** | 用于本地开发、测试、双机部署 |
+| **生产前端** | ✅ **独立部署** | 由前端团队独立部署，不在此仓库 |
+
+### 🔧 配置要求
+
+#### 1. Docker Compose 配置
+
+**生产环境配置** (`deploy/docker/docker-compose.prod.yml`)：
+```yaml
+volumes:
+  - ../../local_frontend:/usr/share/nginx/html/local_frontend:ro
+```
+
+**本地前端配置** (`docker-compose.frontend.yml`)：
+```yaml
+volumes:
+  - ./local_frontend:/usr/share/nginx/html:ro
+```
+
+#### 2. Nginx 配置
+
+**所有 Nginx 配置文件中的路径**：
+```nginx
+root /usr/share/nginx/html/local_frontend;
+```
+
+#### 3. 后端代码配置
+
+**`server/main.py`** 中的静态文件挂载：
+```python
+local_frontend_dir = os.path.join(project_root, "local_frontend")
+if os.path.exists(local_frontend_dir):
+    app.mount("/local_frontend", StaticFiles(directory=local_frontend_dir, html=True), name="local_frontend")
+```
+
+### ⚠️ 重要说明
+
+1. **禁止修改生产前端**：生产环境的前端由前端团队独立部署，后端开发人员不得修改
+2. **本地前端仅用于开发测试**：`local_frontend` 目录仅用于本地开发、测试环境、双机部署
+3. **路径一致性**：所有配置文件中的路径必须统一使用 `local_frontend`
+4. **部署脚本更新**：所有部署脚本必须引用 `local_frontend` 目录
+
+### ✅ 检查清单
+
+每次修改前端相关配置时，必须检查：
+
+- [ ] Docker Compose 配置中的路径是否为 `local_frontend`
+- [ ] Nginx 配置中的路径是否为 `local_frontend`
+- [ ] 后端代码中的路径是否为 `local_frontend`
+- [ ] 部署脚本中的路径是否为 `local_frontend`
+- [ ] 文档中的路径是否为 `local_frontend`
+
+---
+
+**核心要点**：
+- **生产环境架构信息必须记录在开发规范中**
+- **部署前必须检查所有配置项**
+- **必须使用内网 IP 进行负载均衡**
+- **部署前必须修复 gRPC 代码**
+- **定期检查服务健康状态**
+- **本地前端目录必须使用 `local_frontend`，与生产前端分离**

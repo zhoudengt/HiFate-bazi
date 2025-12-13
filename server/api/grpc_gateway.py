@@ -63,6 +63,8 @@ from server.api.v1.calendar_api import (
     CalendarRequest,
     query_calendar,
 )
+from server.api.v1.bazi import BaziInterfaceRequest, ShengongMinggongRequest, get_shengong_minggong
+from server.services.bazi_interface_service import BaziInterfaceService
 
 # 文件上传相关
 import base64
@@ -71,6 +73,16 @@ from fastapi import UploadFile, File, Form
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# 在模块加载时打印已注册的端点（调试用）
+def _log_registered_endpoints():
+    """在模块加载完成后打印已注册的端点"""
+    import atexit
+    def log_on_exit():
+        if SUPPORTED_ENDPOINTS:
+            logger.info(f"已注册的 gRPC 端点数量: {len(SUPPORTED_ENDPOINTS)}")
+            logger.debug(f"已注册的端点列表: {list(SUPPORTED_ENDPOINTS.keys())}")
+    atexit.register(log_on_exit)
 
 
 GrpcResult = Tuple[Dict[str, Any], int]
@@ -197,6 +209,52 @@ async def _handle_monthly_fortune(payload: Dict[str, Any]):
     return await calculate_monthly_fortune(request_model)
 
 
+@_register("/bazi/interface")
+async def _handle_bazi_interface(payload: Dict[str, Any]):
+    """处理八字界面信息请求（包含命宫、身宫、胎元、胎息、命卦等）"""
+    import asyncio
+    request_model = BaziInterfaceRequest(**payload)
+    
+    # 在线程池中执行CPU密集型计算
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,  # 使用默认线程池
+        BaziInterfaceService.generate_interface_full,
+        request_model.solar_date,
+        request_model.solar_time,
+        request_model.gender,
+        request_model.name or "",
+        request_model.location or "未知地",
+        request_model.latitude or 39.00,
+        request_model.longitude or 120.00
+    )
+    
+    # 返回格式与 REST API 一致
+    return {
+        "success": True,
+        "data": result
+    }
+
+
+@_register("/bazi/shengong-minggong")
+async def _handle_shengong_minggong(payload: Dict[str, Any]):
+    """处理身宫命宫详细信息请求"""
+    from fastapi import Request
+    from unittest.mock import MagicMock
+    
+    request_model = ShengongMinggongRequest(**payload)
+    # 创建一个模拟的Request对象（gRPC网关不需要真实的Request）
+    mock_request = MagicMock(spec=Request)
+    result = await get_shengong_minggong(request_model, mock_request)
+    
+    # 处理 BaziResponse 对象
+    if hasattr(result, 'model_dump'):
+        return result.model_dump()
+    elif hasattr(result, 'dict'):
+        return result.dict()
+    return result
+
+
 @_register("/payment/unified/create")
 async def _handle_unified_payment_create(payload: Dict[str, Any]):
     """处理统一支付创建请求"""
@@ -280,6 +338,11 @@ async def _handle_face_analysis_v2(payload: Dict[str, Any]):
 @_register("/api/v2/desk-fengshui/analyze")
 async def _handle_desk_fengshui(payload: Dict[str, Any]):
     """处理办公桌风水分析请求（支持文件上传）"""
+    # #region agent log
+    import json as json_lib
+    with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+        f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "grpc_gateway.py:339", "message": "_handle_desk_fengshui entry", "data": {"has_image_base64": bool(payload.get("image_base64")), "use_bazi": payload.get("use_bazi")}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+    # #endregion
     from server.api.v2.desk_fengshui_api import analyze_desk_fengshui
     from fastapi.responses import JSONResponse
     
@@ -305,35 +368,128 @@ async def _handle_desk_fengshui(payload: Dict[str, Any]):
     )
     
     # 调用原始接口
-    result = await analyze_desk_fengshui(
-        image=image_file,
-        solar_date=payload.get("solar_date"),
-        solar_time=payload.get("solar_time"),
-        gender=payload.get("gender"),
-        use_bazi=payload.get("use_bazi", True)
-    )
-    
-    # JSONResponse 对象需要提取 body 内容
-    if isinstance(result, JSONResponse):
-        body = result.body
-        if isinstance(body, bytes):
-            data = json.loads(body.decode('utf-8'))
+    try:
+        # #region agent log
+        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "grpc_gateway.py:367", "message": "before analyze_desk_fengshui call", "data": {"image_size": len(image_bytes), "solar_date": payload.get("solar_date"), "use_bazi": payload.get("use_bazi")}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+        # #endregion
+        result = await analyze_desk_fengshui(
+            image=image_file,
+            solar_date=payload.get("solar_date"),
+            solar_time=payload.get("solar_time"),
+            gender=payload.get("gender"),
+            use_bazi=payload.get("use_bazi", True)
+        )
+        
+        # #region agent log
+        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A,B,C", "location": "grpc_gateway.py:376", "message": "after analyze_desk_fengshui call", "data": {"result_is_none": result is None, "result_type": str(type(result)), "has_success": hasattr(result, 'success') if result else False, "is_dict": isinstance(result, dict) if result else False}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+        # #endregion
+        
+        # 🔴 防御性检查：确保 result 不为 None
+        if result is None:
+            logger.error("办公桌风水分析返回 None")
+            # #region agent log
+            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "grpc_gateway.py:378", "message": "result is None - returning error", "data": {}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+            # #endregion
+            return {"success": False, "error": "分析服务返回空结果，请稍后重试"}
+        
+        # JSONResponse 对象需要提取 body 内容
+        if isinstance(result, JSONResponse):
+            body = result.body
+            if isinstance(body, bytes):
+                data = json.loads(body.decode('utf-8'))
+            else:
+                data = body
+            # #region agent log
+            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "grpc_gateway.py:388", "message": "JSONResponse path", "data": {"data_type": str(type(data)), "data_is_none": data is None}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+            # #endregion
+            # 深度清理，确保可以序列化（修复 Maximum call stack exceeded）
+            cleaned = _deep_clean_for_serialization(data)
+            # 🔴 防御性检查：确保 cleaned 不为 None
+            if cleaned is None:
+                logger.error("_deep_clean_for_serialization 返回了 None (JSONResponse path)")
+                return {"success": False, "error": "数据清理失败"}
+            return cleaned
+        elif hasattr(result, 'model_dump'):
+            # Pydantic v2 模型
+            data = result.model_dump()
+            
+            # 🔴 防御性检查：确保 data 不为 None
+            if data is None:
+                logger.error("model_dump() 返回了 None")
+                return {"success": False, "error": "数据解析失败"}
+            
+            # 🔴 防御性检查：确保 data 是字典类型
+            if not isinstance(data, dict):
+                logger.error(f"model_dump() 返回了非字典类型: {type(data)}")
+                return {"success": False, "error": "数据格式错误"}
+            
+            # #region agent log
+            import json as json_lib
+            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "grpc_gateway.py:393", "message": "Pydantic v2 path", "data": {"data_type": str(type(data)), "data_is_none": data is None, "has_data_key": 'data' in data if data else False}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+            # #endregion
+            
+            # 深度清理，确保可以序列化
+            cleaned = _deep_clean_for_serialization(data)
+            # 🔴 防御性检查：确保 cleaned 不为 None
+            if cleaned is None:
+                logger.error("_deep_clean_for_serialization 返回了 None (Pydantic v2 path)")
+                return {"success": False, "error": "数据清理失败"}
+            return cleaned
+        elif hasattr(result, 'dict'):
+            # Pydantic v1 模型
+            data = result.dict()
+            # #region agent log
+            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "grpc_gateway.py:398", "message": "Pydantic v1 path", "data": {"data_type": str(type(data)), "data_is_none": data is None}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+            # #endregion
+            # 深度清理，确保可以序列化
+            cleaned = _deep_clean_for_serialization(data)
+            # 🔴 防御性检查：确保 cleaned 不为 None
+            if cleaned is None:
+                logger.error("_deep_clean_for_serialization 返回了 None (Pydantic v1 path)")
+                return {"success": False, "error": "数据清理失败"}
+            return cleaned
+        elif isinstance(result, dict):
+            # 普通字典，直接返回
+            # #region agent log
+            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "grpc_gateway.py:402", "message": "dict path", "data": {"result_keys": list(result.keys()) if result else [], "has_success": "success" in result if result else False}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+            # #endregion
+            cleaned = _deep_clean_for_serialization(result)
+            # 🔴 防御性检查：确保 cleaned 不为 None
+            if cleaned is None:
+                logger.error("_deep_clean_for_serialization 返回了 None")
+                return {"success": False, "error": "数据清理失败"}
+            return cleaned
+        
+        # 未知类型，尝试转换
+        logger.warning(f"办公桌风水分析返回了未知类型: {type(result)}")
+        # #region agent log
+        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "grpc_gateway.py:407", "message": "unknown result type", "data": {"result_type": str(type(result))}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+        # #endregion
+        return {"success": False, "error": f"分析服务返回了无效的数据类型: {type(result).__name__}"}
+        
+    except Exception as e:
+        logger.error(f"办公桌风水分析异常: {e}", exc_info=True)
+        # #region agent log
+        import json as json_lib
+        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "grpc_gateway.py:410", "message": "exception caught", "data": {"error_type": str(type(e)), "error_msg": str(e)}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+        # #endregion
+        
+        # 🔴 修复：正确处理 HTTPException，提取 detail 字段
+        if isinstance(e, HTTPException):
+            error_detail = e.detail if hasattr(e, 'detail') and e.detail else str(e)
+            return {"success": False, "error": f"分析失败: {error_detail}"}
         else:
-            data = body
-        # 深度清理，确保可以序列化（修复 Maximum call stack exceeded）
-        return _deep_clean_for_serialization(data)
-    elif hasattr(result, 'model_dump'):
-        # Pydantic v2 模型
-        data = result.model_dump()
-        # 深度清理，确保可以序列化
-        return _deep_clean_for_serialization(data)
-    elif hasattr(result, 'dict'):
-        # Pydantic v1 模型
-        data = result.dict()
-        # 深度清理，确保可以序列化
-        return _deep_clean_for_serialization(data)
-    
-    return result
+            error_msg = str(e) if e else "未知错误"
+            return {"success": False, "error": f"分析失败: {error_msg}"}
 
 
 def _deep_clean_for_serialization(obj: Any, visited: set = None) -> Any:
@@ -349,6 +505,10 @@ def _deep_clean_for_serialization(obj: Any, visited: set = None) -> Any:
     if visited is None:
         visited = set()
     
+    # 🔴 防御性检查：如果 obj 是 None，直接返回 None
+    if obj is None:
+        return None
+    
     # 检测循环引用
     obj_id = id(obj)
     if obj_id in visited:
@@ -360,7 +520,7 @@ def _deep_clean_for_serialization(obj: Any, visited: set = None) -> Any:
             return {k: _deep_clean_for_serialization(v, visited) for k, v in obj.items()}
         elif isinstance(obj, list):
             return [_deep_clean_for_serialization(item, visited) for item in obj]
-        elif isinstance(obj, (str, int, float, bool, type(None))):
+        elif isinstance(obj, (str, int, float, bool)):
             return obj
         elif hasattr(obj, '__dict__'):
             # 对象，转换为字典
@@ -398,6 +558,15 @@ async def grpc_web_gateway(request: Request):
     - 调度到已有业务 handler
     - 将响应再编码为 gRPC-Web 帧
     """
+    # #region agent log
+    import json as json_lib
+    import time as time_module
+    try:
+        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A,B,C,D,E", "location": "grpc_gateway.py:508", "message": "grpc_web_gateway entry", "data": {"method": request.method, "url": str(request.url)}, "timestamp": int(time_module.time() * 1000)}) + '\n')
+    except Exception as log_err:
+        logger.error(f"日志写入失败: {log_err}")
+    # #endregion
     raw_body = await request.body()
 
     try:
@@ -422,45 +591,95 @@ async def grpc_web_gateway(request: Request):
 
     handler = SUPPORTED_ENDPOINTS.get(endpoint)
     if not handler:
-        error_msg = f"Unsupported endpoint: {endpoint}"
+        # 调试信息：列出所有已注册的端点
+        available_endpoints = list(SUPPORTED_ENDPOINTS.keys())
+        logger.warning(f"未找到端点: {endpoint}, 已注册的端点: {available_endpoints}")
+        error_msg = f"Unsupported endpoint: {endpoint}. Available endpoints: {', '.join(available_endpoints[:10])}"
         return _build_error_response(error_msg, http_status=404, grpc_status=12)
+
+    # #region agent log
+    import json as json_lib
+    with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+        f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A,B,C,D", "location": "grpc_gateway.py:546", "message": "before handler call", "data": {"endpoint": endpoint, "has_handler": handler is not None, "payload_keys": list(payload.keys()) if isinstance(payload, dict) else []}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+    # #endregion
 
     try:
         result = await handler(payload)
         
-        # 如果 handler 已经处理了 JSONResponse，result 应该是字典
-        # 但为了安全，仍然检查 JSONResponse 对象
-        from fastapi.responses import JSONResponse
-        if isinstance(result, JSONResponse):
-            body = result.body
-            if isinstance(body, bytes):
-                data = json.loads(body.decode('utf-8'))
-            else:
-                data = body
-        else:
-            # 处理 Pydantic 模型和普通字典
-            try:
-                # 检查是否为 Pydantic BaseModel
-                if hasattr(result, 'model_dump'):
-                    # Pydantic v2
-                    data = result.model_dump()
-                elif hasattr(result, 'dict'):
-                    # Pydantic v1
-                    data = result.dict()
-                else:
-                    # 普通对象，尝试 JSON 序列化
-                    json_str = json.dumps(result, default=str, ensure_ascii=False)
-                    data = json.loads(json_str)
-            except (RecursionError, ValueError, TypeError) as json_err:
-                logger.error(f"JSON 序列化失败（可能是循环引用或数据过大）: {json_err}", exc_info=True)
-                # 降级方案：使用 jsonable_encoder
-                try:
-                    data = jsonable_encoder(result)
-                except Exception as encoder_err:
-                    logger.error(f"jsonable_encoder 也失败: {encoder_err}", exc_info=True)
-                    data = {"error": "数据序列化失败", "detail": str(json_err)}
+        # #region agent log
+        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A,B,C", "location": "grpc_gateway.py:550", "message": "after handler call", "data": {"result_is_none": result is None, "result_type": str(type(result)) if result else "None", "is_dict": isinstance(result, dict) if result else False}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+        # #endregion
         
-        status_code = 200
+        # 🔴 防御性检查：确保 result 不为 None
+        if result is None:
+            logger.error(f"Handler 返回了 None，endpoint: {endpoint}")
+            # #region agent log
+            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "grpc_gateway.py:562", "message": "result is None from handler", "data": {"endpoint": endpoint}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+            # #endregion
+            data = {"detail": "服务返回空结果，请稍后重试"}
+            status_code = 500
+        else:
+            # 如果 handler 已经处理了 JSONResponse，result 应该是字典
+            # 但为了安全，仍然检查 JSONResponse 对象
+            from fastapi.responses import JSONResponse
+            if isinstance(result, JSONResponse):
+                body = result.body
+                if isinstance(body, bytes):
+                    data = json.loads(body.decode('utf-8'))
+                else:
+                    data = body
+                # 🔴 防御性检查：确保 data 不为 None
+                if data is None:
+                    logger.error("JSONResponse body 解析后为 None")
+                    data = {"error": "响应解析失败", "detail": "JSONResponse body 为空"}
+            else:
+                # 处理 Pydantic 模型和普通字典
+                try:
+                    # 检查是否为 Pydantic BaseModel
+                    if hasattr(result, 'model_dump'):
+                        # Pydantic v2
+                        data = result.model_dump()
+                        # 🔴 防御性检查：确保 model_dump 返回值不为 None
+                        if data is None:
+                            logger.error("Pydantic v2 model_dump 返回了 None")
+                            data = {"error": "数据解析失败", "detail": "model_dump 返回空结果"}
+                    elif hasattr(result, 'dict'):
+                        # Pydantic v1
+                        data = result.dict()
+                        # 🔴 防御性检查：确保 dict() 返回值不为 None
+                        if data is None:
+                            logger.error("Pydantic v1 dict() 返回了 None")
+                            data = {"error": "数据解析失败", "detail": "dict() 返回空结果"}
+                    else:
+                        # 普通对象，尝试 JSON 序列化
+                        json_str = json.dumps(result, default=str, ensure_ascii=False)
+                        data = json.loads(json_str)
+                        # 🔴 防御性检查：确保 json.loads 返回值不为 None
+                        if data is None:
+                            logger.error("json.loads 返回了 None")
+                            data = {"error": "数据解析失败", "detail": "JSON 解析返回空结果"}
+                except (RecursionError, ValueError, TypeError) as json_err:
+                    logger.error(f"JSON 序列化失败（可能是循环引用或数据过大）: {json_err}", exc_info=True)
+                    # 降级方案：使用 jsonable_encoder
+                    try:
+                        data = jsonable_encoder(result)
+                        # 🔴 防御性检查：确保 jsonable_encoder 返回值不为 None
+                        if data is None:
+                            logger.error("jsonable_encoder 返回了 None")
+                            data = {"error": "数据序列化失败", "detail": "jsonable_encoder 返回空结果"}
+                    except Exception as encoder_err:
+                        logger.error(f"jsonable_encoder 也失败: {encoder_err}", exc_info=True)
+                        data = {"error": "数据序列化失败", "detail": str(json_err)}
+            
+            # 🔴 防御性检查：确保 data 在 try 块中被设置
+            if 'data' not in locals() or data is None:
+                logger.error("data 变量未初始化或为 None")
+                data = {"error": "数据处理失败", "detail": "数据变量未正确初始化"}
+                status_code = 500
+            else:
+                status_code = 200
     except HTTPException as exc:
         status_code = exc.status_code
         data = {"detail": exc.detail}
@@ -469,16 +688,60 @@ async def grpc_web_gateway(request: Request):
         status_code = 500
         data = {"detail": f"Internal error: {exc}"}
 
+    # #region agent log
+    import json as json_lib
+    with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+        f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C,E", "location": "grpc_gateway.py:545", "message": "before data None check", "data": {"data_is_none": data is None, "data_type": str(type(data)) if data else "None", "endpoint": endpoint, "status_code": status_code}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+    # #endregion
+
+    # 🔴 防御性检查：确保 data 不为 None
+    if data is None:
+        logger.error(f"gRPC-Web handler 返回了 None，endpoint: {endpoint}")
+        # #region agent log
+        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "grpc_gateway.py:550", "message": "data is None - setting default", "data": {"endpoint": endpoint}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+        # #endregion
+        data = {"detail": "服务返回空结果，请稍后重试"}
+        status_code = 500
+    
+    # 🔴 防御性检查：确保 data 是字典类型
+    if not isinstance(data, dict):
+        logger.error(f"gRPC-Web handler 返回了非字典类型: {type(data)}, endpoint: {endpoint}")
+        # #region agent log
+        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "grpc_gateway.py:557", "message": "data is not dict - converting", "data": {"data_type": str(type(data)), "endpoint": endpoint}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+        # #endregion
+        data = {"detail": f"服务返回了无效的数据类型: {type(data).__name__}"}
+        status_code = 500
+    
+    # #region agent log
+    with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+        f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C,E", "location": "grpc_gateway.py:562", "message": "before building response", "data": {"data_keys": list(data.keys()) if isinstance(data, dict) else [], "has_detail": "detail" in data if isinstance(data, dict) else False, "status_code": status_code}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+    # #endregion
+    
+    # 🔴 最终防御性检查：确保 data 是字典且不为 None（双重保险）
+    if not isinstance(data, dict) or data is None:
+        logger.error(f"最终检查：data 不是有效字典，endpoint: {endpoint}, type: {type(data)}")
+        data = {"detail": "服务返回了无效的数据"}
+        status_code = 500
+    
     success = 200 <= status_code < 300
+    # 🔴 安全获取 detail：确保 data 是字典
+    detail_value = data.get("detail", "") if isinstance(data, dict) else "未知错误"
+    
     response_payload = _encode_frontend_response(
         success=success,
         data_json=json.dumps(data, ensure_ascii=False) if data is not None else "",
-        error="" if success else str(data.get("detail", "")),
+        error="" if success else str(detail_value),
         status_code=status_code,
     )
 
     grpc_status = 0 if success else _map_http_to_grpc_status(status_code)
-    grpc_message = "" if success else str(data.get("detail", ""))
+    grpc_message = "" if success else str(detail_value)
+    # #region agent log
+    with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+        f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "E", "location": "grpc_gateway.py:572", "message": "response built", "data": {"success": success, "grpc_status": grpc_status, "has_grpc_message": bool(grpc_message)}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+    # #endregion
     return _build_grpc_web_response(response_payload, grpc_status, grpc_message)
 
 
@@ -576,7 +839,14 @@ def _encode_frontend_response(
 
 def _build_grpc_web_response(message: bytes, grpc_status: int, grpc_message: str) -> Response:
     data_frame = _wrap_frame(0x00, message)
-    trailer_payload = f"grpc-status:{grpc_status}\r\ngrpc-message:{grpc_message}\r\n".encode(
+    
+    # 修复：grpc-message 在 trailer 中需要使用 URL 编码来支持非 ASCII 字符
+    # 根据 gRPC-Web 规范，grpc-message 应该使用 URL 编码
+    import urllib.parse
+    encoded_message = urllib.parse.quote(grpc_message, safe='')
+    
+    # trailer payload 使用 ASCII 编码（因为已经 URL 编码了）
+    trailer_payload = f"grpc-status:{grpc_status}\r\ngrpc-message:{encoded_message}\r\n".encode(
         "ascii", errors="ignore"
     )
     trailer_frame = _wrap_frame(0x80, trailer_payload)
@@ -585,7 +855,8 @@ def _build_grpc_web_response(message: bytes, grpc_status: int, grpc_message: str
     headers = {
         **_grpc_cors_headers(),
         "grpc-status": str(grpc_status),
-        "grpc-message": grpc_message,
+        # HTTP header 中的 grpc-message 也需要 URL 编码
+        "grpc-message": encoded_message,
         "Content-Type": "application/grpc-web+proto",
     }
 

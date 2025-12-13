@@ -562,13 +562,13 @@ try:
 except ImportError as e:
     logger.warning(f"可观测性路由导入失败: {e}")
 
-# 挂载静态文件目录（前端文件）
-frontend_dir = os.path.join(project_root, "frontend")
-if os.path.exists(frontend_dir):
-    app.mount("/frontend", StaticFiles(directory=frontend_dir, html=True), name="frontend")
-    logger.info(f"✓ 静态文件目录已挂载: /frontend -> {frontend_dir}")
+# 挂载静态文件目录（本地前端文件）
+local_frontend_dir = os.path.join(project_root, "local_frontend")
+if os.path.exists(local_frontend_dir):
+    app.mount("/local_frontend", StaticFiles(directory=local_frontend_dir, html=True), name="local_frontend")
+    logger.info(f"✓ 本地前端目录已挂载: /local_frontend -> {local_frontend_dir}")
 else:
-    logger.warning(f"⚠ 前端目录不存在: {frontend_dir}")
+    logger.warning(f"⚠ 本地前端目录不存在: {local_frontend_dir}")
 
 
 @app.get("/")

@@ -22,7 +22,7 @@ services:
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./nginx/logs:/var/log/nginx
-      - ./frontend:/usr/share/nginx/html/frontend:ro
+      - ./local_frontend:/usr/share/nginx/html/local_frontend:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro  # SSL 证书目录（可选）
     restart: always
     networks:
