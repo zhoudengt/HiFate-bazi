@@ -645,6 +645,257 @@ git pull origin master
 - 🔒 **强制要求**：本地、GitHub、服务器三处代码必须完全一致
 - 📋 **必须检查**：每次部署前检查服务器代码与 GitHub 是否一致
 
+---
+
+### 🔄 代码一致性标准流程 【必须遵守】
+
+**标准流程（推荐）**：
+
+```
+1. 本地修改代码
+   ↓
+2. 本地测试验证
+   ↓
+3. 提交到 Git（git commit）
+   ↓
+4. 推送到 GitHub（git push）
+   ↓
+5. 增量部署到生产（bash deploy/scripts/incremental_deploy_production.sh）
+   ↓
+6. 验证生产环境
+   ↓
+7. 如果发现问题，回到步骤1重新修改
+```
+
+**详细步骤**：
+
+#### 步骤 1：本地修改代码
+
+```bash
+# 在本地 Mac 上修改代码
+vim server/api/v1/bazi.py
+vim local_frontend/fortune.html
+# ... 修改其他文件 ...
+```
+
+#### 步骤 2：本地测试验证
+
+```bash
+# 本地启动服务测试
+python3 server/start.py
+
+# 访问本地测试
+curl http://localhost:8001/health
+```
+
+#### 步骤 3：提交到 Git
+
+```bash
+# 查看修改
+git status
+
+# 添加修改的文件
+git add server/api/v1/bazi.py local_frontend/fortune.html
+
+# 提交
+git commit -m "fix: 修复首页404错误"
+```
+
+#### 步骤 4：推送到 GitHub
+
+```bash
+# 推送到远程
+git push origin master
+```
+
+#### 步骤 5：增量部署到生产
+
+```bash
+# 使用增量部署脚本（自动拉取GitHub代码并热更新）
+export SSH_PASSWORD="Yuanqizhan@163"
+bash deploy/scripts/incremental_deploy_production.sh
+```
+
+#### 步骤 6：验证生产环境
+
+```bash
+# 检查健康状态
+curl http://8.210.52.217:8001/health
+curl http://47.243.160.43:8001/health
+
+# 检查功能
+curl http://8.210.52.217/fortune.html
+```
+
+#### 步骤 7：如果发现问题，回到步骤1
+
+```bash
+# 如果生产环境有问题，回到本地修改
+# 重复步骤1-6，直到问题解决
+```
+
+---
+
+### ⚡ 快速修复流程（紧急情况，需确保代码一致性）
+
+**适用场景**：紧急修复，需要快速部署，但**必须确保代码一致性**
+
+**流程**：
+
+```
+1. 本地修改代码（确保与服务器代码一致）
+   ↓
+2. 直接部署到服务器（跳过GitHub，但必须验证一致性）
+   ↓
+3. 验证部署成功
+   ↓
+4. 立即提交到GitHub（确保代码一致性）
+   ↓
+5. 服务器拉取GitHub代码（确保最终一致）
+```
+
+**详细步骤**：
+
+#### 步骤 1：本地修改代码（确保与服务器代码一致）
+
+```bash
+# 1.1 先拉取服务器当前代码（确保本地与服务器一致）
+ssh root@8.210.52.217 "cd /opt/HiFate-bazi && git rev-parse HEAD" > /tmp/server_commit.txt
+git fetch origin
+git checkout $(cat /tmp/server_commit.txt)  # 切换到服务器当前版本
+
+# 1.2 在本地修改代码
+vim server/api/v1/bazi.py
+
+# 1.3 验证修改
+python3 -c "import ast; ast.parse(open('server/api/v1/bazi.py').read())"
+```
+
+#### 步骤 2：直接部署到服务器（跳过GitHub，但必须验证一致性）
+
+```bash
+# 2.1 创建临时部署脚本
+cat > /tmp/quick_deploy.sh << 'EOF'
+#!/bin/bash
+# 快速部署脚本 - 直接部署代码到服务器，确保一致性
+
+SERVER_IP="8.210.52.217"
+PROJECT_DIR="/opt/HiFate-bazi"
+LOCAL_FILE="$1"
+REMOTE_FILE="$2"
+
+# 备份服务器原文件
+ssh root@$SERVER_IP "cd $PROJECT_DIR && cp $REMOTE_FILE ${REMOTE_FILE}.backup.$(date +%s)"
+
+# 上传文件
+scp $LOCAL_FILE root@$SERVER_IP:$PROJECT_DIR/$REMOTE_FILE
+
+# 验证文件一致性
+LOCAL_HASH=$(md5 -q $LOCAL_FILE)
+REMOTE_HASH=$(ssh root@$SERVER_IP "md5sum $PROJECT_DIR/$REMOTE_FILE | cut -d' ' -f1")
+
+if [ "$LOCAL_HASH" != "$REMOTE_HASH" ]; then
+    echo "❌ 文件一致性验证失败"
+    exit 1
+fi
+
+echo "✅ 文件一致性验证通过"
+
+# 触发热更新
+curl -X POST http://$SERVER_IP:8001/api/v1/hot-reload/check
+EOF
+
+chmod +x /tmp/quick_deploy.sh
+
+# 2.2 部署文件
+/tmp/quick_deploy.sh local_frontend/fortune.html local_frontend/fortune.html
+```
+
+#### 步骤 3：验证部署成功
+
+```bash
+# 检查健康状态
+curl http://8.210.52.217:8001/health
+
+# 检查功能
+curl http://8.210.52.217/fortune.html
+```
+
+#### 步骤 4：立即提交到GitHub（确保代码一致性）
+
+```bash
+# 4.1 提交修改
+git add local_frontend/fortune.html
+git commit -m "fix: 修复首页404错误（紧急修复）"
+
+# 4.2 推送到GitHub
+git push origin master
+```
+
+#### 步骤 5：服务器拉取GitHub代码（确保最终一致）
+
+```bash
+# 5.1 在服务器上拉取GitHub代码
+ssh root@8.210.52.217 "cd /opt/HiFate-bazi && git pull origin master"
+
+# 5.2 验证服务器代码与GitHub一致
+SERVER_COMMIT=$(ssh root@8.210.52.217 "cd /opt/HiFate-bazi && git rev-parse HEAD")
+LOCAL_COMMIT=$(git rev-parse HEAD)
+
+if [ "$SERVER_COMMIT" != "$LOCAL_COMMIT" ]; then
+    echo "❌ 代码一致性验证失败"
+    exit 1
+fi
+
+echo "✅ 代码一致性验证通过"
+```
+
+**快速修复流程检查清单**：
+
+- [ ] 本地代码与服务器代码一致（步骤1.1）
+- [ ] 文件一致性验证通过（步骤2.2）
+- [ ] 部署后功能验证通过（步骤3）
+- [ ] 已提交到GitHub（步骤4）
+- [ ] 服务器代码与GitHub一致（步骤5.2）
+
+**重要提醒**：
+
+⚠️ **快速修复流程仅用于紧急情况**，标准流程仍然是推荐方式！
+
+⚠️ **即使使用快速修复流程，也必须确保代码一致性**：
+- 部署前验证本地代码与服务器代码一致
+- 部署后立即提交到GitHub
+- 服务器最终必须与GitHub代码一致
+
+---
+
+### 📋 代码一致性检查工具
+
+**创建一致性检查脚本**：
+
+```bash
+# scripts/check_code_consistency.sh
+#!/bin/bash
+# 检查本地、GitHub、服务器代码一致性
+
+LOCAL_COMMIT=$(git rev-parse HEAD)
+GITHUB_COMMIT=$(git ls-remote origin master | cut -f1)
+SERVER_COMMIT=$(ssh root@8.210.52.217 "cd /opt/HiFate-bazi && git rev-parse HEAD" 2>/dev/null || echo "无法获取")
+
+echo "代码版本一致性检查："
+echo "  本地:  $LOCAL_COMMIT"
+echo "  GitHub: $GITHUB_COMMIT"
+echo "  服务器: $SERVER_COMMIT"
+
+if [ "$LOCAL_COMMIT" = "$GITHUB_COMMIT" ] && [ "$GITHUB_COMMIT" = "$SERVER_COMMIT" ]; then
+    echo "✅ 代码一致性检查通过"
+    exit 0
+else
+    echo "❌ 代码一致性检查失败"
+    exit 1
+fi
+```
+
 ### 1. 最小影响原则 【最重要】
 - **坚决不可改动与之无关的代码**
 - 修改会引起其他功能变化时，**必须先咨询用户**
