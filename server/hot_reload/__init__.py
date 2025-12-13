@@ -34,6 +34,8 @@ from .microservice_reloader import (
     get_all_microservice_reloaders,
     reload_all_microservices,
     get_all_microservice_status,
+    get_dependent_services,
+    trigger_dependent_services,
 )
 from .cluster_synchronizer import (
     ClusterSynchronizer,
@@ -68,6 +70,8 @@ __all__ = [
     'get_all_microservice_reloaders',
     'reload_all_microservices',
     'get_all_microservice_status',
+    'get_dependent_services',
+    'trigger_dependent_services',
     
     # 集群同步
     'ClusterSynchronizer',

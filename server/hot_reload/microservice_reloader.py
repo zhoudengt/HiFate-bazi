@@ -978,3 +978,66 @@ def get_all_microservice_status() -> Dict[str, Dict]:
         for service_name, reloader in _microservice_reloaders.items()
     }
 
+
+def get_dependent_services(changed_file: str) -> List[str]:
+    """
+    获取依赖指定文件的微服务列表
+    
+    Args:
+        changed_file: 变化的文件路径（相对于项目根目录）
+    
+    Returns:
+        依赖该文件的微服务名称列表
+    """
+    dependent_services = set()
+    
+    # 检查文件路径，确定依赖关系
+    for module_pattern, services in DEPENDENCY_MAP.items():
+        if module_pattern in changed_file or changed_file.startswith(module_pattern):
+            dependent_services.update(services)
+    
+    # 如果文件在 src/ 目录下，所有微服务都可能依赖
+    if changed_file.startswith('src/'):
+        dependent_services.update(['bazi_core', 'bazi_fortune', 'bazi_analyzer', 'bazi_rule', 
+                                   'fortune_analysis', 'fortune_rule', 'intent_service'])
+    
+    return list(dependent_services)
+
+
+def trigger_dependent_services(changed_file: str) -> bool:
+    """
+    触发依赖指定文件的微服务热更新
+    
+    Args:
+        changed_file: 变化的文件路径
+    
+    Returns:
+        是否成功触发
+    """
+    dependent_services = get_dependent_services(changed_file)
+    
+    if not dependent_services:
+        return False
+    
+    print(f"🔄 检测到共享文件变化: {changed_file}")
+    print(f"   → 触发依赖服务热更新: {', '.join(dependent_services)}")
+    
+    success_count = 0
+    for service_name in dependent_services:
+        if service_name in _microservice_reloaders:
+            reloader = _microservice_reloaders[service_name]
+            try:
+                # 强制检查并重新加载
+                if reloader._check_and_reload():
+                    success_count += 1
+                    print(f"   ✓ {service_name} 热更新成功")
+                else:
+                    print(f"   ⚠ {service_name} 无需更新")
+            except Exception as e:
+                print(f"   ❌ {service_name} 热更新失败: {e}")
+        else:
+            print(f"   ⚠ {service_name} 未注册")
+    
+    print(f"📊 依赖服务热更新完成: {success_count}/{len(dependent_services)} 成功")
+    return success_count > 0
+
