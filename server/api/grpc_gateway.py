@@ -117,18 +117,75 @@ def _reload_endpoints():
     # 重新导入模块以触发装饰器执行
     try:
         import importlib
-        import server.api.grpc_gateway as gateway_module
+        import sys
         
         # ⭐ 关键修复：重新加载模块前，先确保模块在 sys.modules 中
         # 如果模块不在 sys.modules 中，装饰器不会执行
-        import sys
         if 'server.api.grpc_gateway' not in sys.modules:
             import server.api.grpc_gateway
         
         # 重新加载模块（触发装饰器 @_register 重新执行）
+        gateway_module = sys.modules['server.api.grpc_gateway']
         importlib.reload(gateway_module)
         
-        # 重新获取 SUPPORTED_ENDPOINTS（装饰器已执行）
+        # ⭐ 关键修复：重新加载后，装饰器应该已经执行
+        # 但如果端点仍未注册，手动重新注册关键端点
+        endpoint_count = len(SUPPORTED_ENDPOINTS)
+        logger.info(f"重新加载后端点数量: {endpoint_count}")
+        
+        # 如果端点数量为0或缺少关键端点，手动重新注册
+        key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong']
+        missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
+        
+        if endpoint_count == 0 or missing:
+            logger.warning(f"⚠️  端点未正确注册（总数: {endpoint_count}, 缺失: {missing}），尝试手动注册...")
+            
+            # 手动重新注册关键端点
+            try:
+                # 重新导入关键函数
+                from server.api.v1.bazi import BaziInterfaceRequest, ShengongMinggongRequest, get_shengong_minggong
+                from server.services.bazi_interface_service import BaziInterfaceService
+                
+                # 手动注册 /bazi/interface
+                async def _handle_bazi_interface(payload: Dict[str, Any]):
+                    import asyncio
+                    request_model = BaziInterfaceRequest(**payload)
+                    loop = asyncio.get_event_loop()
+                    result = await loop.run_in_executor(
+                        None,
+                        BaziInterfaceService.generate_interface_full,
+                        request_model.solar_date,
+                        request_model.solar_time,
+                        request_model.gender,
+                        request_model.name or "",
+                        request_model.location or "未知地",
+                        request_model.latitude or 39.00,
+                        request_model.longitude or 120.00
+                    )
+                    return {"success": True, "data": result}
+                
+                # 手动注册 /bazi/shengong-minggong
+                async def _handle_shengong_minggong(payload: Dict[str, Any]):
+                    from fastapi import Request
+                    from unittest.mock import MagicMock
+                    request_model = ShengongMinggongRequest(**payload)
+                    mock_request = MagicMock(spec=Request)
+                    result = await get_shengong_minggong(request_model, mock_request)
+                    if hasattr(result, 'model_dump'):
+                        return result.model_dump()
+                    elif hasattr(result, 'dict'):
+                        return result.dict()
+                    return result
+                
+                # 注册到 SUPPORTED_ENDPOINTS
+                SUPPORTED_ENDPOINTS['/bazi/interface'] = _handle_bazi_interface
+                SUPPORTED_ENDPOINTS['/bazi/shengong-minggong'] = _handle_shengong_minggong
+                
+                logger.info(f"✅ 手动注册关键端点成功")
+            except Exception as e:
+                logger.error(f"❌ 手动注册端点失败: {e}", exc_info=True)
+        
+        # 重新获取端点数量
         endpoint_count = len(SUPPORTED_ENDPOINTS)
         logger.info(f"✅ gRPC 端点已重新注册，当前端点数量: {endpoint_count}")
         
