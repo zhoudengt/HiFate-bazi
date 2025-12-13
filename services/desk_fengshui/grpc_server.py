@@ -169,28 +169,64 @@ class DeskFengshuiServicer:
 
 
 def serve(port: int = 9010):
-    """启动 gRPC 服务器"""
+    """启动 gRPC 服务器（支持热更新）"""
     if not desk_fengshui_pb2_grpc:
         logger.error("❌ proto文件未生成，无法启动服务")
         return
     
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    
-    # 添加服务
-    servicer = DeskFengshuiServicer()
-    desk_fengshui_pb2_grpc.add_DeskFengshuiServiceServicer_to_server(servicer, server)
-    
-    # 绑定端口
-    server.add_insecure_port(f'[::]:{port}')
-    
-    logger.info(f"🚀 办公桌风水服务启动在端口 {port}")
-    server.start()
-    
     try:
-        server.wait_for_termination()
-    except KeyboardInterrupt:
-        logger.info("服务停止")
-        server.stop(0)
+        from server.hot_reload.microservice_reloader import (
+            create_hot_reload_server,
+            register_microservice_reloader
+        )
+        
+        server_options = [
+            ('grpc.keepalive_time_ms', 300000),
+            ('grpc.keepalive_timeout_ms', 20000),
+        ]
+        
+        server, reloader = create_hot_reload_server(
+            service_name="desk_fengshui",
+            module_path="services.desk_fengshui.grpc_server",
+            servicer_class_name="DeskFengshuiServicer",
+            add_servicer_to_server_func=desk_fengshui_pb2_grpc.add_DeskFengshuiServiceServicer_to_server,
+            port=port,
+            server_options=server_options,
+            max_workers=10,
+            check_interval=30
+        )
+        
+        register_microservice_reloader("desk_fengshui", reloader)
+        reloader.start()
+        
+        # create_hot_reload_server 已经绑定了端口，不需要再次绑定
+        logger.info(f"🚀 办公桌风水服务启动在端口 {port} (热更新已启用)")
+        server.start()
+        
+        try:
+            server.wait_for_termination()
+        except KeyboardInterrupt:
+            logger.info("服务停止")
+            reloader.stop()
+            server.stop(0)
+            
+    except ImportError:
+        # 降级到传统模式
+        server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        
+        servicer = DeskFengshuiServicer()
+        desk_fengshui_pb2_grpc.add_DeskFengshuiServiceServicer_to_server(servicer, server)
+        
+        server.add_insecure_port(f'[::]:{port}')
+        
+        logger.info(f"🚀 办公桌风水服务启动在端口 {port} (传统模式)")
+        server.start()
+        
+        try:
+            server.wait_for_termination()
+        except KeyboardInterrupt:
+            logger.info("服务停止")
+            server.stop(0)
 
 
 if __name__ == "__main__":

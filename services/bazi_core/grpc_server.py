@@ -135,36 +135,87 @@ class BaziCoreServicer(bazi_core_pb2_grpc.BaziCoreServiceServicer):
 
 
 def serve(port: int = 9001):
-    """启动 gRPC 服务器"""
-    # 增加线程池大小以处理更多并发请求
-    # 配置 keepalive 选项，避免 "Too many pings" 错误
-    server_options = [
-        ('grpc.keepalive_time_ms', 300000),  # 5分钟
-        ('grpc.keepalive_timeout_ms', 20000),  # 20秒
-        ('grpc.keepalive_permit_without_calls', False),
-        ('grpc.http2.max_pings_without_data', 2),
-        ('grpc.http2.min_time_between_pings_ms', 60000),  # 60秒
-        ('grpc.http2.min_ping_interval_without_data_ms', 300000),  # 5分钟
-    ]
-    
-    server = grpc.server(
-        futures.ThreadPoolExecutor(max_workers=20),
-        options=server_options
-    )
-    bazi_core_pb2_grpc.add_BaziCoreServiceServicer_to_server(BaziCoreServicer(), server)
-    
-    listen_addr = f"localhost:{port}"  # 使用 localhost 避免权限问题
-    server.add_insecure_port(listen_addr)
-    
-    server.start()
-    print(f"✅ Bazi Core gRPC 服务已启动，监听端口: {port}")
-    
+    """启动 gRPC 服务器（支持热更新）"""
     try:
-        server.wait_for_termination()
-    except KeyboardInterrupt:
-        print("\n>>> 正在停止服务...")
-        server.stop(grace=5)
-        print("✅ 服务已停止")
+        # 尝试使用热更新模式
+        from server.hot_reload.microservice_reloader import (
+            create_hot_reload_server,
+            register_microservice_reloader
+        )
+        
+        # 服务器选项
+        server_options = [
+            ('grpc.keepalive_time_ms', 300000),  # 5分钟
+            ('grpc.keepalive_timeout_ms', 20000),  # 20秒
+            ('grpc.keepalive_permit_without_calls', False),
+            ('grpc.http2.max_pings_without_data', 2),
+            ('grpc.http2.min_time_between_pings_ms', 60000),  # 60秒
+            ('grpc.http2.min_ping_interval_without_data_ms', 300000),  # 5分钟
+        ]
+        
+        # 创建支持热更新的服务器
+        # 使用 localhost 避免权限问题（某些环境可能需要）
+        listen_addr = f"localhost:{port}"
+        server, reloader = create_hot_reload_server(
+            service_name="bazi_core",
+            module_path="services.bazi_core.grpc_server",
+            servicer_class_name="BaziCoreServicer",
+            add_servicer_to_server_func=bazi_core_pb2_grpc.add_BaziCoreServiceServicer_to_server,
+            port=port,
+            server_options=server_options,
+            max_workers=20,
+            check_interval=30,  # 30秒检查一次
+            listen_addr=listen_addr  # 使用 localhost
+        )
+        
+        # 注册热更新器（供主服务查询）
+        register_microservice_reloader("bazi_core", reloader)
+        
+        # 启动热更新监控
+        reloader.start()
+        
+        server.start()
+        print(f"✅ Bazi Core gRPC 服务已启动（热更新已启用），监听端口: {port}")
+        
+        try:
+            server.wait_for_termination()
+        except KeyboardInterrupt:
+            print("\n>>> 正在停止服务...")
+            reloader.stop()
+            server.stop(grace=5)
+            print("✅ 服务已停止")
+            
+    except ImportError as e:
+        # 如果热更新模块不可用，使用传统模式（降级）
+        print(f"⚠️ 热更新模块不可用，使用传统模式: {e}")
+        
+        server_options = [
+            ('grpc.keepalive_time_ms', 300000),
+            ('grpc.keepalive_timeout_ms', 20000),
+            ('grpc.keepalive_permit_without_calls', False),
+            ('grpc.http2.max_pings_without_data', 2),
+            ('grpc.http2.min_time_between_pings_ms', 60000),
+            ('grpc.http2.min_ping_interval_without_data_ms', 300000),
+        ]
+        
+        server = grpc.server(
+            futures.ThreadPoolExecutor(max_workers=20),
+            options=server_options
+        )
+        bazi_core_pb2_grpc.add_BaziCoreServiceServicer_to_server(BaziCoreServicer(), server)
+        
+        listen_addr = f"localhost:{port}"
+        server.add_insecure_port(listen_addr)
+        
+        server.start()
+        print(f"✅ Bazi Core gRPC 服务已启动（传统模式），监听端口: {port}")
+        
+        try:
+            server.wait_for_termination()
+        except KeyboardInterrupt:
+            print("\n>>> 正在停止服务...")
+            server.stop(grace=5)
+            print("✅ 服务已停止")
 
 
 if __name__ == "__main__":

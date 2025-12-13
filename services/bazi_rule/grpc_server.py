@@ -169,40 +169,82 @@ class BaziRuleServicer(bazi_rule_pb2_grpc.BaziRuleServiceServicer):
 
 
 def serve(port: int = 9004):
-    """启动 gRPC 服务器"""
-    # 增加线程池大小以处理更多并发请求，规则匹配是CPU密集型任务
-    # 配置 keepalive 选项，避免 "Too many pings" 错误
-    # 配置消息大小限制，支持大响应（462条规则可能产生较大的响应）
-    server_options = [
-        ('grpc.keepalive_time_ms', 300000),  # 5分钟
-        ('grpc.keepalive_timeout_ms', 20000),  # 20秒
-        ('grpc.keepalive_permit_without_calls', False),
-        ('grpc.http2.max_pings_without_data', 2),
-        ('grpc.http2.min_time_between_pings_ms', 60000),  # 60秒
-        ('grpc.http2.min_ping_interval_without_data_ms', 300000),  # 5分钟
-        # 增加消息大小限制（默认4MB，增加到50MB以支持大量规则）
-        ('grpc.max_send_message_length', 50 * 1024 * 1024),  # 50MB
-        ('grpc.max_receive_message_length', 50 * 1024 * 1024),  # 50MB
-    ]
-    
-    server = grpc.server(
-        futures.ThreadPoolExecutor(max_workers=20),
-        options=server_options
-    )
-    bazi_rule_pb2_grpc.add_BaziRuleServiceServicer_to_server(BaziRuleServicer(), server)
-    
-    listen_addr = f"[::]:{port}"
-    server.add_insecure_port(listen_addr)
-    
-    server.start()
-    print(f"✅ Bazi Rule gRPC 服务已启动，监听端口: {port}")
-    
+    """启动 gRPC 服务器（支持热更新）"""
     try:
-        server.wait_for_termination()
-    except KeyboardInterrupt:
-        print("\n>>> 正在停止服务...")
-        server.stop(grace=5)
-        print("✅ 服务已停止")
+        from server.hot_reload.microservice_reloader import (
+            create_hot_reload_server,
+            register_microservice_reloader
+        )
+        
+        server_options = [
+            ('grpc.keepalive_time_ms', 300000),
+            ('grpc.keepalive_timeout_ms', 20000),
+            ('grpc.keepalive_permit_without_calls', False),
+            ('grpc.http2.max_pings_without_data', 2),
+            ('grpc.http2.min_time_between_pings_ms', 60000),
+            ('grpc.http2.min_ping_interval_without_data_ms', 300000),
+            # 增加消息大小限制（默认4MB，增加到50MB以支持大量规则）
+            ('grpc.max_send_message_length', 50 * 1024 * 1024),  # 50MB
+            ('grpc.max_receive_message_length', 50 * 1024 * 1024),  # 50MB
+        ]
+        
+        server, reloader = create_hot_reload_server(
+            service_name="bazi_rule",
+            module_path="services.bazi_rule.grpc_server",
+            servicer_class_name="BaziRuleServicer",
+            add_servicer_to_server_func=bazi_rule_pb2_grpc.add_BaziRuleServiceServicer_to_server,
+            port=port,
+            server_options=server_options,
+            max_workers=20,
+            check_interval=30
+        )
+        
+        register_microservice_reloader("bazi_rule", reloader)
+        reloader.start()
+        
+        # create_hot_reload_server 已经绑定了端口，不需要再次绑定
+        server.start()
+        print(f"✅ Bazi Rule gRPC 服务已启动（热更新已启用），监听端口: {port}")
+        
+        try:
+            server.wait_for_termination()
+        except KeyboardInterrupt:
+            print("\n>>> 正在停止服务...")
+            reloader.stop()
+            server.stop(grace=5)
+            print("✅ 服务已停止")
+            
+    except ImportError:
+        # 降级到传统模式
+        server_options = [
+            ('grpc.keepalive_time_ms', 300000),
+            ('grpc.keepalive_timeout_ms', 20000),
+            ('grpc.keepalive_permit_without_calls', False),
+            ('grpc.http2.max_pings_without_data', 2),
+            ('grpc.http2.min_time_between_pings_ms', 60000),
+            ('grpc.http2.min_ping_interval_without_data_ms', 300000),
+            ('grpc.max_send_message_length', 50 * 1024 * 1024),
+            ('grpc.max_receive_message_length', 50 * 1024 * 1024),
+        ]
+        
+        server = grpc.server(
+            futures.ThreadPoolExecutor(max_workers=20),
+            options=server_options
+        )
+        bazi_rule_pb2_grpc.add_BaziRuleServiceServicer_to_server(BaziRuleServicer(), server)
+        
+        listen_addr = f"[::]:{port}"
+        server.add_insecure_port(listen_addr)
+        
+        server.start()
+        print(f"✅ Bazi Rule gRPC 服务已启动（传统模式），监听端口: {port}")
+        
+        try:
+            server.wait_for_termination()
+        except KeyboardInterrupt:
+            print("\n>>> 正在停止服务...")
+            server.stop(grace=5)
+            print("✅ 服务已停止")
 
 
 if __name__ == "__main__":

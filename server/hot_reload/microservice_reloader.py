@@ -372,7 +372,8 @@ def create_hot_reload_server(
     port: int,
     server_options: List = None,
     max_workers: int = 20,
-    check_interval: int = 30
+    check_interval: int = 30,
+    listen_addr: str = None
 ):
     """
     创建支持热更新的 gRPC 服务器
@@ -386,6 +387,7 @@ def create_hot_reload_server(
         server_options: gRPC 服务器选项
         max_workers: 线程池大小
         check_interval: 热更新检查间隔
+        listen_addr: 监听地址（默认: [::]:port，可自定义如 localhost:port）
     
     Returns:
         tuple: (server, reloader)
@@ -430,8 +432,9 @@ def create_hot_reload_server(
     # 注册动态 Servicer
     add_servicer_to_server_func(dynamic_servicer, server)
     
-    # 绑定端口
-    listen_addr = f"[::]:{port}"
+    # 绑定端口（如果没有指定地址，使用默认的 [::]:port）
+    if listen_addr is None:
+        listen_addr = f"[::]:{port}"
     server.add_insecure_port(listen_addr)
     
     return server, reloader

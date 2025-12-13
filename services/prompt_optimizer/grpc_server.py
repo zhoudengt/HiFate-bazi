@@ -164,24 +164,69 @@ class PromptOptimizerServiceImpl(optimizer_pb2_grpc.PromptOptimizerServiceServic
 
 
 def serve():
-    """启动服务器"""
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    optimizer_pb2_grpc.add_PromptOptimizerServiceServicer_to_server(
-        PromptOptimizerServiceImpl(), server
-    )
-    
-    server_address = f'{SERVICE_HOST}:{SERVICE_PORT}'
-    server.add_insecure_port(server_address)
-    
-    logger.info(f"Prompt Optimizer Service starting on {server_address}...")
-    server.start()
-    logger.info(f"Prompt Optimizer Service is running on {server_address}")
-    
+    """启动服务器（支持热更新）"""
     try:
-        server.wait_for_termination()
-    except KeyboardInterrupt:
-        logger.info("Prompt Optimizer Service shutting down...")
-        server.stop(0)
+        from server.hot_reload.microservice_reloader import (
+            create_hot_reload_server,
+            register_microservice_reloader
+        )
+        
+        server_options = [
+            ('grpc.keepalive_time_ms', 300000),
+            ('grpc.keepalive_timeout_ms', 20000),
+        ]
+        
+        server, reloader = create_hot_reload_server(
+            service_name="prompt_optimizer",
+            module_path="services.prompt_optimizer.grpc_server",
+            servicer_class_name="PromptOptimizerServiceImpl",
+            add_servicer_to_server_func=optimizer_pb2_grpc.add_PromptOptimizerServiceServicer_to_server,
+            port=SERVICE_PORT,
+            server_options=server_options,
+            max_workers=10,
+            check_interval=30
+        )
+        
+        register_microservice_reloader("prompt_optimizer", reloader)
+        reloader.start()
+        
+        # create_hot_reload_server 已经绑定了端口（使用 [::]:port）
+        # 如果需要使用 SERVICE_HOST，需要重新绑定
+        server_address = f'{SERVICE_HOST}:{SERVICE_PORT}'
+        if SERVICE_HOST != "0.0.0.0":
+            # 如果指定了特定主机，需要重新绑定
+            server.add_insecure_port(server_address)
+        
+        logger.info(f"Prompt Optimizer Service starting on {server_address} (热更新已启用)...")
+        server.start()
+        logger.info(f"Prompt Optimizer Service is running on {server_address}")
+        
+        try:
+            server.wait_for_termination()
+        except KeyboardInterrupt:
+            logger.info("Prompt Optimizer Service shutting down...")
+            reloader.stop()
+            server.stop(0)
+            
+    except ImportError:
+        # 降级到传统模式
+        server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        optimizer_pb2_grpc.add_PromptOptimizerServiceServicer_to_server(
+            PromptOptimizerServiceImpl(), server
+        )
+        
+        server_address = f'{SERVICE_HOST}:{SERVICE_PORT}'
+        server.add_insecure_port(server_address)
+        
+        logger.info(f"Prompt Optimizer Service starting on {server_address} (传统模式)...")
+        server.start()
+        logger.info(f"Prompt Optimizer Service is running on {server_address}")
+        
+        try:
+            server.wait_for_termination()
+        except KeyboardInterrupt:
+            logger.info("Prompt Optimizer Service shutting down...")
+            server.stop(0)
 
 
 if __name__ == '__main__':

@@ -248,31 +248,76 @@ class IntentServiceImpl(intent_pb2_grpc.IntentServiceServicer):
 
 
 def serve():
-    """启动 gRPC 服务器"""
-    server = grpc.server(
-        futures.ThreadPoolExecutor(max_workers=10),
-        options=[
+    """启动 gRPC 服务器（支持热更新）"""
+    try:
+        from server.hot_reload.microservice_reloader import (
+            create_hot_reload_server,
+            register_microservice_reloader
+        )
+        
+        server_options = [
             ('grpc.max_send_message_length', 50 * 1024 * 1024),
             ('grpc.max_receive_message_length', 50 * 1024 * 1024),
         ]
-    )
-    
-    intent_pb2_grpc.add_IntentServiceServicer_to_server(
-        IntentServiceImpl(), server
-    )
-    
-    server_address = f'{SERVICE_HOST}:{SERVICE_PORT}'
-    server.add_insecure_port(server_address)
-    
-    logger.info(f"Intent Service starting on {server_address}...")
-    server.start()
-    logger.info(f"Intent Service is running on {server_address}")
-    
-    try:
-        server.wait_for_termination()
-    except KeyboardInterrupt:
-        logger.info("Intent Service shutting down...")
-        server.stop(0)
+        
+        server, reloader = create_hot_reload_server(
+            service_name="intent_service",
+            module_path="services.intent_service.grpc_server",
+            servicer_class_name="IntentServiceImpl",
+            add_servicer_to_server_func=intent_pb2_grpc.add_IntentServiceServicer_to_server,
+            port=SERVICE_PORT,
+            server_options=server_options,
+            max_workers=10,
+            check_interval=30
+        )
+        
+        register_microservice_reloader("intent_service", reloader)
+        reloader.start()
+        
+        # create_hot_reload_server 已经绑定了端口（使用 [::]:port）
+        # 如果需要使用 SERVICE_HOST，需要重新绑定
+        server_address = f'{SERVICE_HOST}:{SERVICE_PORT}'
+        if SERVICE_HOST != "0.0.0.0":
+            # 如果指定了特定主机，需要重新绑定
+            server.add_insecure_port(server_address)
+        
+        logger.info(f"Intent Service starting on {server_address} (热更新已启用)...")
+        server.start()
+        logger.info(f"Intent Service is running on {server_address}")
+        
+        try:
+            server.wait_for_termination()
+        except KeyboardInterrupt:
+            logger.info("Intent Service shutting down...")
+            reloader.stop()
+            server.stop(0)
+            
+    except ImportError:
+        # 降级到传统模式
+        server = grpc.server(
+            futures.ThreadPoolExecutor(max_workers=10),
+            options=[
+                ('grpc.max_send_message_length', 50 * 1024 * 1024),
+                ('grpc.max_receive_message_length', 50 * 1024 * 1024),
+            ]
+        )
+        
+        intent_pb2_grpc.add_IntentServiceServicer_to_server(
+            IntentServiceImpl(), server
+        )
+        
+        server_address = f'{SERVICE_HOST}:{SERVICE_PORT}'
+        server.add_insecure_port(server_address)
+        
+        logger.info(f"Intent Service starting on {server_address} (传统模式)...")
+        server.start()
+        logger.info(f"Intent Service is running on {server_address}")
+        
+        try:
+            server.wait_for_termination()
+        except KeyboardInterrupt:
+            logger.info("Intent Service shutting down...")
+            server.stop(0)
 
 
 if __name__ == '__main__':

@@ -528,33 +528,75 @@ class FortuneRuleServicer(fortune_rule_pb2_grpc.FortuneRuleServiceServicer):
 
 
 def serve(port: int = 9007):
-    """启动 gRPC 服务器"""
-    server_options = [
-        ('grpc.keepalive_time_ms', 300000),
-        ('grpc.keepalive_timeout_ms', 20000),
-        ('grpc.keepalive_permit_without_calls', False),
-        ('grpc.http2.max_pings_without_data', 2),
-        ('grpc.http2.min_time_between_pings_ms', 60000),
-    ]
-    
-    server = grpc.server(
-        futures.ThreadPoolExecutor(max_workers=10),
-        options=server_options
-    )
-    fortune_rule_pb2_grpc.add_FortuneRuleServiceServicer_to_server(FortuneRuleServicer(), server)
-    
-    listen_addr = f"[::]:{port}"
-    server.add_insecure_port(listen_addr)
-    
-    server.start()
-    print(f"✅ Fortune Rule gRPC 服务已启动，监听端口: {port}")
-    
+    """启动 gRPC 服务器（支持热更新）"""
     try:
-        server.wait_for_termination()
-    except KeyboardInterrupt:
-        print("\n>>> 正在停止服务...")
-        server.stop(grace=5)
-        print("✅ 服务已停止")
+        from server.hot_reload.microservice_reloader import (
+            create_hot_reload_server,
+            register_microservice_reloader
+        )
+        
+        server_options = [
+            ('grpc.keepalive_time_ms', 300000),
+            ('grpc.keepalive_timeout_ms', 20000),
+            ('grpc.keepalive_permit_without_calls', False),
+            ('grpc.http2.max_pings_without_data', 2),
+            ('grpc.http2.min_time_between_pings_ms', 60000),
+        ]
+        
+        server, reloader = create_hot_reload_server(
+            service_name="fortune_rule",
+            module_path="services.fortune_rule.grpc_server",
+            servicer_class_name="FortuneRuleServicer",
+            add_servicer_to_server_func=fortune_rule_pb2_grpc.add_FortuneRuleServiceServicer_to_server,
+            port=port,
+            server_options=server_options,
+            max_workers=10,
+            check_interval=30
+        )
+        
+        register_microservice_reloader("fortune_rule", reloader)
+        reloader.start()
+        
+        # create_hot_reload_server 已经绑定了端口，不需要再次绑定
+        server.start()
+        print(f"✅ Fortune Rule gRPC 服务已启动（热更新已启用），监听端口: {port}")
+        
+        try:
+            server.wait_for_termination()
+        except KeyboardInterrupt:
+            print("\n>>> 正在停止服务...")
+            reloader.stop()
+            server.stop(grace=5)
+            print("✅ 服务已停止")
+            
+    except ImportError:
+        # 降级到传统模式
+        server_options = [
+            ('grpc.keepalive_time_ms', 300000),
+            ('grpc.keepalive_timeout_ms', 20000),
+            ('grpc.keepalive_permit_without_calls', False),
+            ('grpc.http2.max_pings_without_data', 2),
+            ('grpc.http2.min_time_between_pings_ms', 60000),
+        ]
+        
+        server = grpc.server(
+            futures.ThreadPoolExecutor(max_workers=10),
+            options=server_options
+        )
+        fortune_rule_pb2_grpc.add_FortuneRuleServiceServicer_to_server(FortuneRuleServicer(), server)
+        
+        listen_addr = f"[::]:{port}"
+        server.add_insecure_port(listen_addr)
+        
+        server.start()
+        print(f"✅ Fortune Rule gRPC 服务已启动（传统模式），监听端口: {port}")
+        
+        try:
+            server.wait_for_termination()
+        except KeyboardInterrupt:
+            print("\n>>> 正在停止服务...")
+            server.stop(grace=5)
+            print("✅ 服务已停止")
 
 
 if __name__ == "__main__":
