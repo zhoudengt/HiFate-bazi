@@ -241,8 +241,17 @@ echo ""
 echo -e "${BLUE}📥 第三步：拉取最新代码${NC}"
 echo "----------------------------------------"
 
-# 在 Node1 上拉取代码
+# 在 Node1 上拉取代码（确保与 GitHub 一致）
 echo "📥 在 Node1 上拉取代码..."
+echo "⚠️  检查服务器本地更改（禁止直接在服务器上修改代码）..."
+LOCAL_CHANGES_NODE1=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git status --porcelain" 2>/dev/null || echo "")
+if [ -n "$LOCAL_CHANGES_NODE1" ]; then
+    echo -e "${YELLOW}⚠️  警告：Node1 上有本地未提交的更改：${NC}"
+    echo "$LOCAL_CHANGES_NODE1" | sed 's/^/  /'
+    echo -e "${YELLOW}⚠️  这些更改将被保存（git stash），确保与 GitHub 代码一致${NC}"
+    echo -e "${YELLOW}⚠️  如需保留这些更改，请在本地修改并提交到 GitHub${NC}"
+fi
+
 ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && \
     git fetch origin && \
     git checkout $GIT_BRANCH && \
@@ -251,10 +260,29 @@ ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && \
     echo -e "${RED}❌ Node1 代码拉取失败${NC}"
     exit 1
 }
+
+# 验证 Node1 代码与 GitHub 一致
+NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+LOCAL_COMMIT=$(git rev-parse HEAD)
+if [ "$NODE1_COMMIT" != "$LOCAL_COMMIT" ]; then
+    echo -e "${YELLOW}⚠️  警告：Node1 代码版本与本地不一致${NC}"
+    echo "  Node1: $NODE1_COMMIT"
+    echo "  本地:  $LOCAL_COMMIT"
+    echo -e "${YELLOW}⚠️  请确保已推送到 GitHub：git push origin master${NC}"
+fi
 echo -e "${GREEN}✅ Node1 代码拉取完成${NC}"
 
-# 在 Node2 上拉取代码
+# 在 Node2 上拉取代码（确保与 GitHub 一致）
 echo "📥 在 Node2 上拉取代码..."
+echo "⚠️  检查服务器本地更改（禁止直接在服务器上修改代码）..."
+LOCAL_CHANGES_NODE2=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git status --porcelain" 2>/dev/null || echo "")
+if [ -n "$LOCAL_CHANGES_NODE2" ]; then
+    echo -e "${YELLOW}⚠️  警告：Node2 上有本地未提交的更改：${NC}"
+    echo "$LOCAL_CHANGES_NODE2" | sed 's/^/  /'
+    echo -e "${YELLOW}⚠️  这些更改将被保存（git stash），确保与 GitHub 代码一致${NC}"
+    echo -e "${YELLOW}⚠️  如需保留这些更改，请在本地修改并提交到 GitHub${NC}"
+fi
+
 ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && \
     git fetch origin && \
     git checkout $GIT_BRANCH && \
@@ -263,6 +291,15 @@ ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && \
     echo -e "${RED}❌ Node2 代码拉取失败${NC}"
     exit 1
 }
+
+# 验证 Node2 代码与 GitHub 一致
+NODE2_COMMIT=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+if [ "$NODE2_COMMIT" != "$LOCAL_COMMIT" ]; then
+    echo -e "${YELLOW}⚠️  警告：Node2 代码版本与本地不一致${NC}"
+    echo "  Node2: $NODE2_COMMIT"
+    echo "  本地:  $LOCAL_COMMIT"
+    echo -e "${YELLOW}⚠️  请确保已推送到 GitHub：git push origin master${NC}"
+fi
 echo -e "${GREEN}✅ Node2 代码拉取完成${NC}"
 
 echo ""
