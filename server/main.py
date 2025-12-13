@@ -280,7 +280,7 @@ async def lifespan(app: FastAPI):
     try:
         # 启动统一的热更新管理器（替代原来的规则热加载）
         from server.hot_reload.hot_reload_manager import HotReloadManager
-        manager = HotReloadManager.get_instance(interval=300)  # 5分钟检查一次
+        manager = HotReloadManager.get_instance(interval=60)  # 1分钟检查一次（减少延迟）
         manager.start()
         logger.info("✓ 热更新管理器已启动")
     except Exception as e:
@@ -293,8 +293,24 @@ async def lifespan(app: FastAPI):
         except Exception as e2:
             logger.warning(f"⚠ 规则热加载启动失败: {e2}")
     
+    # 启动集群同步器（双机同步）
+    try:
+        from server.hot_reload.cluster_synchronizer import start_cluster_sync
+        start_cluster_sync()
+        logger.info("✓ 集群同步器已启动")
+    except Exception as e:
+        logger.warning(f"⚠ 集群同步器启动失败（单机模式）: {e}")
+    
     yield
     # 关闭时执行
+    # 停止集群同步器
+    try:
+        from server.hot_reload.cluster_synchronizer import stop_cluster_sync
+        stop_cluster_sync()
+        logger.info("✓ 集群同步器已停止")
+    except Exception as e:
+        logger.warning(f"⚠ 集群同步器停止失败: {e}")
+    
     try:
         from server.hot_reload.hot_reload_manager import HotReloadManager
         manager = HotReloadManager.get_instance()
