@@ -18,7 +18,7 @@ services:
     volumes:
       - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ../nginx/conf.d:/etc/nginx/conf.d:ro
-      - ../../local_frontend:/usr/share/nginx/html/local_frontend:ro
+      - /opt/HiFate-bazi/local_frontend:/usr/share/nginx/html/local_frontend:ro
       - nginx_logs:/var/log/nginx
     environment:
       TZ: Asia/Shanghai
