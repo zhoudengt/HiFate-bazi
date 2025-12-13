@@ -219,12 +219,12 @@ async def rollback_module(module_name: Optional[str] = None, version: Optional[i
             from .cluster_synchronizer import get_cluster_synchronizer
             synchronizer = get_cluster_synchronizer()
             event_id = synchronizer.trigger_cluster_rollback(version)
-        
-        return ReloadResponse(
-            success=True,
+            
+            return ReloadResponse(
+                success=True,
                 message=f"回滚事件已发送 (事件ID: {event_id})",
-            reloaded_modules=[module_name] if module_name else None
-        )
+                reloaded_modules=[module_name] if module_name else None
+            )
         except Exception as e:
             # 如果集群同步不可用，执行本地回滚
             print(f"⚠ 集群同步不可用，执行本地回滚: {e}")
