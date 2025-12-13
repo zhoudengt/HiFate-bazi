@@ -91,6 +91,13 @@ GrpcResult = Tuple[Dict[str, Any], int]
 SUPPORTED_ENDPOINTS: Dict[str, Callable[[Dict[str, Any]], Any]] = {}
 
 
+def _clear_endpoints():
+    """清空已注册的端点（用于热更新）"""
+    global SUPPORTED_ENDPOINTS
+    SUPPORTED_ENDPOINTS.clear()
+    logger.info("已清空 gRPC 端点注册表（热更新）")
+
+
 def _register(endpoint: str):
     """装饰器：注册 endpoint -> handler"""
 
