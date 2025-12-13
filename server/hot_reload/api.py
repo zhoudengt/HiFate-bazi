@@ -71,6 +71,32 @@ async def get_hot_reload_status():
         raise HTTPException(status_code=500, detail=f"获取状态失败: {str(e)}")
 
 
+@router.post("/hot-reload/reload-endpoints", summary="强制重新注册 gRPC 端点")
+async def reload_endpoints():
+    """
+    强制重新注册所有 gRPC 端点
+    
+    用于修复热更新后端点丢失的问题
+    """
+    try:
+        from server.api.grpc_gateway import _reload_endpoints, SUPPORTED_ENDPOINTS
+        
+        old_count = len(SUPPORTED_ENDPOINTS)
+        success = _reload_endpoints()
+        new_count = len(SUPPORTED_ENDPOINTS)
+        
+        return {
+            "success": success,
+            "message": f"端点重新注册完成（旧: {old_count}, 新: {new_count}）",
+            "old_count": old_count,
+            "new_count": new_count,
+            "endpoints": list(SUPPORTED_ENDPOINTS.keys())
+        }
+    except Exception as e:
+        logger.error(f"重新注册端点失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"重新注册端点失败: {str(e)}")
+
+
 @router.post("/hot-reload/check", summary="手动触发热更新检查")
 async def trigger_hot_reload(module_name: Optional[str] = None):
     """
@@ -193,12 +219,12 @@ async def rollback_module(module_name: Optional[str] = None, version: Optional[i
             from .cluster_synchronizer import get_cluster_synchronizer
             synchronizer = get_cluster_synchronizer()
             event_id = synchronizer.trigger_cluster_rollback(version)
-            
-            return ReloadResponse(
-                success=True,
+        
+        return ReloadResponse(
+            success=True,
                 message=f"回滚事件已发送 (事件ID: {event_id})",
-                reloaded_modules=[module_name] if module_name else None
-            )
+            reloaded_modules=[module_name] if module_name else None
+        )
         except Exception as e:
             # 如果集群同步不可用，执行本地回滚
             print(f"⚠ 集群同步不可用，执行本地回滚: {e}")
