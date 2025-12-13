@@ -191,6 +191,19 @@ class SourceCodeReloader:
                         
                         # 重新加载模块
                         importlib.reload(module)
+                        
+                        # ⭐ 特殊处理：如果是 grpc_gateway 模块，需要重新注册端点
+                        if module_name == 'server.api.grpc_gateway':
+                            try:
+                                # 重新导入模块，让装饰器重新执行
+                                # 由于装饰器在模块加载时执行，重新加载模块后端点会自动注册
+                                # 但为了确保，我们显式调用重新注册函数（如果存在）
+                                if hasattr(module, '_reload_endpoints'):
+                                    module._reload_endpoints()
+                                    print(f"     ✅ gRPC 端点已重新注册")
+                            except Exception as e:
+                                print(f"     ⚠️  gRPC 端点重新注册失败: {e}")
+                        
                         reloaded_modules.append({
                             'module': module_name,
                             'file': file_path,

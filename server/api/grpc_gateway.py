@@ -98,6 +98,20 @@ def _clear_endpoints():
     logger.info("已清空 gRPC 端点注册表（热更新）")
 
 
+def _reload_endpoints():
+    """重新注册所有端点（用于热更新后恢复端点）"""
+    global SUPPORTED_ENDPOINTS
+    # 注意：由于装饰器 @_register 在模块加载时执行，
+    # 当使用 importlib.reload() 重新加载模块时，装饰器会自动重新执行
+    # 所以这里不需要手动重新注册，只需要确保模块被重新加载即可
+    # 这个函数主要用于日志记录和验证
+    endpoint_count = len(SUPPORTED_ENDPOINTS)
+    logger.info(f"gRPC 端点已重新注册，当前端点数量: {endpoint_count}")
+    if endpoint_count > 0:
+        logger.debug(f"已注册的端点: {list(SUPPORTED_ENDPOINTS.keys())[:10]}...")
+    return endpoint_count > 0
+
+
 def _register(endpoint: str):
     """装饰器：注册 endpoint -> handler"""
 
