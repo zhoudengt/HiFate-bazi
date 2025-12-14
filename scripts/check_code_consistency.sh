@@ -1,171 +1,186 @@
 #!/bin/bash
 # 代码一致性检查脚本
-# 用途：检查本地、GitHub、服务器代码是否一致
-# 使用：bash scripts/check_code_consistency.sh
+# 检查本地、Node1、Node2 代码是否一致
 
 set -e
 
-# 颜色定义
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-# 服务器配置
-NODE1_PUBLIC_IP="8.210.52.217"
-NODE2_PUBLIC_IP="47.243.160.43"
-PROJECT_DIR="/opt/HiFate-bazi"
+NODE1_IP="8.210.52.217"
+NODE2_IP="47.243.160.43"
 SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
-
-# SSH 执行函数
-ssh_exec() {
-    local host=$1
-    shift
-    local cmd="$@"
-    
-    if command -v sshpass &> /dev/null; then
-        sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$host "$cmd"
-    else
-        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$host "$cmd"
-    fi
-}
+PROJECT_DIR="/opt/HiFate-bazi"
 
 echo "========================================"
 echo "🔍 代码一致性检查"
 echo "========================================"
 echo ""
 
-# 1. 检查本地代码
-echo "📋 检查本地代码..."
-LOCAL_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "无法获取")
-LOCAL_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "无法获取")
-LOCAL_STATUS=$(git status --porcelain 2>/dev/null || echo "")
+# 颜色输出
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-if [ -n "$LOCAL_STATUS" ]; then
-    echo -e "${YELLOW}⚠️  本地有未提交的更改：${NC}"
-    echo "$LOCAL_STATUS" | sed 's/^/  /'
-else
-    echo -e "${GREEN}✅ 本地无未提交的更改${NC}"
-fi
+# 检查项列表
+CHECKS=(
+    "proto/generated/bazi_core_pb2_grpc.py:gRPC代码"
+    "server/api/grpc_gateway.py:gRPC网关"
+    "server/api/v2/desk_fengshui_api.py:办公桌风水API"
+    "deploy/docker/docker-compose.prod.yml:Docker配置"
+    "requirements.txt:依赖配置"
+)
 
-echo "  分支: $LOCAL_BRANCH"
-echo "  提交: $LOCAL_COMMIT"
-echo ""
+# 不一致文件列表
+INCONSISTENT_FILES=()
 
-# 2. 检查 GitHub 代码
-echo "📋 检查 GitHub 代码..."
-GITHUB_COMMIT=$(git ls-remote origin master 2>/dev/null | cut -f1 || echo "无法获取")
-
-if [ "$GITHUB_COMMIT" = "无法获取" ]; then
-    echo -e "${RED}❌ 无法连接到 GitHub${NC}"
-else
-    echo "  提交: $GITHUB_COMMIT"
-    if [ "$LOCAL_COMMIT" = "$GITHUB_COMMIT" ]; then
-        echo -e "${GREEN}✅ 本地与 GitHub 一致${NC}"
-    else
-        echo -e "${YELLOW}⚠️  本地与 GitHub 不一致${NC}"
-        echo "  本地:  $LOCAL_COMMIT"
-        echo "  GitHub: $GITHUB_COMMIT"
-    fi
-fi
-echo ""
-
-# 3. 检查服务器代码（Node1）
-echo "📋 检查 Node1 代码..."
-NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null || echo "无法获取")
-NODE1_STATUS=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git status --porcelain" 2>/dev/null || echo "")
-
-if [ "$NODE1_COMMIT" = "无法获取" ]; then
-    echo -e "${RED}❌ 无法连接到 Node1${NC}"
-else
-    echo "  提交: $NODE1_COMMIT"
-    if [ -n "$NODE1_STATUS" ]; then
-        echo -e "${YELLOW}⚠️  Node1 有本地未提交的更改：${NC}"
-        echo "$NODE1_STATUS" | sed 's/^/  /'
-    else
-        echo -e "${GREEN}✅ Node1 无本地未提交的更改${NC}"
+# 检查单个文件
+check_file() {
+    local file_path=$1
+    local file_desc=$2
+    local node=$3
+    
+    echo "【检查】$file_desc ($file_path)"
+    
+    # 获取本地文件哈希
+    if [ ! -f "$file_path" ]; then
+        echo "  ⚠️  本地文件不存在: $file_path"
+        return 1
     fi
     
-    if [ "$NODE1_COMMIT" = "$GITHUB_COMMIT" ] && [ "$GITHUB_COMMIT" != "无法获取" ]; then
-        echo -e "${GREEN}✅ Node1 与 GitHub 一致${NC}"
-    elif [ "$GITHUB_COMMIT" != "无法获取" ]; then
-        echo -e "${YELLOW}⚠️  Node1 与 GitHub 不一致${NC}"
-    fi
-fi
-echo ""
-
-# 4. 检查服务器代码（Node2）
-echo "📋 检查 Node2 代码..."
-NODE2_COMMIT=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null || echo "无法获取")
-NODE2_STATUS=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git status --porcelain" 2>/dev/null || echo "")
-
-if [ "$NODE2_COMMIT" = "无法获取" ]; then
-    echo -e "${RED}❌ 无法连接到 Node2${NC}"
-else
-    echo "  提交: $NODE2_COMMIT"
-    if [ -n "$NODE2_STATUS" ]; then
-        echo -e "${YELLOW}⚠️  Node2 有本地未提交的更改：${NC}"
-        echo "$NODE2_STATUS" | sed 's/^/  /'
-    else
-        echo -e "${GREEN}✅ Node2 无本地未提交的更改${NC}"
+    local local_hash=$(md5 -q "$file_path" 2>/dev/null || md5sum "$file_path" 2>/dev/null | cut -d' ' -f1)
+    
+    # 获取服务器文件哈希
+    local server_hash=""
+    if [ "$node" = "node1" ]; then
+        server_hash=$(sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no root@$NODE1_IP "md5sum $PROJECT_DIR/$file_path 2>/dev/null | cut -d' ' -f1" 2>/dev/null || echo "")
+    elif [ "$node" = "node2" ]; then
+        server_hash=$(sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no root@$NODE2_IP "md5sum $PROJECT_DIR/$file_path 2>/dev/null | cut -d' ' -f1" 2>/dev/null || echo "")
     fi
     
-    if [ "$NODE2_COMMIT" = "$GITHUB_COMMIT" ] && [ "$GITHUB_COMMIT" != "无法获取" ]; then
-        echo -e "${GREEN}✅ Node2 与 GitHub 一致${NC}"
-    elif [ "$GITHUB_COMMIT" != "无法获取" ]; then
-        echo -e "${YELLOW}⚠️  Node2 与 GitHub 不一致${NC}"
+    if [ -z "$server_hash" ]; then
+        echo "  ${RED}❌ 服务器文件不存在或无法访问${NC}"
+        INCONSISTENT_FILES+=("$file_path (服务器不存在)")
+        return 1
     fi
-fi
+    
+    if [ "$local_hash" = "$server_hash" ]; then
+        echo "  ${GREEN}✅ 一致${NC} (哈希: ${local_hash:0:8}...)${NC}"
+        return 0
+    else
+        echo "  ${RED}❌ 不一致${NC}"
+        echo "    本地: ${local_hash:0:8}..."
+        echo "    服务器: ${server_hash:0:8}..."
+        INCONSISTENT_FILES+=("$file_path")
+        return 1
+    fi
+}
+
+# 检查关键内容
+check_content() {
+    local file_path=$1
+    local pattern=$2
+    local desc=$3
+    local node=$4
+    
+    echo "【检查】$desc"
+    
+    # 本地检查
+    local local_count=$(grep -c "$pattern" "$file_path" 2>/dev/null || echo "0")
+    
+    # 服务器检查
+    local server_count="0"
+    if [ "$node" = "node1" ]; then
+        server_count=$(sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no root@$NODE1_IP "grep -c '$pattern' $PROJECT_DIR/$file_path 2>/dev/null || echo '0'" 2>/dev/null || echo "0")
+    elif [ "$node" = "node2" ]; then
+        server_count=$(sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no root@$NODE2_IP "grep -c '$pattern' $PROJECT_DIR/$file_path 2>/dev/null || echo '0'" 2>/dev/null || echo "0")
+    fi
+    
+    if [ "$local_count" = "$server_count" ]; then
+        echo "  ${GREEN}✅ 一致${NC} (匹配数: $local_count)${NC}"
+        return 0
+    else
+        echo "  ${RED}❌ 不一致${NC}"
+        echo "    本地: $local_count 个匹配"
+        echo "    服务器: $server_count 个匹配"
+        INCONSISTENT_FILES+=("$file_path ($desc)")
+        return 1
+    fi
+}
+
+# 检查 Git 版本
+check_git_version() {
+    echo "【检查】Git 版本一致性"
+    
+    local local_commit=$(git rev-parse HEAD 2>/dev/null || echo "")
+    local node1_commit=$(sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no root@$NODE1_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" 2>/dev/null || echo "")
+    local node2_commit=$(sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no root@$NODE2_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" 2>/dev/null || echo "")
+    
+    if [ -z "$local_commit" ]; then
+        echo "  ${YELLOW}⚠️  本地无法获取 Git 版本${NC}"
+        return 1
+    fi
+    
+    echo "  本地: ${local_commit:0:8}"
+    echo "  Node1: ${node1_commit:0:8}"
+    echo "  Node2: ${node2_commit:0:8}"
+    
+    if [ "$local_commit" = "$node1_commit" ] && [ "$local_commit" = "$node2_commit" ]; then
+        echo "  ${GREEN}✅ Git 版本一致${NC}"
+        return 0
+    else
+        echo "  ${RED}❌ Git 版本不一致${NC}"
+        INCONSISTENT_FILES+=("Git版本")
+        return 1
+    fi
+}
+
+# 主检查流程
+echo "【1/4】检查 Git 版本一致性"
+check_git_version
 echo ""
 
-# 5. 总结
+echo "【2/4】检查关键文件一致性（Node1）"
+for check in "${CHECKS[@]}"; do
+    file_path=$(echo $check | cut -d':' -f1)
+    file_desc=$(echo $check | cut -d':' -f2)
+    check_file "$file_path" "$file_desc" "node1"
+done
+echo ""
+
+echo "【3/4】检查关键内容一致性（Node1）"
+check_content "server/api/grpc_gateway.py" "/Users/zhoudt" "硬编码路径检查" "node1"
+check_content "server/api/v2/desk_fengshui_api.py" "/Users/zhoudt" "硬编码路径检查" "node1"
+check_content "proto/generated/bazi_core_pb2_grpc.py" "add_registered_method_handlers" "gRPC兼容性检查" "node1"
+check_content "deploy/docker/docker-compose.prod.yml" "proto:/app/proto" "容器挂载检查" "node1"
+echo ""
+
+echo "【4/4】检查容器内代码一致性（Node1）"
+echo "【检查】容器内 gRPC 代码"
+container_count=$(sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no root@$NODE1_IP "docker exec hifate-bazi-core grep -c 'add_registered_method_handlers' /app/proto/generated/bazi_core_pb2_grpc.py 2>/dev/null || echo '0'" 2>/dev/null || echo "0")
+if [ "$container_count" = "0" ]; then
+    echo "  ${GREEN}✅ 容器内代码已修复（0 个问题代码）${NC}"
+else
+    echo "  ${RED}❌ 容器内仍有 $container_count 个问题代码${NC}"
+    INCONSISTENT_FILES+=("容器内gRPC代码")
+fi
+
+echo ""
 echo "========================================"
-echo "📊 一致性检查总结"
+echo "📊 检查结果汇总"
 echo "========================================"
 
-ALL_CONSISTENT=true
-
-# 检查本地与GitHub
-if [ "$LOCAL_COMMIT" != "$GITHUB_COMMIT" ] && [ "$GITHUB_COMMIT" != "无法获取" ]; then
-    echo -e "${YELLOW}⚠️  本地与 GitHub 不一致${NC}"
-    ALL_CONSISTENT=false
-fi
-
-# 检查Node1与GitHub
-if [ "$NODE1_COMMIT" != "$GITHUB_COMMIT" ] && [ "$GITHUB_COMMIT" != "无法获取" ] && [ "$NODE1_COMMIT" != "无法获取" ]; then
-    echo -e "${YELLOW}⚠️  Node1 与 GitHub 不一致${NC}"
-    ALL_CONSISTENT=false
-fi
-
-# 检查Node2与GitHub
-if [ "$NODE2_COMMIT" != "$GITHUB_COMMIT" ] && [ "$GITHUB_COMMIT" != "无法获取" ] && [ "$NODE2_COMMIT" != "无法获取" ]; then
-    echo -e "${YELLOW}⚠️  Node2 与 GitHub 不一致${NC}"
-    ALL_CONSISTENT=false
-fi
-
-# 检查服务器本地更改
-if [ -n "$NODE1_STATUS" ] || [ -n "$NODE2_STATUS" ]; then
-    echo -e "${YELLOW}⚠️  服务器上有本地未提交的更改${NC}"
-    ALL_CONSISTENT=false
-fi
-
-if [ "$ALL_CONSISTENT" = true ]; then
-    echo -e "${GREEN}✅ 代码一致性检查通过！${NC}"
-    echo ""
-    echo "所有环境代码版本一致："
-    echo "  本地:  $LOCAL_COMMIT"
-    echo "  GitHub: $GITHUB_COMMIT"
-    echo "  Node1:  $NODE1_COMMIT"
-    echo "  Node2:  $NODE2_COMMIT"
+if [ ${#INCONSISTENT_FILES[@]} -eq 0 ]; then
+    echo "${GREEN}✅ 所有检查通过，代码完全一致！${NC}"
     exit 0
 else
-    echo -e "${RED}❌ 代码一致性检查失败！${NC}"
+    echo "${RED}❌ 发现 ${#INCONSISTENT_FILES[@]} 处不一致：${NC}"
+    for file in "${INCONSISTENT_FILES[@]}"; do
+        echo "  - $file"
+    done
     echo ""
-    echo "建议操作："
-    echo "  1. 如果有未提交的更改，先提交：git add . && git commit -m '...'"
-    echo "  2. 推送到 GitHub：git push origin master"
-    echo "  3. 在服务器上拉取：ssh root@server 'cd /opt/HiFate-bazi && git pull origin master'"
-    echo "  4. 或使用增量部署脚本：bash deploy/scripts/incremental_deploy_production.sh"
+    echo "${YELLOW}💡 建议：${NC}"
+    echo "  1. 检查本地代码是否已提交到 Git"
+    echo "  2. 检查服务器代码是否已拉取最新版本"
+    echo "  3. 运行修复脚本：bash scripts/grpc/fix_grpc_generated_code.py"
+    echo "  4. 重启容器以应用新配置"
     exit 1
 fi
-
