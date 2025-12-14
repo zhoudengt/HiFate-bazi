@@ -517,6 +517,82 @@ fi
 
 echo ""
 
+# ==================== 第七步：双机代码一致性验证 ====================
+echo -e "${BLUE}🔍 第七步：双机代码一致性验证（严格执行）${NC}"
+echo "----------------------------------------"
+
+echo "🔍 验证 Node1 与 Node2 代码一致性..."
+
+# 获取双机 Git 版本
+NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
+NODE2_COMMIT=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
+
+if [ -z "$NODE1_COMMIT" ] || [ -z "$NODE2_COMMIT" ]; then
+    echo -e "${RED}❌ 错误：无法获取双机 Git 版本${NC}"
+    exit 1
+fi
+
+echo "  Node1 Git 版本: ${NODE1_COMMIT:0:8}"
+echo "  Node2 Git 版本: ${NODE2_COMMIT:0:8}"
+
+if [ "$NODE1_COMMIT" != "$NODE2_COMMIT" ]; then
+    echo -e "${RED}❌ 错误：Node1 与 Node2 Git 版本不一致！${NC}"
+    echo -e "${RED}   违反规范：双机代码必须完全一致${NC}"
+    echo ""
+    echo "修复方法："
+    echo "  1. 在 Node1 上执行: git reset --hard origin/master && git pull origin master"
+    echo "  2. 在 Node2 上执行: git reset --hard origin/master && git pull origin master"
+    echo "  3. 重新运行增量部署脚本"
+    exit 1
+fi
+
+echo -e "${GREEN}✅ Node1 与 Node2 Git 版本一致${NC}"
+
+# 验证关键文件一致性
+echo ""
+echo "🔍 验证关键文件一致性..."
+
+KEY_FILES=(
+    "server/api/grpc_gateway.py"
+    "server/api/v2/desk_fengshui_api.py"
+    "deploy/docker/docker-compose.prod.yml"
+    "requirements.txt"
+)
+
+ALL_FILES_MATCH=true
+for file in "${KEY_FILES[@]}"; do
+    NODE1_HASH=$(ssh_exec $NODE1_PUBLIC_IP "md5sum $PROJECT_DIR/$file 2>/dev/null | cut -d' ' -f1" || echo "")
+    NODE2_HASH=$(ssh_exec $NODE2_PUBLIC_IP "md5sum $PROJECT_DIR/$file 2>/dev/null | cut -d' ' -f1" || echo "")
+    
+    if [ -z "$NODE1_HASH" ] || [ -z "$NODE2_HASH" ]; then
+        echo -e "${YELLOW}⚠️  无法验证 $file${NC}"
+        continue
+    fi
+    
+    if [ "$NODE1_HASH" != "$NODE2_HASH" ]; then
+        echo -e "${RED}❌ 错误：$file 在 Node1 和 Node2 不一致！${NC}"
+        echo "    Node1: ${NODE1_HASH:0:16}..."
+        echo "    Node2: ${NODE2_HASH:0:16}..."
+        echo -e "${RED}   违反规范：双机代码必须完全一致${NC}"
+        ALL_FILES_MATCH=false
+    fi
+done
+
+if [ "$ALL_FILES_MATCH" = false ]; then
+    echo ""
+    echo -e "${RED}❌ 双机文件一致性验证失败${NC}"
+    echo "修复方法："
+    echo "  1. 确保代码已推送到 GitHub"
+    echo "  2. 在 Node1 和 Node2 上执行: git reset --hard origin/master && git pull origin master"
+    echo "  3. 重新运行增量部署脚本"
+    exit 1
+fi
+
+echo -e "${GREEN}✅ 关键文件一致性验证通过${NC}"
+echo ""
+echo -e "${GREEN}✅ 双机代码一致性验证通过（严格执行）${NC}"
+echo ""
+
 # ==================== 完成 ====================
 echo "========================================"
 echo -e "${GREEN}✅ 增量部署完成！${NC}"
@@ -534,6 +610,7 @@ echo "热更新状态："
 echo "  Node1: http://$NODE1_PUBLIC_IP:8001/api/v1/hot-reload/status"
 echo "  Node2: http://$NODE2_PUBLIC_IP:8001/api/v1/hot-reload/status"
 echo ""
+echo -e "${GREEN}✅ 双机代码版本一致: ${NODE1_COMMIT:0:8}${NC}"
 echo "部署时间: $(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 
