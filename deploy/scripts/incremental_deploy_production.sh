@@ -338,7 +338,86 @@ echo -e "${GREEN}✅ Node2 代码拉取完成${NC}"
 
 echo ""
 
-# ==================== 第四步：服务器端验证 ====================
+# ==================== 第四步：验证双机代码一致性 ====================
+echo -e "${BLUE}🔍 第四步：验证双机代码一致性（强制检查）${NC}"
+echo "----------------------------------------"
+
+# 检查双机 Git 版本一致性
+echo "🔍 检查双机 Git 版本一致性..."
+NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
+NODE2_COMMIT=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
+
+if [ -z "$NODE1_COMMIT" ] || [ -z "$NODE2_COMMIT" ]; then
+    echo -e "${RED}❌ 错误：无法获取双机 Git 版本${NC}"
+    exit 1
+fi
+
+if [ "$NODE1_COMMIT" != "$NODE2_COMMIT" ]; then
+    echo -e "${RED}❌ 错误：Node1 和 Node2 Git 版本不一致（违反双机代码一致性规范）${NC}"
+    echo "  Node1: ${NODE1_COMMIT:0:8}"
+    echo "  Node2: ${NODE2_COMMIT:0:8}"
+    echo ""
+    echo -e "${YELLOW}⚠️  强制要求：Node1 与 Node2 代码必须完全一致${NC}"
+    echo -e "${YELLOW}⚠️  正在同步 Node2 代码到与 Node1 一致...${NC}"
+    
+    # 强制同步 Node2 到与 Node1 一致
+    ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && \
+        git fetch origin && \
+        git reset --hard $NODE1_COMMIT 2>/dev/null || \
+        git reset --hard origin/$GIT_BRANCH" || {
+        echo -e "${RED}❌ 错误：无法同步 Node2 代码${NC}"
+        exit 1
+    }
+    
+    # 再次验证
+    NODE2_COMMIT_AFTER=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
+    if [ "$NODE1_COMMIT" != "$NODE2_COMMIT_AFTER" ]; then
+        echo -e "${RED}❌ 错误：同步后双机 Git 版本仍不一致${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✅ Node2 代码已同步到与 Node1 一致${NC}"
+else
+    echo -e "${GREEN}✅ 双机 Git 版本一致（${NODE1_COMMIT:0:8}）${NC}"
+fi
+
+# 检查双机关键文件一致性
+echo ""
+echo "🔍 检查双机关键文件一致性..."
+KEY_FILES=(
+    "server/api/grpc_gateway.py"
+    "server/api/v2/desk_fengshui_api.py"
+    "deploy/docker/docker-compose.prod.yml"
+    "requirements.txt"
+)
+
+INCONSISTENT_FILES=()
+for file in "${KEY_FILES[@]}"; do
+    NODE1_HASH=$(ssh_exec $NODE1_PUBLIC_IP "md5sum $PROJECT_DIR/$file 2>/dev/null | cut -d' ' -f1" || echo "")
+    NODE2_HASH=$(ssh_exec $NODE2_PUBLIC_IP "md5sum $PROJECT_DIR/$file 2>/dev/null | cut -d' ' -f1" || echo "")
+    
+    if [ -z "$NODE1_HASH" ] || [ -z "$NODE2_HASH" ]; then
+        echo -e "${YELLOW}⚠️  警告：无法检查 $file${NC}"
+        continue
+    fi
+    
+    if [ "$NODE1_HASH" != "$NODE2_HASH" ]; then
+        echo -e "${RED}❌ 错误：$file 双机不一致（违反双机代码一致性规范）${NC}"
+        INCONSISTENT_FILES+=("$file")
+    fi
+done
+
+if [ ${#INCONSISTENT_FILES[@]} -gt 0 ]; then
+    echo -e "${RED}❌ 错误：发现 ${#INCONSISTENT_FILES[@]} 个文件双机不一致${NC}"
+    echo -e "${YELLOW}⚠️  强制要求：Node1 与 Node2 代码必须完全一致${NC}"
+    echo -e "${YELLOW}⚠️  建议：重新执行增量部署脚本，确保双机同步${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✅ 双机关键文件一致性检查通过${NC}"
+
+echo ""
+
+# ==================== 第五步：服务器端验证 ====================
 echo -e "${BLUE}🔍 第四步：服务器端验证${NC}"
 echo "----------------------------------------"
 
@@ -406,7 +485,7 @@ echo -e "${GREEN}✅ Node2 语法验证通过${NC}"
 
 echo ""
 
-# ==================== 第五步：触发热更新 ====================
+# ==================== 第六步：触发热更新 ====================
 echo -e "${BLUE}🔄 第五步：触发热更新${NC}"
 echo "----------------------------------------"
 
