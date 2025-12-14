@@ -269,6 +269,15 @@ if [ "$NODE1_COMMIT" != "$LOCAL_COMMIT" ]; then
     echo "  Node1: $NODE1_COMMIT"
     echo "  本地:  $LOCAL_COMMIT"
     echo -e "${YELLOW}⚠️  请确保已推送到 GitHub：git push origin master${NC}"
+    echo -e "${YELLOW}⚠️  重新拉取 Node1 代码以同步...${NC}"
+    ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git fetch origin && git pull origin $GIT_BRANCH"
+    NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+    if [ "$NODE1_COMMIT" != "$LOCAL_COMMIT" ]; then
+        echo -e "${RED}❌ 错误：Node1 代码版本仍与本地不一致${NC}"
+        echo -e "${RED}🔴 请确保已推送到 GitHub：git push origin master${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✅ Node1 代码已同步到最新版本${NC}"
 fi
 
 # 修复 Node1 Nginx 配置（确保IP占位符被替换）
@@ -316,7 +325,30 @@ if [ "$NODE2_COMMIT" != "$LOCAL_COMMIT" ]; then
     echo "  Node2: $NODE2_COMMIT"
     echo "  本地:  $LOCAL_COMMIT"
     echo -e "${YELLOW}⚠️  请确保已推送到 GitHub：git push origin master${NC}"
+    echo -e "${YELLOW}⚠️  重新拉取 Node2 代码以同步...${NC}"
+    ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git fetch origin && git pull origin $GIT_BRANCH"
+    NODE2_COMMIT=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+    if [ "$NODE2_COMMIT" != "$LOCAL_COMMIT" ]; then
+        echo -e "${RED}❌ 错误：Node2 代码版本仍与本地不一致${NC}"
+        echo -e "${RED}🔴 请确保已推送到 GitHub：git push origin master${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✅ Node2 代码已同步到最新版本${NC}"
 fi
+
+# 🔴 严格执行：立即检查 Node1 与 Node2 Git 版本一致性
+echo ""
+echo "🔍 严格执行：检查 Node1 与 Node2 Git 版本一致性..."
+NODE1_COMMIT_CHECK=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+NODE2_COMMIT_CHECK=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+if [ "$NODE1_COMMIT_CHECK" != "$NODE2_COMMIT_CHECK" ]; then
+    echo -e "${RED}❌ 错误：Node1 与 Node2 Git 版本不一致（违反双机代码一致性规范）${NC}"
+    echo "  Node1: ${NODE1_COMMIT_CHECK:0:8}"
+    echo "  Node2: ${NODE2_COMMIT_CHECK:0:8}"
+    echo -e "${RED}🔴 严格执行：Node1 与 Node2 代码必须完全一致，停止部署${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ Node1 与 Node2 Git 版本一致（${NODE1_COMMIT_CHECK:0:8}）${NC}"
 
 # 修复 Node2 Nginx 配置（确保IP占位符被替换）
 echo "🔧 修复 Node2 Nginx 配置..."
@@ -624,6 +656,12 @@ echo "  Node2 Git 版本: ${NODE2_COMMIT:0:8}"
 if [ "$NODE1_COMMIT" != "$NODE2_COMMIT" ]; then
     echo -e "${RED}❌ 错误：Node1 与 Node2 Git 版本不一致！${NC}"
     echo -e "${RED}🔴 违反规范：双机代码必须完全一致（严格执行）${NC}"
+    echo -e "${RED}🔴 停止部署：必须修复双机代码不一致后才能继续${NC}"
+    echo ""
+    echo "修复步骤："
+    echo "  1. 在 Node1 和 Node2 上执行: git pull origin master"
+    echo "  2. 验证双机 Git 版本一致"
+    echo "  3. 重新执行增量部署脚本"
     echo ""
     echo "修复方法："
     echo "  1. 在 Node1 上执行: git reset --hard origin/master && git pull origin master"
@@ -676,7 +714,8 @@ fi
 
 echo -e "${GREEN}✅ 关键文件一致性验证通过${NC}"
 echo ""
-echo -e "${GREEN}✅ 双机代码一致性验证通过（严格执行）${NC}"
+echo -e "${GREEN}✅ 双机代码一致性验证通过（严格执行，符合规范）${NC}"
+echo -e "${GREEN}✅ Node1 与 Node2 代码完全一致（${NODE1_COMMIT:0:8}）${NC}"
 echo ""
 
 # ==================== 完成 ====================
