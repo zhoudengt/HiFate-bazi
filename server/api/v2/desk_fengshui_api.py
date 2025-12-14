@@ -107,15 +107,7 @@ async def analyze_desk_fengshui(
             analyzer = DeskFengshuiAnalyzer()
             
             # 使用异步方法以提升并发性能
-            # #region agent log
-            import json as json_lib
-            try:
-                os.makedirs(os.path.dirname(DEBUG_LOG_PATH), exist_ok=True)
-                with open(DEBUG_LOG_PATH, 'a') as f:
-                    f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "desk_fengshui_api.py:107", "message": "before analyze_async call", "data": {"image_size": len(image_bytes), "use_bazi": use_bazi, "has_solar_date": bool(solar_date)}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-            except Exception:
-                pass  # 忽略日志写入错误
-            # #endregion
+            
             result = await analyzer.analyze_async(
                 image_bytes=image_bytes,
                 solar_date=solar_date,
@@ -124,12 +116,7 @@ async def analyze_desk_fengshui(
                 use_bazi=use_bazi
             )
             
-            # #region agent log
-            try:
-                os.makedirs(os.path.dirname(DEBUG_LOG_PATH), exist_ok=True)
-                with open(DEBUG_LOG_PATH, 'a') as f:
-                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "desk_fengshui_api.py:115", "message": "after analyze_async call", "data": {"result_is_none": result is None, "result_type": str(type(result)) if result else "None", "is_dict": isinstance(result, dict) if result else False, "has_success": result.get("success") if isinstance(result, dict) else None}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-            # #endregion
+            
             
             # 🔴 防御性检查：确保 result 不为 None
             if result is None:
