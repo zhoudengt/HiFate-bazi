@@ -15,6 +15,9 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.pa
 sys.path.insert(0, BASE_DIR)
 sys.path.insert(0, os.path.join(BASE_DIR, 'services', 'desk_fengshui'))
 
+# 定义调试日志路径（兼容本地和生产环境）
+DEBUG_LOG_PATH = os.path.join(BASE_DIR, 'logs', 'debug.log')
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v2/desk-fengshui", tags=["办公桌风水"])
@@ -106,8 +109,12 @@ async def analyze_desk_fengshui(
             # 使用异步方法以提升并发性能
             # #region agent log
             import json as json_lib
-            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "desk_fengshui_api.py:107", "message": "before analyze_async call", "data": {"image_size": len(image_bytes), "use_bazi": use_bazi, "has_solar_date": bool(solar_date)}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+            try:
+                os.makedirs(os.path.dirname(DEBUG_LOG_PATH), exist_ok=True)
+                with open(DEBUG_LOG_PATH, 'a') as f:
+                    f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "desk_fengshui_api.py:107", "message": "before analyze_async call", "data": {"image_size": len(image_bytes), "use_bazi": use_bazi, "has_solar_date": bool(solar_date)}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
+            except Exception:
+                pass  # 忽略日志写入错误
             # #endregion
             result = await analyzer.analyze_async(
                 image_bytes=image_bytes,
@@ -118,7 +125,9 @@ async def analyze_desk_fengshui(
             )
             
             # #region agent log
-            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
+            try:
+                os.makedirs(os.path.dirname(DEBUG_LOG_PATH), exist_ok=True)
+                with open(DEBUG_LOG_PATH, 'a') as f:
                 f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "desk_fengshui_api.py:115", "message": "after analyze_async call", "data": {"result_is_none": result is None, "result_type": str(type(result)) if result else "None", "is_dict": isinstance(result, dict) if result else False, "has_success": result.get("success") if isinstance(result, dict) else None}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
             # #endregion
             

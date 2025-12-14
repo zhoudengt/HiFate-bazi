@@ -13,10 +13,15 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any, Callable, Dict, Tuple
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
+
+# 获取项目根目录（兼容本地和生产环境）
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DEBUG_LOG_PATH = os.path.join(PROJECT_ROOT, 'logs', 'debug.log')
 
 from server.api.v1.auth import LoginRequest, login
 from server.api.v1.bazi_display import (
@@ -454,11 +459,7 @@ async def _handle_face_analysis_v2(payload: Dict[str, Any]):
 @_register("/api/v2/desk-fengshui/analyze")
 async def _handle_desk_fengshui(payload: Dict[str, Any]):
     """处理办公桌风水分析请求（支持文件上传）"""
-    # #region agent log
-    import json as json_lib
-    with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-        f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "grpc_gateway.py:339", "message": "_handle_desk_fengshui entry", "data": {"has_image_base64": bool(payload.get("image_base64")), "use_bazi": payload.get("use_bazi")}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-    # #endregion
+    
     from server.api.v2.desk_fengshui_api import analyze_desk_fengshui
     from fastapi.responses import JSONResponse
     
@@ -485,10 +486,7 @@ async def _handle_desk_fengshui(payload: Dict[str, Any]):
     
     # 调用原始接口
     try:
-        # #region agent log
-        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "grpc_gateway.py:367", "message": "before analyze_desk_fengshui call", "data": {"image_size": len(image_bytes), "solar_date": payload.get("solar_date"), "use_bazi": payload.get("use_bazi")}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-        # #endregion
+        
         result = await analyze_desk_fengshui(
             image=image_file,
             solar_date=payload.get("solar_date"),
@@ -497,18 +495,12 @@ async def _handle_desk_fengshui(payload: Dict[str, Any]):
             use_bazi=payload.get("use_bazi", True)
         )
         
-        # #region agent log
-        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A,B,C", "location": "grpc_gateway.py:376", "message": "after analyze_desk_fengshui call", "data": {"result_is_none": result is None, "result_type": str(type(result)), "has_success": hasattr(result, 'success') if result else False, "is_dict": isinstance(result, dict) if result else False}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-        # #endregion
+        
         
         # 🔴 防御性检查：确保 result 不为 None
         if result is None:
             logger.error("办公桌风水分析返回 None")
-            # #region agent log
-            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "grpc_gateway.py:378", "message": "result is None - returning error", "data": {}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-            # #endregion
+            
             return {"success": False, "error": "分析服务返回空结果，请稍后重试"}
         
         # JSONResponse 对象需要提取 body 内容
@@ -518,10 +510,7 @@ async def _handle_desk_fengshui(payload: Dict[str, Any]):
                 data = json.loads(body.decode('utf-8'))
             else:
                 data = body
-            # #region agent log
-            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "grpc_gateway.py:388", "message": "JSONResponse path", "data": {"data_type": str(type(data)), "data_is_none": data is None}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-            # #endregion
+            
             # 深度清理，确保可以序列化（修复 Maximum call stack exceeded）
             cleaned = _deep_clean_for_serialization(data)
             # 🔴 防御性检查：确保 cleaned 不为 None
@@ -543,11 +532,7 @@ async def _handle_desk_fengshui(payload: Dict[str, Any]):
                 logger.error(f"model_dump() 返回了非字典类型: {type(data)}")
                 return {"success": False, "error": "数据格式错误"}
             
-            # #region agent log
-            import json as json_lib
-            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "grpc_gateway.py:393", "message": "Pydantic v2 path", "data": {"data_type": str(type(data)), "data_is_none": data is None, "has_data_key": 'data' in data if data else False}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-            # #endregion
+            
             
             # 深度清理，确保可以序列化
             cleaned = _deep_clean_for_serialization(data)
@@ -559,10 +544,7 @@ async def _handle_desk_fengshui(payload: Dict[str, Any]):
         elif hasattr(result, 'dict'):
             # Pydantic v1 模型
             data = result.dict()
-            # #region agent log
-            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "grpc_gateway.py:398", "message": "Pydantic v1 path", "data": {"data_type": str(type(data)), "data_is_none": data is None}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-            # #endregion
+            
             # 深度清理，确保可以序列化
             cleaned = _deep_clean_for_serialization(data)
             # 🔴 防御性检查：确保 cleaned 不为 None
@@ -572,10 +554,7 @@ async def _handle_desk_fengshui(payload: Dict[str, Any]):
             return cleaned
         elif isinstance(result, dict):
             # 普通字典，直接返回
-            # #region agent log
-            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "grpc_gateway.py:402", "message": "dict path", "data": {"result_keys": list(result.keys()) if result else [], "has_success": "success" in result if result else False}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-            # #endregion
+            
             cleaned = _deep_clean_for_serialization(result)
             # 🔴 防御性检查：确保 cleaned 不为 None
             if cleaned is None:
@@ -585,19 +564,12 @@ async def _handle_desk_fengshui(payload: Dict[str, Any]):
         
         # 未知类型，尝试转换
         logger.warning(f"办公桌风水分析返回了未知类型: {type(result)}")
-        # #region agent log
-        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "grpc_gateway.py:407", "message": "unknown result type", "data": {"result_type": str(type(result))}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-        # #endregion
+        
         return {"success": False, "error": f"分析服务返回了无效的数据类型: {type(result).__name__}"}
         
     except Exception as e:
         logger.error(f"办公桌风水分析异常: {e}", exc_info=True)
-        # #region agent log
-        import json as json_lib
-        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "grpc_gateway.py:410", "message": "exception caught", "data": {"error_type": str(type(e)), "error_msg": str(e)}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-        # #endregion
+        
         
         # 🔴 修复：正确处理 HTTPException，提取 detail 字段
         if isinstance(e, HTTPException):
@@ -674,15 +646,7 @@ async def grpc_web_gateway(request: Request):
     - 调度到已有业务 handler
     - 将响应再编码为 gRPC-Web 帧
     """
-    # #region agent log
-    import json as json_lib
-    import time as time_module
-    try:
-        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A,B,C,D,E", "location": "grpc_gateway.py:508", "message": "grpc_web_gateway entry", "data": {"method": request.method, "url": str(request.url)}, "timestamp": int(time_module.time() * 1000)}) + '\n')
-    except Exception as log_err:
-        logger.error(f"日志写入失败: {log_err}")
-    # #endregion
+    
     raw_body = await request.body()
 
     try:
@@ -713,27 +677,17 @@ async def grpc_web_gateway(request: Request):
         error_msg = f"Unsupported endpoint: {endpoint}. Available endpoints: {', '.join(available_endpoints[:10])}"
         return _build_error_response(error_msg, http_status=404, grpc_status=12)
 
-    # #region agent log
-    import json as json_lib
-    with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-        f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A,B,C,D", "location": "grpc_gateway.py:546", "message": "before handler call", "data": {"endpoint": endpoint, "has_handler": handler is not None, "payload_keys": list(payload.keys()) if isinstance(payload, dict) else []}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-    # #endregion
+    
 
     try:
         result = await handler(payload)
         
-        # #region agent log
-        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A,B,C", "location": "grpc_gateway.py:550", "message": "after handler call", "data": {"result_is_none": result is None, "result_type": str(type(result)) if result else "None", "is_dict": isinstance(result, dict) if result else False}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-        # #endregion
+        
         
         # 🔴 防御性检查：确保 result 不为 None
         if result is None:
             logger.error(f"Handler 返回了 None，endpoint: {endpoint}")
-            # #region agent log
-            with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-                f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "grpc_gateway.py:562", "message": "result is None from handler", "data": {"endpoint": endpoint}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-            # #endregion
+            
             data = {"detail": "服务返回空结果，请稍后重试"}
             status_code = 500
         else:
@@ -804,36 +758,23 @@ async def grpc_web_gateway(request: Request):
         status_code = 500
         data = {"detail": f"Internal error: {exc}"}
 
-    # #region agent log
-    import json as json_lib
-    with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-        f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C,E", "location": "grpc_gateway.py:545", "message": "before data None check", "data": {"data_is_none": data is None, "data_type": str(type(data)) if data else "None", "endpoint": endpoint, "status_code": status_code}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-    # #endregion
+    
 
     # 🔴 防御性检查：确保 data 不为 None
     if data is None:
         logger.error(f"gRPC-Web handler 返回了 None，endpoint: {endpoint}")
-        # #region agent log
-        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "grpc_gateway.py:550", "message": "data is None - setting default", "data": {"endpoint": endpoint}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-        # #endregion
+        
         data = {"detail": "服务返回空结果，请稍后重试"}
         status_code = 500
     
     # 🔴 防御性检查：确保 data 是字典类型
     if not isinstance(data, dict):
         logger.error(f"gRPC-Web handler 返回了非字典类型: {type(data)}, endpoint: {endpoint}")
-        # #region agent log
-        with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-            f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "grpc_gateway.py:557", "message": "data is not dict - converting", "data": {"data_type": str(type(data)), "endpoint": endpoint}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-        # #endregion
+        
         data = {"detail": f"服务返回了无效的数据类型: {type(data).__name__}"}
         status_code = 500
     
-    # #region agent log
-    with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-        f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C,E", "location": "grpc_gateway.py:562", "message": "before building response", "data": {"data_keys": list(data.keys()) if isinstance(data, dict) else [], "has_detail": "detail" in data if isinstance(data, dict) else False, "status_code": status_code}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-    # #endregion
+    
     
     # 🔴 最终防御性检查：确保 data 是字典且不为 None（双重保险）
     if not isinstance(data, dict) or data is None:
@@ -854,10 +795,7 @@ async def grpc_web_gateway(request: Request):
 
     grpc_status = 0 if success else _map_http_to_grpc_status(status_code)
     grpc_message = "" if success else str(detail_value)
-    # #region agent log
-    with open('/Users/zhoudt/Downloads/project/HiFate-bazi/.cursor/debug.log', 'a') as f:
-        f.write(json_lib.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "E", "location": "grpc_gateway.py:572", "message": "response built", "data": {"success": success, "grpc_status": grpc_status, "has_grpc_message": bool(grpc_message)}, "timestamp": int(__import__('time').time() * 1000)}) + '\n')
-    # #endregion
+    
     return _build_grpc_web_response(response_payload, grpc_status, grpc_message)
 
 
