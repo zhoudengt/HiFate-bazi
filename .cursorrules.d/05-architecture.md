@@ -2,7 +2,7 @@
 
 ## 前端架构 `frontend/`
 ```
-frontend/
+local_frontend/
 ├── js/
 │   ├── api.js                  # gRPC-Web 客户端（核心）
 │   ├── config.js               # API 配置

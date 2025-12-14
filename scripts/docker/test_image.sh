@@ -244,3 +244,4 @@ echo "大小: ${IMAGE_SIZE}"
 echo "状态: 通过"
 echo ""
 
+
