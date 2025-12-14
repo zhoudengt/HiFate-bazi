@@ -64,6 +64,7 @@ services:
       - /opt/HiFate-bazi/server:/app/server:ro  # 挂载 server 目录，支持热更新
       - /opt/HiFate-bazi/src:/app/src:ro  # 挂载 src 目录，支持热更新
       - /opt/HiFate-bazi/services:/app/services:ro  # 挂载 services 目录，支持热更新
+      - /opt/HiFate-bazi/proto:/app/proto:ro  # 挂载 proto 目录，支持热更新（修复 gRPC 代码）
     restart: always
     networks:
       - hifate-network
@@ -99,6 +100,10 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SERVICE_PORT: 9001
       TZ: Asia/Shanghai
+    volumes:
+      - /opt/HiFate-bazi/proto:/app/proto:ro  # 挂载 proto 目录，支持热更新（修复 gRPC 代码）
+      - /opt/HiFate-bazi/services:/app/services:ro  # 挂载 services 目录，支持热更新
+      - /opt/HiFate-bazi/src:/app/src:ro  # 挂载 src 目录，支持热更新
     command: python services/bazi_core/grpc_server.py --port 9001
     restart: always
     networks:
@@ -124,6 +129,10 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SERVICE_PORT: 9002
       TZ: Asia/Shanghai
+    volumes:
+      - /opt/HiFate-bazi/proto:/app/proto:ro  # 挂载 proto 目录，支持热更新
+      - /opt/HiFate-bazi/services:/app/services:ro
+      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/bazi_fortune/grpc_server.py --port 9002
     restart: always
     networks:
@@ -149,6 +158,10 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SERVICE_PORT: 9003
       TZ: Asia/Shanghai
+    volumes:
+      - /opt/HiFate-bazi/proto:/app/proto:ro
+      - /opt/HiFate-bazi/services:/app/services:ro
+      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/bazi_analyzer/grpc_server.py --port 9003
     restart: always
     networks:
@@ -174,6 +187,10 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SERVICE_PORT: 9004
       TZ: Asia/Shanghai
+    volumes:
+      - /opt/HiFate-bazi/proto:/app/proto:ro
+      - /opt/HiFate-bazi/services:/app/services:ro
+      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/bazi_rule/grpc_server.py --port 9004
     restart: always
     networks:
@@ -199,6 +216,10 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SERVICE_PORT: 9005
       TZ: Asia/Shanghai
+    volumes:
+      - /opt/HiFate-bazi/proto:/app/proto:ro
+      - /opt/HiFate-bazi/services:/app/services:ro
+      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/fortune_analysis/grpc_server.py --port 9005
     restart: always
     networks:
@@ -224,6 +245,10 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SERVICE_PORT: 9006
       TZ: Asia/Shanghai
+    volumes:
+      - /opt/HiFate-bazi/proto:/app/proto:ro
+      - /opt/HiFate-bazi/services:/app/services:ro
+      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/payment_service/grpc_server.py --port 9006
     restart: always
     networks:
@@ -249,6 +274,10 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SERVICE_PORT: 9007
       TZ: Asia/Shanghai
+    volumes:
+      - /opt/HiFate-bazi/proto:/app/proto:ro
+      - /opt/HiFate-bazi/services:/app/services:ro
+      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/fortune_rule/grpc_server.py --port 9007
     restart: always
     networks:
@@ -277,6 +306,10 @@ services:
       COZE_ACCESS_TOKEN: ${COZE_ACCESS_TOKEN:-}
       INTENT_BOT_ID: ${INTENT_BOT_ID:-}
       TZ: Asia/Shanghai
+    volumes:
+      - /opt/HiFate-bazi/proto:/app/proto:ro
+      - /opt/HiFate-bazi/services:/app/services:ro
+      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/intent_service/grpc_server.py
     restart: always
     networks:
@@ -305,6 +338,10 @@ services:
       COZE_ACCESS_TOKEN: ${COZE_ACCESS_TOKEN:-}
       COZE_BOT_ID: ${COZE_BOT_ID:-}
       TZ: Asia/Shanghai
+    volumes:
+      - /opt/HiFate-bazi/proto:/app/proto:ro
+      - /opt/HiFate-bazi/services:/app/services:ro
+      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/prompt_optimizer/grpc_server.py
     restart: always
     networks:
@@ -330,6 +367,10 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SERVICE_PORT: 9010
       TZ: Asia/Shanghai
+    volumes:
+      - /opt/HiFate-bazi/proto:/app/proto:ro
+      - /opt/HiFate-bazi/services:/app/services:ro
+      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/desk_fengshui/grpc_server.py --port 9010
     restart: always
     networks:
