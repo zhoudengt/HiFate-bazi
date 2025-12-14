@@ -341,11 +341,20 @@ echo ""
 echo "🔍 严格执行：检查 Node1 与 Node2 Git 版本一致性（双机代码必须完全一致）..."
 NODE1_COMMIT_CHECK=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
 NODE2_COMMIT_CHECK=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+
 if [ "$NODE1_COMMIT_CHECK" != "$NODE2_COMMIT_CHECK" ]; then
     echo -e "${RED}❌ 错误：Node1 与 Node2 Git 版本不一致（违反双机代码一致性规范）${NC}"
     echo "  Node1: ${NODE1_COMMIT_CHECK:0:8}"
     echo "  Node2: ${NODE2_COMMIT_CHECK:0:8}"
     echo -e "${RED}🔴 严格执行：Node1 与 Node2 代码必须完全一致，停止部署${NC}"
+    echo ""
+    echo "修复步骤："
+    echo "  1. 确保 GitHub 代码是最新的：git push origin master"
+    echo "  2. 同步双机代码："
+    echo "     ssh root@$NODE1_PUBLIC_IP 'cd $PROJECT_DIR && git reset --hard origin/master && git pull origin master'"
+    echo "     ssh root@$NODE2_PUBLIC_IP 'cd $PROJECT_DIR && git reset --hard origin/master && git pull origin master'"
+    echo "  3. 验证双机一致性：bash scripts/check_code_consistency.sh"
+    echo "  4. 重新执行增量部署脚本"
     exit 1
 fi
 echo -e "${GREEN}✅ Node1 与 Node2 Git 版本一致（${NODE1_COMMIT_CHECK:0:8}）${NC}"
@@ -441,14 +450,25 @@ for file in "${KEY_FILES[@]}"; do
 done
 
 if [ ${#INCONSISTENT_FILES[@]} -gt 0 ]; then
-    echo -e "${RED}❌ 错误：发现 ${#INCONSISTENT_FILES[@]} 个文件双机不一致${NC}"
+    echo -e "${RED}❌ 错误：发现 ${#INCONSISTENT_FILES[@]} 个文件双机不一致（违反双机代码一致性规范）${NC}"
+    for file in "${INCONSISTENT_FILES[@]}"; do
+        echo -e "${RED}  - $file${NC}"
+    done
     echo -e "${RED}🔴 严格执行：Node1 与 Node2 代码必须完全一致${NC}"
     echo -e "${RED}🔴 停止部署：必须修复双机代码不一致后才能继续${NC}"
     echo ""
-    echo "修复建议："
-    echo "  1. 在 Node1 和 Node2 上执行: git reset --hard origin/master && git pull origin master"
-    echo "  2. 验证双机代码一致性: bash scripts/check_code_consistency.sh"
-    echo "  3. 重新执行增量部署脚本"
+    echo "修复步骤："
+    echo "  1. 确保 GitHub 代码是最新的：git push origin master"
+    echo "  2. 同步双机代码（强制执行）："
+    echo "     ssh root@$NODE1_PUBLIC_IP 'cd $PROJECT_DIR && git reset --hard origin/master && git pull origin master'"
+    echo "     ssh root@$NODE2_PUBLIC_IP 'cd $PROJECT_DIR && git reset --hard origin/master && git pull origin master'"
+    echo "  3. 验证双机一致性：bash scripts/check_code_consistency.sh"
+    echo "  4. 重新执行增量部署脚本"
+    echo ""
+    echo "⚠️  注意：如果在服务器上直接修改了文件，必须："
+    echo "  - 在本地做相同修改"
+    echo "  - 提交到 Git 并推送到 GitHub"
+    echo "  - 然后在服务器上拉取最新代码"
     exit 1
 fi
 
@@ -556,6 +576,23 @@ echo ""
 
 # ==================== 第六步：部署后验证 ====================
 echo -e "${BLUE}🏥 第六步：部署后验证${NC}"
+echo "----------------------------------------"
+
+# 🔴 严格执行：最终验证 Node1 与 Node2 代码一致性（双机代码必须一致）
+echo ""
+echo "🔍 严格执行：最终验证 Node1 与 Node2 代码一致性（双机代码必须完全一致）..."
+FINAL_NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+FINAL_NODE2_COMMIT=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+
+if [ "$FINAL_NODE1_COMMIT" != "$FINAL_NODE2_COMMIT" ]; then
+    echo -e "${RED}❌ 错误：部署后双机 Git 版本不一致（违反双机代码一致性规范）${NC}"
+    echo "  Node1: ${FINAL_NODE1_COMMIT:0:8}"
+    echo "  Node2: ${FINAL_NODE2_COMMIT:0:8}"
+    echo -e "${RED}🔴 严格执行：Node1 与 Node2 代码必须完全一致，部署失败${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ 部署后双机 Git 版本一致（${FINAL_NODE1_COMMIT:0:8}）${NC}"
+echo ""
 echo "----------------------------------------"
 
 # 6.1 健康检查
