@@ -2772,6 +2772,75 @@ bash scripts/grpc/verify_grpc_fix.sh
 
 ---
 
+## 🔧 环境变量配置规范 【必须遵守】
+
+### 🔴 核心原则
+
+> **容器启动必须使用 --env-file 传递环境变量，确保关键配置（如密码）正确加载。**
+
+### 📋 环境变量传递要求
+
+#### 1. Docker Compose 标准配置
+
+```bash
+# ✅ 正确：使用 --env-file 传递环境变量
+docker-compose -f docker-compose.prod.yml -f docker-compose.node1.yml \
+  --env-file /opt/HiFate-bazi/.env up -d web
+
+# ❌ 错误：不使用 --env-file
+docker-compose up -d web  # 环境变量未加载
+```
+
+#### 2. 环境变量验证
+
+**启动后必须验证**：
+```bash
+# 检查关键环境变量是否正确加载
+docker exec hifate-web env | grep -E "MYSQL_PASSWORD|MYSQL_USER|MYSQL_HOST"
+
+# 应该显示：
+# MYSQL_PASSWORD=Yuanqizhan@163
+# MYSQL_USER=root
+# MYSQL_HOST=mysql
+```
+
+#### 3. 重启容器注意事项
+
+**重要**：修改环境变量后必须重新创建容器：
+```bash
+# ✅ 正确：重新创建容器以应用新环境变量
+docker-compose -f docker-compose.prod.yml -f docker-compose.node1.yml \
+  --env-file /opt/HiFate-bazi/.env up -d --force-recreate web
+
+# ❌ 错误：仅重启容器，环境变量不会更新
+docker-compose restart web  # 环境变量不更新
+```
+
+### ✅ 环境变量配置检查清单
+
+每次部署前必须检查：
+
+- [ ] 容器启动是否使用 `--env-file` 参数
+- [ ] 环境变量文件路径是否正确（`.env` 文件存在）
+- [ ] 关键环境变量是否正确加载（如 MYSQL_PASSWORD）
+- [ ] 修改环境变量后是否重新创建了容器
+
+### 🚨 常见问题
+
+#### 问题：MySQL 连接失败 - Access denied
+
+**症状**：`Access denied for user 'root'@'xxx' (using password: NO)`
+
+**原因**：容器内 `MYSQL_PASSWORD` 环境变量为空
+
+**解决**：
+1. 检查 `.env` 文件是否存在且包含 `MYSQL_PASSWORD`
+2. 确保容器启动使用 `--env-file`
+3. 重新创建容器：`docker-compose up -d --force-recreate web`
+4. 验证环境变量：`docker exec hifate-web env | grep MYSQL_PASSWORD`
+
+---
+
 ## 🔐 安全规范 【必须遵守】
 
 ### 🔴 安全开发原则
