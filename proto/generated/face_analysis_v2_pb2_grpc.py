@@ -123,11 +123,7 @@ def add_FaceAnalysisServiceServicer_to_server(servicer, server):
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'face_analysis_v2.FaceAnalysisService', rpc_method_handlers)
-    server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('face_analysis_v2.FaceAnalysisService', rpc_method_handlers)
-
-
- # This class is part of an EXPERIMENTAL API.
+    server.add_generic_rpc_handlers((generic_handler,)) # This class is part of an EXPERIMENTAL API.
 class FaceAnalysisService(object):
     """========================================
     面相分析V2 gRPC服务定义
@@ -301,11 +297,7 @@ def add_FaceKnowledgeServiceServicer_to_server(servicer, server):
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'face_analysis_v2.FaceKnowledgeService', rpc_method_handlers)
-    server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('face_analysis_v2.FaceKnowledgeService', rpc_method_handlers)
-
-
- # This class is part of an EXPERIMENTAL API.
+    server.add_generic_rpc_handlers((generic_handler,)) # This class is part of an EXPERIMENTAL API.
 class FaceKnowledgeService(object):
     """面相知识库服务
     """
