@@ -336,9 +336,9 @@ if [ "$NODE2_COMMIT" != "$LOCAL_COMMIT" ]; then
     echo -e "${GREEN}✅ Node2 代码已同步到最新版本${NC}"
 fi
 
-# 🔴 严格执行：立即检查 Node1 与 Node2 Git 版本一致性
+# 🔴 严格执行：立即检查 Node1 与 Node2 Git 版本一致性（双机代码必须一致）
 echo ""
-echo "🔍 严格执行：检查 Node1 与 Node2 Git 版本一致性..."
+echo "🔍 严格执行：检查 Node1 与 Node2 Git 版本一致性（双机代码必须完全一致）..."
 NODE1_COMMIT_CHECK=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
 NODE2_COMMIT_CHECK=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
 if [ "$NODE1_COMMIT_CHECK" != "$NODE2_COMMIT_CHECK" ]; then
