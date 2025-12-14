@@ -647,6 +647,64 @@ git pull origin master
 
 ---
 
+### 🔴 双机代码一致性规范 【最高优先级，严格执行】
+
+> **Node1 和 Node2 的代码必须完全一致，坚决禁止在服务器上直接修改代码！**
+
+#### 核心要求
+
+| 要求 | 状态 | 说明 |
+|------|------|------|
+| **Node1 与 Node2 代码必须一致** | 🔴 **必须严格执行** | 双机 Git 版本、文件内容必须完全一致 |
+| **禁止直接在服务器上修改代码** | 🔴 **绝对禁止** | 所有修改必须通过本地 → Git → 服务器流程 |
+| **代码修改唯一路径** | 🔴 **强制执行** | 本地修改 → 提交 Git → 推送到 GitHub → 服务器拉取 |
+
+#### 检查机制
+
+**每次部署后必须验证**：
+
+```bash
+# 检查双机 Git 版本一致性
+NODE1_COMMIT=$(ssh root@8.210.52.217 "cd /opt/HiFate-bazi && git rev-parse HEAD")
+NODE2_COMMIT=$(ssh root@47.243.160.43 "cd /opt/HiFate-bazi && git rev-parse HEAD")
+
+if [ "$NODE1_COMMIT" != "$NODE2_COMMIT" ]; then
+    echo "❌ 错误：Node1 和 Node2 Git 版本不一致"
+    exit 1
+fi
+```
+
+**每次部署前必须检查**：
+
+- [ ] Node1 代码与 GitHub 一致
+- [ ] Node2 代码与 GitHub 一致
+- [ ] Node1 与 Node2 Git 版本一致
+- [ ] Node1 与 Node2 关键文件哈希一致
+
+#### 违反规范的后果
+
+**如果发现违反规范**：
+1. **立即停止部署**
+2. **恢复代码一致性**：
+   ```bash
+   # Node1 和 Node2 都拉取最新代码
+   ssh root@8.210.52.217 "cd /opt/HiFate-bazi && git reset --hard origin/master"
+   ssh root@47.243.160.43 "cd /opt/HiFate-bazi && git reset --hard origin/master"
+   ```
+3. **记录违规行为**（更新问题复盘文档）
+4. **更新规范**（防止再次发生）
+
+#### 自动化检查
+
+**增量部署脚本已包含双机一致性检查**：
+- ✅ 自动检查 Node1 与 Node2 Git 版本
+- ✅ 自动同步双机代码
+- ✅ 部署后验证双机一致性
+
+---
+
+---
+
 ### 🔄 代码一致性标准流程 【必须遵守】
 
 **标准流程（推荐）**：
@@ -3712,6 +3770,13 @@ curl -X POST http://47.243.160.43:8001/api/v1/hot-reload/rollback
 
 每次增量部署前必须检查：
 
+#### 代码路径规范检查（最高优先级）
+- [ ] ✅ 所有代码修改都在本地完成（未在服务器上修改）
+- [ ] ✅ 代码已提交到 Git（git commit）
+- [ ] ✅ 代码已推送到 GitHub（git push origin master）
+- [ ] ✅ 未在服务器上直接修改任何代码（sed、vim、nano 等）
+- [ ] ✅ 准备使用增量部署脚本（自动同步双机）
+
 #### 代码质量检查
 - [ ] 代码已提交到 Git
 - [ ] 代码已推送到远程
@@ -3733,6 +3798,8 @@ curl -X POST http://47.243.160.43:8001/api/v1/hot-reload/rollback
 #### 部署后验证
 - [ ] Node1 健康检查通过
 - [ ] Node2 健康检查通过
+- [ ] Node1 与 Node2 Git 版本一致（脚本自动验证）
+- [ ] Node1 与 Node2 关键文件哈希一致（脚本自动验证）
 - [ ] 热更新状态正常
 - [ ] 关键功能验证通过（可选）
 
