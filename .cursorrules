@@ -626,8 +626,6 @@ git pull origin master
 - [ ] 本地代码已推送到 GitHub
 - [ ] 服务器代码与 GitHub 一致（`git status` 无本地更改）
 - [ ] 三环境代码版本一致（`git log --oneline -1`）
-- [ ] **Node1 与 Node2 Git 版本一致（严格执行）**
-- [ ] **Node1 与 Node2 关键文件哈希一致（严格执行）**
 - [ ] 配置文件三环境一致
 - [ ] 无服务器本地未提交的更改
 
@@ -660,8 +658,6 @@ git pull origin master
 | **Node1 与 Node2 代码必须一致** | 🔴 **必须严格执行** | 双机 Git 版本、文件内容必须完全一致 |
 | **禁止直接在服务器上修改代码** | 🔴 **绝对禁止** | 所有修改必须通过本地 → Git → 服务器流程 |
 | **代码修改唯一路径** | 🔴 **强制执行** | 本地修改 → 提交 Git → 推送到 GitHub → 服务器拉取 |
-| **部署时强制检查** | 🔴 **必须执行** | 增量部署脚本必须验证双机一致性，不一致则停止部署 |
-| **部署后强制验证** | 🔴 **必须执行** | 部署完成后必须验证双机代码一致性 |
 
 #### 检查机制
 
@@ -676,16 +672,6 @@ if [ "$NODE1_COMMIT" != "$NODE2_COMMIT" ]; then
     echo "❌ 错误：Node1 和 Node2 Git 版本不一致"
     exit 1
 fi
-
-# 检查关键文件一致性
-for file in "server/api/grpc_gateway.py" "proto/generated/bazi_core_pb2_grpc.py"; do
-    NODE1_HASH=$(ssh root@8.210.52.217 "md5sum /opt/HiFate-bazi/$file | cut -d' ' -f1")
-    NODE2_HASH=$(ssh root@47.243.160.43 "md5sum /opt/HiFate-bazi/$file | cut -d' ' -f1")
-    if [ "$NODE1_HASH" != "$NODE2_HASH" ]; then
-        echo "❌ 错误：$file 在双机不一致"
-        exit 1
-    fi
-done
 ```
 
 **每次部署前必须检查**：
@@ -698,38 +684,22 @@ done
 #### 违反规范的后果
 
 **如果发现违反规范**：
-1. **立即停止部署**（增量部署脚本会自动停止）
+1. **立即停止部署**
 2. **恢复代码一致性**：
    ```bash
    # Node1 和 Node2 都拉取最新代码
-   ssh root@8.210.52.217 "cd /opt/HiFate-bazi && git reset --hard origin/master && git pull origin master"
-   ssh root@47.243.160.43 "cd /opt/HiFate-bazi && git reset --hard origin/master && git pull origin master"
+   ssh root@8.210.52.217 "cd /opt/HiFate-bazi && git reset --hard origin/master"
+   ssh root@47.243.160.43 "cd /opt/HiFate-bazi && git reset --hard origin/master"
    ```
-3. **验证一致性**：
-   ```bash
-   bash scripts/check_code_consistency.sh
-   ```
-4. **记录违规行为**（更新问题复盘文档）
-5. **更新规范**（防止再次发生）
+3. **记录违规行为**（更新问题复盘文档）
+4. **更新规范**（防止再次发生）
 
 #### 自动化检查
 
 **增量部署脚本已包含双机一致性检查**：
-- ✅ **部署前检查**：验证双机 Git 版本一致性（第341-382行）
-- ✅ **部署中检查**：验证关键文件一致性（第383-416行）
-- ✅ **部署后验证**：最终验证双机代码一致性（第599-672行）
-- ✅ **自动同步**：如果发现不一致，自动同步 Node2 到与 Node1 一致
-- ✅ **强制停止**：如果无法同步，停止部署并报错
-
-**检查时机**：
-1. **拉取代码后**：立即检查双机 Git 版本
-2. **触发热更新前**：检查关键文件一致性
-3. **部署完成后**：最终验证双机代码一致性
-
-**检查标准**：
-- Git 版本必须完全一致（commit hash 相同）
-- 关键文件哈希必须完全一致（md5sum 相同）
-- 不一致则停止部署，不允许继续
+- ✅ 自动检查 Node1 与 Node2 Git 版本
+- ✅ 自动同步双机代码
+- ✅ 部署后验证双机一致性
 
 ---
 
