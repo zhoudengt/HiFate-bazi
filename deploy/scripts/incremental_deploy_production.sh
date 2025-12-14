@@ -697,18 +697,23 @@ for file in "${KEY_FILES[@]}"; do
         echo -e "${RED}❌ 错误：$file 在 Node1 和 Node2 不一致！${NC}"
         echo "    Node1: ${NODE1_HASH:0:16}..."
         echo "    Node2: ${NODE2_HASH:0:16}..."
-        echo -e "${RED}   违反规范：双机代码必须完全一致${NC}"
+        echo -e "${RED}   违反规范：双机代码必须完全一致（严格执行）${NC}"
         ALL_FILES_MATCH=false
     fi
 done
 
 if [ "$ALL_FILES_MATCH" = false ]; then
     echo ""
-    echo -e "${RED}❌ 双机文件一致性验证失败${NC}"
-    echo "修复方法："
-    echo "  1. 确保代码已推送到 GitHub"
-    echo "  2. 在 Node1 和 Node2 上执行: git reset --hard origin/master && git pull origin master"
-    echo "  3. 重新运行增量部署脚本"
+    echo -e "${RED}❌ 双机文件一致性验证失败（违反双机代码一致性规范）${NC}"
+    echo -e "${RED}🔴 严格执行：Node1 与 Node2 代码必须完全一致${NC}"
+    echo -e "${RED}🔴 停止部署：必须修复双机代码不一致后才能继续${NC}"
+    echo ""
+    echo "修复步骤："
+    echo "  1. 确保代码已推送到 GitHub: git push origin master"
+    echo "  2. 在 Node1 上执行: cd /opt/HiFate-bazi && git reset --hard origin/master && git pull origin master"
+    echo "  3. 在 Node2 上执行: cd /opt/HiFate-bazi && git reset --hard origin/master && git pull origin master"
+    echo "  4. 验证双机代码一致性: bash scripts/check_code_consistency.sh"
+    echo "  5. 重新运行增量部署脚本"
     exit 1
 fi
 
@@ -735,7 +740,7 @@ echo "热更新状态："
 echo "  Node1: http://$NODE1_PUBLIC_IP:8001/api/v1/hot-reload/status"
 echo "  Node2: http://$NODE2_PUBLIC_IP:8001/api/v1/hot-reload/status"
 echo ""
-echo -e "${GREEN}✅ 双机代码版本一致: ${NODE1_COMMIT:0:8}${NC}"
+echo -e "${GREEN}✅ 双机代码版本一致: ${NODE1_COMMIT:0:8}（严格执行，符合规范）${NC}"
 echo "部署时间: $(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 
