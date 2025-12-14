@@ -357,8 +357,8 @@ if [ "$NODE1_COMMIT" != "$NODE2_COMMIT" ]; then
     echo "  Node1: ${NODE1_COMMIT:0:8}"
     echo "  Node2: ${NODE2_COMMIT:0:8}"
     echo ""
-    echo -e "${YELLOW}⚠️  强制要求：Node1 与 Node2 代码必须完全一致${NC}"
-    echo -e "${YELLOW}⚠️  正在同步 Node2 代码到与 Node1 一致...${NC}"
+    echo -e "${RED}🔴 严格执行：Node1 与 Node2 代码必须完全一致${NC}"
+    echo -e "${YELLOW}⚠️  正在强制同步 Node2 代码到与 Node1 一致...${NC}"
     
     # 强制同步 Node2 到与 Node1 一致
     ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && \
@@ -372,7 +372,8 @@ if [ "$NODE1_COMMIT" != "$NODE2_COMMIT" ]; then
     # 再次验证
     NODE2_COMMIT_AFTER=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
     if [ "$NODE1_COMMIT" != "$NODE2_COMMIT_AFTER" ]; then
-        echo -e "${RED}❌ 错误：同步后双机 Git 版本仍不一致${NC}"
+        echo -e "${RED}❌ 错误：同步后双机 Git 版本仍不一致（违反双机代码一致性规范）${NC}"
+        echo -e "${RED}🔴 严格执行：停止部署，必须确保双机代码一致后才能继续${NC}"
         exit 1
     fi
     echo -e "${GREEN}✅ Node2 代码已同步到与 Node1 一致${NC}"
@@ -402,14 +403,20 @@ for file in "${KEY_FILES[@]}"; do
     
     if [ "$NODE1_HASH" != "$NODE2_HASH" ]; then
         echo -e "${RED}❌ 错误：$file 双机不一致（违反双机代码一致性规范）${NC}"
+        echo -e "${RED}🔴 严格执行：停止部署，必须确保双机代码一致后才能继续${NC}"
         INCONSISTENT_FILES+=("$file")
     fi
 done
 
 if [ ${#INCONSISTENT_FILES[@]} -gt 0 ]; then
     echo -e "${RED}❌ 错误：发现 ${#INCONSISTENT_FILES[@]} 个文件双机不一致${NC}"
-    echo -e "${YELLOW}⚠️  强制要求：Node1 与 Node2 代码必须完全一致${NC}"
-    echo -e "${YELLOW}⚠️  建议：重新执行增量部署脚本，确保双机同步${NC}"
+    echo -e "${RED}🔴 严格执行：Node1 与 Node2 代码必须完全一致${NC}"
+    echo -e "${RED}🔴 停止部署：必须修复双机代码不一致后才能继续${NC}"
+    echo ""
+    echo "修复建议："
+    echo "  1. 在 Node1 和 Node2 上执行: git reset --hard origin/master && git pull origin master"
+    echo "  2. 验证双机代码一致性: bash scripts/check_code_consistency.sh"
+    echo "  3. 重新执行增量部署脚本"
     exit 1
 fi
 
@@ -616,7 +623,7 @@ echo "  Node2 Git 版本: ${NODE2_COMMIT:0:8}"
 
 if [ "$NODE1_COMMIT" != "$NODE2_COMMIT" ]; then
     echo -e "${RED}❌ 错误：Node1 与 Node2 Git 版本不一致！${NC}"
-    echo -e "${RED}   违反规范：双机代码必须完全一致${NC}"
+    echo -e "${RED}🔴 违反规范：双机代码必须完全一致（严格执行）${NC}"
     echo ""
     echo "修复方法："
     echo "  1. 在 Node1 上执行: git reset --hard origin/master && git pull origin master"
