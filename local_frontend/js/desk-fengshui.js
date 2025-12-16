@@ -81,13 +81,21 @@ class DeskFengshuiAnalyzer {
     loadImage(file) {
         // 验证文件类型
         if (!file.type.startsWith('image/')) {
-            alert('请上传图片文件');
+            if (typeof ErrorHandler !== 'undefined') {
+                ErrorHandler.showError('请上传图片文件');
+            } else {
+                alert('请上传图片文件');
+            }
             return;
         }
         
         // 验证文件大小（最大10MB）
         if (file.size > 10 * 1024 * 1024) {
-            alert('图片文件不能超过10MB');
+            if (typeof ErrorHandler !== 'undefined') {
+                ErrorHandler.showError('图片文件不能超过10MB');
+            } else {
+                alert('图片文件不能超过10MB');
+            }
             return;
         }
         
@@ -129,7 +137,11 @@ class DeskFengshuiAnalyzer {
     
     async analyze() {
         if (!this.selectedImage) {
-            alert('请先上传照片');
+            if (typeof ErrorHandler !== 'undefined') {
+                ErrorHandler.showError('请先上传照片');
+            } else {
+                alert('请先上传照片');
+            }
             return;
         }
         
@@ -140,9 +152,33 @@ class DeskFengshuiAnalyzer {
             const solarTime = document.getElementById('solarTime').value;
             const gender = document.getElementById('gender').value;
             
-            if (!solarDate || !solarTime) {
-                alert('请填写完整的八字信息');
-                return;
+            // 使用统一验证工具
+            if (typeof Validator !== 'undefined') {
+                try {
+                    Validator.required(solarDate, '出生日期');
+                    Validator.date(solarDate, '出生日期');
+                    Validator.required(solarTime, '出生时间');
+                    Validator.time(solarTime, '出生时间');
+                    Validator.required(gender, '性别');
+                    Validator.gender(gender, '性别');
+                } catch (error) {
+                    if (typeof ErrorHandler !== 'undefined') {
+                        ErrorHandler.showError(error.message);
+                    } else {
+                        alert(error.message);
+                    }
+                    return;
+                }
+            } else {
+                // 降级方案：简单验证
+                if (!solarDate || !solarTime) {
+                    if (typeof ErrorHandler !== 'undefined') {
+                        ErrorHandler.showError('请填写完整的八字信息');
+                    } else {
+                        alert('请填写完整的八字信息');
+                    }
+                    return;
+                }
             }
         }
         
@@ -167,48 +203,27 @@ class DeskFengshuiAnalyzer {
                 requestData.gender = document.getElementById('gender').value;
             }
             
-            console.log('使用 gRPC-Web 调用办公桌风水分析接口');
-            console.log('请求数据:', { 
-                has_image: !!requestData.image_base64, 
-                filename: requestData.filename,
-                use_bazi: requestData.use_bazi 
-            });
-            
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/78526dd9-2af8-4107-b5eb-7335b61d3b69',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'desk-fengshui.js:178',message:'before api.post call',data:{has_image:!!requestData.image_base64,use_bazi:requestData.use_bazi},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-            // #endregion
-            
             // 使用 gRPC-Web 调用
             const result = await api.post('/api/v2/desk-fengshui/analyze', requestData);
-            
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/78526dd9-2af8-4107-b5eb-7335b61d3b69',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'desk-fengshui.js:182',message:'after api.post call',data:{result_is_null:result===null,result_is_undefined:result===undefined,result_type:typeof result,has_success:result?.success,has_error:!!result?.error,has_detail:!!result?.detail},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-            // #endregion
-            
-            // 安全地打印结果（避免循环引用导致 Maximum call stack exceeded）
-            try {
-                console.log('分析结果:', JSON.parse(JSON.stringify(result)));
-            } catch (e) {
-                console.log('分析结果: success =', result?.success);
-            }
             
             if (result && result.success) {
                 this.displayResult(result.data);
             } else {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/78526dd9-2af8-4107-b5eb-7335b61d3b69',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'desk-fengshui.js:194',message:'result not success - throwing error',data:{error:result?.error,detail:result?.detail},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-                // #endregion
                 throw new Error(result?.error || result?.detail || '分析失败');
             }
             
         } catch (error) {
-            console.error('分析失败:', error);
-            console.error('错误堆栈:', error.stack);
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/78526dd9-2af8-4107-b5eb-7335b61d3b69',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'desk-fengshui.js:193',message:'error caught',data:{error_type:error?.constructor?.name,error_message:error?.message,error_stack:error?.stack?.substring(0,200)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-            // #endregion
-            const errorMsg = error.message || '未知错误';
-            alert(`分析失败: ${errorMsg}\n请检查浏览器控制台获取详细信息`);
+            // 使用统一错误处理
+            if (typeof ErrorHandler !== 'undefined') {
+                ErrorHandler.handleApiError(error, {
+                    containerId: 'errorMessage',
+                    sectionId: 'resultSection'
+                });
+            } else {
+                // 降级方案：如果 ErrorHandler 未加载
+                console.error('分析失败:', error);
+                alert(`分析失败: ${error.message || '未知错误'}`);
+            }
         } finally {
             this.setLoading(false);
         }

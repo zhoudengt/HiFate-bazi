@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>办公桌风水分析 - HiFate命理</title>
+    <link rel="stylesheet" href="css/common.css">
     <link rel="stylesheet" href="css/desk-fengshui.css">
 </head>
 <body>
@@ -70,6 +71,9 @@
                     </div>
                 </div>
             </section>
+
+            <!-- 错误消息容器 -->
+            <div id="errorMessage" class="error-message" style="display: none;"></div>
 
             <!-- 提交按钮 -->
             <section class="action-section">
@@ -142,7 +146,13 @@
     </div>
 
     <script src="config.js"></script>
+    <!-- 核心工具类 -->
+    <script src="js/core/error-handler.js"></script>
+    <script src="js/core/dom-utils.js"></script>
+    <script src="js/core/validator.js"></script>
+    <!-- API客户端 -->
     <script src="js/api.js"></script>
+    <!-- 页面脚本 -->
     <script src="js/desk-fengshui.js"></script>
 </body>
 </html>

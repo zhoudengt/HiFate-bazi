@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package auth;
+
+// Auth Service - OAuth 2.0 认证服务
+
+// 验证 Token 请求
+message VerifyTokenRequest {
+  string token = 1;  // Access Token
+}
+
+// 验证 Token 响应
+message VerifyTokenResponse {
+  bool valid = 1;           // Token 是否有效
+  string user_id = 2;       // 用户 ID（如果有效）
+  string client_id = 3;     // 客户端 ID
+  int64 expires_at = 4;     // 过期时间戳（Unix 时间戳，秒）
+  string error = 5;         // 错误信息（如果无效）
+}
+
+// 刷新 Token 请求
+message RefreshTokenRequest {
+  string refresh_token = 1;  // Refresh Token
+  string client_id = 2;       // 客户端 ID
+  string client_secret = 3;  // 客户端密钥
+}
+
+// 刷新 Token 响应
+message RefreshTokenResponse {
+  bool success = 1;          // 是否成功
+  string access_token = 2;  // 新的 Access Token
+  string refresh_token = 3; // 新的 Refresh Token（可选）
+  int32 expires_in = 4;     // Access Token 过期时间（秒）
+  string token_type = 5;    // Token 类型（通常是 "bearer"）
+  string error = 6;          // 错误信息（如果失败）
+}
+
+// 获取 Token 信息请求
+message GetTokenInfoRequest {
+  string token = 1;  // Access Token
+}
+
+// 获取 Token 信息响应
+message GetTokenInfoResponse {
+  bool valid = 1;           // Token 是否有效
+  string user_id = 2;       // 用户 ID
+  string client_id = 3;     // 客户端 ID
+  repeated string scope = 4; // 权限范围
+  int64 issued_at = 5;      // 签发时间戳
+  int64 expires_at = 6;     // 过期时间戳
+  string error = 7;          // 错误信息（如果无效）
+}
+
+// 创建 Token 请求
+message CreateTokenRequest {
+  string user_id = 1;                    // 用户 ID
+  string client_id = 2;                  // 客户端 ID
+  repeated string scope = 3;              // 权限范围（可选）
+  int32 access_token_expires_in = 4;      // Access Token 过期时间（秒，0 表示使用默认值）
+  int32 refresh_token_expires_in = 5;     // Refresh Token 过期时间（秒，0 表示使用默认值）
+}
+
+// 创建 Token 响应
+message CreateTokenResponse {
+  bool success = 1;          // 是否成功
+  string access_token = 2;  // Access Token
+  string refresh_token = 3; // Refresh Token
+  int32 expires_in = 4;     // Access Token 过期时间（秒）
+  string token_type = 5;    // Token 类型（通常是 "bearer"）
+  string error = 6;          // 错误信息（如果失败）
+}
+
+// 健康检查请求
+message HealthCheckRequest {}
+
+// 健康检查响应
+message HealthCheckResponse {
+  string status = 1;
+}
+
+// Auth Service 服务定义
+service AuthService {
+  // 验证 Token
+  rpc VerifyToken(VerifyTokenRequest) returns (VerifyTokenResponse);
+  
+  // 刷新 Token
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+  
+  // 获取 Token 信息
+  rpc GetTokenInfo(GetTokenInfoRequest) returns (GetTokenInfoResponse);
+  
+  // 创建 Token
+  rpc CreateToken(CreateTokenRequest) returns (CreateTokenResponse);
+  
+  // 健康检查
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}

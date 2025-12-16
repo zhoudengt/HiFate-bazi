@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>工具类测试页面</title>
+    <link rel="stylesheet" href="css/common.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .test-section h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        .test-button {
+            margin: 10px 5px;
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .test-button:hover {
+            background: #5568d3;
+        }
+        #testElement {
+            padding: 10px;
+            margin: 10px 0;
+            background: #f0f0f0;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>前端工具类测试页面</h1>
+    <p>本页面用于测试 ErrorHandler、DomUtils、Validator 工具类的功能</p>
+
+    <!-- 错误消息容器 -->
+    <div id="errorMessage" class="error-message" style="display: none;"></div>
+    
+    <!-- 成功消息容器 -->
+    <div id="successMessage" class="success-message" style="display: none;"></div>
+
+    <!-- 测试元素 -->
+    <div id="testElement" style="display: none;">测试元素</div>
+
+    <!-- ErrorHandler 测试 -->
+    <div class="test-section">
+        <h2>ErrorHandler 测试</h2>
+        <button class="test-button" onclick="testShowError()">测试显示错误</button>
+        <button class="test-button" onclick="testHideError()">测试隐藏错误</button>
+        <button class="test-button" onclick="testApiError()">测试API错误处理</button>
+        <button class="test-button" onclick="testShowSuccess()">测试显示成功消息</button>
+    </div>
+
+    <!-- DomUtils 测试 -->
+    <div class="test-section">
+        <h2>DomUtils 测试</h2>
+        <button class="test-button" onclick="testSetText()">测试设置文本</button>
+        <button class="test-button" onclick="testShowHide()">测试显示/隐藏</button>
+        <button class="test-button" onclick="testSetFormValue()">测试设置表单值</button>
+        <button class="test-button" onclick="testGetFormValue()">测试获取表单值</button>
+        <br>
+        <input type="text" id="testInput" placeholder="测试输入框" style="margin-top: 10px; padding: 5px;">
+        <div id="testOutput" style="margin-top: 10px; padding: 10px; background: #f9f9f9; border-radius: 5px;"></div>
+    </div>
+
+    <!-- Validator 测试 -->
+    <div class="test-section">
+        <h2>Validator 测试</h2>
+        <button class="test-button" onclick="testDateValidation()">测试日期验证</button>
+        <button class="test-button" onclick="testTimeValidation()">测试时间验证</button>
+        <button class="test-button" onclick="testBaziInput()">测试八字输入验证</button>
+        <div id="validationOutput" style="margin-top: 10px; padding: 10px; background: #f9f9f9; border-radius: 5px;"></div>
+    </div>
+
+    <!-- 引入脚本 -->
+    <script src="config.js"></script>
+    <script src="js/core/error-handler.js"></script>
+    <script src="js/core/dom-utils.js"></script>
+    <script src="js/core/validator.js"></script>
+
+    <script>
+        // ErrorHandler 测试函数
+        function testShowError() {
+            ErrorHandler.showError('这是一个测试错误消息', {
+                containerId: 'errorMessage',
+                scrollTo: true
+            });
+        }
+
+        function testHideError() {
+            ErrorHandler.hideError('errorMessage');
+        }
+
+        function testApiError() {
+            const error = new Error('网络连接失败');
+            ErrorHandler.handleApiError(error, {
+                containerId: 'errorMessage'
+            });
+        }
+
+        function testShowSuccess() {
+            ErrorHandler.showSuccess('操作成功！', {
+                containerId: 'successMessage',
+                autoHide: true,
+                hideDelay: 3000
+            });
+        }
+
+        // DomUtils 测试函数
+        function testSetText() {
+            DomUtils.setText('testElement', '文本已更新: ' + new Date().toLocaleTimeString());
+            DomUtils.show('testElement');
+        }
+
+        function testShowHide() {
+            if (DomUtils.hasClass('testElement', 'visible') || 
+                window.getComputedStyle(document.getElementById('testElement')).display !== 'none') {
+                DomUtils.hide('testElement');
+            } else {
+                DomUtils.show('testElement');
+            }
+        }
+
+        function testSetFormValue() {
+            DomUtils.setFormValue('testInput', '测试值: ' + new Date().toLocaleTimeString());
+        }
+
+        function testGetFormValue() {
+            const value = DomUtils.getFormValue('testInput');
+            DomUtils.setText('testOutput', '获取到的值: ' + (value || '(空)'));
+        }
+
+        // Validator 测试函数
+        function testDateValidation() {
+            try {
+                Validator.date('1990-01-15', '日期');
+                DomUtils.setText('validationOutput', '✅ 日期验证通过: 1990-01-15');
+            } catch (error) {
+                DomUtils.setText('validationOutput', '❌ 日期验证失败: ' + error.message);
+            }
+        }
+
+        function testTimeValidation() {
+            try {
+                Validator.time('12:00', '时间');
+                DomUtils.setText('validationOutput', '✅ 时间验证通过: 12:00');
+            } catch (error) {
+                DomUtils.setText('validationOutput', '❌ 时间验证失败: ' + error.message);
+            }
+        }
+
+        function testBaziInput() {
+            try {
+                Validator.baziInput({
+                    solar_date: '1990-01-15',
+                    solar_time: '12:00',
+                    gender: 'male'
+                });
+                DomUtils.setText('validationOutput', '✅ 八字输入验证通过');
+            } catch (error) {
+                DomUtils.setText('validationOutput', '❌ 八字输入验证失败: ' + error.message);
+            }
+        }
+
+        // 页面加载完成后的提示
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('✅ 工具类测试页面加载完成');
+            console.log('✅ ErrorHandler:', typeof ErrorHandler !== 'undefined' ? '已加载' : '未加载');
+            console.log('✅ DomUtils:', typeof DomUtils !== 'undefined' ? '已加载' : '未加载');
+            console.log('✅ Validator:', typeof Validator !== 'undefined' ? '已加载' : '未加载');
+            
+            if (typeof ErrorHandler !== 'undefined' && typeof DomUtils !== 'undefined' && typeof Validator !== 'undefined') {
+                ErrorHandler.showSuccess('所有工具类已成功加载！', {
+                    containerId: 'successMessage',
+                    autoHide: true,
+                    hideDelay: 2000
+                });
+            } else {
+                ErrorHandler.showError('部分工具类未加载，请检查控制台', {
+                    containerId: 'errorMessage'
+                });
+            }
+        });
+    </script>
+</body>
+</html>
+

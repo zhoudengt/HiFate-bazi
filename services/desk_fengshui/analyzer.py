@@ -18,8 +18,13 @@ from bazi_client import BaziClient
 
 logger = logging.getLogger(__name__)
 
-# 全局线程池（用于CPU密集型任务）
-_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="desk_fengshui")
+# 全局线程池（优化：增加线程数，添加名称前缀）
+_executor = ThreadPoolExecutor(max_workers=6, thread_name_prefix="desk_fengshui")
+
+# 超时配置
+BAZI_TIMEOUT = 8  # 八字服务超时（秒）
+DETECTION_TIMEOUT = 30  # 检测超时（秒）
+RULE_TIMEOUT = 10  # 规则匹配超时（秒）
 
 
 class DeskFengshuiAnalyzer:
@@ -49,16 +54,31 @@ class DeskFengshuiAnalyzer:
         Returns:
             分析结果
         """
-        start_time = time.time()
+        total_start = time.time()
+        stages_time = {}
         
         try:
-            # 1. 异步检测物品（CPU密集型，在线程池中执行）
+            # 1. 异步检测物品（CPU密集型，在线程池中执行，带超时）
             logger.info("开始物品检测（异步）...")
-            detection_result = await asyncio.get_event_loop().run_in_executor(
-                _executor,
-                self.detector.detect,
-                image_bytes
-            )
+            stage_start = time.time()
+            try:
+                detection_result = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        _executor,
+                        self.detector.detect,
+                        image_bytes
+                    ),
+                    timeout=DETECTION_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                elapsed = time.time() - stage_start
+                logger.error(f"❌ 物品检测超时（>{DETECTION_TIMEOUT}秒，已耗时: {elapsed:.2f}秒）")
+                return {
+                    'success': False,
+                    'error': f'物品检测超时（超过{DETECTION_TIMEOUT}秒），请尝试上传更小的图片'
+                }
+            
+            stages_time['detection'] = time.time() - stage_start
             
             # 🔴 防御性检查：确保 detection_result 不为 None
             if detection_result is None:
@@ -77,16 +97,19 @@ class DeskFengshuiAnalyzer:
             items = detection_result.get('items', [])
             img_shape = detection_result.get('image_shape')
             
-            logger.info(f"检测到 {len(items)} 个物品")
+            logger.info(f"检测到 {len(items)} 个物品（耗时: {stages_time['detection']:.2f}秒）")
             
             # 2. 计算位置（轻量级，同步执行）
             logger.info("计算物品位置...")
+            stage_start = time.time()
             enriched_items = PositionCalculator.calculate_all_positions(items, img_shape)
+            stages_time['position'] = time.time() - stage_start
             
             # 3. 并行获取八字信息和加载规则
             logger.info("并行获取八字信息和规则...")
             bazi_info = None
             loop = asyncio.get_event_loop()
+            stage_start = time.time()
             
             # 创建八字获取Future（如果需要）
             bazi_future = None
@@ -104,30 +127,56 @@ class DeskFengshuiAnalyzer:
                 False  # force_reload
             )
             
-            # 等待八字信息（如果启用）
+            # 等待八字信息（如果启用，带超时）
             if bazi_future:
                 try:
-                    bazi_result = await bazi_future
+                    bazi_result = await asyncio.wait_for(bazi_future, timeout=BAZI_TIMEOUT)
                     # 🔴 防御性检查：确保 bazi_result 不为 None
                     if bazi_result is not None and bazi_result.get('success'):
                         bazi_info = bazi_result
+                        stages_time['bazi'] = time.time() - stage_start
+                        logger.info(f"✅ 获取八字信息成功（耗时: {stages_time['bazi']:.2f}秒）: 喜神={bazi_info.get('xishen')}, 忌神={bazi_info.get('jishen')}")
                     else:
                         error_msg = bazi_result.get('error', '未知错误') if bazi_result else '返回空结果'
-                        logger.warning(f"获取八字信息失败: {error_msg}")
+                        logger.warning(f"获取八字信息失败: {error_msg}，将不使用八字分析")
+                        stages_time['bazi'] = time.time() - stage_start
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ 获取八字信息超时（>{BAZI_TIMEOUT}秒），将不使用八字分析")
+                    stages_time['bazi'] = BAZI_TIMEOUT
                 except Exception as e:
-                    logger.warning(f"获取八字信息异常: {e}")
+                    error_msg = str(e)
+                    # 检查是否是 gRPC 相关错误
+                    if 'aborted' in error_msg.lower() or 'signal' in error_msg.lower():
+                        logger.warning(f"⚠️ 八字服务连接中断: {error_msg}，将不使用八字分析")
+                    else:
+                        logger.warning(f"获取八字信息异常: {e}，将不使用八字分析")
+                    stages_time['bazi'] = time.time() - stage_start
             
             # 等待规则加载完成
             await rules_future
             
-            # 4. 匹配规则（CPU密集型，在线程池中执行）
+            # 4. 匹配规则（CPU密集型，在线程池中执行，带超时）
             logger.info("匹配风水规则（异步）...")
-            rule_result = await asyncio.get_event_loop().run_in_executor(
-                _executor,
-                self.engine.match_rules,
-                enriched_items,
-                bazi_info
-            )
+            stage_start = time.time()
+            try:
+                rule_result = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        _executor,
+                        self.engine.match_rules,
+                        enriched_items,
+                        bazi_info
+                    ),
+                    timeout=RULE_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                elapsed = time.time() - stage_start
+                logger.error(f"❌ 规则匹配超时（>{RULE_TIMEOUT}秒，已耗时: {elapsed:.2f}秒）")
+                return {
+                    'success': False,
+                    'error': f'规则匹配超时（超过{RULE_TIMEOUT}秒）'
+                }
+            
+            stages_time['rules'] = time.time() - stage_start
             
             # 🔴 防御性检查：确保 rule_result 不为 None
             if rule_result is None:
@@ -143,28 +192,52 @@ class DeskFengshuiAnalyzer:
                     'error': rule_result.get('error', '规则匹配失败')
                 }
             
-            # 4.1 为每个物品生成详细分析（核心新功能）
+            # 4.1 为每个物品生成详细分析（核心新功能，带超时）
             logger.info("生成物品级详细分析...")
-            item_analyses = await asyncio.get_event_loop().run_in_executor(
-                _executor,
-                self.engine.analyze_all_items,
-                enriched_items,
-                bazi_info
-            )
+            stage_start = time.time()
+            try:
+                item_analyses = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        _executor,
+                        self.engine.analyze_all_items,
+                        enriched_items,
+                        bazi_info
+                    ),
+                    timeout=10
+                )
+            except asyncio.TimeoutError:
+                logger.warning("物品分析超时，使用空列表")
+                item_analyses = []
+            
+            stages_time['item_analysis'] = time.time() - stage_start
             
             # 🔴 防御性检查：确保 item_analyses 不为 None
             if item_analyses is None:
                 logger.warning("物品分析返回 None，使用空列表")
                 item_analyses = []
             
-            # 4.2 生成三级建议体系
+            # 4.2 生成三级建议体系（带超时）
             logger.info("生成三级建议体系...")
-            recommendations = await asyncio.get_event_loop().run_in_executor(
-                _executor,
-                self.engine.generate_recommendations,
-                enriched_items,
-                bazi_info
-            )
+            stage_start = time.time()
+            try:
+                recommendations = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        _executor,
+                        self.engine.generate_recommendations,
+                        enriched_items,
+                        bazi_info
+                    ),
+                    timeout=10
+                )
+            except asyncio.TimeoutError:
+                logger.warning("建议生成超时，使用空字典")
+                recommendations = {
+                    'must_adjust': [],
+                    'should_add': [],
+                    'optional_optimize': []
+                }
+            
+            stages_time['recommendations'] = time.time() - stage_start
             
             # 🔴 防御性检查：确保 recommendations 不为 None
             if recommendations is None:
@@ -193,7 +266,16 @@ class DeskFengshuiAnalyzer:
                 }
             
             # 5. 构建响应
-            duration = int((time.time() - start_time) * 1000)
+            # 计算总耗时
+            total_time = time.time() - total_start
+            
+            # 记录性能信息
+            logger.info(f"✅ 分析完成，总耗时: {total_time:.2f}秒")
+            logger.info(f"   各阶段耗时: {stages_time}")
+            
+            # 如果总耗时过长，记录警告
+            if total_time > 60:
+                logger.warning(f"⚠️ 分析耗时过长: {total_time:.2f}秒")
             
             response = {
                 'success': True,
@@ -209,19 +291,28 @@ class DeskFengshuiAnalyzer:
                 'score': rule_result.get('score', 0),
                 'summary': rule_result.get('summary', ''),
                 'bazi_info': bazi_info,
-                'duration_ms': duration,
+                'duration_ms': int(total_time * 1000),
+                'performance': {
+                    'total_time': total_time,
+                    'stages_time': stages_time
+                },
                 'using_backup': detection_result.get('using_backup', False),
                 'warning': detection_result.get('warning')
             }
             
-            logger.info(f"✅ 分析完成，耗时 {duration}ms")
+            # 日志已在上面记录
             return response
             
         except Exception as e:
-            logger.error(f"分析过程出错: {e}", exc_info=True)
+            total_time = time.time() - total_start
+            logger.error(f"❌ 分析失败，已耗时: {total_time:.2f}秒，错误: {e}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'performance': {
+                    'total_time': total_time,
+                    'stages_time': stages_time
+                }
             }
     
     def analyze(self, image_bytes: bytes, solar_date: Optional[str] = None,
@@ -389,10 +480,15 @@ class DeskFengshuiAnalyzer:
             return response
             
         except Exception as e:
-            logger.error(f"分析失败: {e}", exc_info=True)
+            total_time = time.time() - total_start if 'total_start' in locals() else 0
+            logger.error(f"❌ 分析失败，已耗时: {total_time:.2f}秒，错误: {e}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'performance': {
+                    'total_time': total_time,
+                    'stages_time': stages_time if 'stages_time' in locals() else {}
+                }
             }
 
 

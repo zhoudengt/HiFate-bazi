@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录测试 - HiFate</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-style.css">
+    <style>
+        .debug-info {
+            background: #f0f0f0;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="login-box">
+            <h1>HiFate系统 - 测试版</h1>
+            <div class="debug-info" id="debugInfo">正在加载脚本...</div>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label>用户名</label>
+                    <input type="text" id="username" value="admin" required>
+                </div>
+                <div class="form-group">
+                    <label>密码</label>
+                    <input type="password" id="password" value="admin123" required>
+                </div>
+                <button type="submit" class="btn btn-primary">登录</button>
+            </form>
+            <div id="errorMsg" class="error-msg"></div>
+        </div>
+    </div>
+
+    <script>
+        // 调试信息
+        const debugInfo = document.getElementById('debugInfo');
+        function updateDebug(msg) {
+            debugInfo.innerHTML += '<br>' + msg;
+            console.log(msg);
+        }
+        
+        updateDebug('1. 开始加载脚本...');
+    </script>
+    
+    <script src="config.js" 
+            onload="updateDebug('2. ✅ config.js 加载成功'); console.log('TOKEN_KEY:', typeof TOKEN_KEY !== 'undefined' ? '✅' : '❌');"
+            onerror="updateDebug('2. ❌ config.js 加载失败'); console.error('config.js 加载失败');"></script>
+    
+    <script src="js/api.js"
+            onload="updateDebug('3. ✅ api.js 加载成功'); console.log('api:', typeof api !== 'undefined' ? '✅' : '❌');"
+            onerror="updateDebug('3. ❌ api.js 加载失败'); console.error('api.js 加载失败');"></script>
+    
+    <script src="js/auth.js"
+            onload="updateDebug('4. ✅ auth.js 加载成功'); console.log('Auth:', typeof Auth !== 'undefined' ? '✅' : '❌');"
+            onerror="updateDebug('4. ❌ auth.js 加载失败'); console.error('auth.js 加载失败');"></script>
+    
+    <script>
+        // 等待所有脚本加载完成
+        window.addEventListener('load', function() {
+            updateDebug('5. 页面加载完成，开始检查...');
+            
+            const checks = [];
+            checks.push('TOKEN_KEY: ' + (typeof TOKEN_KEY !== 'undefined' ? '✅' : '❌'));
+            checks.push('api: ' + (typeof api !== 'undefined' ? '✅' : '❌'));
+            checks.push('Auth: ' + (typeof Auth !== 'undefined' ? '✅' : '❌'));
+            
+            updateDebug('检查结果: ' + checks.join(', '));
+            
+            // 检查必要的对象是否已加载
+            if (typeof Auth === 'undefined') {
+                const errorMsg = document.getElementById('errorMsg');
+                errorMsg.textContent = '❌ Auth 对象未定义！请检查浏览器控制台查看详细错误。';
+                errorMsg.style.color = 'red';
+                updateDebug('❌ Auth 未定义，无法继续');
+                return;
+            }
+            
+            if (typeof api === 'undefined') {
+                const errorMsg = document.getElementById('errorMsg');
+                errorMsg.textContent = '❌ api 对象未定义！请检查浏览器控制台查看详细错误。';
+                errorMsg.style.color = 'red';
+                updateDebug('❌ api 未定义，无法继续');
+                return;
+            }
+            
+            updateDebug('✅ 所有对象已加载，可以登录');
+            
+            const loginForm = document.getElementById('loginForm');
+            if (loginForm) {
+                loginForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const username = document.getElementById('username').value;
+                    const password = document.getElementById('password').value;
+                    const errorMsg = document.getElementById('errorMsg');
+                    
+                    try {
+                        errorMsg.textContent = '';
+                        errorMsg.style.color = '';
+                        updateDebug('🔐 开始登录: ' + username);
+                        await Auth.login(username, password);
+                        updateDebug('✅ 登录成功，跳转中...');
+                        window.location.href = 'index.html';
+                    } catch (error) {
+                        updateDebug('❌ 登录失败: ' + error.message);
+                        errorMsg.textContent = error.message || '登录失败';
+                        errorMsg.style.color = 'red';
+                    }
+                });
+            } else {
+                updateDebug('❌ 登录表单未找到');
+            }
+        });
+    </script>
+</body>
+</html>

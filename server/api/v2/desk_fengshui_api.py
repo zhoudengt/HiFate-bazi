@@ -100,20 +100,23 @@ async def analyze_desk_fengshui(
                 logger.warning("use_bazi=True 但缺少八字参数，将不使用八字分析")
                 use_bazi = False
         
-        # 4. 调用分析服务（异步）
+        # 4. 调用分析服务（异步，带超时）
         try:
+            import asyncio
             from analyzer import DeskFengshuiAnalyzer
             
             analyzer = DeskFengshuiAnalyzer()
             
-            # 使用异步方法以提升并发性能
-            
-            result = await analyzer.analyze_async(
-                image_bytes=image_bytes,
-                solar_date=solar_date,
-                solar_time=solar_time,
-                gender=gender,
-                use_bazi=use_bazi
+            # 使用异步方法以提升并发性能，添加总超时（90秒）
+            result = await asyncio.wait_for(
+                analyzer.analyze_async(
+                    image_bytes=image_bytes,
+                    solar_date=solar_date,
+                    solar_time=solar_time,
+                    gender=gender,
+                    use_bazi=use_bazi
+                ),
+                timeout=90.0  # 90秒总超时
             )
             
             
@@ -150,6 +153,12 @@ async def analyze_desk_fengshui(
                 data=result
             )
             
+        except asyncio.TimeoutError:
+            logger.error("分析超时（>90秒）")
+            raise HTTPException(
+                status_code=504,
+                detail="分析超时，请稍后重试。建议：1) 上传更小的图片 2) 关闭八字分析（use_bazi=false）"
+            )
         except ImportError as e:
             logger.error(f"服务模块导入失败: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="服务未就绪，请稍后重试")

@@ -24,6 +24,16 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 DEBUG_LOG_PATH = os.path.join(PROJECT_ROOT, 'logs', 'debug.log')
 
 from server.api.v1.auth import LoginRequest, login
+from server.api.v1.oauth import (
+    AuthorizeRequest,
+    TokenRequest,
+    RefreshTokenRequest,
+    RevokeTokenRequest,
+    authorize,
+    token,
+    refresh_token,
+    revoke_token,
+)
 from server.api.v1.bazi_display import (
     BaziDisplayRequest,
     DayunDisplayRequest,
@@ -269,6 +279,27 @@ async def _handle_yigua(payload: Dict[str, Any]):
 async def _handle_login(payload: Dict[str, Any]):
     request_model = LoginRequest(**payload)
     return await login(request_model)
+
+
+@_register("/oauth/token")
+async def _handle_oauth_token(payload: Dict[str, Any]):
+    """OAuth 2.0 Token 获取端点"""
+    request_model = TokenRequest(**payload)
+    return await token(request_model)
+
+
+@_register("/oauth/refresh")
+async def _handle_oauth_refresh(payload: Dict[str, Any]):
+    """OAuth 2.0 Token 刷新端点"""
+    request_model = RefreshTokenRequest(**payload)
+    return await refresh_token(request_model)
+
+
+@_register("/oauth/revoke")
+async def _handle_oauth_revoke(payload: Dict[str, Any]):
+    """OAuth 2.0 Token 撤销端点"""
+    request_model = RevokeTokenRequest(**payload)
+    return await revoke_token(request_model)
 
 
 @_register("/payment/create-session")
@@ -661,6 +692,7 @@ async def grpc_web_gateway(request: Request):
 
     endpoint = frontend_request["endpoint"]
     payload_json = frontend_request["payload_json"]
+    auth_token = frontend_request.get("auth_token", "")
 
     try:
         payload = json.loads(payload_json) if payload_json else {}
@@ -668,6 +700,36 @@ async def grpc_web_gateway(request: Request):
         error_msg = f"payload_json 解析失败: {exc}"
         logger.warning(error_msg)
         return _build_error_response(error_msg, http_status=400, grpc_status=3)
+
+    # ⭐ 认证检查：对于需要认证的端点，验证 Token
+    # 白名单端点（不需要认证）
+    whitelist_endpoints = {
+        "/auth/login",
+        "/oauth/authorize",
+        "/oauth/token",
+        "/oauth/refresh",
+    }
+    
+    if endpoint not in whitelist_endpoints:
+        # 需要认证的端点
+        if not auth_token:
+            error_msg = "未提供认证信息，请在请求头中添加 Authorization: Bearer <token>"
+            logger.warning(f"gRPC 网关: {endpoint} 需要认证，但未提供 Token")
+            return _build_error_response(error_msg, http_status=401, grpc_status=16)
+        
+        # 验证 Token
+        try:
+            from src.clients.auth_client_grpc import get_auth_client
+            auth_client = get_auth_client()
+            result = auth_client.verify_token(auth_token)
+            
+            if not result.get("valid", False):
+                error_msg = result.get("error", "Token 无效或已过期")
+                logger.warning(f"gRPC 网关: {endpoint} Token 验证失败: {error_msg}")
+                return _build_error_response(error_msg, http_status=401, grpc_status=16)
+        except Exception as e:
+            logger.error(f"gRPC 网关: 认证服务错误: {str(e)}", exc_info=True)
+            return _build_error_response("认证服务暂时不可用，请稍后重试", http_status=503, grpc_status=14)
 
     handler = SUPPORTED_ENDPOINTS.get(endpoint)
     if not handler:

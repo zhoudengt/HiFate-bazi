@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """
 八字服务客户端
-调用八字核心服务获取用户的喜神、忌神等信息
+直接使用本地服务获取用户的喜神、忌神等信息
+修复：移除不存在的 gRPC 客户端引用，直接使用本地 WangShuaiService
 """
 
 import sys
 import os
 import logging
+import time
 from typing import Dict, Optional
 
 # 添加项目根目录到路径
@@ -17,22 +19,18 @@ logger = logging.getLogger(__name__)
 
 
 class BaziClient:
-    """八字服务客户端"""
+    """八字服务客户端（使用本地服务）"""
     
     def __init__(self):
         """初始化八字客户端"""
         try:
-            from src.clients.bazi_analyzer_client import BaziAnalyzerClient
-            from src.clients.wangshuai_analyzer_client import WangShuaiAnalyzerClient
-            
-            self.analyzer_client = BaziAnalyzerClient()
-            self.wangshuai_client = WangShuaiAnalyzerClient()
-            
-            logger.info("✅ 八字客户端初始化成功")
+            # 直接使用本地旺衰服务，不需要 gRPC 客户端
+            from server.services.wangshuai_service import WangShuaiService
+            self.wangshuai_service = WangShuaiService
+            logger.info("✅ 八字客户端初始化成功（本地服务模式）")
         except Exception as e:
-            logger.error(f"❌ 八字客户端初始化失败: {e}")
-            self.analyzer_client = None
-            self.wangshuai_client = None
+            logger.error(f"❌ 八字客户端初始化失败: {e}", exc_info=True)
+            self.wangshuai_service = None
     
     def get_xishen_jishen(self, solar_date: str, solar_time: str, gender: str) -> Dict:
         """
@@ -46,63 +44,79 @@ class BaziClient:
         Returns:
             喜神忌神信息
         """
+        start_time = time.time()
+        
         try:
-            # 1. 调用旺衰分析服务获取喜神忌神
-            if self.wangshuai_client:
-                try:
-                    result = self.wangshuai_client.calculate_wangshuai(
-                        solar_date, solar_time, gender
-                    )
-                    
-                    if result.get('success'):
-                        data = result.get('data', {})
-                        xishen_list = data.get('xishen', [])
-                        jishen_list = data.get('jishen', [])
-                        
-                        # 提取主要喜神忌神
-                        xishen = xishen_list[0] if xishen_list else None
-                        jishen = jishen_list[0] if jishen_list else None
-                        
-                        logger.info(f"获取喜神忌神成功: 喜神={xishen}, 忌神={jishen}")
-                        
-                        return {
-                            'success': True,
-                            'xishen': xishen,
-                            'xishen_list': xishen_list,
-                            'jishen': jishen,
-                            'jishen_list': jishen_list,
-                            'wangshuai_level': data.get('level', ''),
-                            # 🔴 防御性检查：避免链式调用导致 None 错误
-                            'day_stem': (lambda: (lambda b, d: d.get('stem', '') if isinstance(d, dict) else '')(b, b.get('day_pillar') if isinstance(b, dict) else {}))(data.get('bazi') or {})
-                        }
-                except Exception as e:
-                    logger.warning(f"旺衰服务调用失败，尝试本地计算: {e}")
+            # 使用本地旺衰服务计算喜神忌神
+            if not self.wangshuai_service:
+                logger.warning("旺衰服务未初始化，尝试直接使用分析器")
+                return self._calculate_with_analyzer(solar_date, solar_time, gender)
             
-            # 2. 备用方案：使用本地八字计算
-            return self._calculate_local(solar_date, solar_time, gender)
+            # 调用旺衰服务
+            result = self.wangshuai_service.calculate_wangshuai(
+                solar_date, solar_time, gender
+            )
+            
+            if not result or not result.get('success'):
+                error_msg = result.get('error', '未知错误') if result else '返回空结果'
+                logger.error(f"旺衰服务计算失败: {error_msg}")
+                # 尝试使用分析器直接计算
+                return self._calculate_with_analyzer(solar_date, solar_time, gender)
+            
+            # 提取数据
+            data = result.get('data', {})
+            xishen_list = data.get('xishen', [])
+            jishen_list = data.get('jishen', [])
+            
+            # 提取主要喜神忌神
+            xishen = xishen_list[0] if xishen_list else None
+            jishen = jishen_list[0] if jishen_list else None
+            
+            # 获取日干
+            bazi_info = data.get('bazi_info', {})
+            day_stem = self._safe_get_day_stem(bazi_info)
+            
+            elapsed = time.time() - start_time
+            logger.info(f"✅ 获取喜神忌神成功（耗时: {elapsed:.2f}秒）: 喜神={xishen}, 忌神={jishen}")
+            
+            return {
+                'success': True,
+                'xishen': xishen,
+                'xishen_list': xishen_list,
+                'jishen': jishen,
+                'jishen_list': jishen_list,
+                'wangshuai_level': data.get('level', ''),
+                'day_stem': day_stem,
+                'source': 'service'
+            }
             
         except Exception as e:
-            logger.error(f"获取喜神忌神失败: {e}", exc_info=True)
-            return {
-                'success': False,
-                'error': str(e),
-                'xishen': None,
-                'jishen': None
-            }
+            elapsed = time.time() - start_time
+            logger.error(f"❌ 获取喜神忌神失败（耗时: {elapsed:.2f}秒）: {e}", exc_info=True)
+            # 尝试使用分析器直接计算作为最后手段
+            try:
+                return self._calculate_with_analyzer(solar_date, solar_time, gender)
+            except Exception as e2:
+                logger.error(f"❌ 所有计算方法都失败: {e2}")
+                return {
+                    'success': False,
+                    'error': str(e),
+                    'xishen': None,
+                    'jishen': None
+                }
     
-    def _calculate_local(self, solar_date: str, solar_time: str, gender: str) -> Dict:
-        """本地计算喜神忌神（备用方案）"""
+    def _calculate_with_analyzer(self, solar_date: str, solar_time: str, gender: str) -> Dict:
+        """直接使用分析器计算喜神忌神（备用方案）"""
         try:
-            from src.bazi_calculator import WenZhenBazi
             from src.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
             
-            # 1. 计算八字
-            bazi_calc = WenZhenBazi(solar_date, solar_time, gender)
-            bazi_result = bazi_calc.calculate()
-            
-            # 2. 计算旺衰和喜神忌神
+            # 直接使用分析器，它内部会计算八字
             analyzer = WangShuaiAnalyzer()
-            wangshuai_result = analyzer.analyze(bazi_result)
+            wangshuai_result = analyzer.analyze(solar_date, solar_time, gender)
+            
+            if not wangshuai_result or not wangshuai_result.get('success'):
+                error_msg = wangshuai_result.get('error', '未知错误') if wangshuai_result else '返回空结果'
+                raise Exception(f"旺衰分析失败: {error_msg}")
             
             xishen_list = wangshuai_result.get('xishen', [])
             jishen_list = wangshuai_result.get('jishen', [])
@@ -110,7 +124,11 @@ class BaziClient:
             xishen = xishen_list[0] if xishen_list else None
             jishen = jishen_list[0] if jishen_list else None
             
-            logger.info(f"本地计算喜神忌神成功: 喜神={xishen}, 忌神={jishen}")
+            # 获取日干
+            bazi_info = wangshuai_result.get('bazi_info', {})
+            day_stem = self._safe_get_day_stem(bazi_info)
+            
+            logger.info(f"✅ 直接计算喜神忌神成功: 喜神={xishen}, 忌神={jishen}")
             
             return {
                 'success': True,
@@ -119,19 +137,23 @@ class BaziClient:
                 'jishen': jishen,
                 'jishen_list': jishen_list,
                 'wangshuai_level': wangshuai_result.get('level', ''),
-                # 🔴 防御性检查：避免链式调用导致 None 错误
-                'day_stem': (lambda: (lambda bp, dp: dp.get('stem', '') if isinstance(dp, dict) else '')(bp, bp.get('day_pillar') if isinstance(bp, dict) else {}))(bazi_result.get('bazi_pillars') or {}),
-                'source': 'local'
+                'day_stem': day_stem,
+                'source': 'analyzer'
             }
             
         except Exception as e:
-            logger.error(f"本地计算失败: {e}", exc_info=True)
-            return {
-                'success': False,
-                'error': str(e),
-                'xishen': None,
-                'jishen': None
-            }
+            logger.error(f"直接计算失败: {e}", exc_info=True)
+            raise
+    
+    def _safe_get_day_stem(self, bazi_info: Optional[Dict]) -> str:
+        """安全获取日干"""
+        try:
+            if not bazi_info or not isinstance(bazi_info, dict):
+                return ''
+            day_stem = bazi_info.get('day_stem', '')
+            return day_stem if isinstance(day_stem, str) else ''
+        except Exception:
+            return ''
     
     def get_basic_info(self, solar_date: str, solar_time: str, gender: str) -> Dict:
         """

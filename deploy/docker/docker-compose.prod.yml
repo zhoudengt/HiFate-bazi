@@ -310,13 +310,99 @@ services:
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
       - /opt/HiFate-bazi/src:/app/src:ro
-    command: python services/intent_service/grpc_server.py
+    command: python services/intent_service/grpc_server.py --port 9008
     restart: always
     networks:
       - hifate-network
     depends_on:
       mysql:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  auth-service:
+    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
+    container_name: hifate-auth-service
+    ports:
+      - "9011:9011"
+    environment:
+      APP_ENV: production
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      AUTH_SERVICE_PORT: 9011
+      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID:-hifate_client}
+      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET:-hifate_secret_change_me}
+      OAUTH_AUTHORIZATION_CODE_EXPIRE_MINUTES: ${OAUTH_AUTHORIZATION_CODE_EXPIRE_MINUTES:-10}
+      OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES: ${OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      OAUTH_REFRESH_TOKEN_EXPIRE_DAYS: ${OAUTH_REFRESH_TOKEN_EXPIRE_DAYS:-30}
+      TZ: Asia/Shanghai
+    volumes:
+      - /opt/HiFate-bazi/proto:/app/proto:ro  # 挂载 proto 目录，支持热更新
+      - /opt/HiFate-bazi/services:/app/services:ro  # 挂载 services 目录，支持热更新
+      - /opt/HiFate-bazi/src:/app/src:ro  # 挂载 src 目录，支持热更新
+    command: python services/auth_service/main.py --port 9011
+    restart: always
+    networks:
+      - hifate-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; import sys; sys.path.insert(0, '/app/proto/generated'); import auth_pb2, auth_pb2_grpc; channel = grpc.insecure_channel('localhost:9011'); stub = auth_pb2_grpc.AuthServiceStub(channel); response = stub.HealthCheck(auth_pb2.HealthCheckRequest(), timeout=5.0); exit(0 if response.status == 'ok' else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+      - /opt/HiFate-bazi/proto:/app/proto:ro
+      - /opt/HiFate-bazi/services:/app/services:ro
+      - /opt/HiFate-bazi/src:/app/src:ro
+    command: python services/intent_service/grpc_server.py --port 9008
+    restart: always
+    networks:
+      - hifate-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  auth-service:
+    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
+    container_name: hifate-auth-service
+    ports:
+      - "9011:9011"
+    environment:
+      APP_ENV: production
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      AUTH_SERVICE_PORT: 9011
+      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID:-hifate_client}
+      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET:-hifate_secret_change_me}
+      OAUTH_AUTHORIZATION_CODE_EXPIRE_MINUTES: ${OAUTH_AUTHORIZATION_CODE_EXPIRE_MINUTES:-10}
+      OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES: ${OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      OAUTH_REFRESH_TOKEN_EXPIRE_DAYS: ${OAUTH_REFRESH_TOKEN_EXPIRE_DAYS:-30}
+      TZ: Asia/Shanghai
+    volumes:
+      - /opt/HiFate-bazi/proto:/app/proto:ro  # 挂载 proto 目录，支持热更新
+      - /opt/HiFate-bazi/services:/app/services:ro  # 挂载 services 目录，支持热更新
+      - /opt/HiFate-bazi/src:/app/src:ro  # 挂载 src 目录，支持热更新
+    command: python services/auth_service/main.py --port 9011
+    restart: always
+    networks:
+      - hifate-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; import sys; sys.path.insert(0, '/app/proto/generated'); import auth_pb2, auth_pb2_grpc; channel = grpc.insecure_channel('localhost:9011'); stub = auth_pb2_grpc.AuthServiceStub(channel); response = stub.HealthCheck(auth_pb2.HealthCheckRequest(), timeout=5.0); exit(0 if response.status == 'ok' else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   prompt-optimizer:
     image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}

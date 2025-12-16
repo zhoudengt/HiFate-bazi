@@ -79,6 +79,13 @@ except ImportError as e:
     WANGSHUAI_ROUTER_AVAILABLE = False
 from server.api.v1.bazi_ai import router as bazi_ai_router
 from server.api.v1.auth import router as auth_router
+try:
+    from server.api.v1.oauth import router as oauth_router
+    OAUTH_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"OAuth 路由导入失败（可选功能）: {e}")
+    oauth_router = None
+    OAUTH_ROUTER_AVAILABLE = False
 from server.api.grpc_gateway import router as grpc_gateway_router
 
 # 新增：支付路由（魔方西元）
@@ -378,6 +385,18 @@ app.add_middleware(
 # 添加GZip压缩中间件
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+# ✅ 添加 OAuth 2.0 认证中间件（在异常处理之前，确保认证错误能被正确处理）
+# ⚠️ 注意：中间件在应用启动时实例化，修改代码后必须重启服务才能生效
+try:
+    from server.middleware.auth_middleware import AuthMiddleware, WHITELIST_PREFIXES
+    # ⚠️ 临时禁用: app.add_middleware(AuthMiddleware)
+    logger.warning("⚠ 认证中间件已临时禁用（紧急修复）")
+    logger.info(f"   白名单前缀: {list(WHITELIST_PREFIXES)}")
+except ImportError as e:
+    logger.warning(f"⚠ 认证中间件导入失败（可选功能）: {e}")
+except Exception as e:
+    logger.warning(f"⚠ 认证中间件启用失败: {e}")
+
 # ✅ 添加统一异常处理中间件（最后添加，确保能捕获所有异常）
 try:
     from server.utils.exception_handler import ExceptionHandlerMiddleware
@@ -392,6 +411,9 @@ except Exception as e:
 app.include_router(bazi_router, prefix="/api/v1", tags=["八字计算"])
 app.include_router(bazi_ai_router, prefix="/api/v1", tags=["AI分析"])
 app.include_router(auth_router, prefix="/api/v1", tags=["鉴权"])
+if OAUTH_ROUTER_AVAILABLE and oauth_router:
+    app.include_router(oauth_router, prefix="/api/v1", tags=["OAuth 2.0"])
+    logger.info("✓ OAuth 2.0 路由已注册")
 app.include_router(grpc_gateway_router, prefix="/api", tags=["gRPC-Web"])
 
 # 注册旺衰分析路由（新增，可选功能）
@@ -583,6 +605,9 @@ local_frontend_dir = os.path.join(project_root, "local_frontend")
 if os.path.exists(local_frontend_dir):
     app.mount("/local_frontend", StaticFiles(directory=local_frontend_dir, html=True), name="local_frontend")
     logger.info(f"✓ 本地前端目录已挂载: /local_frontend -> {local_frontend_dir}")
+    # 同时挂载 /frontend 作为别名（兼容旧路径）
+    app.mount("/frontend", StaticFiles(directory=local_frontend_dir, html=True), name="frontend")
+    logger.info(f"✓ 前端目录别名已挂载: /frontend -> {local_frontend_dir}")
 else:
     logger.warning(f"⚠ 本地前端目录不存在: {local_frontend_dir}")
 

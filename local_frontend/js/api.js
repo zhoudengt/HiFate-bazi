@@ -42,7 +42,24 @@ class GrpcGatewayClient {
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error(`gRPC-Web 调用失败: HTTP ${response.status}`, errorText);
-                throw new Error(`服务器错误: HTTP ${response.status} - ${errorText.substring(0, 200)}`);
+                
+                // 尝试解析 JSON 错误响应
+                let errorMessage = `服务器错误: HTTP ${response.status}`;
+                try {
+                    const errorData = JSON.parse(errorText);
+                    if (errorData.error) {
+                        errorMessage = errorData.error;
+                    } else if (errorData.message) {
+                        errorMessage = errorData.message;
+                    } else if (errorData.detail) {
+                        errorMessage = errorData.detail;
+                    }
+                } catch (e) {
+                    // 如果不是 JSON，使用原始文本（截取前200字符）
+                    errorMessage = errorText.substring(0, 200);
+                }
+                
+                throw new Error(errorMessage);
             }
 
             const buffer = new Uint8Array(await response.arrayBuffer());

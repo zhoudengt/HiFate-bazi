@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>登录 - HiFate</title>
+    <link rel="stylesheet" href="css/common.css">
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/fatetell-style.css">
 </head>
@@ -22,27 +23,148 @@
                 </div>
                 <button type="submit" class="btn btn-primary">登录</button>
             </form>
-            <div id="errorMsg" class="error-msg"></div>
+            <div id="errorMessage" class="error-message" style="display: none;"></div>
+            <div id="errorMsg" class="error-msg" style="display: none;"></div>
         </div>
     </div>
 
-    <script src="config.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/auth.js"></script>
     <script>
-        document.getElementById('loginForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const errorMsg = document.getElementById('errorMsg');
-            
-            try {
-                errorMsg.textContent = '';
-                await Auth.login(username, password);
-                window.location.href = 'index.html';
-            } catch (error) {
-                errorMsg.textContent = error.message || '登录失败';
+        // 调试信息
+        console.log('📄 开始加载登录页面脚本...');
+        
+        // 检查脚本加载状态
+        let scriptsLoaded = {
+            config: false,
+            api: false,
+            auth: false
+        };
+        
+        function checkAllLoaded() {
+            if (scriptsLoaded.config && scriptsLoaded.api && scriptsLoaded.auth) {
+                console.log('✅ 所有脚本已加载');
+                console.log('TOKEN_KEY:', typeof TOKEN_KEY !== 'undefined' ? '✅' : '❌');
+                console.log('api:', typeof api !== 'undefined' ? '✅' : '❌');
+                console.log('Auth:', typeof Auth !== 'undefined' ? '✅' : '❌');
+                
+                if (typeof Auth === 'undefined') {
+                    console.error('❌ Auth 对象未定义！');
+                    const errorMsg = document.getElementById('errorMsg');
+                    if (errorMsg) {
+                        errorMsg.textContent = '❌ Auth 对象未定义！请检查浏览器控制台（F12）查看详细错误。';
+                        errorMsg.style.color = 'red';
+                    }
+                    return false;
+                }
+                
+                if (typeof api === 'undefined') {
+                    console.error('❌ api 对象未定义！');
+                    const errorMsg = document.getElementById('errorMsg');
+                    if (errorMsg) {
+                        errorMsg.textContent = '❌ api 对象未定义！请检查浏览器控制台（F12）查看详细错误。';
+                        errorMsg.style.color = 'red';
+                    }
+                    return false;
+                }
+                
+                return true;
             }
+            return false;
+        }
+    </script>
+    
+    <!-- 核心工具类 -->
+    <script src="js/core/error-handler.js"></script>
+    <script src="js/core/dom-utils.js"></script>
+    <script src="js/core/validator.js"></script>
+    
+    <!-- 先定义 initLoginForm 函数 -->
+    <script>
+        function initLoginForm() {
+            console.log('🔧 初始化登录表单...');
+            const loginForm = document.getElementById('loginForm');
+            if (!loginForm) {
+                console.error('❌ 登录表单未找到');
+                return;
+            }
+            
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const username = DomUtils.getFormValue('username');
+                const password = DomUtils.getFormValue('password');
+                
+                // 隐藏之前的错误
+                ErrorHandler.hideError('errorMessage');
+                DomUtils.hide('errorMsg');
+                
+                // 参数验证
+                try {
+                    Validator.required(username, '用户名');
+                    Validator.required(password, '密码');
+                } catch (error) {
+                    ErrorHandler.showError(error.message, {
+                        containerId: 'errorMessage',
+                        scrollTo: true
+                    });
+                    return;
+                }
+                
+                try {
+                    console.log('🔐 开始登录，用户名:', username);
+                    await Auth.login(username, password);
+                    console.log('✅ 登录成功，跳转中...');
+                    window.location.href = 'index.html';
+                } catch (error) {
+                    console.error('❌ 登录失败:', error);
+                    // 使用统一错误处理
+                    if (typeof ErrorHandler !== 'undefined') {
+                        ErrorHandler.handleApiError(error, {
+                            containerId: 'errorMessage',
+                            scrollTo: true
+                        });
+                    } else {
+                        // 降级方案
+                        const errorMsg = document.getElementById('errorMsg');
+                        if (errorMsg) {
+                            errorMsg.textContent = error.message || '登录失败';
+                            errorMsg.style.color = 'red';
+                            errorMsg.style.display = 'block';
+                        }
+                    }
+                }
+            });
+            
+            console.log('✅ 登录表单初始化完成');
+        }
+    </script>
+    
+    <!-- 配置和API -->
+    <script src="config.js" 
+            onload="console.log('✅ config.js 加载成功'); scriptsLoaded.config = true; checkAllLoaded();"
+            onerror="console.error('❌ config.js 加载失败'); if (typeof ErrorHandler !== 'undefined') { ErrorHandler.showError('config.js 加载失败，请检查文件路径'); } else { document.getElementById('errorMsg').textContent = '❌ config.js 加载失败'; document.getElementById('errorMsg').style.color = 'red'; }"></script>
+    
+    <script src="js/api.js"
+            onload="console.log('✅ api.js 加载成功'); scriptsLoaded.api = true; checkAllLoaded();"
+            onerror="console.error('❌ api.js 加载失败'); if (typeof ErrorHandler !== 'undefined') { ErrorHandler.showError('api.js 加载失败，请检查文件路径'); } else { document.getElementById('errorMsg').textContent = '❌ api.js 加载失败'; document.getElementById('errorMsg').style.color = 'red'; }"></script>
+    
+    <script src="js/auth.js"
+            onload="console.log('✅ auth.js 加载成功'); scriptsLoaded.auth = true; checkAllLoaded(); if (typeof initLoginForm === 'function') { initLoginForm(); }"
+            onerror="console.error('❌ auth.js 加载失败'); if (typeof ErrorHandler !== 'undefined') { ErrorHandler.showError('auth.js 加载失败，请检查文件路径'); } else { document.getElementById('errorMsg').textContent = '❌ auth.js 加载失败'; document.getElementById('errorMsg').style.color = 'red'; }"></script>
+    
+    <script>
+        // 备用检查：如果 window.load 时脚本还没加载完，再次检查
+        window.addEventListener('load', function() {
+            console.log('📄 页面加载完成');
+            setTimeout(function() {
+                if (!checkAllLoaded()) {
+                    console.warn('⚠️ 脚本可能未完全加载，再次检查...');
+                    if (typeof Auth !== 'undefined' && typeof api !== 'undefined' && typeof initLoginForm === 'function') {
+                        initLoginForm();
+                    }
+                } else if (typeof initLoginForm === 'function') {
+                    // 如果所有脚本已加载但表单未初始化，再次初始化
+                    initLoginForm();
+                }
+            }, 100);
         });
     </script>
 </body>
