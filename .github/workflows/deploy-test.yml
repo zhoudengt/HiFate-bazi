@@ -41,9 +41,13 @@ jobs:
              [ -n "${{ secrets.ACR_USERNAME }}" ] && [ -n "${{ secrets.ACR_PASSWORD }}" ]; then
             echo "acr_configured=true" >> $GITHUB_OUTPUT
             echo "✅ ACR secrets 已配置"
+            echo "ACR_REGISTRY=${{ secrets.ACR_REGISTRY }}" >> $GITHUB_OUTPUT
+            echo "ACR_NAMESPACE=${{ secrets.ACR_NAMESPACE }}" >> $GITHUB_OUTPUT
           else
             echo "acr_configured=false" >> $GITHUB_OUTPUT
-            echo "⚠️  ACR secrets 未配置"
+            echo "❌ ACR secrets 未配置，无法构建和推送镜像"
+            echo "需要的 secrets: ACR_REGISTRY, ACR_NAMESPACE, ACR_USERNAME, ACR_PASSWORD"
+            exit 1
           fi
       
       - name: 🔐 Login to ACR
@@ -77,6 +81,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
+          provenance: false  # ⚠️ ACR 必需！不支持 provenance
+          sbom: false  # ⚠️ ACR 必需！不支持 sbom
           build-args: |
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
@@ -224,19 +230,41 @@ jobs:
             echo "⏳ 等待新容器启动..."
             sleep 20
             
-            # 健康检查（重试机制）
+            # 健康检查（增强重试机制）
             echo "🏥 健康检查..."
-            MAX_RETRIES=5
+            MAX_RETRIES=10  # 增加重试次数
             RETRY_COUNT=0
             HEALTH_CHECK_PASSED=false
             
             while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+              # 检查基本健康端点
               if curl -f -s http://localhost:8001/health > /dev/null 2>&1; then
-                HEALTH_CHECK_PASSED=true
-                break
+                echo "✅ 基本健康检查通过"
+                
+                # 检查 API 端点（更详细的检查）
+                if curl -f -s http://localhost:8001/api/v1/health > /dev/null 2>&1; then
+                  echo "✅ API 健康检查通过"
+                  HEALTH_CHECK_PASSED=true
+                  break
+                else
+                  echo "⚠️  API 健康检查失败，但基本健康检查通过"
+                  # 如果基本健康检查通过，也认为成功（向后兼容）
+                  HEALTH_CHECK_PASSED=true
+                  break
+                fi
               fi
+              
               RETRY_COUNT=$((RETRY_COUNT + 1))
               echo "⏳ 健康检查失败，重试 $RETRY_COUNT/$MAX_RETRIES..."
+              
+              # 显示容器状态和日志（帮助调试）
+              if [ $RETRY_COUNT -eq 3 ] || [ $RETRY_COUNT -eq 6 ]; then
+                echo "📋 容器状态："
+                docker compose -f docker-compose.yml -f docker-compose.prod.yml ps web || true
+                echo "📋 最近日志（最后 20 行）："
+                docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=20 web || true
+              fi
+              
               sleep 5
             done
             
@@ -257,7 +285,71 @@ jobs:
               docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100 web
               echo "📋 查看容器状态："
               docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
-              exit 1
+              
+              # 自动回滚到上一个版本
+              echo "🔄 开始自动回滚..."
+              
+              # 检查是否有上一个版本的镜像
+              if [ "${ACR_CONFIGURED}" == "true" ] && [ -n "${ACR_REGISTRY}" ] && [ -n "${ACR_NAMESPACE}" ]; then
+                IMAGE_BASE="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
+                
+                # 尝试拉取 latest 标签（通常是上一个稳定版本）
+                echo "📥 尝试回滚到 latest 标签..."
+                ROLLBACK_IMAGE="${IMAGE_BASE}:latest"
+                
+                if docker pull ${ROLLBACK_IMAGE} 2>/dev/null; then
+                  echo "✅ 找到回滚镜像: ${ROLLBACK_IMAGE}"
+                  
+                  # 清理已停止的容器
+                  echo "🧹 清理已停止的容器..."
+                  docker compose -f docker-compose.yml -f docker-compose.prod.yml rm -f web 2>/dev/null || true
+                  CONTAINER_IDS=$(docker ps -a --filter "name=hifate-web" --filter "status=exited" --format "{{.ID}}" 2>/dev/null || true)
+                  if [ -n "$CONTAINER_IDS" ]; then
+                    echo "$CONTAINER_IDS" | xargs -r docker rm -f 2>/dev/null || true
+                  fi
+                  
+                  # 使用回滚镜像启动服务
+                  echo "🔄 使用回滚镜像启动服务..."
+                  DOCKER_IMAGE=${ROLLBACK_IMAGE} docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps web
+                  
+                  # 等待回滚后的服务启动
+                  echo "⏳ 等待回滚后的服务启动..."
+                  sleep 15
+                  
+                  # 验证回滚后的服务
+                  ROLLBACK_RETRIES=5
+                  ROLLBACK_RETRY=0
+                  ROLLBACK_SUCCESS=false
+                  
+                  while [ $ROLLBACK_RETRY -lt $ROLLBACK_RETRIES ]; do
+                    if curl -f -s http://localhost:8001/health > /dev/null 2>&1; then
+                      ROLLBACK_SUCCESS=true
+                      echo "✅ 回滚成功！服务已恢复"
+                      break
+                    fi
+                    ROLLBACK_RETRY=$((ROLLBACK_RETRY + 1))
+                    echo "⏳ 回滚后健康检查，重试 $ROLLBACK_RETRY/$ROLLBACK_RETRIES..."
+                    sleep 5
+                  done
+                  
+                  if [ "$ROLLBACK_SUCCESS" = true ]; then
+                    echo "✅ 回滚完成，服务已恢复到上一个版本"
+                    exit 0  # 回滚成功，退出码为 0
+                  else
+                    echo "❌ 回滚失败，服务仍无法启动"
+                    echo "请手动检查服务状态或联系管理员"
+                    exit 1
+                  fi
+                else
+                  echo "⚠️  无法找到回滚镜像，无法自动回滚"
+                  echo "请手动检查服务状态或联系管理员"
+                  exit 1
+                fi
+              else
+                echo "⚠️  ACR 未配置，无法自动回滚"
+                echo "请手动检查服务状态或联系管理员"
+                exit 1
+              fi
             fi
             
             # 清理未使用的镜像

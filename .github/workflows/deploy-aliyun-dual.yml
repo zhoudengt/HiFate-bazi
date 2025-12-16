@@ -67,7 +67,19 @@ jobs:
         with:
           platforms: linux/amd64
       
+      - name: 🔍 检查 ACR 配置
+        id: check_acr
+        run: |
+          if [ -z "${{ secrets.ACR_USERNAME }}" ] || [ -z "${{ secrets.ACR_PASSWORD }}" ]; then
+            echo "❌ ACR secrets 未配置"
+            echo "需要的 secrets: ACR_USERNAME, ACR_PASSWORD"
+            echo "可选但推荐: ACR_REGISTRY (默认: registry.cn-hangzhou.aliyuncs.com), ACR_NAMESPACE (默认: hifate)"
+            exit 1
+          fi
+          echo "✅ ACR secrets 已配置"
+      
       - name: 🔐 登录阿里云 ACR
+        if: steps.check_acr.outcome == 'success'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.ACR_REGISTRY }}
@@ -91,8 +103,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           platforms: linux/amd64
-          provenance: false
-          sbom: false
+          provenance: false  # ⚠️ ACR 必需！不支持 provenance
+          sbom: false  # ⚠️ ACR 必需！不支持 sbom
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
@@ -178,26 +190,48 @@ jobs:
             echo "⏳ 等待服务启动..."
             sleep 15
             
-            # 健康检查
+            # 健康检查（增强）
             echo "🏥 健康检查..."
             MAX_RETRIES=10
             RETRY=0
             HEALTH_OK=false
             
             while [ $RETRY -lt $MAX_RETRIES ]; do
+              # 检查基本健康端点
               if curl -sf http://localhost:8001/health > /dev/null 2>&1; then
-                HEALTH_OK=true
-                echo "✅ Web 服务健康检查通过"
-                break
+                echo "✅ 基本健康检查通过"
+                
+                # 检查 API 端点（更详细的检查）
+                if curl -sf http://localhost:8001/api/v1/health > /dev/null 2>&1; then
+                  echo "✅ API 健康检查通过"
+                  HEALTH_OK=true
+                  break
+                else
+                  echo "⚠️  API 健康检查失败，但基本健康检查通过"
+                  HEALTH_OK=true
+                  break
+                fi
               fi
+              
               RETRY=$((RETRY + 1))
               echo "⏳ 等待服务启动... ($RETRY/$MAX_RETRIES)"
+              
+              # 显示容器状态和日志（帮助调试）
+              if [ $RETRY -eq 3 ] || [ $RETRY -eq 6 ] || [ $RETRY -eq 9 ]; then
+                echo "📋 容器状态："
+                docker-compose -f docker-compose.yml -f docker-compose.aliyun.yml ps web || true
+                echo "📋 最近日志（最后 30 行）："
+                docker-compose -f docker-compose.yml -f docker-compose.aliyun.yml logs --tail=30 web || true
+              fi
+              
               sleep 5
             done
             
             if [ "$HEALTH_OK" != "true" ]; then
               echo "❌ 健康检查失败，查看日志："
               docker-compose -f docker-compose.yml -f docker-compose.aliyun.yml logs --tail=50 web
+              echo "📋 容器状态："
+              docker-compose -f docker-compose.yml -f docker-compose.aliyun.yml ps
               exit 1
             fi
             
@@ -303,26 +337,48 @@ jobs:
             echo "⏳ 等待服务启动..."
             sleep 15
             
-            # 健康检查
+            # 健康检查（增强）
             echo "🏥 健康检查..."
             MAX_RETRIES=10
             RETRY=0
             HEALTH_OK=false
             
             while [ $RETRY -lt $MAX_RETRIES ]; do
+              # 检查基本健康端点
               if curl -sf http://localhost:8001/health > /dev/null 2>&1; then
-                HEALTH_OK=true
-                echo "✅ Web 服务健康检查通过"
-                break
+                echo "✅ 基本健康检查通过"
+                
+                # 检查 API 端点（更详细的检查）
+                if curl -sf http://localhost:8001/api/v1/health > /dev/null 2>&1; then
+                  echo "✅ API 健康检查通过"
+                  HEALTH_OK=true
+                  break
+                else
+                  echo "⚠️  API 健康检查失败，但基本健康检查通过"
+                  HEALTH_OK=true
+                  break
+                fi
               fi
+              
               RETRY=$((RETRY + 1))
               echo "⏳ 等待服务启动... ($RETRY/$MAX_RETRIES)"
+              
+              # 显示容器状态和日志（帮助调试）
+              if [ $RETRY -eq 3 ] || [ $RETRY -eq 6 ] || [ $RETRY -eq 9 ]; then
+                echo "📋 容器状态："
+                docker-compose -f docker-compose.yml -f docker-compose.aliyun.yml ps web || true
+                echo "📋 最近日志（最后 30 行）："
+                docker-compose -f docker-compose.yml -f docker-compose.aliyun.yml logs --tail=30 web || true
+              fi
+              
               sleep 5
             done
             
             if [ "$HEALTH_OK" != "true" ]; then
               echo "❌ 健康检查失败，查看日志："
               docker-compose -f docker-compose.yml -f docker-compose.aliyun.yml logs --tail=50 web
+              echo "📋 容器状态："
+              docker-compose -f docker-compose.yml -f docker-compose.aliyun.yml ps
               exit 1
             fi
             

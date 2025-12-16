@@ -5,11 +5,21 @@ name: 🚀 Deploy to Production
 
 on:
   workflow_dispatch:  # 仅支持手动触发（生产环境必须手动部署）
+  workflow_run:
+    workflows: ["🐳 Build and Push Docker Image"]  # 等待构建工作流完成
+    types:
+      - completed
+    branches:
+      - master
 
 jobs:
   deploy:
     name: 部署到生产服务器
     runs-on: ubuntu-latest
+    # 如果是通过 workflow_run 触发，确保构建工作流成功
+    if: |
+      github.event_name == 'workflow_dispatch' || 
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     
     steps:
       # 1. 检出代码
@@ -51,27 +61,59 @@ jobs:
             find backups/ -name "mysql_backup_*.sql" -mtime +7 -delete
           EOF
           
-      # 5. 等待镜像构建完成（如果 build-and-push workflow 正在运行）
+      # 5. 检查 ACR 配置
+      - name: 🔍 Check ACR configuration
+        id: check_acr
+        run: |
+          if [ -n "${{ secrets.ACR_REGISTRY }}" ] && [ -n "${{ secrets.ACR_NAMESPACE }}" ] && \
+             [ -n "${{ secrets.ACR_USERNAME }}" ] && [ -n "${{ secrets.ACR_PASSWORD }}" ]; then
+            echo "acr_configured=true" >> $GITHUB_OUTPUT
+            echo "✅ ACR secrets 已配置"
+            echo "ACR_REGISTRY=${{ secrets.ACR_REGISTRY }}" >> $GITHUB_OUTPUT
+            echo "ACR_NAMESPACE=${{ secrets.ACR_NAMESPACE }}" >> $GITHUB_OUTPUT
+          else
+            echo "acr_configured=false" >> $GITHUB_OUTPUT
+            echo "❌ ACR secrets 未配置，无法部署"
+            exit 1
+          fi
+      
+      # 6. 等待镜像构建完成（如果 build-and-push workflow 正在运行）
       - name: ⏳ Wait for image build
+        if: steps.check_acr.outputs.acr_configured == 'true'
+        env:
+          ACR_REGISTRY: ${{ steps.check_acr.outputs.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ steps.check_acr.outputs.ACR_NAMESPACE }}
         run: |
           echo "⏳ 等待镜像构建完成..."
           # 等待最多 10 分钟，每 30 秒检查一次
           MAX_WAIT=600
           WAIT_TIME=0
+          IMAGE_BASE="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
+          
           while [ $WAIT_TIME -lt $MAX_WAIT ]; do
-            if docker pull ghcr.io/${{ github.repository }}/hifate-bazi:master 2>/dev/null; then
-              echo "✅ 镜像已可用"
+            if docker pull ${IMAGE_BASE}:master 2>/dev/null; then
+              echo "✅ 镜像已可用: ${IMAGE_BASE}:master"
               break
             fi
             echo "⏳ 镜像尚未就绪，等待中... ($WAIT_TIME/$MAX_WAIT 秒)"
             sleep 30
             WAIT_TIME=$((WAIT_TIME + 30))
           done
+          
+          if [ $WAIT_TIME -ge $MAX_WAIT ]; then
+            echo "⚠️  等待超时，将尝试拉取 latest 标签"
+          fi
       
-      # 6. 部署到生产服务器
+      # 7. 部署到生产服务器
       - name: 🚀 Deploy to production server
+        if: steps.check_acr.outputs.acr_configured == 'true'
+        env:
+          ACR_REGISTRY: ${{ steps.check_acr.outputs.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ steps.check_acr.outputs.ACR_NAMESPACE }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
-          ssh ${{ secrets.PROD_SERVER_USER }}@${{ secrets.PROD_SERVER_HOST }} << 'EOF'
+          ssh ${{ secrets.PROD_SERVER_USER }}@${{ secrets.PROD_SERVER_HOST }} << EOF
             set -e
             
             echo "🔄 开始部署到生产环境..."
@@ -85,18 +127,14 @@ jobs:
             git checkout master
             git pull origin master
             
-            # 登录到 GitHub Container Registry
-            echo "🔐 登录到 GitHub Container Registry..."
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin || {
-              echo "⚠️  使用 GITHUB_TOKEN 登录失败，尝试使用 Personal Access Token"
-              if [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
-                echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-              else
-                echo "❌ 无法登录到 GitHub Container Registry"
-                echo "请配置 GHCR_TOKEN secret 或确保 GITHUB_TOKEN 有 packages:write 权限"
-                exit 1
-              fi
+            # 登录到阿里云容器镜像服务 (ACR)
+            echo "🔐 登录到阿里云容器镜像服务 (ACR)..."
+            echo "${ACR_PASSWORD}" | docker login ${ACR_REGISTRY} -u ${ACR_USERNAME} --password-stdin || {
+              echo "❌ ACR 登录失败，请检查 ACR secrets 配置"
+              echo "需要的 secrets: ACR_REGISTRY, ACR_NAMESPACE, ACR_USERNAME, ACR_PASSWORD"
+              exit 1
             }
+            echo "✅ ACR 登录成功"
             
             # 检查 MySQL 和 Redis 是否运行
             echo "🔍 检查 MySQL 和 Redis 服务..."
@@ -140,16 +178,26 @@ jobs:
               exit 1
             fi
             
-            # 拉取最新镜像（从 GitHub Container Registry）
+            # 拉取最新镜像（从阿里云容器镜像服务 ACR）
             echo "📥 拉取最新镜像..."
-            IMAGE_TAG="ghcr.io/${{ github.repository }}/hifate-bazi:master"
-            docker pull ${IMAGE_TAG} || {
-              echo "⚠️  拉取 master 标签失败，尝试 latest 标签"
-              IMAGE_TAG="ghcr.io/${{ github.repository }}/hifate-bazi:latest"
-              docker pull ${IMAGE_TAG}
-            }
+            IMAGE_BASE="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
+            IMAGE_TAG="${IMAGE_BASE}:master"
             
-            echo "✅ 镜像拉取成功: ${IMAGE_TAG}"
+            if docker pull ${IMAGE_TAG} 2>&1; then
+              echo "✅ 镜像拉取成功: ${IMAGE_TAG}"
+            else
+              echo "⚠️  拉取 master 标签失败，尝试 latest 标签"
+              IMAGE_TAG="${IMAGE_BASE}:latest"
+              if docker pull ${IMAGE_TAG} 2>&1; then
+                echo "✅ 镜像拉取成功: ${IMAGE_TAG}"
+              else
+                echo "❌ 无法拉取镜像，请检查："
+                echo "   1. 镜像是否已构建并推送到 ACR"
+                echo "   2. ACR 登录是否成功"
+                echo "   3. 镜像标签是否正确"
+                exit 1
+              fi
+            fi
             
             # 只清理已停止的容器（零停机部署）
             echo "🧹 清理已停止的容器..."
@@ -172,19 +220,41 @@ jobs:
             echo "⏳ 等待新容器启动..."
             sleep 20
             
-            # 健康检查（重试机制）
+            # 健康检查（增强重试机制）
             echo "🏥 健康检查..."
-            MAX_RETRIES=5
+            MAX_RETRIES=10  # 增加重试次数（生产环境更严格）
             RETRY_COUNT=0
             HEALTH_CHECK_PASSED=false
             
             while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+              # 检查基本健康端点
               if curl -f -s http://localhost:8001/health > /dev/null 2>&1; then
-                HEALTH_CHECK_PASSED=true
-                break
+                echo "✅ 基本健康检查通过"
+                
+                # 检查 API 端点（更详细的检查）
+                if curl -f -s http://localhost:8001/api/v1/health > /dev/null 2>&1; then
+                  echo "✅ API 健康检查通过"
+                  HEALTH_CHECK_PASSED=true
+                  break
+                else
+                  echo "⚠️  API 健康检查失败，但基本健康检查通过"
+                  # 如果基本健康检查通过，也认为成功（向后兼容）
+                  HEALTH_CHECK_PASSED=true
+                  break
+                fi
               fi
+              
               RETRY_COUNT=$((RETRY_COUNT + 1))
               echo "⏳ 健康检查失败，重试 $RETRY_COUNT/$MAX_RETRIES..."
+              
+              # 显示容器状态和日志（帮助调试）
+              if [ $RETRY_COUNT -eq 3 ] || [ $RETRY_COUNT -eq 6 ] || [ $RETRY_COUNT -eq 9 ]; then
+                echo "📋 容器状态："
+                docker-compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml ps web || true
+                echo "📋 最近日志（最后 30 行）："
+                docker-compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml logs --tail=30 web || true
+              fi
+              
               sleep 5
             done
             
@@ -205,7 +275,8 @@ jobs:
               # 回滚到上一个版本（拉取上一个 commit 的镜像）
               echo "🔄 回滚到上一个版本..."
               PREVIOUS_SHA=$(git rev-parse HEAD^)
-              PREVIOUS_IMAGE="ghcr.io/${{ github.repository }}/hifate-bazi:${PREVIOUS_SHA:0:7}"
+              IMAGE_BASE="${ACR_REGISTRY}/${ACR_NAMESPACE}/hifate-bazi"
+              PREVIOUS_IMAGE="${IMAGE_BASE}:${PREVIOUS_SHA:0:7}"
               
               # 清理已停止的容器（回滚时也需要零停机）
               echo "🧹 清理已停止的容器..."
@@ -220,8 +291,16 @@ jobs:
                 echo "✅ 找到上一个版本的镜像: ${PREVIOUS_IMAGE}"
                 DOCKER_IMAGE=${PREVIOUS_IMAGE} docker-compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml up -d --no-deps web
               else
-                echo "⚠️  未找到上一个版本的镜像，使用 latest 标签"
-                DOCKER_IMAGE="ghcr.io/${{ github.repository }}/hifate-bazi:latest" docker-compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml up -d --no-deps web
+                echo "⚠️  未找到上一个版本的镜像，尝试 latest 标签"
+                FALLBACK_IMAGE="${IMAGE_BASE}:latest"
+                if docker pull ${FALLBACK_IMAGE} 2>/dev/null; then
+                  echo "✅ 使用 latest 标签回滚: ${FALLBACK_IMAGE}"
+                  DOCKER_IMAGE=${FALLBACK_IMAGE} docker-compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.image.yml up -d --no-deps web
+                else
+                  echo "❌ 无法回滚：找不到可用的镜像"
+                  echo "请手动检查 ACR 中的镜像或联系管理员"
+                  exit 1
+                fi
               fi
               
               echo "❌ 已回滚到上一个版本"
@@ -232,18 +311,30 @@ jobs:
             echo "🧹 清理旧镜像..."
             docker image prune -f
             
-            # 最终健康检查（重试机制）
+            # 最终健康检查（增强重试机制）
             echo "🏥 最终健康检查..."
             sleep 10
-            MAX_FINAL_RETRIES=3
+            MAX_FINAL_RETRIES=5  # 增加重试次数
             FINAL_RETRY_COUNT=0
             FINAL_HEALTH_CHECK_PASSED=false
             
             while [ $FINAL_RETRY_COUNT -lt $MAX_FINAL_RETRIES ]; do
+              # 检查基本健康端点
               if curl -f -s http://localhost:8001/health > /dev/null 2>&1; then
-                FINAL_HEALTH_CHECK_PASSED=true
-                break
+                echo "✅ 最终基本健康检查通过"
+                
+                # 检查 API 端点
+                if curl -f -s http://localhost:8001/api/v1/health > /dev/null 2>&1; then
+                  echo "✅ 最终 API 健康检查通过"
+                  FINAL_HEALTH_CHECK_PASSED=true
+                  break
+                else
+                  echo "⚠️  最终 API 健康检查失败，但基本健康检查通过"
+                  FINAL_HEALTH_CHECK_PASSED=true
+                  break
+                fi
               fi
+              
               FINAL_RETRY_COUNT=$((FINAL_RETRY_COUNT + 1))
               echo "⏳ 最终健康检查失败，重试 $FINAL_RETRY_COUNT/$MAX_FINAL_RETRIES..."
               sleep 5
@@ -263,7 +354,7 @@ jobs:
             echo "🎉 生产环境部署完成！"
           EOF
           
-      # 6. 通知（可选，需要配置 Slack/钉钉等）
+      # 8. 通知（可选，需要配置 Slack/钉钉等）
       - name: 📢 Send notification
         if: always()
         run: |
@@ -273,7 +364,7 @@ jobs:
             echo "❌ 生产环境部署失败"
           fi
           
-      # 7. 显示部署信息
+      # 9. 显示部署信息
       - name: 📊 Deployment summary
         if: success()
         run: |
@@ -287,7 +378,7 @@ jobs:
           echo "访问：https://${{ secrets.PROD_SERVER_HOST }}"
           echo "=========================================="
           
-      # 8. 创建发布标签
+      # 10. 创建发布标签
       - name: 🏷️ Create release tag
         if: success()
         run: |

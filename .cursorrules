@@ -4064,6 +4064,402 @@ curl -X POST http://47.243.160.43:8001/api/v1/hot-reload/rollback
 
 ---
 
+## 🚀 生产双节点部署流程规范 【必须遵守】
+
+### 🔴 核心原则
+
+> **生产环境双节点部署必须经过完整的测试验证，确保所有接口功能正常，不单单是登录界面能进去就好。**
+
+### 📋 部署方式选择
+
+| 部署方式 | 适用场景 | 部署时间 | 服务中断 | 使用命令 |
+|---------|---------|---------|---------|---------|
+| **增量部署脚本** | 日常代码更新（90%情况） | 30秒-2分钟 | 0秒 | `bash deploy/scripts/incremental_deploy_production.sh` |
+| **GitHub Actions CI/CD** | 依赖变更、首次部署 | 8-15分钟 | 可能有短暂中断 | GitHub Actions 自动触发 |
+
+### 🎯 部署方式选择指南
+
+#### ✅ 使用增量部署脚本（推荐，日常使用）
+
+**适用场景**：
+- Python 代码更新
+- 业务逻辑修改
+- Bug 修复
+- 规则更新（数据库规则）
+- 配置更新
+- 微服务代码修改
+
+**不适用场景**（必须使用 GitHub Actions）：
+- 依赖变更（`requirements.txt`）
+- Dockerfile 变更
+- 首次部署
+- 重大架构变更
+
+#### ✅ 使用 GitHub Actions CI/CD（完整部署）
+
+**适用场景**：
+- 依赖变更（`requirements.txt`）
+- Dockerfile 变更
+- 首次部署
+- 重大架构变更
+
+**触发方式**：
+- 自动触发：推送到 `master` 分支
+- 手动触发：GitHub Actions 页面手动触发 `🚀 Deploy to Aliyun (Dual Nodes)`
+
+---
+
+### 📋 标准部署流程
+
+#### 方式 1：增量部署脚本（日常使用）
+
+**标准流程**：
+
+```bash
+# 1. 本地开发并提交
+git add .
+git commit -m "feat: 新功能"
+git push origin master
+
+# 2. 运行增量部署脚本（自动执行所有检查）
+bash deploy/scripts/incremental_deploy_production.sh
+
+# 3. 运行端到端测试（必须！）
+python3 tests/e2e_production_test.py
+
+# 4. 验证部署结果
+curl http://8.210.52.217:8001/health
+curl http://47.243.160.43:8001/health
+```
+
+**脚本执行流程**：
+
+```
+第一步：部署前检查
+  ├─ 检查当前分支（必须是 master）
+  ├─ 检查未提交的更改（禁止）
+  ├─ 检查未推送的提交（提示推送）
+  ├─ 本地语法验证（Python 文件）
+  └─ 关键模块导入验证（可选）
+
+第二步：服务器连接检查
+  ├─ 检查 Node1 SSH 连接
+  └─ 检查 Node2 SSH 连接
+
+第三步：拉取代码
+  ├─ Node1 拉取最新代码（确保与 GitHub 一致）
+  ├─ Node2 拉取最新代码（确保与 GitHub 一致）
+  ├─ 验证双机代码一致性（Git 版本）
+  └─ 修复 Nginx 配置（IP 占位符）
+
+第四步：服务器端验证
+  ├─ Node1 语法验证
+  ├─ Node2 语法验证
+  └─ 热更新服务可用性检查
+
+第五步：触发热更新
+  ├─ Node1 触发热更新
+  └─ 自动同步到 Node2（通过 Redis）
+
+第六步：部署后验证
+  ├─ 健康检查（Node1 和 Node2）
+  ├─ 热更新状态检查
+  └─ 双机代码一致性验证
+```
+
+#### 方式 2：GitHub Actions CI/CD（完整部署）
+
+**标准流程**：
+
+```bash
+# 1. 修改依赖或 Dockerfile
+vim requirements.txt
+
+# 2. 提交并推送
+git add .
+git commit -m "chore: 更新依赖"
+git push origin master
+
+# 3. GitHub Actions 自动触发
+#    - build-and-push.yml: 构建镜像并推送到 ACR
+#    - deploy-aliyun-dual.yml: 部署到双节点
+
+# 4. 运行端到端测试（必须！）
+python3 tests/e2e_production_test.py
+
+# 5. 验证部署结果
+curl http://8.210.52.217:8001/health
+curl http://47.243.160.43:8001/health
+```
+
+---
+
+### 🧪 端到端测试规范 【必须遵守】
+
+> **⚠️ 所有部署后必须运行完整的端到端测试，覆盖所有关键接口，不单单是登录界面能进去就好！**
+
+#### 测试脚本
+
+**端到端测试脚本**：`tests/e2e_production_test.py`
+
+**使用方法**：
+
+```bash
+# 使用默认配置（Node1: 8.210.52.217, Node2: 47.243.160.43）
+python3 tests/e2e_production_test.py
+
+# 自定义 Node URL
+python3 tests/e2e_production_test.py \
+  --node1-url http://8.210.52.217:8001 \
+  --node2-url http://47.243.160.43:8001
+
+# 自定义超时时间
+python3 tests/e2e_production_test.py --timeout 60
+```
+
+#### 测试覆盖范围
+
+**必须测试的接口**：
+
+1. **健康检查接口**
+   - `/health` - 基本健康检查
+   - `/api/v1/health` - API 健康检查
+
+2. **八字计算接口**
+   - `/api/v1/bazi/calculate` - 八字计算（男性）
+   - `/api/v1/bazi/calculate` - 八字计算（女性）
+
+3. **公式分析接口**
+   - `/api/v1/bazi/formula-analysis` - 公式分析
+
+4. **运势接口**
+   - `/api/v1/bazi/monthly-fortune` - 月运势
+   - `/api/v1/bazi/daily-fortune` - 日运势
+
+5. **身宫命宫接口**
+   - `/api/v1/bazi/shengong-minggong` - 身宫命宫
+
+6. **智能分析接口**
+   - `/api/v1/smart-analyze` - 智能分析（财富意图）
+
+7. **热更新状态接口**
+   - `/api/v1/hot-reload/status` - 热更新状态
+
+8. **API 文档接口**
+   - `/docs` - API 文档
+
+**测试要求**：
+- ✅ 所有接口必须测试（Node1 和 Node2）
+- ✅ 必须验证响应状态码
+- ✅ 必须验证响应数据结构
+- ✅ 必须测试成功和失败场景
+- ✅ 必须测试不同性别、不同日期
+
+#### 测试检查清单
+
+**部署后必须检查**：
+
+- [ ] 运行端到端测试脚本：`python3 tests/e2e_production_test.py`
+- [ ] 所有测试用例通过（Node1 和 Node2）
+- [ ] 健康检查通过（基本和 API）
+- [ ] 八字计算接口正常（男性和女性）
+- [ ] 公式分析接口正常
+- [ ] 运势接口正常（月运势和日运势）
+- [ ] 身宫命宫接口正常
+- [ ] 智能分析接口正常
+- [ ] 热更新状态正常
+- [ ] API 文档可访问
+
+---
+
+### 🔒 部署前安全检查清单
+
+#### 代码一致性检查（最高优先级）
+
+```bash
+# 1. 确保代码已提交并推送
+git status  # 应该显示 "working tree clean"
+git log --oneline -1  # 记录最新提交
+git push origin master  # 确保已推送
+
+# 2. 验证本地代码与 GitHub 一致
+LOCAL_COMMIT=$(git rev-parse HEAD)
+REMOTE_COMMIT=$(git ls-remote origin master | cut -f1)
+if [ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]; then
+    echo "❌ 本地代码与 GitHub 不一致，请先推送"
+    exit 1
+fi
+```
+
+#### 服务器代码一致性检查
+
+```bash
+# 检查双机代码版本
+NODE1_COMMIT=$(ssh root@8.210.52.217 "cd /opt/HiFate-bazi && git rev-parse HEAD")
+NODE2_COMMIT=$(ssh root@47.243.160.43 "cd /opt/HiFate-bazi && git rev-parse HEAD")
+LOCAL_COMMIT=$(git rev-parse HEAD)
+
+# 必须完全一致
+if [ "$NODE1_COMMIT" != "$LOCAL_COMMIT" ] || [ "$NODE2_COMMIT" != "$LOCAL_COMMIT" ]; then
+    echo "❌ 服务器代码与 GitHub 不一致，请先同步"
+    exit 1
+fi
+```
+
+#### 语法和导入验证
+
+```bash
+# 本地验证
+python3 -c "import ast; import glob; [ast.parse(open(f).read()) for f in glob.glob('server/**/*.py', recursive=True)]"
+
+# 服务器端验证（增量部署脚本会自动执行）
+```
+
+#### 服务健康检查
+
+```bash
+# 部署前检查服务是否正常
+curl -f http://8.210.52.217:8001/health
+curl -f http://47.243.160.43:8001/health
+```
+
+---
+
+### 🔍 部署后验证清单
+
+#### 健康检查
+
+```bash
+# 基本健康检查
+curl -f http://8.210.52.217:8001/health
+curl -f http://47.243.160.43:8001/health
+
+# API 健康检查（更详细）
+curl -f http://8.210.52.217:8001/api/v1/health
+curl -f http://47.243.160.43:8001/api/v1/health
+```
+
+#### 热更新状态检查
+
+```bash
+# 检查热更新状态
+curl http://8.210.52.217:8001/api/v1/hot-reload/status
+curl http://47.243.160.43:8001/api/v1/hot-reload/status
+
+# 检查版本号
+curl http://8.210.52.217:8001/api/v1/hot-reload/versions
+curl http://47.243.160.43:8001/api/v1/hot-reload/versions
+```
+
+#### 双机一致性验证
+
+```bash
+# 验证双机 Git 版本一致
+NODE1_COMMIT=$(ssh root@8.210.52.217 "cd /opt/HiFate-bazi && git rev-parse HEAD")
+NODE2_COMMIT=$(ssh root@47.243.160.43 "cd /opt/HiFate-bazi && git rev-parse HEAD")
+
+if [ "$NODE1_COMMIT" != "$NODE2_COMMIT" ]; then
+    echo "❌ 双机代码版本不一致"
+    exit 1
+fi
+```
+
+#### 端到端测试（必须！）
+
+```bash
+# 运行完整的端到端测试
+python3 tests/e2e_production_test.py
+
+# 必须所有测试通过才能认为部署成功
+```
+
+---
+
+### 🚨 故障处理
+
+#### 如果部署失败
+
+**增量部署失败**：
+
+```bash
+# 1. 查看错误信息（脚本会显示详细错误）
+# 2. 手动回滚
+curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/rollback
+curl -X POST http://47.243.160.43:8001/api/v1/hot-reload/rollback
+
+# 3. 检查服务状态
+ssh root@8.210.52.217 "docker logs hifate-web --tail 100"
+```
+
+**GitHub Actions 部署失败**：
+
+```bash
+# 1. 查看 GitHub Actions 日志
+#    Actions → 查看失败的 workflow → 查看日志
+
+# 2. 手动回滚（使用上一个版本的镜像）
+ssh root@8.210.52.217 "cd /opt/HiFate-bazi && \
+  docker pull registry.cn-hangzhou.aliyuncs.com/hifate/hifate-bazi:previous_tag && \
+  docker-compose -f docker-compose.yml -f docker-compose.aliyun.yml up -d --no-deps web"
+```
+
+#### 如果测试失败
+
+```bash
+# 1. 查看测试错误详情
+python3 tests/e2e_production_test.py --node1-url http://8.210.52.217:8001 --node2-url http://47.243.160.43:8001
+
+# 2. 检查服务日志
+ssh root@8.210.52.217 "docker logs hifate-web --tail 100"
+ssh root@47.243.160.43 "docker logs hifate-web --tail 100"
+
+# 3. 检查热更新状态
+curl http://8.210.52.217:8001/api/v1/hot-reload/status
+curl http://47.243.160.43:8001/api/v1/hot-reload/status
+
+# 4. 如果问题严重，立即回滚
+curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/rollback
+curl -X POST http://47.243.160.43:8001/api/v1/hot-reload/rollback
+```
+
+---
+
+### 📊 部署成功标准
+
+**部署成功的标准**（必须全部满足）：
+
+1. ✅ **健康检查通过**：Node1 和 Node2 的健康检查都通过
+2. ✅ **热更新状态正常**：热更新系统运行正常
+3. ✅ **双机代码一致**：Node1 和 Node2 的代码版本完全一致
+4. ✅ **端到端测试通过**：所有测试用例通过（Node1 和 Node2）
+5. ✅ **所有接口正常**：所有关键接口都能正常响应
+6. ✅ **功能验证通过**：关键功能（八字计算、公式分析、运势等）都能正常工作
+
+**禁止操作**：
+- ❌ 禁止只检查登录界面就认为部署成功
+- ❌ 禁止跳过端到端测试
+- ❌ 禁止只测试一个节点
+- ❌ 禁止只测试健康检查接口
+
+---
+
+### 📚 相关文档
+
+- **增量部署使用指南**：`docs/增量部署使用指南.md`
+- **热更新系统**：`.cursorrules` - "🔥 热更新强制规范"章节
+- **CI/CD 标准流程**：`.cursorrules` - "🚀 CI/CD 标准流程"章节
+- **端到端测试脚本**：`tests/e2e_production_test.py`
+
+---
+
+**核心要点**：
+- **🔴 最高优先级**：**所有部署后必须运行完整的端到端测试**
+- **📋 测试覆盖**：**必须覆盖所有关键接口，不单单是登录界面**
+- **✅ 双机验证**：**必须验证 Node1 和 Node2 都正常**
+- **🚫 禁止跳过**：**禁止跳过测试或只做表面检查**
+
+---
+
 ### 🎯 部署方式选择指南
 
 **如何选择部署方式**：
