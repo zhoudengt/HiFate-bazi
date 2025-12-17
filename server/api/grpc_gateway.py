@@ -562,7 +562,8 @@ async def _handle_desk_fengshui(payload: Dict[str, Any]):
             return cleaned
         elif hasattr(result, 'model_dump'):
             # Pydantic v2 模型
-            data = result.model_dump()
+            # 🔴 修复：使用 exclude_none=False 确保包含所有字段（包括 None 值）
+            data = result.model_dump(exclude_none=False)
             
             # 🔴 防御性检查：确保 data 不为 None
             if data is None:
@@ -801,7 +802,8 @@ async def grpc_web_gateway(request: Request):
                     # 检查是否为 Pydantic BaseModel
                     if hasattr(result, 'model_dump'):
                         # Pydantic v2
-                        data = result.model_dump()
+                        # 🔴 修复：使用 exclude_none=False 确保包含所有字段（包括 None 值）
+                        data = result.model_dump(exclude_none=False)
                         # 🔴 防御性检查：确保 model_dump 返回值不为 None
                         if data is None:
                             logger.error("Pydantic v2 model_dump 返回了 None")
