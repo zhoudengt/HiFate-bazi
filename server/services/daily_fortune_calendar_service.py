@@ -282,11 +282,19 @@ class DailyFortuneCalendarService:
                 
                 shishen = query_result.get('shishen')
                 
+                # 🔴 修复：十神名称映射（偏官 = 七杀）
+                # 十神查询表可能使用"偏官"，但十神象义表使用"七杀"
+                shishen_mapping = {
+                    '偏官': '七杀',
+                    '偏印': '偏印',  # 保持原样
+                }
+                mapped_shishen = shishen_mapping.get(shishen, shishen)
+                
                 # 2. 查询十神象义
                 # 🔴 修复：enabled 字段可能是 NULL 或 0，使用 COALESCE 处理
                 cursor.execute(
                     "SELECT hint, hint_keywords FROM daily_fortune_shishen_meaning WHERE shishen = %s AND COALESCE(enabled, 1) = 1",
-                    (shishen,)
+                    (mapped_shishen,)
                 )
                 meaning_result = cursor.fetchone()
                 if not meaning_result:
