@@ -1042,23 +1042,27 @@ def _ensure_endpoints_registered():
     """确保所有端点被注册（用于热更新后恢复）"""
     global SUPPORTED_ENDPOINTS
     
-    # 如果端点数量为0，尝试重新注册
-    if len(SUPPORTED_ENDPOINTS) == 0:
-        logger.warning("检测到端点数量为0，尝试手动注册端点...")
+    # 检查关键端点是否已注册
+    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong"]
+    missing_endpoints = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
+    
+    if missing_endpoints:
+        logger.warning(f"检测到缺失端点: {missing_endpoints}，尝试手动注册...")
         try:
-            # 手动注册每日运势端点
-            from server.api.v1.daily_fortune_calendar import (
-                DailyFortuneCalendarRequest,
-                query_daily_fortune_calendar,
-            )
-            
-            async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
-                """处理每日运势日历查询请求"""
-                request_model = DailyFortuneCalendarRequest(**payload)
-                return await query_daily_fortune_calendar(request_model)
-            
-            SUPPORTED_ENDPOINTS["/daily-fortune-calendar/query"] = _handle_daily_fortune_calendar_query
-            logger.info("✅ 手动注册端点: /daily-fortune-calendar/query")
+            # 手动注册每日运势日历端点
+            if "/daily-fortune-calendar/query" in missing_endpoints:
+                from server.api.v1.daily_fortune_calendar import (
+                    DailyFortuneCalendarRequest,
+                    query_daily_fortune_calendar,
+                )
+                
+                async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
+                    """处理每日运势日历查询请求"""
+                    request_model = DailyFortuneCalendarRequest(**payload)
+                    return await query_daily_fortune_calendar(request_model)
+                
+                SUPPORTED_ENDPOINTS["/daily-fortune-calendar/query"] = _handle_daily_fortune_calendar_query
+                logger.info("✅ 手动注册端点: /daily-fortune-calendar/query")
         except Exception as e:
             logger.error(f"手动注册端点失败: {e}", exc_info=True)
 
