@@ -744,11 +744,29 @@ async def grpc_web_gateway(request: Request):
 
     handler = SUPPORTED_ENDPOINTS.get(endpoint)
     if not handler:
-        # 调试信息：列出所有已注册的端点
-        available_endpoints = list(SUPPORTED_ENDPOINTS.keys())
-        logger.warning(f"未找到端点: {endpoint}, 已注册的端点: {available_endpoints}")
-        error_msg = f"Unsupported endpoint: {endpoint}. Available endpoints: {', '.join(available_endpoints[:10])}"
-        return _build_error_response(error_msg, http_status=404, grpc_status=12)
+        # 如果端点未找到，尝试动态注册（用于热更新后恢复）
+        if endpoint == "/daily-fortune-calendar/query":
+            try:
+                from server.api.v1.daily_fortune_calendar import (
+                    DailyFortuneCalendarRequest,
+                    query_daily_fortune_calendar,
+                )
+                async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
+                    """处理每日运势日历查询请求"""
+                    request_model = DailyFortuneCalendarRequest(**payload)
+                    return await query_daily_fortune_calendar(request_model)
+                SUPPORTED_ENDPOINTS["/daily-fortune-calendar/query"] = _handle_daily_fortune_calendar_query
+                handler = _handle_daily_fortune_calendar_query
+                logger.info("✅ 动态注册端点: /daily-fortune-calendar/query")
+            except Exception as e:
+                logger.error(f"动态注册端点失败: {e}", exc_info=True)
+        
+        if not handler:
+            # 调试信息：列出所有已注册的端点
+            available_endpoints = list(SUPPORTED_ENDPOINTS.keys())
+            logger.warning(f"未找到端点: {endpoint}, 已注册的端点: {available_endpoints}")
+            error_msg = f"Unsupported endpoint: {endpoint}. Available endpoints: {', '.join(available_endpoints[:10])}"
+            return _build_error_response(error_msg, http_status=404, grpc_status=12)
 
     
 
