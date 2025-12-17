@@ -406,6 +406,7 @@ services:
       SERVICE_PORT: 9010
       TZ: Asia/Shanghai
     volumes:
+      - web_logs:/app/logs  # 挂载日志目录，解决日志文件创建问题
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
       - /opt/HiFate-bazi/src:/app/src:ro
