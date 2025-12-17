@@ -28,8 +28,20 @@ class AuthClient:
         # base_url 格式: host:port 或 [host]:port
         base_url = base_url or os.getenv("AUTH_SERVICE_URL", "")
         if not base_url:
-            # 默认使用 localhost:9011
-            base_url = "localhost:9011"
+            # Docker 环境默认使用服务名，本地环境使用 localhost
+            # 检查是否在 Docker 容器中（通过环境变量或文件系统）
+            is_docker = os.path.exists("/.dockerenv") or os.getenv("APP_ENV") == "production"
+            if is_docker:
+                base_url = "auth-service:9011"  # Docker 服务名
+            else:
+                base_url = "localhost:9011"  # 本地开发
+        
+        # 🔴 强制检查：如果检测到是 Docker 环境但使用了 localhost，强制使用服务名
+        if base_url.startswith("localhost") or base_url.startswith("127.0.0.1"):
+            is_docker = os.path.exists("/.dockerenv") or os.getenv("APP_ENV") == "production"
+            if is_docker:
+                logger.warning(f"⚠️  检测到 Docker 环境但使用了 localhost，强制使用 auth-service:9011")
+                base_url = "auth-service:9011"
         
         # 解析地址（移除 http:// 前缀）
         if base_url.startswith("http://"):
