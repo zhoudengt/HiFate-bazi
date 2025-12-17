@@ -327,7 +327,10 @@ services:
       - "9011:9011"
     environment:
       APP_ENV: production
-      REDIS_HOST: redis
+      # ⚠️ 重要：auth-service 必须连接 Redis 主库（可写），不能连接从库（只读）
+      # Node1: 使用本地 redis (主库)
+      # Node2: 使用 Node1 的 redis 主库（通过内网IP或服务名）
+      REDIS_HOST: ${REDIS_MASTER_HOST:-redis}
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
