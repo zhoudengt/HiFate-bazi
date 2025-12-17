@@ -78,6 +78,10 @@ from server.api.v1.calendar_api import (
     CalendarRequest,
     query_calendar,
 )
+from server.api.v1.daily_fortune_calendar import (
+    DailyFortuneCalendarRequest,
+    query_daily_fortune_calendar,
+)
 from server.api.v1.bazi import BaziInterfaceRequest, ShengongMinggongRequest, get_shengong_minggong
 from server.services.bazi_interface_service import BaziInterfaceService
 
@@ -434,6 +438,13 @@ async def _handle_calendar_query(payload: Dict[str, Any]):
     """处理万年历查询请求"""
     request_model = CalendarRequest(**payload)
     return await query_calendar(request_model)
+
+
+@_register("/daily-fortune-calendar/query")
+async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
+    """处理每日运势日历查询请求"""
+    request_model = DailyFortuneCalendarRequest(**payload)
+    return await query_daily_fortune_calendar(request_model)
 
 
 @_register("/api/v2/face/analyze")
@@ -1025,3 +1036,35 @@ def _write_varint(value: int) -> bytes:
 
 
 
+
+# 模块加载时确保端点被注册（用于热更新后恢复）
+def _ensure_endpoints_registered():
+    """确保所有端点被注册（用于热更新后恢复）"""
+    global SUPPORTED_ENDPOINTS
+    
+    # 如果端点数量为0，尝试重新注册
+    if len(SUPPORTED_ENDPOINTS) == 0:
+        logger.warning("检测到端点数量为0，尝试手动注册端点...")
+        try:
+            # 手动注册每日运势端点
+            from server.api.v1.daily_fortune_calendar import (
+                DailyFortuneCalendarRequest,
+                query_daily_fortune_calendar,
+            )
+            
+            async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
+                """处理每日运势日历查询请求"""
+                request_model = DailyFortuneCalendarRequest(**payload)
+                return await query_daily_fortune_calendar(request_model)
+            
+            SUPPORTED_ENDPOINTS["/daily-fortune-calendar/query"] = _handle_daily_fortune_calendar_query
+            logger.info("✅ 手动注册端点: /daily-fortune-calendar/query")
+        except Exception as e:
+            logger.error(f"手动注册端点失败: {e}", exc_info=True)
+
+
+# 在模块加载时调用（用于热更新后恢复）
+try:
+    _ensure_endpoints_registered()
+except Exception as e:
+    logger.warning(f"初始化端点注册检查失败: {e}")

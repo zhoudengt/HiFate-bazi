@@ -25,6 +25,7 @@ class Sidebar {
                         <a href="fortune.html" class="nav-submenu-item" data-page="fortune">日运日签</a>
                         <a href="fortune.html" class="nav-submenu-item" data-page="year-report">2025乙巳年年运报告</a>
                         <a href="fortune.html" class="nav-submenu-item active" data-page="dayun-liunian">大运流年</a>
+                        <a href="daily-fortune-calendar.html" class="nav-submenu-item" data-page="daily-fortune-calendar">每日运势</a>
                         <a href="shengong-minggong.html" class="nav-submenu-item" data-page="shengong-minggong">身宫命宫</a>
                     </div>
                     <a href="pan.html" class="nav-item" data-page="pan">
@@ -68,6 +69,18 @@ class Sidebar {
                 }
             }
         });
+        
+        // 确保子菜单默认显示（如果当前页面是子菜单项，展开父菜单）
+        if (currentPage === 'daily-fortune-calendar' || 
+            currentPage === 'fortune' || 
+            currentPage === 'year-report' || 
+            currentPage === 'dayun-liunian' || 
+            currentPage === 'shengong-minggong') {
+            const submenu = document.querySelector('.nav-submenu');
+            if (submenu) {
+                submenu.style.display = 'block';
+            }
+        }
     }
 
     getCurrentPage() {
@@ -77,6 +90,7 @@ class Sidebar {
         if (filename.includes('basic-info')) return 'basic-info';
         if (filename.includes('pan')) return 'pan';
         if (filename.includes('shengong-minggong')) return 'shengong-minggong';
+        if (filename.includes('daily-fortune-calendar')) return 'daily-fortune-calendar';
         if (filename.includes('fortune')) return 'dayun-liunian';
         if (filename.includes('yigua')) return 'yigua';
         if (filename.includes('dayun')) return 'dayun';

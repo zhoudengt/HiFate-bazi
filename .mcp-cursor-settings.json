@@ -22,6 +22,19 @@
         "MYSQL_PASSWORD": "root",
         "MYSQL_DATABASE": "bazi_system"
       }
+    },
+    "interactive-feedback-mcp": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/Users/zhoudt/Downloads/project/HiFate-bazi/scripts/interactive-feedback-mcp",
+        "run",
+        "server.py"
+      ],
+      "timeout": 600,
+      "autoApprove": [
+        "interactive_feedback"
+      ]
     }
   }
 }

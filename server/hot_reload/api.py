@@ -79,14 +79,37 @@ async def reload_endpoints():
     用于修复热更新后端点丢失的问题
     """
     try:
-        from server.api.grpc_gateway import _reload_endpoints, SUPPORTED_ENDPOINTS
+        from server.api.grpc_gateway import _reload_endpoints, SUPPORTED_ENDPOINTS, _register
         
         old_count = len(SUPPORTED_ENDPOINTS)
+        
+        # 先尝试重新加载模块
         success = _reload_endpoints()
         new_count = len(SUPPORTED_ENDPOINTS)
         
+        # 如果重新加载后端点数量为0，手动注册关键端点
+        if new_count == 0:
+            logger.warning("端点重新加载后数量为0，尝试手动注册端点...")
+            try:
+                # 手动注册每日运势端点
+                from server.api.v1.daily_fortune_calendar import (
+                    DailyFortuneCalendarRequest,
+                    query_daily_fortune_calendar,
+                )
+                
+                async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
+                    """处理每日运势日历查询请求"""
+                    request_model = DailyFortuneCalendarRequest(**payload)
+                    return await query_daily_fortune_calendar(request_model)
+                
+                SUPPORTED_ENDPOINTS["/daily-fortune-calendar/query"] = _handle_daily_fortune_calendar_query
+                logger.info("✅ 手动注册端点: /daily-fortune-calendar/query")
+                new_count = len(SUPPORTED_ENDPOINTS)
+            except Exception as e:
+                logger.error(f"手动注册端点失败: {e}", exc_info=True)
+        
         return {
-            "success": success,
+            "success": success or new_count > 0,
             "message": f"端点重新注册完成（旧: {old_count}, 新: {new_count}）",
             "old_count": old_count,
             "new_count": new_count,

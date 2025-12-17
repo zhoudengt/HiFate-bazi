@@ -483,6 +483,19 @@ if MONTHLY_FORTUNE_ROUTER_AVAILABLE and monthly_fortune_router:
     app.include_router(monthly_fortune_router, prefix="/api/v1", tags=["月运势"])
     logger.info("✓ 月运势分析路由已注册")
 
+# 注册每日运势日历路由（新增，基于万年历）
+try:
+    from server.api.v1.daily_fortune_calendar import router as daily_fortune_calendar_router
+    DAILY_FORTUNE_CALENDAR_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"每日运势日历路由导入失败（可选功能）: {e}")
+    daily_fortune_calendar_router = None
+    DAILY_FORTUNE_CALENDAR_ROUTER_AVAILABLE = False
+
+if DAILY_FORTUNE_CALENDAR_ROUTER_AVAILABLE and daily_fortune_calendar_router:
+    app.include_router(daily_fortune_calendar_router, prefix="/api/v1", tags=["每日运势日历"])
+    logger.info("✓ 每日运势日历路由已注册")
+
 # 算法公式规则分析路由（808条规则）
 if FORMULA_ANALYSIS_ROUTER_AVAILABLE and formula_analysis_router:
     app.include_router(formula_analysis_router, prefix="/api/v1", tags=["算法公式规则"])
