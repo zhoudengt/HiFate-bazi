@@ -245,7 +245,13 @@ class DailyFortuneCalendarService:
                 )
                 result = cursor.fetchone()
                 if result:
-                    return result.get('content')
+                    content = result.get('content')
+                    # 🔴 修复：将转义的 \n 字符串转换为实际换行符，确保返回完整内容
+                    if content and isinstance(content, str):
+                        # 如果包含转义的 \n 字符串，转换为实际换行符
+                        if '\\n' in content:
+                            content = content.replace('\\n', '\n')
+                    return content
                 return None
         except Exception as e:
             print(f"查询六十甲子运势失败: {e}")
