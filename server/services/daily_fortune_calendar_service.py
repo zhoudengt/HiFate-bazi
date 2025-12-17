@@ -238,8 +238,9 @@ class DailyFortuneCalendarService:
         conn = get_mysql_connection()
         try:
             with conn.cursor() as cursor:
+                # 🔴 修复：enabled 字段可能是 NULL 或 0，使用 COALESCE 处理
                 cursor.execute(
-                    "SELECT content FROM daily_fortune_jiazi WHERE jiazi_day = %s AND enabled = TRUE",
+                    "SELECT content FROM daily_fortune_jiazi WHERE jiazi_day = %s AND COALESCE(enabled, 1) = 1",
                     (jiazi_day,)
                 )
                 result = cursor.fetchone()
@@ -248,6 +249,8 @@ class DailyFortuneCalendarService:
                 return None
         except Exception as e:
             print(f"查询六十甲子运势失败: {e}")
+            import traceback
+            traceback.print_exc()
             return None
         finally:
             return_mysql_connection(conn)
@@ -268,8 +271,9 @@ class DailyFortuneCalendarService:
         try:
             with conn.cursor() as cursor:
                 # 1. 查询十神
+                # 🔴 修复：enabled 字段可能是 NULL 或 0，使用 COALESCE 处理
                 cursor.execute(
-                    "SELECT shishen FROM daily_fortune_shishen_query WHERE day_stem = %s AND birth_stem = %s AND enabled = TRUE",
+                    "SELECT shishen FROM daily_fortune_shishen_query WHERE day_stem = %s AND birth_stem = %s AND COALESCE(enabled, 1) = 1",
                     (day_stem, birth_stem)
                 )
                 query_result = cursor.fetchone()
@@ -279,8 +283,9 @@ class DailyFortuneCalendarService:
                 shishen = query_result.get('shishen')
                 
                 # 2. 查询十神象义
+                # 🔴 修复：enabled 字段可能是 NULL 或 0，使用 COALESCE 处理
                 cursor.execute(
-                    "SELECT hint, hint_keywords FROM daily_fortune_shishen_meaning WHERE shishen = %s AND enabled = TRUE",
+                    "SELECT hint, hint_keywords FROM daily_fortune_shishen_meaning WHERE shishen = %s AND COALESCE(enabled, 1) = 1",
                     (shishen,)
                 )
                 meaning_result = cursor.fetchone()
@@ -317,8 +322,9 @@ class DailyFortuneCalendarService:
         try:
             with conn.cursor() as cursor:
                 # 查询所有关系
+                # 🔴 修复：enabled 字段可能是 NULL 或 0，使用 COALESCE 处理
                 cursor.execute(
-                    "SELECT relation_type, target_branch, target_zodiac, content FROM daily_fortune_zodiac WHERE day_branch = %s AND enabled = TRUE ORDER BY FIELD(relation_type, '合', '冲', '刑', '破', '害')",
+                    "SELECT relation_type, target_branch, target_zodiac, content FROM daily_fortune_zodiac WHERE day_branch = %s AND COALESCE(enabled, 1) = 1 ORDER BY FIELD(relation_type, '合', '冲', '刑', '破', '害')",
                     (day_branch,)
                 )
                 results = cursor.fetchall()
@@ -360,8 +366,9 @@ class DailyFortuneCalendarService:
         conn = get_mysql_connection()
         try:
             with conn.cursor() as cursor:
+                # 🔴 修复：enabled 字段可能是 NULL 或 0，使用 COALESCE 处理
                 cursor.execute(
-                    "SELECT content FROM daily_fortune_jianchu WHERE jianchu = %s AND enabled = TRUE",
+                    "SELECT content FROM daily_fortune_jianchu WHERE jianchu = %s AND COALESCE(enabled, 1) = 1",
                     (jianchu,)
                 )
                 result = cursor.fetchone()
@@ -370,6 +377,8 @@ class DailyFortuneCalendarService:
                 return None
         except Exception as e:
             print(f"查询建除十二神能量小结失败: {e}")
+            import traceback
+            traceback.print_exc()
             return None
         finally:
             return_mysql_connection(conn)
