@@ -10,7 +10,9 @@ const API_CONFIG = (function() {
     
     // 生产环境域名/IP 列表
     const PRODUCTION_HOSTS = [
-        '123.57.216.15',        // 阿里云 ECS
+        '123.57.216.15',        // 测试环境
+        '8.210.52.217',         // Node1（生产环境）
+        '47.243.160.43',        // Node2（生产环境）
         // 'your-domain.com',   // 未来的域名
     ];
     
@@ -46,7 +48,9 @@ const GRPC_CONFIG = (function() {
     
     // 生产环境域名/IP 列表
     const PRODUCTION_HOSTS = [
-        '123.57.216.15',
+        '123.57.216.15',        // 测试环境
+        '8.210.52.217',         // Node1（生产环境）
+        '47.243.160.43',        // Node2（生产环境）
     ];
     
     const isProduction = PRODUCTION_HOSTS.includes(hostname);
