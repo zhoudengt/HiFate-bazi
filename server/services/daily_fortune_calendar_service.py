@@ -590,12 +590,12 @@ class DailyFortuneCalendarService:
                 
                 if has_score:
                     cursor.execute(
-                        "SELECT jianchu, content, score FROM daily_fortune_jianchu WHERE jianchu = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
+                        "SELECT jianchu, content, score FROM daily_fortune_jianchu WHERE jianchu = %s COLLATE utf8mb4_bin AND COALESCE(enabled, 1) = 1 LIMIT 1",
                         (jianchu,)
                     )
                 else:
                     cursor.execute(
-                        "SELECT jianchu, content FROM daily_fortune_jianchu WHERE jianchu = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
+                        "SELECT jianchu, content FROM daily_fortune_jianchu WHERE jianchu = %s COLLATE utf8mb4_bin AND COALESCE(enabled, 1) = 1 LIMIT 1",
                         (jianchu,)
                     )
                 result = cursor.fetchone()
