@@ -1090,6 +1090,36 @@ def _ensure_endpoints_registered():
             logger.error(f"手动注册端点失败: {e}", exc_info=True)
 
 
+# 注册安全监控端点（可选）
+try:
+    from server.api.v1.security_monitor import (
+        get_security_stats,
+        get_blocked_ips,
+        unblock_ip,
+        check_ip_status
+    )
+    
+    @_register("/security/stats")
+    async def _handle_security_stats(payload: Dict[str, Any]):
+        """获取安全统计信息"""
+        return await get_security_stats()
+    
+    @_register("/security/blocked-ips")
+    async def _handle_security_blocked_ips(payload: Dict[str, Any]):
+        """获取封禁 IP 列表"""
+        return await get_blocked_ips()
+    
+    @_register("/security/unblock-ip")
+    async def _handle_security_unblock_ip(payload: Dict[str, Any]):
+        """解封 IP"""
+        from server.api.v1.security_monitor import UnblockIPRequest
+        request_model = UnblockIPRequest(**payload)
+        return await unblock_ip(request_model)
+    
+    logger.info("✓ 安全监控端点已注册")
+except ImportError as e:
+    logger.warning(f"⚠ 安全监控端点未注册（可选功能）: {e}")
+
 # 在模块加载时调用（用于热更新后恢复）
 try:
     _ensure_endpoints_registered()
