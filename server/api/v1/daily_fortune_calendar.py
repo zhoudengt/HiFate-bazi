@@ -218,7 +218,7 @@ class ActionSuggestionsRequest(BaseModel):
     """行动建议请求模型"""
     yi: List[str] = Field(..., description="宜事项列表", example=["解除", "扫舍", "馀事勿取"])
     ji: List[str] = Field(..., description="忌事项列表", example=["诸事不宜"])
-    bot_id: Optional[str] = Field(None, description="Coze Bot ID（可选，优先级：参数 > DAILY_FORTUNE_ACTION_BOT_ID > 默认值7584766797639958555）", example="7584766797639958555")
+    bot_id: Optional[str] = Field(None, description="Coze Bot ID（可选，优先级：参数 > DAILY_FORTUNE_ACTION_BOT_ID 环境变量）", example="7584766797639958555")
 
 
 async def action_suggestions_stream_generator(
@@ -235,10 +235,17 @@ async def action_suggestions_stream_generator(
         bot_id: Coze Bot ID（可选，优先级：参数 > DAILY_FORTUNE_ACTION_BOT_ID > 默认值）
     """
     try:
-        # 确定使用的 bot_id（优先级：参数 > 环境变量 DAILY_FORTUNE_ACTION_BOT_ID > 默认值）
+        # 确定使用的 bot_id（优先级：参数 > 环境变量 DAILY_FORTUNE_ACTION_BOT_ID）
         if not bot_id:
             # 优先使用专门为每日运势行动建议配置的 BOT_ID
-            bot_id = os.getenv("DAILY_FORTUNE_ACTION_BOT_ID") or "7584766797639958555"
+            bot_id = os.getenv("DAILY_FORTUNE_ACTION_BOT_ID")
+            if not bot_id:
+                error_msg = {
+                    'type': 'error',
+                    'content': "Coze Bot ID 配置缺失: 请设置环境变量 DAILY_FORTUNE_ACTION_BOT_ID 或在请求参数中提供 bot_id。"
+                }
+                yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+                return
         
         # 创建Coze流式服务（捕获初始化错误）
         try:
@@ -305,7 +312,7 @@ async def action_suggestions_stream(request: ActionSuggestionsRequest):
     **参数说明**：
     - **yi**: 宜事项列表（必填）
     - **ji**: 忌事项列表（必填）
-    - **bot_id**: Coze Bot ID（可选，优先级：参数 > DAILY_FORTUNE_ACTION_BOT_ID > 默认值7584766797639958555）
+    - **bot_id**: Coze Bot ID（可选，优先级：参数 > DAILY_FORTUNE_ACTION_BOT_ID 环境变量）
     
     **返回格式**：
     SSE流式响应，每行格式：`data: {"type": "progress|complete|error", "content": "..."}`

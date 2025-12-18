@@ -4525,6 +4525,312 @@ curl -X POST http://47.243.160.43:8001/api/v1/hot-reload/rollback
 
 - **增量部署脚本**：`deploy/scripts/incremental_deploy_production.sh`
 - **热更新系统**：见"🔥 热更新强制规范"章节
+
+---
+
+## 🎯 灰度发布规范 【必须遵守】
+
+### 🔴 核心原则
+
+> **所有生产环境部署必须使用灰度发布流程，先部署到 Node1 进行完整功能测试，通过后再部署到 Node2，确保上线准确率 >95%。**
+
+### 📋 灰度发布流程
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    灰度发布流程                              │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  1. 部署前检查（本地）                                       │
+│     ├─ Git 状态检查                                         │
+│     ├─ 代码语法验证                                         │
+│     ├─ 数据库变更检测（对比数据字典）                        │
+│     └─ 生成数据库同步脚本（如有变更）                        │
+│                                                             │
+│  2. 部署到 Node1（灰度节点）                                │
+│     ├─ 拉取代码到 Node1                                     │
+│     ├─ 执行数据库同步（如有变更）                            │
+│     ├─ 触发热更新                                           │
+│     └─ 等待热更新完成                                       │
+│                                                             │
+│  3. Node1 完整功能测试（关键步骤）                          │
+│     ├─ 健康检查                                             │
+│     ├─ 所有前端调用的接口测试（9-10个接口）                  │
+│     │   ├─ 八字计算                                         │
+│     │   ├─ 公式分析                                         │
+│     │   ├─ 月运势                                           │
+│     │   ├─ 日运势                                           │
+│     │   ├─ 身宫命宫                                         │
+│     │   ├─ 智能分析                                         │
+│     │   ├─ 每日运势日历                                     │
+│     │   ├─ 行动建议流式                                     │
+│     │   └─ 其他前端接口                                     │
+│     ├─ 热更新状态检查                                       │
+│     └─ 性能检查（响应时间）                                 │
+│                                                             │
+│  4. 决策点：Node1 测试结果                                 │
+│     ├─ ✅ 全部通过 → 继续到步骤5（部署 Node2）              │
+│     └─ ❌ 测试失败 → 回滚 Node1，报告问题，停止部署          │
+│                                                             │
+│  5. 部署到 Node2（生产节点）                                │
+│     ├─ 拉取代码到 Node2                                     │
+│     ├─ 执行数据库同步（如有变更）                            │
+│     ├─ 触发热更新                                           │
+│     └─ 等待热更新完成                                       │
+│                                                             │
+│  6. Node2 验证（快速验证）                                  │
+│     ├─ 健康检查                                             │
+│     ├─ 关键接口快速测试（3-5个核心接口）                     │
+│     └─ 双机代码一致性验证                                    │
+│                                                             │
+│  7. 完成部署                                                │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 🚀 灰度发布执行步骤
+
+#### 使用灰度发布脚本（推荐）
+
+```bash
+# 1. 确保代码已提交并推送
+git add .
+git commit -m "feat: 新功能"
+git push origin master
+
+# 2. 运行灰度发布脚本
+bash deploy/scripts/grayscale_deploy_production.sh
+```
+
+**脚本功能**：
+- ✅ 自动执行所有安全检查
+- ✅ 自动检测数据库变更
+- ✅ 自动部署到 Node1（灰度节点）
+- ✅ 自动运行完整功能测试
+- ✅ 测试通过后自动部署到 Node2
+- ✅ 测试失败自动回滚 Node1
+- ✅ 自动生成失败报告
+
+### 📋 核心功能接口清单
+
+基于前端调用，需要测试的接口：
+
+| 接口 | 路径 | 方法 | 优先级 |
+|------|------|------|--------|
+| 健康检查 | `/health` | GET | 高 |
+| 八字计算 | `/api/v1/bazi/calculate` | POST | 高 |
+| 公式分析 | `/api/v1/bazi/formula-analysis` | POST | 高 |
+| 月运势 | `/api/v1/bazi/monthly-fortune` | POST | 高 |
+| 日运势 | `/api/v1/bazi/daily-fortune` | POST | 高 |
+| 身宫命宫 | `/api/v1/bazi/shengong-minggong` | POST | 高 |
+| 智能分析 | `/api/v1/smart-analyze` | GET | 高 |
+| 每日运势日历 | `/api/v1/daily-fortune-calendar/calendar` | POST | 高 |
+| 行动建议流式 | `/api/v1/daily-fortune-calendar/action-suggestions/stream` | POST | 中 |
+| 热更新状态 | `/api/v1/hot-reload/status` | GET | 中 |
+
+### 🔄 回滚机制
+
+**自动回滚触发条件**：
+- Node1 健康检查失败（5次重试后）
+- Node1 功能测试失败（任何接口测试失败）
+- 数据库同步失败
+
+**回滚顺序**：
+1. 先回滚代码（热更新回滚）
+2. 再回滚数据库（执行回滚脚本）
+3. 验证回滚成功
+
+**回滚命令**：
+```bash
+# 代码回滚
+curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/rollback
+
+# 数据库回滚（如有变更）
+bash scripts/db/rollback_db.sh --node node1 --rollback-file scripts/db/rollback/rollback_YYYYMMDD_HHMMSS.sql
+```
+
+### ✅ 灰度发布检查清单
+
+每次灰度发布前必须检查：
+
+- [ ] 代码已推送到 GitHub
+- [ ] 本地代码语法验证通过
+- [ ] 数据库变更已检测并生成同步脚本
+- [ ] 回滚脚本已生成
+- [ ] Node1 服务健康检查通过
+- [ ] Node1 完整功能测试通过（所有接口）
+- [ ] Node2 服务健康检查通过
+- [ ] Node2 快速验证通过
+- [ ] 双机代码一致性验证通过
+
+### 📊 灰度发布性能指标
+
+| 指标 | 目标值 | 说明 |
+|------|--------|------|
+| **上线准确率** | >95% | 通过灰度发布验证 |
+| **问题影响范围** | 仅 Node1 | Node2 保持稳定 |
+| **回滚速度** | < 30秒 | 自动回滚，秒级恢复 |
+| **测试覆盖率** | 100% | 所有前端接口必须测试 |
+
+### 📚 相关文档
+
+- **灰度发布脚本**：`deploy/scripts/grayscale_deploy_production.sh`
+- **Node1 测试脚本**：`tests/e2e_node1_test.py`
+- **增量部署脚本**：`deploy/scripts/incremental_deploy_production.sh`（旧版本，保留作为备用）
+
+---
+
+## 🗄️ 数据库同步规范 【必须遵守】
+
+### 🔴 核心原则
+
+> **所有数据库结构变更必须通过数据库同步机制处理，确保本地、Node1、Node2 数据库结构完全一致，支持自动回滚。**
+
+### 📋 数据库同步流程
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    数据库同步流程                            │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  1. 数据库变更检测（本地）                                   │
+│     ├─ 对比本地和生产数据库结构                             │
+│     ├─ 检测新增表、新增字段、修改字段                        │
+│     └─ 生成变更报告                                         │
+│                                                             │
+│  2. 生成同步脚本                                             │
+│     ├─ 生成 CREATE TABLE 语句（新增表）                     │
+│     ├─ 生成 ALTER TABLE 语句（新增字段）                     │
+│     └─ 生成回滚脚本（反向操作）                              │
+│                                                             │
+│  3. 执行数据库同步（Node1 灰度节点）                        │
+│     ├─ 上传同步脚本到 Node1                                 │
+│     ├─ 执行 SQL 脚本                                        │
+│     └─ 验证同步结果                                         │
+│                                                             │
+│  4. Node1 功能测试                                          │
+│     ├─ 如果测试通过 → 继续到步骤5（同步 Node2）             │
+│     └─ 如果测试失败 → 回滚数据库变更                        │
+│                                                             │
+│  5. 执行数据库同步（Node2 生产节点）                        │
+│     ├─ 上传同步脚本到 Node2                                 │
+│     ├─ 执行 SQL 脚本                                        │
+│     └─ 验证同步结果                                         │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 🔧 数据库变更检测
+
+**检测脚本**：`scripts/db/detect_db_changes.py`
+
+**使用方法**：
+```bash
+# 检测数据库变更并生成同步脚本
+python3 scripts/db/detect_db_changes.py --generate-sync-script
+```
+
+**检测内容**：
+- 新增表（CREATE TABLE）
+- 新增字段（ALTER TABLE ADD COLUMN）
+- 修改字段（ALTER TABLE MODIFY COLUMN，需要手动确认）
+- 新增索引（CREATE INDEX）
+
+**输出文件**：
+- `scripts/db/sync_YYYYMMDD_HHMMSS.sql` - 同步脚本
+- `scripts/db/rollback/rollback_YYYYMMDD_HHMMSS.sql` - 回滚脚本
+- `scripts/db/changes_YYYYMMDD_HHMMSS.json` - 变更信息
+
+### 🔄 数据库同步执行
+
+**同步脚本**：`scripts/db/sync_production_db.sh`
+
+**使用方法**：
+```bash
+# 同步到 Node1（灰度节点）
+bash scripts/db/sync_production_db.sh --node node1 --deployment-id 20250115_143000
+
+# 同步到 Node2（生产节点）
+bash scripts/db/sync_production_db.sh --node node2 --deployment-id 20250115_143000
+
+# 预览模式（不执行实际变更）
+bash scripts/db/sync_production_db.sh --node node1 --deployment-id 20250115_143000 --dry-run
+```
+
+**同步流程**：
+1. 上传同步脚本到目标节点
+2. 执行 SQL 脚本（使用事务）
+3. 验证同步结果
+4. 记录同步日志
+
+### 🔙 数据库回滚
+
+**回滚脚本**：`scripts/db/rollback_db.sh`
+
+**使用方法**：
+```bash
+# 回滚 Node1 数据库
+bash scripts/db/rollback_db.sh --node node1 --rollback-file scripts/db/rollback/rollback_20250115_143000.sql
+
+# 预览模式（不执行实际回滚）
+bash scripts/db/rollback_db.sh --node node1 --rollback-file scripts/db/rollback/rollback_20250115_143000.sql --dry-run
+```
+
+**回滚内容**：
+- 删除新增的表（DROP TABLE）
+- 删除新增的字段（ALTER TABLE DROP COLUMN）
+- 恢复修改的字段（需要手动处理）
+
+### ✅ 数据库同步检查清单
+
+每次数据库变更前必须检查：
+
+- [ ] 数据库变更已检测（运行 `detect_db_changes.py`）
+- [ ] 同步脚本已生成（`scripts/db/sync_*.sql`）
+- [ ] 回滚脚本已生成（`scripts/db/rollback/rollback_*.sql`）
+- [ ] 同步脚本已预览（`--dry-run` 模式）
+- [ ] Node1 数据库同步成功
+- [ ] Node1 功能测试通过（验证数据库变更不影响功能）
+- [ ] Node2 数据库同步成功
+- [ ] 双机数据库结构一致
+
+### 🚨 数据库同步注意事项
+
+1. **只增不减原则**
+   - 优先使用新增字段，避免删除字段
+   - 删除字段需要手动处理，确保数据安全
+
+2. **字段修改谨慎**
+   - 修改字段类型可能影响现有数据
+   - 需要手动确认并测试
+
+3. **事务保证**
+   - 所有同步脚本使用事务（START TRANSACTION / COMMIT）
+   - 确保原子性操作
+
+4. **回滚准备**
+   - 每次同步前必须生成回滚脚本
+   - 回滚脚本必须经过测试验证
+
+5. **数据备份**
+   - 重要数据变更前建议手动备份
+   - 使用 `mysqldump` 备份关键表
+
+### 📊 数据库同步性能指标
+
+| 指标 | 目标值 | 说明 |
+|------|--------|------|
+| **同步时间** | < 30秒 | 单个节点同步时间 |
+| **回滚时间** | < 10秒 | 数据库回滚时间 |
+| **一致性** | 100% | 双机数据库结构完全一致 |
+| **成功率** | > 99% | 数据库同步成功率 |
+
+### 📚 相关文档
+
+- **数据库变更检测脚本**：`scripts/db/detect_db_changes.py`
+- **数据库同步脚本**：`scripts/db/sync_production_db.sh`
+- **数据库回滚脚本**：`scripts/db/rollback_db.sh`
+- **灰度发布脚本**：`deploy/scripts/grayscale_deploy_production.sh`（集成数据库同步）
 - **完整部署流程**：见"🚀 CI/CD 标准流程"章节
 
 ---

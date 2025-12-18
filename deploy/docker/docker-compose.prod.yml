@@ -58,6 +58,9 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       COZE_ACCESS_TOKEN: ${COZE_ACCESS_TOKEN:-}
       COZE_BOT_ID: ${COZE_BOT_ID:-}
+      INTENT_BOT_ID: ${INTENT_BOT_ID:-}
+      FORTUNE_ANALYSIS_BOT_ID: ${FORTUNE_ANALYSIS_BOT_ID:-}
+      DAILY_FORTUNE_ACTION_BOT_ID: ${DAILY_FORTUNE_ACTION_BOT_ID:-}
       TZ: Asia/Shanghai
     volumes:
       - web_logs:/app/logs
