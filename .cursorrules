@@ -2702,6 +2702,50 @@ async def _handle_new_feature(payload: Dict[str, Any]):
 
 ---
 
+### 问题7：数据库编码异常导致查询失败 - 2025-12-18
+
+**症状**：
+- 生产环境"分数"和"幸运颜色"显示"暂无"
+- API 返回 `score: null` 和 `lucky_colors: null`
+- 但数据库查询显示有数据（命令行查询正常）
+
+**原因**：
+- 数据库记录编码异常（UTF-8 字符被错误编码为多字节序列）
+- Python 查询时无法匹配编码异常的记录
+- 使用普通 `WHERE` 条件查询返回 `None`
+
+**解决**：
+1. **数据插入使用 UNHEX**：
+   ```sql
+   -- ✅ 正确：使用 UNHEX 确保编码正确
+   INSERT INTO daily_fortune_jianchu (jianchu, content, score, enabled) 
+   VALUES (UNHEX('E694B6'), UNHEX('E883BDE9878FE5B08FE7BB93...'), 90, 1);
+   ```
+
+2. **查询使用 BINARY 比较**：
+   ```python
+   # ✅ 正确：使用 BINARY 比较确保精确匹配
+   cursor.execute(
+       "SELECT jianchu, score FROM daily_fortune_jianchu WHERE BINARY jianchu = %s",
+       ('收',)
+   )
+   ```
+
+3. **Python 脚本生成 UNHEX SQL**：
+   ```python
+   def generate_unhex_sql(text: str) -> str:
+       hex_encoding = text.encode('utf-8').hex().upper()
+       return f"UNHEX('{hex_encoding}')"
+   ```
+
+**预防**：
+- ✅ 所有包含中文字符的数据插入必须使用 `UNHEX`
+- ✅ 所有中文字段查询必须使用 `BINARY` 比较
+- ✅ 数据同步脚本必须验证编码正确性
+- ✅ 详见"🔤 数据库编码处理规范"章节
+
+---
+
 ## 🔄 Redis缓存开发规范 【必须遵守】
 
 ### 🔴 核心原则
