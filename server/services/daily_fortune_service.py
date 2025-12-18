@@ -23,8 +23,50 @@ from server.utils.data_validator import validate_bazi_data
 class DailyFortuneService:
     """今日运势分析服务"""
     
+    # Redis缓存TTL（24小时，因为每日运势每天变化）
+    CACHE_TTL = 86400
+    
     @staticmethod
-    def calculate_daily_fortune(
+    def _generate_cache_key(
+        solar_date: str,
+        solar_time: str,
+        gender: str,
+        target_date: Optional[str] = None,
+        use_llm: bool = False
+    ) -> str:
+        """
+        生成缓存键
+        
+        Args:
+            solar_date: 用户出生日期
+            solar_time: 用户出生时间
+            gender: 性别
+            target_date: 目标日期
+            use_llm: 是否使用LLM
+            
+        Returns:
+            str: 缓存键
+        """
+        # 标准化参数
+        if target_date:
+            date_key = target_date
+        else:
+            date_key = date.today().strftime('%Y-%m-%d')
+        
+        # 生成键（格式：daily_fortune:service:{date}:{solar_date}:{solar_time}:{gender}:{use_llm}）
+        key_parts = [
+            'daily_fortune',
+            'service',
+            date_key,
+            solar_date,
+            solar_time,
+            gender,
+            'llm' if use_llm else 'rule'
+        ]
+        return ':'.join(key_parts)
+    
+    @staticmethod
+    def _calculate_daily_fortune_from_database(
         solar_date: str,
         solar_time: str,
         gender: str,
@@ -133,6 +175,69 @@ class DailyFortuneService:
                 "error": f"计算今日运势异常: {str(e)}\n{traceback.format_exc()}",
                 "fortune": None
             }
+    
+    @staticmethod
+    def calculate_daily_fortune(
+        solar_date: str,
+        solar_time: str,
+        gender: str,
+        target_date: Optional[str] = None,
+        use_llm: bool = False,
+        access_token: Optional[str] = None,
+        bot_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        计算今日运势分析（带Redis缓存）
+        
+        Args:
+            solar_date: 用户出生日期（阳历）
+            solar_time: 用户出生时间
+            gender: 性别
+            target_date: 目标日期（可选，默认为今天），格式：YYYY-MM-DD
+            use_llm: 是否使用 LLM 生成（可选，默认使用规则匹配）
+            access_token: Coze Access Token（可选，use_llm=True 时需要）
+            bot_id: Coze Bot ID（可选，use_llm=True 时需要）
+            
+        Returns:
+            dict: 包含今日运势分析结果
+        """
+        # 1. 生成缓存键
+        cache_key = DailyFortuneService._generate_cache_key(
+            solar_date, solar_time, gender, target_date, use_llm
+        )
+        
+        # 2. 先查缓存（L1内存 + L2 Redis）
+        try:
+            from server.utils.cache_multi_level import get_multi_cache
+            cache = get_multi_cache()
+            cached_result = cache.get(cache_key)
+            if cached_result:
+                # 缓存命中，直接返回（0个数据库连接）
+                return cached_result
+        except Exception as e:
+            # Redis不可用，降级到数据库查询
+            print(f"⚠️  Redis缓存不可用，降级到数据库查询: {e}")
+        
+        # 3. 缓存未命中，查询数据库
+        result = DailyFortuneService._calculate_daily_fortune_from_database(
+            solar_date, solar_time, gender, target_date, use_llm, access_token, bot_id
+        )
+        
+        # 4. 写入缓存（仅成功时）
+        if result.get('success'):
+            try:
+                from server.utils.cache_multi_level import get_multi_cache
+                cache = get_multi_cache()
+                # 使用自定义TTL（24小时）
+                cache.l2.ttl = DailyFortuneService.CACHE_TTL
+                cache.set(cache_key, result)
+                # 恢复默认TTL
+                cache.l2.ttl = 3600
+            except Exception as e:
+                # 缓存写入失败不影响业务
+                print(f"⚠️  缓存写入失败（不影响业务）: {e}")
+        
+        return result
     
     @staticmethod
     def _extract_liuri_info(detail_result: Dict[str, Any], target_date: date) -> Dict[str, Any]:
@@ -680,4 +785,50 @@ class DailyFortuneService:
                 [],
                 target_date
             )
+    
+    @staticmethod
+    def invalidate_cache_for_date(target_date: Optional[str] = None):
+        """
+        使指定日期的缓存失效（支持双机同步）
+        
+        Args:
+            target_date: 目标日期（可选，默认为今天），格式：YYYY-MM-DD
+        """
+        try:
+            from server.utils.cache_multi_level import get_multi_cache
+            from server.config.redis_config import get_redis_client
+            
+            # 1. 清理本地L1缓存
+            cache = get_multi_cache()
+            cache.l1.clear()  # 清空所有L1缓存（简单实现）
+            
+            # 2. 清理Redis缓存（支持pattern匹配）
+            redis_client = get_redis_client()
+            if redis_client:
+                if target_date:
+                    # 清理指定日期的缓存
+                    pattern = f"daily_fortune:service:{target_date}:*"
+                else:
+                    # 清理所有每日运势缓存
+                    pattern = "daily_fortune:service:*"
+                
+                # 使用SCAN迭代删除（避免阻塞）
+                cursor = 0
+                deleted_count = 0
+                while True:
+                    cursor, keys = redis_client.scan(cursor, match=pattern, count=100)
+                    if keys:
+                        deleted_count += redis_client.delete(*keys)
+                    if cursor == 0:
+                        break
+                
+                # 3. 发布缓存失效事件（双机同步）
+                try:
+                    redis_client.publish('cache:invalidate:daily_fortune', target_date or 'all')
+                except Exception as e:
+                    print(f"⚠️  发布缓存失效事件失败: {e}")
+                
+                print(f"✅ 已清理每日运势服务缓存: {deleted_count} 条（日期: {target_date or 'all'}）")
+        except Exception as e:
+            print(f"⚠️  缓存失效操作失败（不影响业务）: {e}")
 

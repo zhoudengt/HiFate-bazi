@@ -174,6 +174,14 @@ def main():
             print(f"   - 新增: {inserted} 条")
             print(f"   - 更新: {updated} 条")
             print(f"   - 总计: {inserted + updated} 条")
+            
+            # 清理每日运势缓存
+            try:
+                from server.services.daily_fortune_calendar_service import DailyFortuneCalendarService
+                DailyFortuneCalendarService.invalidate_cache_for_date()
+                print(f"\n✅ 已清理每日运势缓存")
+            except Exception as e:
+                print(f"\n⚠️  清理缓存失败（不影响数据导入）: {e}")
         else:
             print(f"\n📊 预览结果：")
             print(f"   - 将处理: {inserted} 条记录")

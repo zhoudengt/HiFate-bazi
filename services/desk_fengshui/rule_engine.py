@@ -593,25 +593,110 @@ class DeskFengshuiEngine:
             cursor = conn.cursor(pymysql.cursors.DictCursor)
             cursor.execute("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci")
             
-            # 查询启用的规则
+            # 🔴 关键修复：使用 CAST AS BINARY 获取原始字节，绕过 pymysql 的字符集转换
+            # 这样可以获取数据库中实际存储的字节，然后手动 UTF-8 解码
             sql = """
-                SELECT * FROM desk_fengshui_rules 
+                SELECT 
+                    id, rule_code, rule_type, item_name, 
+                    CAST(item_label AS BINARY) as item_label_bytes,
+                    CAST(reason AS BINARY) as reason_bytes,
+                    CAST(suggestion AS BINARY) as suggestion_bytes,
+                    ideal_position, priority, related_element, 
+                    conditions, enabled, created_at, updated_at
+                FROM desk_fengshui_rules 
                 WHERE enabled = 1 
                 ORDER BY priority DESC, rule_code
             """
             
             cursor.execute(sql)
-            rules = cursor.fetchall()
+            rules_raw = cursor.fetchall()
             
-            # 解析JSON字段并修复编码
-            for rule in rules:
-                # 修复文本字段的编码
-                if rule.get('reason'):
-                    rule['reason'] = self._safe_decode(rule['reason'])
-                if rule.get('suggestion'):
-                    rule['suggestion'] = self._safe_decode(rule['suggestion'])
-                if rule.get('item_label'):
-                    rule['item_label'] = self._safe_decode(rule['item_label'])
+            # 手动解码字节字段，处理双重编码问题
+            rules = []
+            for rule in rules_raw:
+                # 解码字节字段
+                item_label_bytes = rule.get('item_label_bytes')
+                reason_bytes = rule.get('reason_bytes')
+                suggestion_bytes = rule.get('suggestion_bytes')
+                
+                # 解码函数：处理双重编码问题
+                def decode_text_field(byte_data):
+                    """
+                    修复双重编码问题
+                    
+                    问题：数据库中存储的文本可能是双重编码的：
+                    1. 原始中文 -> UTF-8 编码 -> 字节1
+                    2. 字节1 被当作 latin1 字符串 -> 再次 UTF-8 编码 -> 字节2
+                    3. 字节2 存储在数据库中
+                    
+                    修复流程：
+                    1. 字节2 -> UTF-8 解码 -> 得到 latin1 字符串（字节1的文本表示）
+                    2. latin1 字符串 -> latin1 编码回字节 -> 得到字节1
+                    3. 字节1 -> UTF-8 解码 -> 得到正确的中文
+                    """
+                    if not byte_data:
+                        return ''
+                    if isinstance(byte_data, bytes):
+                        try:
+                            # 第一步：UTF-8 解码（得到 latin1 字符串）
+                            first_decode = byte_data.decode('utf-8')
+                            
+                            # 检查是否已经包含中文（说明不是双重编码）
+                            if any('\u4e00' <= c <= '\u9fff' for c in first_decode):
+                                return first_decode
+                            
+                            # 如果不包含中文，可能是双重或三次编码，尝试修复
+                            try:
+                                # 🔴 关键修复：使用 errors='replace' 处理特殊字符，支持多次解码
+                                # 第一步：将 latin1 字符串编码回字节（使用 errors='replace' 处理无法编码的字符）
+                                re_encoded1 = first_decode.encode('latin1', errors='replace')
+                                # 第二步：再次 UTF-8 解码
+                                second_decode = re_encoded1.decode('utf-8')
+                                
+                                # 检查是否包含中文
+                                if any('\u4e00' <= c <= '\u9fff' for c in second_decode):
+                                    logger.debug(f"✅ 双重编码修复成功: {second_decode[:30]}")
+                                    return second_decode
+                                
+                                # 如果第二次解码仍不包含中文，尝试三次解码
+                                try:
+                                    re_encoded2 = second_decode.encode('latin1', errors='replace')
+                                    third_decode = re_encoded2.decode('utf-8')
+                                    if any('\u4e00' <= c <= '\u9fff' for c in third_decode):
+                                        logger.debug(f"✅ 三次编码修复成功: {third_decode[:30]}")
+                                        return third_decode
+                                except (UnicodeEncodeError, UnicodeDecodeError):
+                                    pass
+                                
+                                # 如果修复失败，返回第二次解码的结果（可能部分正确）
+                                return second_decode
+                            except (UnicodeEncodeError, UnicodeDecodeError) as e:
+                                logger.debug(f"编码修复失败: {e}")
+                                pass
+                            
+                            # 如果修复失败，返回第一次解码的结果
+                            return first_decode
+                        except UnicodeDecodeError:
+                            # UTF-8 解码失败，尝试 latin1
+                            try:
+                                return byte_data.decode('latin1')
+                            except:
+                                return byte_data.decode('utf-8', errors='ignore')
+                    else:
+                        # 如果不是字节，直接使用 _safe_decode
+                        return self._safe_decode(str(byte_data))
+                
+                # 解码各个字段
+                rule['item_label'] = decode_text_field(item_label_bytes)
+                rule['reason'] = decode_text_field(reason_bytes)
+                rule['suggestion'] = decode_text_field(suggestion_bytes)
+                
+                # 移除临时字节字段
+                rule.pop('item_label_bytes', None)
+                rule.pop('reason_bytes', None)
+                rule.pop('suggestion_bytes', None)
+                
+                rules.append(rule)
                 
                 if rule.get('ideal_position') and isinstance(rule['ideal_position'], str):
                     try:
@@ -1285,7 +1370,15 @@ class DeskFengshuiEngine:
                 
                 # 获取理想位置
                 ideal_pos = rule.get('ideal_position', {})
+                # 🔴 防御性检查：确保 ideal_pos 不为 None
                 if not ideal_pos:
+                    ideal_pos = {}
+                if isinstance(ideal_pos, str):
+                    try:
+                        ideal_pos = json.loads(ideal_pos)
+                    except:
+                        ideal_pos = {}
+                if not isinstance(ideal_pos, dict):
                     continue
                 
                 ideal_directions = ideal_pos.get('directions', [])
@@ -1343,7 +1436,15 @@ class DeskFengshuiEngine:
                 
                 if rule['item_name'] == item_name:
                     ideal_pos = rule.get('ideal_position', {})
-                    avoid_direction = ideal_pos.get('direction', '')
+                    # 🔴 防御性检查：确保 ideal_pos 不为 None
+                    if not ideal_pos:
+                        ideal_pos = {}
+                    if isinstance(ideal_pos, str):
+                        try:
+                            ideal_pos = json.loads(ideal_pos)
+                        except:
+                            ideal_pos = {}
+                    avoid_direction = ideal_pos.get('direction', '') if isinstance(ideal_pos, dict) else ''
                     
                     # 检查是否在禁止区域
                     if 'avoid' in avoid_direction.lower():
@@ -1360,7 +1461,7 @@ class DeskFengshuiEngine:
         
         return removals
     
-    def _generate_additions(self, detected_items: List[Dict], bazi_info: Dict, rules: List[Dict]) -> List[Dict]:
+    def _generate_additions(self, detected_items: List[Dict], bazi_info: Optional[Dict], rules: List[Dict]) -> List[Dict]:
         """基于规则和喜神生成增加建议"""
         additions = []
         xishen = bazi_info.get('xishen') if bazi_info else None
@@ -1399,7 +1500,15 @@ class DeskFengshuiEngine:
             # 如果是喜神相关规则，优先推荐（强制显示，即使已有类似物品）
             if rule.get('related_element') == xishen:
                 ideal_pos = rule.get('ideal_position', {})
-                ideal_directions = ideal_pos.get('directions', [])
+                # 🔴 防御性检查：确保 ideal_pos 不为 None
+                if not ideal_pos:
+                    ideal_pos = {}
+                if isinstance(ideal_pos, str):
+                    try:
+                        ideal_pos = json.loads(ideal_pos)
+                    except:
+                        ideal_pos = {}
+                ideal_directions = ideal_pos.get('directions', []) if isinstance(ideal_pos, dict) else []
                 if isinstance(ideal_directions, str):
                     ideal_directions = [ideal_directions]
                 
@@ -1430,7 +1539,15 @@ class DeskFengshuiEngine:
             if rule['rule_type'] in ['position', 'wealth', 'career', 'love', 'protection', 'health', 'study', 'relationship', 'general'] and not has_item:
                 # 检查是否应该推荐（基于位置和规则优先级）
                 ideal_pos = rule.get('ideal_position', {})
-                ideal_directions = ideal_pos.get('directions', [])
+                # 🔴 防御性检查：确保 ideal_pos 不为 None
+                if not ideal_pos:
+                    ideal_pos = {}
+                if isinstance(ideal_pos, str):
+                    try:
+                        ideal_pos = json.loads(ideal_pos)
+                    except:
+                        ideal_pos = {}
+                ideal_directions = ideal_pos.get('directions', []) if isinstance(ideal_pos, dict) else []
                 if isinstance(ideal_directions, str):
                     ideal_directions = [ideal_directions]
                 
@@ -1778,7 +1895,15 @@ class DeskFengshuiEngine:
     def _safe_decode(text: str) -> str:
         """
         安全解码字符串，处理可能的编码问题
-        增强版：支持多种编码修复策略
+        增强版：支持多种编码修复策略，修复 pymysql latin1 错误编码问题
+        
+        🔴 核心问题：pymysql 在某些情况下会将 UTF-8 编码的中文字符以 latin1 方式读取，
+        导致字符串中包含 0x80-0xFF 范围的字符，这些字符实际上是 UTF-8 字节被错误解释的结果。
+        
+        修复策略：
+        1. 检测是否包含可疑字符（0x80-0xFF）
+        2. 尝试将字符串按 latin1 编码回字节，再按 UTF-8 解码
+        3. 验证修复后的文本是否包含中文字符
         """
         if not text:
             return text
@@ -1807,35 +1932,48 @@ class DeskFengshuiEngine:
         
         # 如果是字符串，检查是否有乱码
         if isinstance(text, str):
-            # 检查是否已经是正确的UTF-8
-            try:
-                # 先尝试正常编码解码验证
-                text.encode('utf-8').decode('utf-8')
-                
-                # 检查是否有常见的乱码模式（如：ä¸æ、ç§等）
-                # 这些是latin1编码的中文字符被错误解释的结果
-                has_suspicious_chars = False
-                for c in text[:200]:  # 检查前200个字符
-                    if 0x80 <= ord(c) <= 0xFF:
-                        has_suspicious_chars = True
+            # 🔴 关键修复：检查是否包含 latin1 错误编码的中文字符
+            # 特征：包含 0x80-0xFF 范围的字符，且这些字符组合起来可能是 UTF-8 编码的中文
+            has_suspicious_chars = False
+            suspicious_char_count = 0
+            for c in text[:200]:  # 检查前200个字符
+                if 0x80 <= ord(c) <= 0xFF:
+                    has_suspicious_chars = True
+                    suspicious_char_count += 1
+                    if suspicious_char_count >= 3:  # 至少3个可疑字符才可能是中文乱码
                         break
-                
-                if has_suspicious_chars:
-                    # 可能是latin1编码的中文，尝试修复
-                    try:
-                        fixed = text.encode('latin1').decode('utf-8')
-                        # 验证修复后的文本是否包含中文字符
-                        if any('\u4e00' <= c <= '\u9fff' or c in '，。！？；：' for c in fixed[:100]):
-                            return fixed
-                    except (UnicodeEncodeError, UnicodeDecodeError):
-                        pass
-                
+            
+            if has_suspicious_chars and suspicious_char_count >= 3:
+                # 尝试修复：latin1 错误编码的 UTF-8 中文
+                try:
+                    # 将字符串按 latin1 编码回字节，再按 UTF-8 解码
+                    fixed = text.encode('latin1').decode('utf-8')
+                    # 验证修复后的文本是否包含中文字符
+                    chinese_count = sum(1 for c in fixed[:100] if '\u4e00' <= c <= '\u9fff')
+                    chinese_punct_count = sum(1 for c in fixed[:100] if c in '，。！？；：')
+                    # 如果包含至少2个中文字符或1个中文标点，认为修复成功
+                    if chinese_count >= 2 or chinese_punct_count >= 1:
+                        logger.debug(f"✅ 编码修复成功: {text[:30]} -> {fixed[:30]}")
+                        return fixed
+                except (UnicodeEncodeError, UnicodeDecodeError) as e:
+                    logger.debug(f"编码修复失败: {e}")
+                    pass
+            
+            # 检查是否已经是正确的UTF-8（不包含可疑字符或修复失败）
+            try:
+                # 验证可以正常编码解码
+                text.encode('utf-8').decode('utf-8')
+                # 如果没有可疑字符，直接返回
+                if not has_suspicious_chars:
+                    return text
+                # 如果有可疑字符但修复失败，可能是其他编码或非中文文本
                 return text
             except UnicodeEncodeError:
                 # 如果无法编码，尝试修复
                 try:
                     fixed = text.encode('latin1').decode('utf-8')
-                    if any('\u4e00' <= c <= '\u9fff' or c in '，。！？；：' for c in fixed[:100]):
+                    chinese_count = sum(1 for c in fixed[:100] if '\u4e00' <= c <= '\u9fff')
+                    if chinese_count >= 2:
                         return fixed
                 except (UnicodeEncodeError, UnicodeDecodeError):
                     pass

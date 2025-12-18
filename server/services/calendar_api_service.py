@@ -177,6 +177,9 @@ class CalendarAPIService:
             yang_gui = lunar.getDayPositionYangGuiDesc() or ''  # 阳贵方位
             yin_gui = lunar.getDayPositionYinGuiDesc() or ''  # 阴贵方位
             
+            # 获取胎神方位（尝试多种可能的方法名）
+            tai_shen = self._get_taishen_from_lunar(lunar, day_ganzhi)
+            
             # 获取冲煞信息
             chong_desc = lunar.getDayChongDesc() or ''  # 冲（如：(丙子)鼠）
             sha_desc = lunar.getDaySha() or ''  # 煞方位（如：北）
@@ -273,7 +276,9 @@ class CalendarAPIService:
                     'caishen': cai_shen,
                     'fushen': fu_shen,
                     'yanggui': yang_gui,  # 阳贵
-                    'yingui': yin_gui  # 阴贵
+                    'yingui': yin_gui,  # 阴贵
+                    'taishen': tai_shen,  # 胎神方位
+                    'taishen_explanation': self._generate_taishen_explanation(tai_shen)  # 胎神解释
                 },
                 'chong_he_sha': {
                     'chong': chong_desc,
@@ -356,7 +361,9 @@ class CalendarAPIService:
                     'deities': {
                         'fucai': result.get('fucai', ''),
                         'caishen': result.get('caishen', ''),
-                        'xishen': result.get('xishen', '')
+                        'xishen': result.get('xishen', ''),
+                        'taishen': result.get('taishen', ''),  # 从API返回中提取胎神
+                        'taishen_explanation': self._generate_taishen_explanation(result.get('taishen', ''))  # 生成解释
                     },
                     'chong_he_sha': {
                         'chong': result.get('chong', ''),
@@ -411,7 +418,9 @@ class CalendarAPIService:
                     'deities': {
                         'fucai': result.get('fucai', ''),
                         'caishen': result.get('caishen', ''),
-                        'xishen': result.get('xishen', '')
+                        'xishen': result.get('xishen', ''),
+                        'taishen': result.get('taishen', ''),  # 从API返回中提取胎神
+                        'taishen_explanation': self._generate_taishen_explanation(result.get('taishen', ''))  # 生成解释
                     },
                     'chong_he_sha': {
                         'chong': result.get('chong', ''),
@@ -466,7 +475,9 @@ class CalendarAPIService:
                     'deities': {
                         'fucai': result.get('fucai', ''),
                         'caishen': result.get('caishen', ''),
-                        'xishen': result.get('xishen', '')
+                        'xishen': result.get('xishen', ''),
+                        'taishen': result.get('taishen', ''),  # 从API返回中提取胎神
+                        'taishen_explanation': self._generate_taishen_explanation(result.get('taishen', ''))  # 生成解释
                     },
                     'chong_he_sha': {
                         'chong': result.get('chong', ''),
@@ -482,3 +493,122 @@ class CalendarAPIService:
         except Exception as e:
             logger.error(f"调用六派数据API失败: {e}")
             raise
+    
+    def _get_taishen_from_lunar(self, lunar, day_ganzhi: str) -> str:
+        """
+        从 lunar_python 库获取胎神方位
+        
+        Args:
+            lunar: lunar_python 的 Lunar 对象
+            day_ganzhi: 日柱干支，格式如 "甲子"
+        
+        Returns:
+            胎神方位字符串，格式如 "占门厕外正东"
+        """
+        # 尝试多种可能的方法名（按可能性排序）
+        taishen_methods = [
+            'getDayPositionTaiShenDesc',  # 最可能的方法名（与其他方位方法一致）
+            'getPositionTaiShen',
+            'getDayTaiShen',
+            'getTaiShen',
+            'getDayPositionTaiShen',
+            'getTaiShenDesc',
+        ]
+        
+        for method_name in taishen_methods:
+            if hasattr(lunar, method_name):
+                try:
+                    method = getattr(lunar, method_name)
+                    result = method()
+                    if result:
+                        return str(result)
+                except Exception as e:
+                    logger.debug(f"尝试方法 {method_name} 失败: {e}")
+                    continue
+        
+        # 如果库不支持，使用备用计算方案
+        return self._calculate_taishen_fallback(day_ganzhi)
+    
+    def _calculate_taishen_fallback(self, day_ganzhi: str) -> str:
+        """
+        备用胎神计算方法（如果 lunar_python 不支持）
+        根据日支计算胎神方位
+        
+        胎神规则：根据日支和方位对应关系计算
+        格式：占[位置][方位]，如 "占门厕外正东"
+        
+        Args:
+            day_ganzhi: 日柱干支，格式如 "甲子"
+        
+        Returns:
+            胎神方位字符串
+        """
+        if not day_ganzhi or len(day_ganzhi) < 2:
+            return ''
+        
+        day_branch = day_ganzhi[1]  # 日支
+        
+        # 胎神方位映射表（根据传统黄历规则）
+        # 格式：{日支: 胎神方位描述}
+        taishen_map = {
+            '子': '占碓磨门外正北',
+            '丑': '占厕外东北',
+            '寅': '占门炉外东北',
+            '卯': '占门房内正东',
+            '辰': '占门栖外正东',
+            '巳': '占门床外正东',
+            '午': '占碓磨外正南',
+            '未': '占厕外西南',
+            '申': '占碓磨门外西南',
+            '酉': '占门栖外西南',
+            '戌': '占房床外西南',
+            '亥': '占房床外西南'
+        }
+        
+        return taishen_map.get(day_branch, '')
+    
+    def _generate_taishen_explanation(self, taishen: str) -> str:
+        """
+        生成胎神解释文本
+        
+        Args:
+            taishen: 胎神方位，格式如 "占门厕外正东"
+        
+        Returns:
+            解释文本
+        """
+        if not taishen:
+            return ''
+        
+        # 提取方位信息（从胎神描述中提取方位）
+        direction_keywords = ['正东', '正西', '正南', '正北', '东北', '东南', '西北', '西南']
+        direction = ''
+        for keyword in direction_keywords:
+            if keyword in taishen:
+                direction = keyword
+                break
+        
+        # 提取位置信息（门、厕、床等）
+        location_keywords = ['门', '厕', '床', '碓', '磨', '房', '炉', '栖']
+        locations = []
+        for keyword in location_keywords:
+            if keyword in taishen:
+                locations.append(keyword)
+        
+        # 生成解释文本
+        if direction:
+            location_desc = '、'.join(locations) if locations else '指定位置'
+            explanation = (
+                f"本日胎神在{location_desc}之外的{direction}方位，"
+                "在这些方位不可随意敲打、动刀剪或移动物件，"
+                "以免对孕妇和胎儿不利。"
+            )
+        else:
+            # 如果没有明确的方位，使用通用解释
+            explanation = (
+                f"本日胎神在{taishen}，"
+                "在此方位不可随意敲打、动刀剪或移动物件，"
+                "以免对孕妇和胎儿不利。"
+            )
+        
+        return explanation

@@ -7,7 +7,10 @@
 
 import sys
 import os
+import json
+import asyncio
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
@@ -17,6 +20,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.daily_fortune_calendar_service import DailyFortuneCalendarService
+from server.services.coze_stream_service import CozeStreamService
 
 router = APIRouter()
 
@@ -67,6 +71,19 @@ class DailyFortuneCalendarRequest(BaseModel):
         return v
 
 
+class JianchuInfo(BaseModel):
+    """建除信息模型"""
+    name: Optional[str] = None  # 建除名称（如：危）
+    score: Optional[int] = None  # 分数（如：90）
+    summary: Optional[str] = None  # 能量小结内容
+
+
+class MasterInfo(BaseModel):
+    """命主信息模型"""
+    rizhu: Optional[str] = None  # 日主（如：甲木）
+    today_shishen: Optional[str] = None  # 今日十神（如：比肩）
+
+
 class DailyFortuneCalendarResponse(BaseModel):
     """每日运势日历响应模型"""
     success: bool
@@ -75,22 +92,25 @@ class DailyFortuneCalendarResponse(BaseModel):
     lunar_date: Optional[str] = None  # 当前阴历日期
     weekday: Optional[str] = None  # 星期几（中文）
     weekday_en: Optional[str] = None  # 星期几（英文）
-    # 流年流月流日
-    liunian: Optional[str] = None  # 流年：甲辰年
-    liuyue: Optional[str] = None  # 流月：戊子月
-    liuri: Optional[str] = None  # 流日：乙卯日
     # 万年历信息
     yi: Optional[List[str]] = None  # 宜
     ji: Optional[List[str]] = None  # 忌
     luck_level: Optional[str] = None  # 吉凶等级
-    deities: Optional[Dict[str, Any]] = None  # 神煞方位（喜神、财神、福神）
+    deities: Optional[Dict[str, Any]] = None  # 神煞方位（喜神、财神、福神、胎神）
     chong_he_sha: Optional[Dict[str, Any]] = None  # 冲合煞（冲、合、煞）
-    jianchu: Optional[str] = None  # 建除十二神
+    jianchu: Optional[JianchuInfo] = None  # 建除信息（包含名称、分数、小结）
+    # 胎神信息
+    taishen: Optional[str] = None  # 胎神方位（如：占门厕外正东）
+    taishen_explanation: Optional[str] = None  # 胎神解释
     # 运势内容
     jiazi_fortune: Optional[str] = None  # 整体运势（六十甲子）
     shishen_hint: Optional[str] = None  # 十神提示（需要用户生辰）
     zodiac_relations: Optional[str] = None  # 生肖简运
-    jianchu_summary: Optional[str] = None  # 能量小结
+    # 新增功能
+    master_info: Optional[MasterInfo] = None  # 命主信息（日主、今日十神）
+    lucky_colors: Optional[str] = None  # 幸运颜色（逗号分隔）
+    guiren_directions: Optional[str] = None  # 贵人指路（逗号分隔）
+    wenshen_directions: Optional[str] = None  # 瘟神方位（逗号分隔）
     error: Optional[str] = None
 
 
@@ -101,11 +121,14 @@ async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
     
     基于万年历接口，提供完整的每日运势信息，包括：
     - 基础万年历信息（阳历、阴历、星期、宜忌、吉凶等级、神煞方位、冲合煞、建除）
-    - 流年、流月、流日（格式：甲辰年、戊子月、乙卯日）
+    - 胎神信息（胎神方位和解释）
     - 整体运势（根据甲子日匹配六十甲子运势）
     - 十神提示（根据日干与用户生辰日干计算，需要用户生辰信息）
     - 生肖简运（根据日支匹配生肖刑冲破害）
-    - 能量小结（根据建除十二神匹配）
+    - 命主信息（日主、今日十神）
+    - 幸运颜色（万年历方位颜色+十神颜色）
+    - 贵人指路（喜神、福神方位+日干方位）
+    - 瘟神方位（万年历煞方位+日支方位）
     
     **参数说明**：
     - **date**: 查询日期（可选，默认为今天），格式：YYYY-MM-DD
@@ -120,6 +143,7 @@ async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
     返回完整的每日运势信息
     """
     try:
+        # 使用模块级别的导入（已在文件顶部导入）
         result = DailyFortuneCalendarService.get_daily_fortune_calendar(
             date_str=request.date,
             user_solar_date=request.solar_date,
@@ -128,25 +152,51 @@ async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
         )
         
         if result.get('success'):
+            # 处理建除信息
+            jianchu_info = result.get('jianchu')
+            jianchu_model = None
+            # 兼容处理：如果jianchu是字符串，尝试从数据库查询
+            if isinstance(jianchu_info, str) and jianchu_info:
+                jianchu_dict = DailyFortuneCalendarService.get_jianchu_info(jianchu_info)
+                if jianchu_dict:
+                    jianchu_info = jianchu_dict
+            if jianchu_info and isinstance(jianchu_info, dict):
+                jianchu_model = JianchuInfo(
+                    name=jianchu_info.get('name'),
+                    score=jianchu_info.get('score'),
+                    summary=jianchu_info.get('summary')
+                )
+            
+            # 处理命主信息
+            master_info = result.get('master_info')
+            master_info_model = None
+            if master_info and isinstance(master_info, dict):
+                master_info_model = MasterInfo(
+                    rizhu=master_info.get('rizhu'),
+                    today_shishen=master_info.get('today_shishen')
+                )
+            
             return DailyFortuneCalendarResponse(
                 success=True,
                 solar_date=result.get('solar_date'),
                 lunar_date=result.get('lunar_date'),
                 weekday=result.get('weekday'),
                 weekday_en=result.get('weekday_en'),
-                liunian=result.get('liunian'),
-                liuyue=result.get('liuyue'),
-                liuri=result.get('liuri'),
                 yi=result.get('yi', []),
                 ji=result.get('ji', []),
                 luck_level=result.get('luck_level'),
                 deities=result.get('deities', {}),
                 chong_he_sha=result.get('chong_he_sha', {}),
-                jianchu=result.get('jianchu'),
+                jianchu=jianchu_model,
+                taishen=result.get('taishen'),
+                taishen_explanation=result.get('taishen_explanation'),
                 jiazi_fortune=result.get('jiazi_fortune'),
                 shishen_hint=result.get('shishen_hint'),
                 zodiac_relations=result.get('zodiac_relations'),
-                jianchu_summary=result.get('jianchu_summary')
+                master_info=master_info_model,
+                lucky_colors=result.get('lucky_colors') if result.get('lucky_colors') else None,  # 空字符串转为None
+                guiren_directions=result.get('guiren_directions'),
+                wenshen_directions=result.get('wenshen_directions')
             )
         else:
             return DailyFortuneCalendarResponse(
@@ -161,5 +211,130 @@ async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
         raise HTTPException(
             status_code=500,
             detail=f"查询每日运势异常: {str(e)}\n{traceback.format_exc()}"
+        )
+
+
+class ActionSuggestionsRequest(BaseModel):
+    """行动建议请求模型"""
+    yi: List[str] = Field(..., description="宜事项列表", example=["解除", "扫舍", "馀事勿取"])
+    ji: List[str] = Field(..., description="忌事项列表", example=["诸事不宜"])
+    bot_id: Optional[str] = Field(None, description="Coze Bot ID（可选，优先级：参数 > DAILY_FORTUNE_ACTION_BOT_ID > 默认值7584766797639958555）", example="7584766797639958555")
+
+
+async def action_suggestions_stream_generator(
+    yi_list: List[str],
+    ji_list: List[str],
+    bot_id: Optional[str] = None
+):
+    """
+    流式生成行动建议的生成器
+    
+    Args:
+        yi_list: 宜事项列表
+        ji_list: 忌事项列表
+        bot_id: Coze Bot ID（可选，优先级：参数 > DAILY_FORTUNE_ACTION_BOT_ID > 默认值）
+    """
+    try:
+        # 确定使用的 bot_id（优先级：参数 > 环境变量 DAILY_FORTUNE_ACTION_BOT_ID > 默认值）
+        if not bot_id:
+            # 优先使用专门为每日运势行动建议配置的 BOT_ID
+            bot_id = os.getenv("DAILY_FORTUNE_ACTION_BOT_ID") or "7584766797639958555"
+        
+        # 创建Coze流式服务（捕获初始化错误）
+        try:
+            coze_service = CozeStreamService(bot_id=bot_id)
+        except ValueError as e:
+            # 环境变量未设置
+            error_msg = {
+                'type': 'error',
+                'content': f"Coze API 配置缺失: {str(e)}。请设置环境变量 COZE_ACCESS_TOKEN 和 COZE_BOT_ID。"
+            }
+            yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+            return
+        except Exception as e:
+            error_msg = {
+                'type': 'error',
+                'content': f"初始化 Coze 服务失败: {str(e)}"
+            }
+            yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+            return
+        
+        # 流式生成
+        async for result in coze_service.stream_action_suggestions(yi_list, ji_list, bot_id):
+            # 转换为SSE格式
+            if result.get('type') == 'progress':
+                # 进度消息
+                msg = {
+                    'type': 'progress',
+                    'content': result.get('content', '')
+                }
+                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0.05)
+            elif result.get('type') == 'complete':
+                # 完成消息
+                msg = {
+                    'type': 'complete',
+                    'content': result.get('content', '')
+                }
+                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                return
+            elif result.get('type') == 'error':
+                # 错误消息
+                msg = {
+                    'type': 'error',
+                    'content': result.get('content', '生成失败')
+                }
+                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                return
+    except Exception as e:
+        import traceback
+        error_msg = {
+            'type': 'error',
+            'content': f"生成行动建议失败: {str(e)}\n{traceback.format_exc()}"
+        }
+        yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+
+
+@router.post("/daily-fortune-calendar/action-suggestions/stream", summary="流式生成行动建议")
+async def action_suggestions_stream(request: ActionSuggestionsRequest):
+    """
+    流式生成行动建议
+    
+    使用Coze大模型美化宜忌内容，返回SSE流式响应。
+    
+    **参数说明**：
+    - **yi**: 宜事项列表（必填）
+    - **ji**: 忌事项列表（必填）
+    - **bot_id**: Coze Bot ID（可选，优先级：参数 > DAILY_FORTUNE_ACTION_BOT_ID > 默认值7584766797639958555）
+    
+    **返回格式**：
+    SSE流式响应，每行格式：`data: {"type": "progress|complete|error", "content": "..."}`
+    
+    **示例**：
+    ```
+    data: {"type": "progress", "content": "宜："}
+    data: {"type": "progress", "content": "今日"}
+    data: {"type": "complete", "content": "宜：今日适合解除束缚，清扫环境，其他事项暂缓。忌：今日不宜进行重大决策或重要活动。"}
+    ```
+    """
+    try:
+        return StreamingResponse(
+            action_suggestions_stream_generator(
+                request.yi,
+                request.ji,
+                request.bot_id  # bot_id 在 generator 中处理默认值
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    except Exception as e:
+        import traceback
+        raise HTTPException(
+            status_code=500,
+            detail=f"流式生成行动建议异常: {str(e)}\n{traceback.format_exc()}"
         )
 

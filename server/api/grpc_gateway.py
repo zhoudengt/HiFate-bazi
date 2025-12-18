@@ -720,6 +720,9 @@ async def grpc_web_gateway(request: Request):
         "/oauth/authorize",
         "/oauth/token",
         "/oauth/refresh",
+        "/api/v2/desk-fengshui/analyze",  # 办公桌风水分析不需要认证（公开功能）
+        "/api/v2/desk-fengshui/health",   # 健康检查不需要认证
+        "/api/v2/desk-fengshui/rules",   # 规则列表不需要认证（公开功能）
     }
     
     if endpoint not in whitelist_endpoints:

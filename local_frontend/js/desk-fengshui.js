@@ -287,12 +287,26 @@ class DeskFengshuiAnalyzer {
         
         // 显示增加建议（优先使用分类展示）
         if (data.categorized_additions && Object.keys(data.categorized_additions).length > 0) {
-            this.displayCategorizedSuggestions(data.categorized_additions);
-            // 隐藏传统的additions列表
-            document.getElementById('additionsList').style.display = 'none';
+            // 🔴 防御性检查：确保函数存在
+            if (typeof this.displayCategorizedSuggestions === 'function') {
+                this.displayCategorizedSuggestions(data.categorized_additions);
+                // 隐藏传统的additions列表
+                document.getElementById('additionsList').style.display = 'none';
+            } else {
+                // 降级方案：使用传统显示方式
+                console.warn('displayCategorizedSuggestions 函数不存在，使用传统显示方式');
+                this.displaySuggestions('additions', data.additions || []);
+                const categorizedContainer = document.getElementById('categorizedSuggestions');
+                if (categorizedContainer) {
+                    categorizedContainer.style.display = 'none';
+                }
+            }
         } else {
             this.displaySuggestions('additions', data.additions || []);
-            document.getElementById('categorizedSuggestions').style.display = 'none';
+            const categorizedContainer = document.getElementById('categorizedSuggestions');
+            if (categorizedContainer) {
+                categorizedContainer.style.display = 'none';
+            }
         }
         
         // 显示删除建议
@@ -494,6 +508,124 @@ class DeskFengshuiAnalyzer {
             </div>
         `;
         vizDiv.appendChild(legend);
+    }
+    
+    displayCategorizedSuggestions(categorizedAdditions) {
+        /**
+         * 显示分类的建议（按规则类型分类）
+         * categorizedAdditions 格式（后端返回）：
+         * {
+         *   "wealth": {
+         *     "name": "💰 财运爆棚",
+         *     "icon": "💰",
+         *     "color": "#ffd700",
+         *     "items": [...]
+         *   },
+         *   "career": {
+         *     "name": "📈 升职加薪",
+         *     "icon": "📈",
+         *     "color": "#4caf50",
+         *     "items": [...]
+         *   },
+         *   ...
+         * }
+         */
+        const container = document.getElementById('categorizedSuggestions');
+        if (!container) {
+            console.warn('categorizedSuggestions 容器不存在，使用传统显示方式');
+            return;
+        }
+        
+        // 显示容器
+        container.style.display = 'block';
+        container.innerHTML = '';
+        
+        // 规则类型标签映射（作为后备）
+        const typeLabels = {
+            'position': '📍 位置布局',
+            'wealth': '💰 财运提升',
+            'career': '💼 事业运势',
+            'love': '💕 感情桃花',
+            'protection': '🛡️ 防护避煞',
+            'health': '💚 健康养生',
+            'study': '📚 学业智慧',
+            'relationship': '👥 人际关系',
+            'element': '⚡ 五行平衡',
+            'general': '✨ 通用建议'
+        };
+        
+        // 按类型显示建议
+        Object.keys(categorizedAdditions).forEach(type => {
+            const categoryData = categorizedAdditions[type];
+            
+            // 🔴 防御性检查：处理两种数据格式
+            // 格式1：后端返回的对象格式 {name, icon, color, items: [...]}
+            // 格式2：直接数组格式（向后兼容）
+            let suggestions = [];
+            let categoryName = '';
+            let categoryColor = '';
+            
+            if (Array.isArray(categoryData)) {
+                // 格式2：直接数组
+                suggestions = categoryData;
+                categoryName = typeLabels[type] || type;
+            } else if (categoryData && typeof categoryData === 'object') {
+                // 格式1：对象格式
+                suggestions = categoryData.items || [];
+                categoryName = categoryData.name || typeLabels[type] || type;
+                categoryColor = categoryData.color || '';
+            } else {
+                // 无效数据，跳过
+                console.warn(`分类 ${type} 的数据格式无效:`, categoryData);
+                return;
+            }
+            
+            // 检查是否有建议
+            if (!suggestions || !Array.isArray(suggestions) || suggestions.length === 0) {
+                return;
+            }
+            
+            const section = document.createElement('div');
+            section.className = 'categorized-section';
+            if (categoryColor) {
+                section.style.borderLeftColor = categoryColor;
+            }
+            section.innerHTML = `
+                <h4 class="category-title">${categoryName}</h4>
+                <div class="category-suggestions" id="category-${type}"></div>
+            `;
+            
+            const suggestionsList = section.querySelector(`#category-${type}`);
+            
+            suggestions.forEach(sugg => {
+                const priority = sugg.priority || 'low';
+                const item = document.createElement('div');
+                item.className = `suggestion-item priority-${priority}`;
+                
+                // 检查是否是喜神建议
+                const isXishen = sugg.is_xishen || sugg.reason?.includes('喜神') || sugg.reason?.includes('🌟');
+                const xishenClass = isXishen ? 'xishen-suggestion' : '';
+                const badgeText = isXishen ? '🌟 喜神专属' : (sugg.element ? `五行：${sugg.element}` : '建议');
+                
+                const content = `
+                    <div class="suggestion-header ${xishenClass}">
+                        <span class="suggestion-title">建议增加：${sugg.item_label || sugg.item}</span>
+                        <span class="suggestion-badge badge-${priority} ${isXishen ? 'badge-xishen' : ''}">
+                            ${badgeText}
+                        </span>
+                    </div>
+                    <div class="suggestion-detail">
+                        建议位置：${sugg.ideal_position || sugg.position || '合适位置'}
+                    </div>
+                    <div class="suggestion-reason ${xishenClass}">${sugg.reason || sugg.suggestion || ''}</div>
+                `;
+                
+                item.innerHTML = content;
+                suggestionsList.appendChild(item);
+            });
+            
+            container.appendChild(section);
+        });
     }
     
     displaySuggestions(type, suggestions) {

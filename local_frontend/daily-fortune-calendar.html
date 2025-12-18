@@ -199,18 +199,6 @@
                                         <span class="info-label">当前星期几：</span>
                                         <span class="info-value" id="weekday"></span>
                                     </div>
-                                    <div class="info-row">
-                                        <span class="info-label">流年：</span>
-                                        <span class="info-value" id="liunian"></span>
-                                    </div>
-                                    <div class="info-row">
-                                        <span class="info-label">流月：</span>
-                                        <span class="info-value" id="liuyue"></span>
-                                    </div>
-                                    <div class="info-row">
-                                        <span class="info-label">流日：</span>
-                                        <span class="info-value" id="liuri"></span>
-                                    </div>
                                 </div>
                                 
                                 <div class="info-card" style="margin-top: 20px;">
@@ -253,7 +241,51 @@
                                     </div>
                                     <div class="info-row">
                                         <span class="info-label">建除：</span>
-                                        <span class="info-value" id="jianchu"></span>
+                                        <span class="info-value" id="jianchuName"></span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">分数：</span>
+                                        <span class="info-value" id="jianchuScore"></span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">胎神：</span>
+                                        <span class="info-value" id="taishen"></span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">解释：</span>
+                                        <span class="info-value" id="taishenExplanation" style="white-space: pre-line;"></span>
+                                    </div>
+                                </div>
+                                
+                                <div class="info-card" style="margin-top: 20px;">
+                                    <h2>👤 命主信息</h2>
+                                    <div class="info-row">
+                                        <span class="info-label">日主：</span>
+                                        <span class="info-value" id="rizhu"></span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">今日十神：</span>
+                                        <span class="info-value" id="todayShishen"></span>
+                                    </div>
+                                </div>
+                                
+                                <div class="info-card" style="margin-top: 20px;">
+                                    <h2>🎨 幸运颜色</h2>
+                                    <div class="info-row">
+                                        <span class="info-label">幸运颜色：</span>
+                                        <span class="info-value" id="luckyColors"></span>
+                                    </div>
+                                </div>
+                                
+                                <div class="info-card" style="margin-top: 20px;">
+                                    <h2>🧭 方位指引</h2>
+                                    <div class="info-row">
+                                        <span class="info-label">贵人指路：</span>
+                                        <span class="info-value" id="guirenDirections"></span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">瘟神方位：</span>
+                                        <span class="info-value" id="wenshenDirections"></span>
                                     </div>
                                 </div>
                             </div>
@@ -287,6 +319,15 @@
                                 <div class="fortune-content">
                                     <h3>能量小结：</h3>
                                     <p id="jianchuSummary" class="empty">暂无数据</p>
+                                </div>
+                                
+                                <!-- 行动建议 -->
+                                <div class="fortune-content">
+                                    <h3>行动建议：</h3>
+                                    <div id="actionSuggestionsContainer">
+                                        <p id="actionSuggestions" class="empty">暂无数据</p>
+                                        <button id="generateActionSuggestionsBtn" onclick="generateActionSuggestions()" style="display: none; margin-top: 10px; padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">生成建议</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -366,9 +407,6 @@
             document.getElementById('solarDate').textContent = data.solar_date || '暂无';
             document.getElementById('lunarDate').textContent = data.lunar_date || '暂无';
             document.getElementById('weekday').textContent = `${data.weekday || ''} (${data.weekday_en || ''})`;
-            document.getElementById('liunian').textContent = data.liunian || '暂无';
-            document.getElementById('liuyue').textContent = data.liuyue || '暂无';
-            document.getElementById('liuri').textContent = data.liuri || '暂无';
             
             // 万年历信息
             document.getElementById('yi').textContent = (data.yi && data.yi.length > 0) ? data.yi.join('、') : '暂无';
@@ -387,8 +425,46 @@
             document.getElementById('he').textContent = chongHeSha.he || '暂无';
             document.getElementById('sha').textContent = chongHeSha.sha || '暂无';
             
-            // 建除
-            document.getElementById('jianchu').textContent = data.jianchu || '暂无';
+            // 建除（包含分数）
+            const jianchu = data.jianchu || {};
+            document.getElementById('jianchuName').textContent = jianchu.name || '暂无';
+            document.getElementById('jianchuScore').textContent = jianchu.score !== null && jianchu.score !== undefined ? jianchu.score : '暂无';
+            
+            // 胎神
+            document.getElementById('taishen').textContent = data.taishen || '暂无';
+            document.getElementById('taishenExplanation').textContent = data.taishen_explanation || '暂无';
+            
+            // 命主信息
+            const masterInfo = data.master_info || {};
+            document.getElementById('rizhu').textContent = masterInfo.rizhu || '暂无';
+            
+            // 今日十神显示逻辑
+            const todayShishenEl = document.getElementById('todayShishen');
+            const userInfo = UserInfo.load();
+            if (masterInfo.today_shishen && masterInfo.today_shishen !== '需要提供生辰信息') {
+                // 有十神数据，直接显示
+                todayShishenEl.textContent = masterInfo.today_shishen;
+            } else if (userInfo && userInfo.solar_date && userInfo.solar_time && userInfo.gender) {
+                // 用户已登录且有生辰信息，但查询失败
+                todayShishenEl.textContent = '暂无';
+            } else if (userInfo) {
+                // 用户已登录但没有生辰信息
+                todayShishenEl.textContent = '请完善生辰信息以查看今日十神';
+            } else {
+                // 用户未登录
+                todayShishenEl.textContent = '登录后可查看基于您生辰的今日十神';
+            }
+            
+            // 幸运颜色
+            document.getElementById('luckyColors').textContent = data.lucky_colors || '暂无';
+            
+            // 方位指引
+            document.getElementById('guirenDirections').textContent = data.guiren_directions || '暂无';
+            document.getElementById('wenshenDirections').textContent = data.wenshen_directions || '暂无';
+            
+            // 保存宜忌数据用于生成行动建议
+            window.currentYi = data.yi || [];
+            window.currentJi = data.ji || [];
             
             // 运势内容
             const jiaziFortuneEl = document.getElementById('jiaziFortune');
@@ -428,12 +504,132 @@
             }
             
             const jianchuSummaryEl = document.getElementById('jianchuSummary');
-            if (data.jianchu_summary) {
-                jianchuSummaryEl.textContent = data.jianchu_summary;
+            // 使用之前已声明的 jianchu 变量
+            if (jianchu && jianchu.summary) {
+                jianchuSummaryEl.textContent = jianchu.summary;
                 jianchuSummaryEl.classList.remove('empty');
             } else {
                 jianchuSummaryEl.textContent = '暂无数据';
                 jianchuSummaryEl.classList.add('empty');
+            }
+            
+            // 行动建议 - 自动开始生成
+            const actionSuggestionsEl = document.getElementById('actionSuggestions');
+            const generateBtn = document.getElementById('generateActionSuggestionsBtn');
+            
+            // 隐藏按钮（不再需要点击）
+            if (generateBtn) {
+                generateBtn.style.display = 'none';
+            }
+            
+            // 如果有宜忌数据，自动开始生成行动建议
+            if (data.yi && data.yi.length > 0 || data.ji && data.ji.length > 0) {
+                // 显示加载状态
+                actionSuggestionsEl.textContent = '正在生成建议...';
+                actionSuggestionsEl.classList.remove('empty');
+                
+                // 自动调用生成函数（异步，不阻塞）
+                generateActionSuggestions();
+            } else {
+                actionSuggestionsEl.textContent = '暂无数据';
+                actionSuggestionsEl.classList.add('empty');
+            }
+        }
+        
+        // 生成行动建议（流式）- 自动生成，无需按钮
+        async function generateActionSuggestions() {
+            const yi = window.currentYi || [];
+            const ji = window.currentJi || [];
+            
+            if (yi.length === 0 && ji.length === 0) {
+                const actionSuggestionsEl = document.getElementById('actionSuggestions');
+                actionSuggestionsEl.textContent = '没有宜忌数据，无法生成建议';
+                actionSuggestionsEl.classList.add('empty');
+                return;
+            }
+            
+            const actionSuggestionsEl = document.getElementById('actionSuggestions');
+            
+            // 清空内容，准备显示流式输出
+            actionSuggestionsEl.textContent = '';
+            actionSuggestionsEl.classList.remove('empty');
+            
+            try {
+                // 调用流式API
+                const apiBaseUrl = API_CONFIG.baseURL.replace('/api/v1', '');
+                const response = await fetch(`${apiBaseUrl}/api/v1/daily-fortune-calendar/action-suggestions/stream`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        yi: yi,
+                        ji: ji
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                // 读取SSE流
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || ''; // 保留最后一个不完整的行
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.substring(6));
+                                
+                                if (data.type === 'progress') {
+                                    // 追加内容
+                                    if (data.content) {
+                                        actionSuggestionsEl.textContent += data.content;
+                                    }
+                                } else if (data.type === 'complete') {
+                                    // 完成
+                                    if (data.content && data.content.trim()) {
+                                        actionSuggestionsEl.textContent = data.content;
+                                    } else if (actionSuggestionsEl.textContent.trim()) {
+                                        // 如果已有内容，保持现有内容
+                                        // 不做任何操作
+                                    } else {
+                                        // 如果完成但没有内容，显示错误
+                                        actionSuggestionsEl.textContent = '生成失败：返回内容为空';
+                                        actionSuggestionsEl.classList.add('empty');
+                                        showError('生成失败：返回内容为空');
+                                    }
+                                    return;
+                                } else if (data.type === 'error') {
+                                    // 错误
+                                    actionSuggestionsEl.textContent = data.content || '生成失败';
+                                    actionSuggestionsEl.classList.add('empty');
+                                    showError(data.content || '生成失败');
+                                    return;
+                                }
+                            } catch (e) {
+                                console.error('解析SSE数据失败:', e);
+                            }
+                        }
+                    }
+                }
+                
+                // 流结束（正常完成）
+                
+            } catch (error) {
+                console.error('生成行动建议失败:', error);
+                actionSuggestionsEl.textContent = '生成失败，请稍后重试';
+                actionSuggestionsEl.classList.add('empty');
+                showError(error.message || '生成失败，请稍后重试');
             }
         }
         

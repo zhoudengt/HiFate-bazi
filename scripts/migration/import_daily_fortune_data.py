@@ -451,9 +451,10 @@ def import_jianchu_data(conn, dry_run: bool = False) -> Tuple[int, int]:
     print(f"\n📖 读取文件: {xlsx_path}")
     df = pd.read_excel(xlsx_path)
     
-    # 假设列名为：建除十二神、能量小结显示内容（根据实际Excel调整）
+    # 假设列名为：建除十二神、能量小结显示内容、分数（根据实际Excel调整）
     jianchu_col = None
     content_col = None
+    score_col = None
     
     for col in df.columns:
         col_str = str(col)
@@ -461,11 +462,16 @@ def import_jianchu_data(conn, dry_run: bool = False) -> Tuple[int, int]:
             jianchu_col = col
         if '能量' in col_str or '小结' in col_str or '内容' in col_str or '显示' in col_str:
             content_col = col
+        if '分数' in col_str or '评分' in col_str or 'score' in col_str.lower():
+            score_col = col
     
     if not jianchu_col or not content_col:
         # 尝试使用第一列和第二列
         jianchu_col = df.columns[0]
         content_col = df.columns[1] if len(df.columns) > 1 else None
+        # 第三列可能是分数
+        if len(df.columns) > 2:
+            score_col = df.columns[2]
     
     if not content_col:
         print(f"❌ 无法识别列名，请检查Excel文件结构")
@@ -483,8 +489,19 @@ def import_jianchu_data(conn, dry_run: bool = False) -> Tuple[int, int]:
             if not jianchu or not content:
                 continue
             
+            # 解析分数
+            score = None
+            if score_col and pd.notna(row[score_col]):
+                try:
+                    score_value = str(row[score_col]).strip()
+                    if score_value and score_value != 'nan':
+                        score = int(float(score_value))
+                except (ValueError, TypeError):
+                    pass
+            
             if dry_run:
-                print(f"  将导入: {jianchu} -> {content[:50]}...")
+                score_str = f", 分数: {score}" if score is not None else ""
+                print(f"  将导入: {jianchu} -> {content[:50]}...{score_str}")
                 inserted += 1
                 continue
             
@@ -497,17 +514,29 @@ def import_jianchu_data(conn, dry_run: bool = False) -> Tuple[int, int]:
             
             if existing:
                 # 更新
-                cursor.execute(
-                    "UPDATE daily_fortune_jianchu SET content = %s, enabled = TRUE WHERE jianchu = %s",
-                    (content, jianchu)
-                )
+                if score is not None:
+                    cursor.execute(
+                        "UPDATE daily_fortune_jianchu SET content = %s, score = %s, enabled = TRUE WHERE jianchu = %s",
+                        (content, score, jianchu)
+                    )
+                else:
+                    cursor.execute(
+                        "UPDATE daily_fortune_jianchu SET content = %s, enabled = TRUE WHERE jianchu = %s",
+                        (content, jianchu)
+                    )
                 updated += 1
             else:
                 # 插入
-                cursor.execute(
-                    "INSERT INTO daily_fortune_jianchu (jianchu, content) VALUES (%s, %s)",
-                    (jianchu, content)
-                )
+                if score is not None:
+                    cursor.execute(
+                        "INSERT INTO daily_fortune_jianchu (jianchu, content, score) VALUES (%s, %s, %s)",
+                        (jianchu, content, score)
+                    )
+                else:
+                    cursor.execute(
+                        "INSERT INTO daily_fortune_jianchu (jianchu, content) VALUES (%s, %s)",
+                        (jianchu, content)
+                    )
                 inserted += 1
     
     return inserted, updated
@@ -581,6 +610,14 @@ def main():
             print("✅ 所有数据导入完成！")
             print("=" * 60)
             print(f"总计: 新增 {total_inserted} 条，更新 {total_updated} 条")
+            
+            # 清理每日运势缓存
+            try:
+                from server.services.daily_fortune_calendar_service import DailyFortuneCalendarService
+                DailyFortuneCalendarService.invalidate_cache_for_date()
+                print("\n✅ 已清理每日运势缓存")
+            except Exception as e:
+                print(f"\n⚠️  清理缓存失败（不影响数据导入）: {e}")
         else:
             print("\n" + "=" * 60)
             print("📋 预览完成（未修改数据库）")

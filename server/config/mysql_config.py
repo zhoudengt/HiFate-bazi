@@ -30,9 +30,9 @@ mysql_config = {
 MYSQL_POOL_CONFIG = {
     'mincached': 10,        # 最小连接数
     'maxcached': 50,        # 最大缓存连接数
-    'maxconnections': 100,  # 最大连接数
+    'maxconnections': 200,  # 最大连接数（从100增加到200）
     'connection_timeout': 30,  # 获取连接的超时时间（秒）
-    'recycle_time': 3600,     # 连接回收时间（秒），超过此时间未使用的连接将被关闭
+    'recycle_time': 300,     # 连接回收时间（秒），超过此时间未使用的连接将被关闭（从3600秒减少到300秒，5分钟）
 }
 
 # 全局连接池实例
@@ -214,6 +214,77 @@ class MySQLConnectionPool:
         with self._lock:
             self._current_connections = 0
             self._connection_times.clear()
+    
+    def cleanup_idle_connections(self, max_idle_time: int = 300):
+        """
+        清理长时间未使用的连接
+        
+        Args:
+            max_idle_time: 最大空闲时间（秒），默认300秒（5分钟）
+        
+        Returns:
+            int: 清理的连接数
+        """
+        cleaned = 0
+        current_time = time.time()
+        valid_conns = []
+        
+        # 清理池中的连接
+        while not self._pool.empty():
+            try:
+                conn = self._pool.get_nowait()
+                conn_id = id(conn)
+                
+                # 检查连接是否过期
+                if conn_id in self._connection_times:
+                    age = current_time - self._connection_times[conn_id]
+                    if age > max_idle_time:
+                        # 连接过期，关闭
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        with self._lock:
+                            self._current_connections -= 1
+                            del self._connection_times[conn_id]
+                        cleaned += 1
+                        continue
+                
+                # 检查连接是否有效
+                if self._is_connection_valid(conn):
+                    valid_conns.append(conn)
+                else:
+                    # 连接无效，关闭
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    with self._lock:
+                        self._current_connections -= 1
+                        if conn_id in self._connection_times:
+                            del self._connection_times[conn_id]
+                    cleaned += 1
+            except Exception:
+                pass
+        
+        # 将有效连接放回池中
+        for conn in valid_conns:
+            try:
+                self._pool.put_nowait(conn)
+            except queue.Full:
+                # 池已满，关闭连接
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                with self._lock:
+                    self._current_connections -= 1
+                    conn_id = id(conn)
+                    if conn_id in self._connection_times:
+                        del self._connection_times[conn_id]
+                cleaned += 1
+        
+        return cleaned
 
 
 def _init_mysql_pool():
@@ -287,6 +358,31 @@ def return_mysql_connection(conn: pymysql.Connection):
             conn.close()
         except Exception:
             pass
+
+
+def cleanup_idle_mysql_connections(max_idle_time: int = 300):
+    """
+    清理长时间未使用的MySQL连接
+    
+    Args:
+        max_idle_time: 最大空闲时间（秒），默认300秒（5分钟）
+    
+    Returns:
+        int: 清理的连接数
+    """
+    global _mysql_pool
+    
+    if _mysql_pool is None:
+        return 0
+    
+    try:
+        cleaned = _mysql_pool.cleanup_idle_connections(max_idle_time)
+        if cleaned > 0:
+            print(f"✓ 清理了 {cleaned} 个长时间未使用的MySQL连接")
+        return cleaned
+    except Exception as e:
+        print(f"⚠️  清理MySQL连接失败: {e}")
+        return 0
 
 
 def test_mysql_connection() -> bool:

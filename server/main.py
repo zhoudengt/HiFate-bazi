@@ -51,10 +51,13 @@ try:
         # 验证关键环境变量
         coze_token = os.getenv("COZE_ACCESS_TOKEN")
         coze_bot_id = os.getenv("COZE_BOT_ID")
+        daily_fortune_action_bot_id = os.getenv("DAILY_FORTUNE_ACTION_BOT_ID")
         if coze_token:
             print(f"✓ COZE_ACCESS_TOKEN: {coze_token[:20]}...")
         if coze_bot_id:
             print(f"✓ COZE_BOT_ID: {coze_bot_id}")
+        if daily_fortune_action_bot_id:
+            print(f"✓ DAILY_FORTUNE_ACTION_BOT_ID: {daily_fortune_action_bot_id}")
 except ImportError:
     print("⚠ python-dotenv 未安装，将使用系统环境变量")
 except Exception as e:
@@ -308,8 +311,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠ 集群同步器启动失败（单机模式）: {e}")
     
+    # 启动缓存同步订阅器（双机缓存同步）
+    try:
+        from server.utils.cache_sync_subscriber import start_cache_sync_subscriber
+        start_cache_sync_subscriber()
+        logger.info("✓ 缓存同步订阅器已启动")
+    except Exception as e:
+        logger.warning(f"⚠ 缓存同步订阅器启动失败（单机模式）: {e}")
+    
     yield
     # 关闭时执行
+    # 停止缓存同步订阅器
+    try:
+        from server.utils.cache_sync_subscriber import stop_cache_sync_subscriber
+        stop_cache_sync_subscriber()
+        logger.info("✓ 缓存同步订阅器已停止")
+    except Exception as e:
+        logger.warning(f"⚠ 缓存同步订阅器停止失败: {e}")
+    
     # 停止集群同步器
     try:
         from server.hot_reload.cluster_synchronizer import stop_cluster_sync
