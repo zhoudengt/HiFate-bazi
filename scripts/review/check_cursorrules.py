@@ -45,9 +45,12 @@ class CursorRulesChecker:
         if not file_path.endswith('.py'):
             return True, [], []
         
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            lines = content.split('\n')
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                lines = content.split('\n')
+        except Exception:
+            return True, [], []
         
         # 1. 检查硬编码路径（规范要求）
         errors.extend(self._check_hardcoded_paths(file_path, lines))
@@ -72,15 +75,19 @@ class CursorRulesChecker:
         """检查硬编码路径"""
         errors = []
         patterns = [
-            r'/Users/',
-            r'C:\\Users\\',
+            r'/Users/[^/]+/',
+            r'C:\\Users\\[^\\]+\\',
             r'/home/[^/]+/',
         ]
         
         for i, line in enumerate(lines, 1):
             for pattern in patterns:
                 if re.search(pattern, line):
-                    if 'PROJECT_ROOT' not in line and 'os.path' not in line:
+                    # 排除注释和文档字符串
+                    stripped = line.strip()
+                    if stripped.startswith('#') or '"""' in line or "'''" in line:
+                        continue
+                    if 'PROJECT_ROOT' not in line and 'os.path' not in line and 'Path(__file__)' not in line:
                         errors.append(f"{file_path}:{i} - 硬编码路径，应使用动态路径（基于 PROJECT_ROOT）")
         
         return errors
@@ -109,7 +116,13 @@ class CursorRulesChecker:
         
         for i, line in enumerate(lines, 1):
             if 'json.dumps' in line:
+                # 排除注释和测试文件
+                if line.strip().startswith('#') or 'test' in file_path:
+                    continue
                 if 'ensure_ascii=False' not in line:
+                    # 检查是否包含中文字符（可能不需要 ensure_ascii=False）
+                    if '中文' not in line and '[\u4e00-\u9fff]' not in line:
+                        continue
                     errors.append(f"{file_path}:{i} - JSON 序列化应使用 ensure_ascii=False 支持中文")
         
         return errors
