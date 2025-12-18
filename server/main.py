@@ -344,6 +344,15 @@ async def lifespan(app: FastAPI):
         logger.info("✓ 热更新管理器已停止")
     except Exception as e:
         logger.warning(f"⚠ 热更新管理器停止失败: {e}")
+    
+    # 停止告警管理器
+    try:
+        from server.observability.alert_manager import AlertManager
+        alert_manager = AlertManager.get_instance()
+        alert_manager.stop()
+        logger.info("✓ 告警管理器已停止")
+    except Exception as e:
+        logger.warning(f"⚠ 告警管理器停止失败: {e}")
         # 停止原来的规则热加载
         try:
             from server.services.rule_service import RuleService
@@ -532,6 +541,19 @@ def _register_all_routers_to_manager():
         tags=["热更新"],
         enabled_getter=lambda: HOT_RELOAD_ROUTER_AVAILABLE and hot_reload_router is not None
     )
+    
+    # 安全监控路由（可选）
+    try:
+        from server.api.v1.security_monitor import router as security_monitor_router
+        router_manager.register_router(
+            "security_monitor",
+            lambda: security_monitor_router,
+            prefix="/api/v1",
+            tags=["安全监控"]
+        )
+        logger.info("✓ 安全监控路由已注册")
+    except ImportError as e:
+        logger.warning(f"⚠ 安全监控路由未注册（可选功能）: {e}")
     
     # LLM 生成路由（条件可用）
     router_manager.register_router(

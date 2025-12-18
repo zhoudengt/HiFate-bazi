@@ -284,6 +284,34 @@ class StructuredLogger:
         """异常日志（自动记录堆栈）"""
         self._log(logging.ERROR, message, exc_info=True, **kwargs)
     
+    def log_security_event(
+        self,
+        event_type: str,
+        severity: str,
+        source_ip: str,
+        endpoint: Optional[str] = None,
+        description: str = "",
+        metadata: Optional[Dict[str, Any]] = None
+    ):
+        """记录安全事件"""
+        level_map = {
+            'critical': logging.CRITICAL,
+            'high': logging.ERROR,
+            'medium': logging.WARNING,
+            'low': logging.INFO,
+        }
+        level = level_map.get(severity.lower(), logging.WARNING)
+        
+        self._log(
+            level,
+            f"[安全事件] {event_type}: {description}",
+            event_type=event_type,
+            severity=severity,
+            source_ip=source_ip,
+            endpoint=endpoint,
+            **(metadata or {})
+        )
+    
     class _TimedContext:
         """计时上下文"""
         def __init__(self, logger: 'StructuredLogger', operation: str, **kwargs):
