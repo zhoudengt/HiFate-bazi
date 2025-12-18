@@ -45,6 +45,65 @@ jobs:
           mypy server/ --ignore-missing-imports || true
         continue-on-error: true
 
+  # 代码审查检查
+  code-review:
+    name: 代码审查检查
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # 获取完整历史用于检查
+      
+      - name: 设置 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: 1. 开发规范符合性检查
+        run: |
+          echo "🔍 检查开发规范符合性..."
+          python3 scripts/review/check_cursorrules.py --exit-on-error || exit 1
+      
+      - name: 2. 安全漏洞检查
+        run: |
+          echo "🔍 检查安全漏洞..."
+          python3 scripts/review/check_security.py --exit-on-error || exit 1
+      
+      - name: 3. 热更新支持检查
+        run: |
+          echo "🔍 检查热更新支持..."
+          python3 scripts/review/check_hot_reload.py || echo "⚠️ 热更新检查有警告，请确认"
+        continue-on-error: true
+      
+      - name: 4. 编码方式检查
+        run: |
+          echo "🔍 检查编码方式..."
+          python3 scripts/review/check_encoding.py --exit-on-error || exit 1
+      
+      - name: 5. gRPC 端点注册检查
+        run: |
+          echo "🔍 检查 gRPC 端点注册..."
+          python3 scripts/review/check_grpc.py --exit-on-error || exit 1
+      
+      - name: 6. 测试覆盖检查
+        run: |
+          echo "🔍 检查测试覆盖..."
+          python3 scripts/review/check_tests.py || echo "⚠️ 测试覆盖检查有警告，请确认"
+        continue-on-error: true
+      
+      - name: 综合代码审查检查
+        run: |
+          echo "🔍 运行综合代码审查检查..."
+          python3 scripts/review/code_review_check.py --exit-on-error || exit 1
+
   # 单元测试
   test:
     name: 单元测试

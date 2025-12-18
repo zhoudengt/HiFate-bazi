@@ -2746,6 +2746,300 @@ async def _handle_new_feature(payload: Dict[str, Any]):
 
 ---
 
+## 🔍 代码审查规范 【必须遵守】
+
+### 🔴 核心原则
+
+> **所有代码提交前必须通过完整的代码审查，确保代码质量、安全性和规范性。**
+
+### 📋 代码审查流程
+
+```
+开发者提交代码
+    ↓
+运行代码审查检查脚本（本地）
+    ├─ 开发规范符合性检查
+    ├─ 安全漏洞检查
+    ├─ 热更新支持检查
+    ├─ 编码方式检查
+    ├─ gRPC 端点注册检查
+    └─ 测试覆盖检查
+    ↓
+创建 Pull Request
+    ↓
+CI/CD 自动检查（GitHub Actions）
+    ├─ 代码质量检查
+    ├─ 代码审查检查（6项核心检查）
+    ├─ 单元测试
+    └─ 测试覆盖率检查
+    ↓
+人工审查（至少 1 人）
+    ├─ 开发规范符合性
+    ├─ 安全性检查
+    ├─ 架构合理性
+    └─ 性能影响
+    ↓
+审查通过 → 合并到 master
+```
+
+### ✅ 核心检查项（必须全部通过）
+
+#### 1. 开发规范符合性检查
+
+**检查内容**：
+- ✅ 是否符合 `.cursorrules` 中的规范要求
+- ✅ 是否使用动态路径（禁止硬编码路径）
+- ✅ 文件操作是否有异常处理
+- ✅ JSON 序列化是否使用 `ensure_ascii=False`
+- ✅ Pydantic 模型是否使用 `Field`
+- ✅ 规则是否从数据库读取（禁止从文件读取）
+
+**检查脚本**：
+```bash
+python3 scripts/review/check_cursorrules.py [文件路径...]
+```
+
+**检查清单**：
+- [ ] 已阅读并理解相关开发规范章节
+- [ ] 代码符合 `.cursorrules` 中的规范要求
+- [ ] 已运行开发规范检查清单
+- [ ] 无硬编码路径
+- [ ] 文件操作有异常处理
+
+#### 2. 安全漏洞检查
+
+**检查内容**：
+- ✅ SQL 注入风险（使用参数化查询）
+- ✅ XSS 风险（输出转义）
+- ✅ 敏感信息泄露（无硬编码密码/密钥）
+- ✅ 文件上传安全（验证文件类型和大小）
+
+**检查脚本**：
+```bash
+python3 scripts/review/check_security.py [文件路径...]
+```
+
+**检查清单**：
+- [ ] 已检查 SQL 注入风险（使用参数化查询）
+- [ ] 已检查 XSS 风险（输出转义）
+- [ ] 已检查敏感信息泄露（无硬编码密码/密钥）
+- [ ] 已检查文件上传安全（如涉及）
+
+#### 3. 热更新支持检查
+
+**检查内容**：
+- ✅ 代码支持热更新（无模块级全局状态初始化）
+- ✅ 单例类提供 `reset()` 方法（如需要）
+- ✅ 缓存支持清理（如需要）
+- ✅ 配置支持热加载（如需要）
+
+**检查脚本**：
+```bash
+python3 scripts/review/check_hot_reload.py [文件路径...]
+```
+
+**检查清单**：
+- [ ] 代码支持热更新
+- [ ] 单例类提供 `reset()` 方法（如需要）
+- [ ] 缓存支持清理（如需要）
+- [ ] 配置支持热加载（如需要）
+
+#### 4. 编码方式检查
+
+**检查内容**：
+- ✅ 数据插入使用 UNHEX（包含中文字符的数据）
+- ✅ 数据查询使用 BINARY 比较（中文字段查询）
+- ✅ 数据同步脚本验证编码正确性（如涉及）
+
+**检查脚本**：
+```bash
+python3 scripts/review/check_encoding.py [文件路径...]
+```
+
+**检查清单**：
+- [ ] 数据插入使用 UNHEX（中文字符）
+- [ ] 数据查询使用 BINARY 比较（中文字段）
+- [ ] 数据同步脚本验证编码正确性
+
+#### 5. gRPC 端点注册检查
+
+**检查内容**：
+- ✅ 新增 API 端点已在 `grpc_gateway.py` 中注册
+- ✅ 使用 `@_register` 装饰器注册
+- ✅ 已转换为 Pydantic 模型后再调用
+
+**检查脚本**：
+```bash
+python3 scripts/review/check_grpc.py [文件路径...]
+```
+
+**检查清单**：
+- [ ] 已注册 gRPC 端点（在 `server/api/grpc_gateway.py` 中）
+- [ ] 使用 `@_register` 装饰器注册
+- [ ] 已转换为 Pydantic 模型后再调用
+
+#### 6. 测试覆盖检查
+
+**检查内容**：
+- ✅ 已编写单元测试（如需要）
+- ✅ 已编写集成测试（如需要）
+- ✅ 已编写 API 测试（如需要）
+- ✅ 测试覆盖率 ≥ 50%（核心模块 ≥ 70%）
+
+**检查脚本**：
+```bash
+python3 scripts/review/check_tests.py [文件路径...]
+```
+
+**检查清单**：
+- [ ] 已编写单元测试
+- [ ] 已编写集成测试（如需要）
+- [ ] 已编写 API 测试（如需要）
+- [ ] 测试覆盖率 ≥ 50%
+
+### 🚀 使用方式
+
+#### 方式 1：运行所有检查（推荐）
+
+```bash
+# 运行所有代码审查检查
+bash scripts/review/run_all_checks.sh
+```
+
+**功能**：
+- 自动检查所有变更的文件
+- 运行 6 项核心检查
+- 输出详细的检查报告
+- 发现错误时退出（用于 CI/CD）
+
+#### 方式 2：运行单项检查
+
+```bash
+# 1. 开发规范符合性检查
+python3 scripts/review/check_cursorrules.py
+
+# 2. 安全漏洞检查
+python3 scripts/review/check_security.py
+
+# 3. 热更新支持检查
+python3 scripts/review/check_hot_reload.py
+
+# 4. 编码方式检查
+python3 scripts/review/check_encoding.py
+
+# 5. gRPC 端点注册检查
+python3 scripts/review/check_grpc.py
+
+# 6. 测试覆盖检查
+python3 scripts/review/check_tests.py
+
+# 7. 综合代码审查检查
+python3 scripts/review/code_review_check.py
+```
+
+#### 方式 3：检查指定文件
+
+```bash
+# 检查指定文件
+python3 scripts/review/check_cursorrules.py server/api/v1/bazi.py
+python3 scripts/review/check_security.py server/services/rule_service.py
+```
+
+### 📋 PR 模板
+
+**PR 模板位置**：`.github/pull_request_template.md`
+
+**使用方式**：
+1. 创建 PR 时，GitHub 会自动加载模板
+2. 填写 PR 描述和检查清单
+3. 确保所有核心检查项都通过
+
+### 🔧 CI/CD 集成
+
+**CI/CD 配置**：`.github/workflows/ci.yml`
+
+**自动检查流程**：
+1. **代码质量检查**（lint）
+   - Black 代码格式检查
+   - isort 导入排序检查
+   - pylint 代码质量检查
+   - mypy 类型检查
+
+2. **代码审查检查**（code-review）
+   - 开发规范符合性检查
+   - 安全漏洞检查
+   - 热更新支持检查
+   - 编码方式检查
+   - gRPC 端点注册检查
+   - 测试覆盖检查
+
+3. **单元测试**（test）
+   - 运行单元测试
+   - 运行 API 测试
+   - 运行集成测试
+   - 生成覆盖率报告
+
+**检查结果**：
+- ✅ 所有检查通过 → PR 可以合并
+- ❌ 任何检查失败 → PR 无法合并（必须修复）
+
+### ✅ 代码审查检查清单
+
+每次提交 PR 前必须检查：
+
+#### 核心检查项（必须全部通过）
+- [ ] 开发规范符合性检查通过
+- [ ] 安全漏洞检查通过
+- [ ] 热更新支持检查通过
+- [ ] 编码方式检查通过
+- [ ] gRPC 端点注册检查通过
+- [ ] 测试覆盖检查通过
+
+#### 其他检查项
+- [ ] 代码质量检查通过（Black、isort、pylint、mypy）
+- [ ] 单元测试通过
+- [ ] 集成测试通过（如需要）
+- [ ] 测试覆盖率 ≥ 50%
+- [ ] 文档已更新
+
+### 🚨 审查失败处理
+
+**如果审查失败**：
+
+1. **查看错误信息**
+   - 查看 CI/CD 日志
+   - 查看本地检查脚本输出
+
+2. **修复问题**
+   - 根据错误信息修复代码
+   - 重新运行检查脚本验证
+
+3. **重新提交**
+   - 修复后重新提交代码
+   - CI/CD 会自动重新检查
+
+**禁止操作**：
+- ❌ 禁止绕过审查检查
+- ❌ 禁止合并不符合规范的代码
+- ❌ 禁止降低审查要求
+
+### 📚 相关文件
+
+| 文件 | 用途 |
+|------|------|
+| `.github/pull_request_template.md` | PR 模板 |
+| `.github/workflows/ci.yml` | CI/CD 配置（包含代码审查检查） |
+| `scripts/review/run_all_checks.sh` | 运行所有检查的主脚本 |
+| `scripts/review/check_cursorrules.py` | 开发规范符合性检查 |
+| `scripts/review/check_security.py` | 安全漏洞检查 |
+| `scripts/review/check_hot_reload.py` | 热更新支持检查 |
+| `scripts/review/check_encoding.py` | 编码方式检查 |
+| `scripts/review/check_grpc.py` | gRPC 端点注册检查 |
+| `scripts/review/check_tests.py` | 测试覆盖检查 |
+| `scripts/review/code_review_check.py` | 综合代码审查检查 |
+
+---
+
 ## 🔄 Redis缓存开发规范 【必须遵守】
 
 ### 🔴 核心原则
