@@ -346,21 +346,29 @@ def test_smart_analyze(base_url: str, result: E2ETestResult):
     """测试智能分析接口"""
     print(f"\n{Colors.BLUE}测试智能分析接口{Colors.RESET}")
     
-    # 测试财富意图（注意：接口需要 year, month, day, hour 参数，不是 solar_date）
-    # 路由路径：/api/v1/smart-fortune/smart-analyze 或通过 grpc_gateway: /api/v1/smart-analyze
+    # 测试财富意图
+    # grpc_gateway 注册的是 POST 接口，需要传递 JSON body
     question = "我的财运怎么样？"
-    # 先尝试 grpc_gateway 路径
-    url = f"{base_url}/api/v1/smart-analyze?question={question}&year=1990&month=1&day=15&hour=12&gender=male"
+    data = {
+        "question": question,
+        "year": 1990,
+        "month": 1,
+        "day": 15,
+        "hour": 12,
+        "gender": "male"
+    }
     
+    # 先尝试 grpc_gateway POST 路径
     test_result = test_endpoint(
         "智能分析 (财富)",
-        url,
-        method="GET",
+        f"{base_url}/api/v1/smart-analyze",
+        method="POST",
+        data=data,
         expected_keys=["success", "data"],
         timeout=60  # 智能分析可能需要更长时间
     )
     
-    # 如果失败，尝试直接路由路径
+    # 如果失败，尝试直接路由 GET 路径
     if not test_result.success and "404" in test_result.error:
         url2 = f"{base_url}/api/v1/smart-fortune/smart-analyze?question={question}&year=1990&month=1&day=15&hour=12&gender=male"
         test_result2 = test_endpoint(
