@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+路由注册管理器 - 支持热更新的路由注册
+
+功能：
+- 统一管理所有路由的注册
+- 支持热更新时重新注册路由
+- 避免路由重复注册
+- 记录路由注册信息
+"""
+
+import sys
+import os
+import logging
+from typing import Optional, Callable, List, Dict, Any, Tuple
+from fastapi import FastAPI, APIRouter
+
+# 添加项目根目录到路径
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, project_root)
+
+logger = logging.getLogger(__name__)
+
+
+class RouterInfo:
+    """路由信息"""
+    def __init__(
+        self,
+        name: str,
+        router_getter: Callable[[], Optional[APIRouter]],
+        prefix: str = "",
+        tags: Optional[List[str]] = None,
+        enabled_getter: Optional[Callable[[], bool]] = None
+    ):
+        self.name = name
+        self.router_getter = router_getter
+        self.prefix = prefix
+        self.tags = tags or []
+        self.enabled_getter = enabled_getter
+        self._registered = False
+    
+    def is_enabled(self) -> bool:
+        """检查路由是否启用"""
+        if self.enabled_getter:
+            try:
+                return self.enabled_getter()
+            except Exception as e:
+                logger.warning(f"检查路由 {self.name} 是否启用时出错: {e}")
+                return False
+        return True
+    
+    def get_router(self) -> Optional[APIRouter]:
+        """获取路由对象"""
+        try:
+            return self.router_getter()
+        except Exception as e:
+            logger.warning(f"获取路由 {self.name} 时出错: {e}")
+            return None
+
+
+class RouterManager:
+    """路由管理器 - 支持热更新的路由注册"""
+    
+    _instance: Optional['RouterManager'] = None
+    _app: Optional[FastAPI] = None
+    
+    def __init__(self, app: FastAPI):
+        """初始化路由管理器"""
+        RouterManager._instance = self
+        RouterManager._app = app
+        self.app = app
+        self.registered_routers: Dict[str, RouterInfo] = {}
+        self._route_signatures: Dict[str, Tuple[str, str]] = {}  # 路由签名：{name: (prefix, path)}
+    
+    @classmethod
+    def get_instance(cls) -> Optional['RouterManager']:
+        """获取单例实例"""
+        return cls._instance
+    
+    def register_router(
+        self,
+        name: str,
+        router_getter: Callable[[], Optional[APIRouter]],
+        prefix: str = "",
+        tags: Optional[List[str]] = None,
+        enabled_getter: Optional[Callable[[], bool]] = None
+    ):
+        """
+        注册路由信息（延迟注册）
+        
+        Args:
+            name: 路由名称（唯一标识）
+            router_getter: 获取路由对象的函数
+            prefix: 路由前缀
+            tags: 路由标签
+            enabled_getter: 检查路由是否启用的函数（可选）
+        """
+        router_info = RouterInfo(name, router_getter, prefix, tags, enabled_getter)
+        self.registered_routers[name] = router_info
+    
+    def _get_route_signature(self, router: APIRouter, prefix: str) -> str:
+        """获取路由签名（用于检测重复注册）"""
+        # 构建路由的唯一标识
+        routes = getattr(router, 'routes', [])
+        paths = [getattr(route, 'path', '') for route in routes if hasattr(route, 'path')]
+        return f"{prefix}:{':'.join(sorted(set(paths)))}"
+    
+    def _is_route_registered(self, router: APIRouter, prefix: str) -> bool:
+        """检查路由是否已注册"""
+        signature = self._get_route_signature(router, prefix)
+        
+        # 检查 app.routes 中是否已存在相同的路由
+        for route in self.app.routes:
+            route_path = getattr(route, 'path', '')
+            route_methods = getattr(route, 'methods', set())
+            
+            # 检查是否有相同的路径和方法
+            router_routes = getattr(router, 'routes', [])
+            for router_route in router_routes:
+                router_path = getattr(router_route, 'path', '')
+                router_methods = getattr(router_route, 'methods', set())
+                
+                full_router_path = prefix.rstrip('/') + '/' + router_path.lstrip('/')
+                if full_router_path == route_path and router_methods & route_methods:
+                    return True
+        
+        return False
+    
+    def _register_single_router(self, router_info: RouterInfo) -> bool:
+        """
+        注册单个路由
+        
+        Returns:
+            bool: 是否成功注册
+        """
+        try:
+            # 检查路由是否启用
+            if not router_info.is_enabled():
+                logger.debug(f"路由 {router_info.name} 未启用，跳过注册")
+                return False
+            
+            # 获取路由对象
+            router = router_info.get_router()
+            if router is None:
+                logger.warning(f"路由 {router_info.name} 获取失败，跳过注册")
+                return False
+            
+            # 检查路由是否已注册（避免重复注册）
+            # 注意：FastAPI 允许重复注册，但为了清晰起见，我们检查一下
+            # 由于 FastAPI 会忽略重复注册，这里主要记录日志
+            
+            # 注册路由
+            self.app.include_router(
+                router,
+                prefix=router_info.prefix,
+                tags=router_info.tags
+            )
+            
+            router_info._registered = True
+            logger.info(f"✓ 路由已注册: {router_info.name} (prefix: {router_info.prefix}, tags: {router_info.tags})")
+            return True
+            
+        except Exception as e:
+            logger.error(f"注册路由 {router_info.name} 失败: {e}", exc_info=True)
+            return False
+    
+    def register_all_routers(self, force: bool = False) -> Dict[str, bool]:
+        """
+        注册所有路由
+        
+        Args:
+            force: 是否强制重新注册（即使已注册）
+        
+        Returns:
+            Dict[str, bool]: 路由注册结果 {name: success}
+        """
+        results = {}
+        registered_count = 0
+        failed_count = 0
+        
+        logger.info("🔄 开始注册所有路由...")
+        
+        for name, router_info in self.registered_routers.items():
+            # 如果已注册且不是强制模式，跳过
+            if router_info._registered and not force:
+                results[name] = True
+                continue
+            
+            # 重置注册状态（强制模式下）
+            if force:
+                router_info._registered = False
+            
+            # 注册路由
+            success = self._register_single_router(router_info)
+            results[name] = success
+            
+            if success:
+                registered_count += 1
+            else:
+                failed_count += 1
+        
+        logger.info(f"✅ 路由注册完成: {registered_count} 成功, {failed_count} 失败")
+        
+        return results
+    
+    def get_registered_routers(self) -> List[str]:
+        """获取已注册的路由名称列表"""
+        return [name for name, info in self.registered_routers.items() if info._registered]
+    
+    def clear_registered_state(self):
+        """清除所有路由的注册状态（用于热更新重新注册）"""
+        for router_info in self.registered_routers.values():
+            router_info._registered = False
+

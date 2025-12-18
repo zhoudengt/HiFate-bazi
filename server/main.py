@@ -362,6 +362,10 @@ app = FastAPI(
     default_response_class=UTF8JSONResponse  # 使用UTF-8编码的JSON响应
 )
 
+# 初始化路由管理器（支持热更新）
+from server.utils.router_manager import RouterManager
+router_manager = RouterManager(app)
+
 # 如果限流可用，初始化限流器
 if RATE_LIMIT_AVAILABLE:
     app.state.limiter = limiter
@@ -426,211 +430,385 @@ except ImportError as e:
 except Exception as e:
     logger.warning(f"⚠ 异常处理中间件启用失败: {e}")
 
-# 注册路由
-app.include_router(bazi_router, prefix="/api/v1", tags=["八字计算"])
-app.include_router(bazi_ai_router, prefix="/api/v1", tags=["AI分析"])
-app.include_router(auth_router, prefix="/api/v1", tags=["鉴权"])
-if OAUTH_ROUTER_AVAILABLE and oauth_router:
-    app.include_router(oauth_router, prefix="/api/v1", tags=["OAuth 2.0"])
-    logger.info("✓ OAuth 2.0 路由已注册")
-app.include_router(grpc_gateway_router, prefix="/api", tags=["gRPC-Web"])
+# ==================== 路由注册（支持热更新） ====================
+# 使用 RouterManager 统一管理路由注册，支持热更新时重新注册
 
-# 注册旺衰分析路由（新增，可选功能）
-if WANGSHUAI_ROUTER_AVAILABLE and wangshuai_router:
-    app.include_router(wangshuai_router, prefix="/api/v1", tags=["旺衰分析"])
-    logger.info("✓ 旺衰分析路由已注册")
-app.include_router(
-    mx_face_router.router,
-    prefix="/api/v1/mianxiang/analysis/face",
-    tags=["面相分析"],
-)
-app.include_router(
-    mx_hand_router.router,
-    prefix="/api/v1/mianxiang/analysis/hand",
-    tags=["手相分析"],
-)
-app.include_router(
-    mx_bazi_router.router,
-    prefix="/api/v1/mianxiang/analysis/bazi",
-    tags=["八字扩展分析"],
-)
-app.include_router(
-    mx_fengshui_router.router,
-    prefix="/api/v1/mianxiang/recommendations/fengshui",
-    tags=["办公室摆件建议"],
-)
+def _register_all_routers_to_manager():
+    """将所有路由注册信息添加到 RouterManager"""
+    
+    # 基础路由（总是可用）
+    router_manager.register_router(
+        "bazi",
+        lambda: bazi_router,
+        prefix="/api/v1",
+        tags=["八字计算"]
+    )
+    router_manager.register_router(
+        "bazi_ai",
+        lambda: bazi_ai_router,
+        prefix="/api/v1",
+        tags=["AI分析"]
+    )
+    router_manager.register_router(
+        "auth",
+        lambda: auth_router,
+        prefix="/api/v1",
+        tags=["鉴权"]
+    )
+    router_manager.register_router(
+        "grpc_gateway",
+        lambda: grpc_gateway_router,
+        prefix="/api",
+        tags=["gRPC-Web"]
+    )
+    
+    # OAuth 路由（条件可用）
+    router_manager.register_router(
+        "oauth",
+        lambda: oauth_router,
+        prefix="/api/v1",
+        tags=["OAuth 2.0"],
+        enabled_getter=lambda: OAUTH_ROUTER_AVAILABLE and oauth_router is not None
+    )
+    
+    # 旺衰分析路由（条件可用）
+    router_manager.register_router(
+        "wangshuai",
+        lambda: wangshuai_router,
+        prefix="/api/v1",
+        tags=["旺衰分析"],
+        enabled_getter=lambda: WANGSHUAI_ROUTER_AVAILABLE and wangshuai_router is not None
+    )
+    
+    # 面相手相路由（总是可用）
+    router_manager.register_router(
+        "mx_face",
+        lambda: mx_face_router.router,
+        prefix="/api/v1/mianxiang/analysis/face",
+        tags=["面相分析"]
+    )
+    router_manager.register_router(
+        "mx_hand",
+        lambda: mx_hand_router.router,
+        prefix="/api/v1/mianxiang/analysis/hand",
+        tags=["手相分析"]
+    )
+    router_manager.register_router(
+        "mx_bazi",
+        lambda: mx_bazi_router.router,
+        prefix="/api/v1/mianxiang/analysis/bazi",
+        tags=["八字扩展分析"]
+    )
+    router_manager.register_router(
+        "mx_fengshui",
+        lambda: mx_fengshui_router.router,
+        prefix="/api/v1/mianxiang/recommendations/fengshui",
+        tags=["办公室摆件建议"]
+    )
+    
+    # 规则匹配路由（条件可用）
+    router_manager.register_router(
+        "bazi_rules",
+        lambda: bazi_rules_router,
+        prefix="/api/v1",
+        tags=["规则匹配"],
+        enabled_getter=lambda: RULES_ROUTER_AVAILABLE and bazi_rules_router is not None
+    )
+    
+    # 规则管理路由（条件可用）
+    router_manager.register_router(
+        "admin_rules",
+        lambda: admin_rules_router,
+        prefix="/api/v1",
+        tags=["规则管理"],
+        enabled_getter=lambda: ADMIN_RULES_ROUTER_AVAILABLE and admin_rules_router is not None
+    )
+    
+    # 热更新路由（条件可用）
+    router_manager.register_router(
+        "hot_reload",
+        lambda: hot_reload_router,
+        prefix="/api/v1",
+        tags=["热更新"],
+        enabled_getter=lambda: HOT_RELOAD_ROUTER_AVAILABLE and hot_reload_router is not None
+    )
+    
+    # LLM 生成路由（条件可用）
+    router_manager.register_router(
+        "llm_generate",
+        lambda: llm_generate_router,
+        prefix="/api/v1",
+        tags=["LLM生成"],
+        enabled_getter=lambda: LLM_GENERATE_ROUTER_AVAILABLE and llm_generate_router is not None
+    )
+    
+    # 对话路由（条件可用）
+    router_manager.register_router(
+        "chat",
+        lambda: chat_router,
+        prefix="/api/v1",
+        tags=["AI对话"],
+        enabled_getter=lambda: CHAT_ROUTER_AVAILABLE and chat_router is not None
+    )
+    
+    # 一事一卦路由（条件可用）
+    router_manager.register_router(
+        "yigua",
+        lambda: yigua_router,
+        prefix="/api/v1",
+        tags=["一事一卦"],
+        enabled_getter=lambda: YIGUA_ROUTER_AVAILABLE and yigua_router is not None
+    )
+    
+    # 今日运势路由（条件可用）
+    router_manager.register_router(
+        "daily_fortune",
+        lambda: daily_fortune_router,
+        prefix="/api/v1",
+        tags=["今日运势"],
+        enabled_getter=lambda: DAILY_FORTUNE_ROUTER_AVAILABLE and daily_fortune_router is not None
+    )
+    
+    # 运势API路由（条件可用）
+    router_manager.register_router(
+        "fortune_api",
+        lambda: fortune_api_router,
+        prefix="/api/v1",
+        tags=["运势API"],
+        enabled_getter=lambda: FORTUNE_API_ROUTER_AVAILABLE and fortune_api_router is not None
+    )
+    
+    # 万年历API路由（条件可用）
+    router_manager.register_router(
+        "calendar_api",
+        lambda: calendar_api_router,
+        prefix="/api/v1",
+        tags=["万年历API"],
+        enabled_getter=lambda: CALENDAR_API_ROUTER_AVAILABLE and calendar_api_router is not None
+    )
+    
+    # 月运势路由（条件可用）
+    router_manager.register_router(
+        "monthly_fortune",
+        lambda: monthly_fortune_router,
+        prefix="/api/v1",
+        tags=["月运势"],
+        enabled_getter=lambda: MONTHLY_FORTUNE_ROUTER_AVAILABLE and monthly_fortune_router is not None
+    )
+    
+    # 每日运势日历路由（动态导入，条件可用）
+    def get_daily_fortune_calendar_router():
+        try:
+            from server.api.v1.daily_fortune_calendar import router as daily_fortune_calendar_router
+            return daily_fortune_calendar_router
+        except ImportError:
+            return None
+    
+    router_manager.register_router(
+        "daily_fortune_calendar",
+        get_daily_fortune_calendar_router,
+        prefix="/api/v1",
+        tags=["每日运势日历"],
+        enabled_getter=lambda: get_daily_fortune_calendar_router() is not None
+    )
+    
+    # 算法公式分析路由（条件可用，注意有重复注册的情况）
+    router_manager.register_router(
+        "formula_analysis",
+        lambda: formula_analysis_router,
+        prefix="/api/v1",
+        tags=["算法公式规则"],
+        enabled_getter=lambda: FORMULA_ANALYSIS_ROUTER_AVAILABLE and formula_analysis_router is not None
+    )
+    
+    # 用户反馈路由（条件可用）
+    router_manager.register_router(
+        "feedback",
+        lambda: feedback_router,
+        prefix="/api/v1",
+        tags=["用户反馈"],
+        enabled_getter=lambda: FEEDBACK_ROUTER_AVAILABLE and feedback_router is not None
+    )
+    
+    # 流年大运增强分析路由（动态导入，条件可用）
+    def get_liunian_enhanced_router():
+        try:
+            from server.api.v1.liunian_enhanced import router as liunian_enhanced_router
+            return liunian_enhanced_router
+        except ImportError:
+            return None
+    
+    router_manager.register_router(
+        "liunian_enhanced",
+        get_liunian_enhanced_router,
+        prefix="/api/v1",
+        tags=["流年大运增强分析"],
+        enabled_getter=lambda: get_liunian_enhanced_router() is not None
+    )
+    
+    # 统一支付路由（条件可用）
+    router_manager.register_router(
+        "unified_payment",
+        lambda: unified_payment_router,
+        prefix="/api/v1",
+        tags=["统一支付"],
+        enabled_getter=lambda: UNIFIED_PAYMENT_ROUTER_AVAILABLE and unified_payment_router is not None
+    )
+    
+    # 模型微调路由（条件可用）
+    router_manager.register_router(
+        "model_tuning",
+        lambda: model_tuning_router,
+        prefix="/api/v1",
+        tags=["模型微调"],
+        enabled_getter=lambda: MODEL_TUNING_ROUTER_AVAILABLE and model_tuning_router is not None
+    )
+    
+    # 前端展示路由（条件可用）
+    router_manager.register_router(
+        "bazi_display",
+        lambda: bazi_display_router,
+        prefix="/api/v1",
+        tags=["前端展示"],
+        enabled_getter=lambda: BAZI_DISPLAY_ROUTER_AVAILABLE and bazi_display_router is not None
+    )
+    
+    # 面相手相分析路由（动态导入，条件可用）
+    def get_fortune_analysis_router():
+        try:
+            from server.api.v1.fortune_analysis import router as fortune_analysis_router
+            return fortune_analysis_router
+        except ImportError:
+            return None
+    
+    router_manager.register_router(
+        "fortune_analysis",
+        get_fortune_analysis_router,
+        prefix="/api/v1",
+        tags=["面相手相分析"],
+        enabled_getter=lambda: get_fortune_analysis_router() is not None
+    )
+    
+    # 流式分析路由（动态导入，条件可用）
+    def get_fortune_analysis_stream_router():
+        try:
+            from server.api.v1.fortune_analysis_stream import router as fortune_analysis_stream_router
+            return fortune_analysis_stream_router
+        except ImportError:
+            return None
+    
+    router_manager.register_router(
+        "fortune_analysis_stream",
+        get_fortune_analysis_stream_router,
+        prefix="/api/v1",
+        tags=["面相手相分析（流式）"],
+        enabled_getter=lambda: get_fortune_analysis_stream_router() is not None
+    )
+    
+    # 支付路由（条件可用）
+    router_manager.register_router(
+        "payment",
+        lambda: payment_router,
+        prefix="/api/v1",
+        tags=["支付"],
+        enabled_getter=lambda: PAYMENT_ROUTER_AVAILABLE and payment_router is not None
+    )
+    
+    # 十神命格调试路由（动态导入）
+    def get_shishen_debug_router():
+        try:
+            from server.api.v1.shishen_debug import router as shishen_debug_router
+            return shishen_debug_router
+        except ImportError:
+            return None
+    
+    router_manager.register_router(
+        "shishen_debug",
+        get_shishen_debug_router,
+        prefix="/api/v1",
+        tags=["十神命格调试"],
+        enabled_getter=lambda: get_shishen_debug_router() is not None
+    )
+    
+    # 智能运势分析路由（动态导入）
+    def get_smart_fortune_router():
+        try:
+            from server.api.v1.smart_fortune import router as smart_fortune_router
+            return smart_fortune_router
+        except ImportError:
+            return None
+    
+    router_manager.register_router(
+        "smart_fortune",
+        get_smart_fortune_router,
+        prefix="/api/v1/smart-fortune",
+        tags=["智能运势分析"],
+        enabled_getter=lambda: get_smart_fortune_router() is not None
+    )
+    
+    # 面相分析V2路由（条件可用）
+    router_manager.register_router(
+        "face_analysis_v2",
+        lambda: face_analysis_v2_router,
+        prefix="",
+        tags=["面相分析V2"],
+        enabled_getter=lambda: FACE_ANALYSIS_V2_ROUTER_AVAILABLE and face_analysis_v2_router is not None
+    )
+    
+    # 办公桌风水分析路由（动态导入）
+    def get_desk_fengshui_router():
+        try:
+            from server.api.v2.desk_fengshui_api import router as desk_fengshui_router
+            return desk_fengshui_router
+        except ImportError:
+            return None
+    
+    router_manager.register_router(
+        "desk_fengshui",
+        get_desk_fengshui_router,
+        prefix="",
+        tags=["办公桌风水"],
+        enabled_getter=lambda: get_desk_fengshui_router() is not None
+    )
+    
+    # 服务治理路由（动态导入）
+    def get_governance_router():
+        try:
+            from server.api.v1.service_governance import router as governance_router
+            return governance_router
+        except ImportError:
+            return None
+    
+    router_manager.register_router(
+        "governance",
+        get_governance_router,
+        prefix="/api/v1",
+        tags=["服务治理"],
+        enabled_getter=lambda: get_governance_router() is not None
+    )
+    
+    # 可观测性路由（动态导入）
+    def get_observability_router():
+        try:
+            from server.api.v1.observability import router as observability_router
+            return observability_router
+        except ImportError:
+            return None
+    
+    router_manager.register_router(
+        "observability",
+        get_observability_router,
+        prefix="/api/v1",
+        tags=["可观测性"],
+        enabled_getter=lambda: get_observability_router() is not None
+    )
 
-# 注册规则匹配路由（新增，不影响现有功能）
-if RULES_ROUTER_AVAILABLE and bazi_rules_router:
-    app.include_router(bazi_rules_router, prefix="/api/v1", tags=["规则匹配"])
 
-# 注册规则管理路由（新增，管理员接口）
-if ADMIN_RULES_ROUTER_AVAILABLE and admin_rules_router:
-    app.include_router(admin_rules_router, prefix="/api/v1", tags=["规则管理"])
+# 注册所有路由信息到管理器
+_register_all_routers_to_manager()
 
-# 注册热更新路由（新增）
-if HOT_RELOAD_ROUTER_AVAILABLE and hot_reload_router:
-    app.include_router(hot_reload_router, prefix="/api/v1", tags=["热更新"])
-
-# 注册 LLM 生成路由（新增，类似 FateTell）
-if LLM_GENERATE_ROUTER_AVAILABLE and llm_generate_router:
-    app.include_router(llm_generate_router, prefix="/api/v1", tags=["LLM生成"])
-
-# 注册对话路由（新增，24/7 AI 对话）
-if CHAT_ROUTER_AVAILABLE and chat_router:
-    app.include_router(chat_router, prefix="/api/v1", tags=["AI对话"])
-
-# 注册一事一卦路由（新增）
-if YIGUA_ROUTER_AVAILABLE and yigua_router:
-    app.include_router(yigua_router, prefix="/api/v1", tags=["一事一卦"])
-
-# 注册今日运势分析路由（新增，类似 FateTell 的日运日签）
-if DAILY_FORTUNE_ROUTER_AVAILABLE and daily_fortune_router:
-    app.include_router(daily_fortune_router, prefix="/api/v1", tags=["今日运势"])
-
-# 注册运势API路由（新增，调用第三方API）
-if FORTUNE_API_ROUTER_AVAILABLE and fortune_api_router:
-    app.include_router(fortune_api_router, prefix="/api/v1", tags=["运势API"])
-
-# 注册万年历API路由（新增，调用第三方API）
-if CALENDAR_API_ROUTER_AVAILABLE and calendar_api_router:
-    app.include_router(calendar_api_router, prefix="/api/v1", tags=["万年历API"])
-    logger.info("✓ 万年历API路由已注册")
-
-# 注册月运势分析路由（新增，基于八字）
-if MONTHLY_FORTUNE_ROUTER_AVAILABLE and monthly_fortune_router:
-    app.include_router(monthly_fortune_router, prefix="/api/v1", tags=["月运势"])
-    logger.info("✓ 月运势分析路由已注册")
-
-# 注册每日运势日历路由（新增，基于万年历）
-try:
-    from server.api.v1.daily_fortune_calendar import router as daily_fortune_calendar_router
-    DAILY_FORTUNE_CALENDAR_ROUTER_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"每日运势日历路由导入失败（可选功能）: {e}")
-    daily_fortune_calendar_router = None
-    DAILY_FORTUNE_CALENDAR_ROUTER_AVAILABLE = False
-
-if DAILY_FORTUNE_CALENDAR_ROUTER_AVAILABLE and daily_fortune_calendar_router:
-    app.include_router(daily_fortune_calendar_router, prefix="/api/v1", tags=["每日运势日历"])
-    logger.info("✓ 每日运势日历路由已注册")
-
-# 算法公式规则分析路由（808条规则）
-if FORMULA_ANALYSIS_ROUTER_AVAILABLE and formula_analysis_router:
-    app.include_router(formula_analysis_router, prefix="/api/v1", tags=["算法公式规则"])
-
-# 注册用户反馈路由
-if FEEDBACK_ROUTER_AVAILABLE and feedback_router:
-    app.include_router(feedback_router, prefix="/api/v1", tags=["用户反馈"])
-    logger.info("✓ 用户反馈路由已注册")
-
-# 新增：流年大运增强分析路由
-try:
-    from server.api.v1.liunian_enhanced import router as liunian_enhanced_router
-    LIUNIAN_ENHANCED_ROUTER_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"流年大运增强分析路由导入失败（可选功能）: {e}")
-    liunian_enhanced_router = None
-    LIUNIAN_ENHANCED_ROUTER_AVAILABLE = False
-
-# 注册流年大运增强分析路由
-if LIUNIAN_ENHANCED_ROUTER_AVAILABLE and liunian_enhanced_router:
-    app.include_router(liunian_enhanced_router, prefix="/api/v1", tags=["流年大运增强分析"])
-    logger.info("✓ 流年大运增强分析路由已注册")
-    logger.info("✓ 算法公式规则分析路由已注册")
-
-if FORMULA_ANALYSIS_ROUTER_AVAILABLE and formula_analysis_router:
-    app.include_router(formula_analysis_router, prefix="/api/v1", tags=["算法公式"])
-    logger.info("✓ 算法公式分析路由已注册")
-
-# 统一支付路由
-if UNIFIED_PAYMENT_ROUTER_AVAILABLE and unified_payment_router:
-    app.include_router(unified_payment_router, prefix="/api/v1", tags=["统一支付"])
-
-# 注册模型微调路由（可选功能）
-if MODEL_TUNING_ROUTER_AVAILABLE and model_tuning_router:
-    app.include_router(model_tuning_router, prefix="/api/v1", tags=["模型微调"])
-    logger.info("✓ 模型微调路由已注册")
-    logger.info("✓ 统一支付路由已注册")
-
-# 推送服务和数据分析路由已废弃，已删除
-
-# 注册前端展示路由（新增，前端优化格式）
-if BAZI_DISPLAY_ROUTER_AVAILABLE and bazi_display_router:
-    app.include_router(bazi_display_router, prefix="/api/v1", tags=["前端展示"])
-
-# 注册面相手相分析路由（新增）
-try:
-    from server.api.v1.fortune_analysis import router as fortune_analysis_router
-    FORTUNE_ANALYSIS_ROUTER_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"面相手相分析路由导入失败（可选功能）: {e}")
-    fortune_analysis_router = None
-    FORTUNE_ANALYSIS_ROUTER_AVAILABLE = False
-
-if FORTUNE_ANALYSIS_ROUTER_AVAILABLE and fortune_analysis_router:
-    app.include_router(fortune_analysis_router, prefix="/api/v1", tags=["面相手相分析"])
-
-# 注册流式分析路由
-try:
-    from server.api.v1.fortune_analysis_stream import router as fortune_analysis_stream_router
-    FORTUNE_ANALYSIS_STREAM_ROUTER_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"面相手相分析流式路由导入失败（可选功能）: {e}")
-    fortune_analysis_stream_router = None
-    FORTUNE_ANALYSIS_STREAM_ROUTER_AVAILABLE = False
-
-if FORTUNE_ANALYSIS_STREAM_ROUTER_AVAILABLE and fortune_analysis_stream_router:
-    app.include_router(fortune_analysis_stream_router, prefix="/api/v1", tags=["面相手相分析（流式）"])
-
-# 注册支付路由（新增，魔方西元）
-if PAYMENT_ROUTER_AVAILABLE and payment_router:
-    app.include_router(payment_router, prefix="/api/v1", tags=["支付"])
-
-# 注册十神命格调试路由
-try:
-    from server.api.v1.shishen_debug import router as shishen_debug_router
-    app.include_router(shishen_debug_router, prefix="/api/v1", tags=["十神命格调试"])
-    logger.info("✓ 十神命格调试路由已注册")
-except ImportError as e:
-    logger.warning(f"十神命格调试路由导入失败: {e}")
-
-# 注册智能运势分析路由（Intent Service）
-try:
-    from server.api.v1.smart_fortune import router as smart_fortune_router
-    app.include_router(smart_fortune_router, prefix="/api/v1/smart-fortune", tags=["智能运势分析"])
-    logger.info("✓ 智能运势分析路由已注册")
-except ImportError as e:
-    logger.warning(f"智能运势分析路由导入失败: {e}")
-
-# 注册面相分析V2路由（独立系统）
-if FACE_ANALYSIS_V2_ROUTER_AVAILABLE and face_analysis_v2_router:
-    app.include_router(face_analysis_v2_router, tags=["面相分析V2"])
-    logger.info("✓ 面相分析V2路由已注册")
-
-# 注册办公桌风水分析路由
-try:
-    from server.api.v2.desk_fengshui_api import router as desk_fengshui_router
-    app.include_router(desk_fengshui_router, tags=["办公桌风水"])
-    logger.info("✓ 办公桌风水分析路由已注册")
-except ImportError as e:
-    logger.warning(f"办公桌风水分析路由导入失败: {e}")
-
-# 注册服务治理路由
-try:
-    from server.api.v1.service_governance import router as governance_router
-    app.include_router(governance_router, prefix="/api/v1", tags=["服务治理"])
-    logger.info("✓ 服务治理路由已注册")
-except ImportError as e:
-    logger.warning(f"服务治理路由导入失败: {e}")
-
-# 注册可观测性路由
-try:
-    from server.api.v1.observability import router as observability_router
-    app.include_router(observability_router, prefix="/api/v1", tags=["可观测性"])
-    logger.info("✓ 可观测性路由已注册")
-except ImportError as e:
-    logger.warning(f"可观测性路由导入失败: {e}")
+# 实际注册所有路由到 FastAPI 应用
+router_manager.register_all_routers()
 
 # 挂载静态文件目录（本地前端文件）
 local_frontend_dir = os.path.join(project_root, "local_frontend")

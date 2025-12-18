@@ -1733,6 +1733,180 @@ stem = safe_get_nested(bazi_data, 'bazi_pillars', 'day', 'stem', default='')
 
 ---
 
+## 🔄 路由热更新规范 【必须遵守】
+
+### 🔴 核心原则
+
+> **所有路由注册必须支持热更新，无需重启服务即可生效。生产环境要求零停机，禁止重启服务。**
+
+### 📋 路由注册标准流程
+
+**必须使用 RouterManager 注册路由**：
+
+1. **在路由文件中定义路由**：
+   ```python
+   # server/api/v1/your_router.py
+   from fastapi import APIRouter
+   router = APIRouter()
+   
+   @router.post("/your-endpoint")
+   async def your_endpoint():
+       return {"success": True}
+   ```
+
+2. **在 `server/main.py` 的 `_register_all_routers_to_manager()` 函数中注册路由信息**：
+   ```python
+   # server/main.py
+   def _register_all_routers_to_manager():
+       # ... 其他路由注册 ...
+       
+       # 新路由注册
+       router_manager.register_router(
+           "your_router_name",  # 路由唯一标识
+           lambda: your_router,  # 路由对象获取函数
+           prefix="/api/v1",     # 路由前缀
+           tags=["你的标签"],     # 路由标签
+           enabled_getter=lambda: YOUR_ROUTER_AVAILABLE and your_router is not None  # 可选：启用检查函数
+       )
+   ```
+
+3. **路由会自动注册到 FastAPI 应用**（通过 `router_manager.register_all_routers()`）
+
+### 🔄 热更新机制
+
+**路由热更新流程**：
+
+```
+1. 修改路由代码（server/api/v1/your_router.py）
+   ↓
+2. 热更新系统检测到文件变化（5秒内）
+   ↓
+3. 重新加载 server.main 模块
+   ↓
+4. _register_all_routers_to_manager() 重新执行
+   ↓
+5. 路由信息重新注册到 RouterManager
+   ↓
+6. 调用 router_manager.register_all_routers(force=True)
+   ↓
+7. 路由重新注册到 FastAPI 应用（无需重启）
+   ↓
+8. 新路由立即生效
+```
+
+### ✅ 路由热更新检查清单
+
+每次添加新路由时，必须检查：
+
+- [ ] 路由是否在 `_register_all_routers_to_manager()` 函数中注册
+- [ ] 路由代码是否支持热更新（无全局状态依赖）
+- [ ] 路由注册信息是否正确（名称、前缀、标签）
+- [ ] 是否测试了路由热更新功能（修改路由代码后，触发热更新，验证路由可用）
+
+### 🚨 禁止的操作
+
+| 操作 | 状态 | 原因 | 正确方式 |
+|------|------|------|---------|
+| ❌ **直接在 server/main.py 中使用 `app.include_router()`** | **禁止** | 不支持热更新 | 使用 RouterManager 注册 |
+| ❌ **跳过 RouterManager 注册路由** | **禁止** | 路由无法热更新 | 在 `_register_all_routers_to_manager()` 中注册 |
+| ❌ **在路由文件中初始化全局状态** | **禁止** | 热更新后状态不一致 | 使用函数/类方法，避免模块级初始化 |
+
+### 📝 路由注册示例
+
+**示例 1：简单路由（总是可用）**：
+```python
+router_manager.register_router(
+    "bazi",
+    lambda: bazi_router,
+    prefix="/api/v1",
+    tags=["八字计算"]
+)
+```
+
+**示例 2：条件路由（可选功能）**：
+```python
+router_manager.register_router(
+    "oauth",
+    lambda: oauth_router,
+    prefix="/api/v1",
+    tags=["OAuth 2.0"],
+    enabled_getter=lambda: OAUTH_ROUTER_AVAILABLE and oauth_router is not None
+)
+```
+
+**示例 3：动态导入路由（try-except 导入）**：
+```python
+def get_daily_fortune_calendar_router():
+    try:
+        from server.api.v1.daily_fortune_calendar import router as daily_fortune_calendar_router
+        return daily_fortune_calendar_router
+    except ImportError:
+        return None
+
+router_manager.register_router(
+    "daily_fortune_calendar",
+    get_daily_fortune_calendar_router,
+    prefix="/api/v1",
+    tags=["每日运势日历"],
+    enabled_getter=lambda: get_daily_fortune_calendar_router() is not None
+)
+```
+
+### 🔧 热更新测试
+
+**测试流程**：
+
+1. **启动服务**（如果未启动）：
+   ```bash
+   python3 server/start.py
+   ```
+
+2. **验证路由可用**：
+   ```bash
+   curl http://localhost:8001/docs  # 查看 API 文档，确认路由存在
+   ```
+
+3. **修改路由代码**（添加新端点）：
+   ```python
+   # server/api/v1/your_router.py
+   @router.post("/new-endpoint")
+   async def new_endpoint():
+       return {"message": "new endpoint"}
+   ```
+
+4. **触发热更新**（等待自动更新，或手动触发）：
+   ```bash
+   # 等待 5 秒自动更新，或手动触发
+   curl -X POST http://localhost:8001/api/v1/hot-reload/check
+   ```
+
+5. **验证新路由可用**（无需重启服务）：
+   ```bash
+   curl -X POST http://localhost:8001/api/v1/your-router/new-endpoint
+   ```
+
+### ⚠️ 注意事项
+
+1. **FastAPI 路由注册机制**：
+   - FastAPI 允许重复调用 `app.include_router()`，会忽略重复注册
+   - 热更新时重复注册不会造成问题
+   - RouterManager 会记录路由注册状态，避免不必要的重复注册
+
+2. **路由注册顺序**：
+   - 路由注册顺序由 `_register_all_routers_to_manager()` 中的顺序决定
+   - 建议按功能模块分组，保持顺序一致性
+
+3. **错误处理**：
+   - 路由注册失败不影响其他路由的注册
+   - 路由注册错误会记录详细日志，便于排查问题
+
+4. **生产环境部署**：
+   - 新增路由后，使用增量部署脚本部署
+   - 热更新会自动生效，无需重启服务
+   - 如果路由注册失败，检查日志并修复后重新部署
+
+---
+
 ## 📜 规则开发规范 【核心】
 
 ### 🔴 规则存储规范 【必须遵守】
