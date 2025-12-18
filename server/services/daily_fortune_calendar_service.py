@@ -772,10 +772,10 @@ class DailyFortuneCalendarService:
             if not conn:
                 return None  # 返回None而不是空字符串
             with conn.cursor() as cursor:
-                # 查询喜神方位颜色
+                # 查询喜神方位颜色（使用BINARY比较确保编码正确）
                 if xishen_direction:
                     cursor.execute(
-                        "SELECT colors FROM daily_fortune_lucky_color_wannianli WHERE direction = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
+                        "SELECT colors FROM daily_fortune_lucky_color_wannianli WHERE BINARY direction = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
                         (xishen_direction,)
                     )
                     result = cursor.fetchone()
@@ -786,10 +786,10 @@ class DailyFortuneCalendarService:
                             colors_list = [c.strip() for c in colors_str.replace('、', ',').split(',') if c.strip()]
                             colors.extend(colors_list)
                 
-                # 查询福神方位颜色
+                # 查询福神方位颜色（使用BINARY比较确保编码正确）
                 if fushen_direction:
                     cursor.execute(
-                        "SELECT colors FROM daily_fortune_lucky_color_wannianli WHERE direction = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
+                        "SELECT colors FROM daily_fortune_lucky_color_wannianli WHERE BINARY direction = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
                         (fushen_direction,)
                     )
                     result = cursor.fetchone()
@@ -815,9 +815,9 @@ class DailyFortuneCalendarService:
                             )
                             
                             if is_xishen:
-                                # 查询十神颜色
+                                # 查询十神颜色（使用BINARY比较确保编码正确）
                                 cursor.execute(
-                                    "SELECT color FROM daily_fortune_lucky_color_shishen WHERE shishen = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
+                                    "SELECT color FROM daily_fortune_lucky_color_shishen WHERE BINARY shishen = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
                                     (today_shishen,)
                                 )
                                 result = cursor.fetchone()
