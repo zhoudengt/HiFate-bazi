@@ -1,0 +1,20 @@
+============================================================
+立即执行修复（复制粘贴以下命令）
+============================================================
+
+方式 1: 一行命令（推荐）
+
+scp scripts/temp_rules_export.sql root@8.210.52.217:/tmp/rules_import.sql && ssh root@8.210.52.217 "cd /opt/HiFate-bazi && docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql && curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/check" && sleep 5 && bash scripts/verify_fix.sh
+
+方式 2: 分步执行
+
+# 步骤 1: 上传文件
+scp scripts/temp_rules_export.sql root@8.210.52.217:/tmp/rules_import.sql
+
+# 步骤 2: SSH 并执行
+ssh root@8.210.52.217 "cd /opt/HiFate-bazi && docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql && curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/check"
+
+# 步骤 3: 验证
+sleep 5 && bash scripts/verify_fix.sh
+
+============================================================

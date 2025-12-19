@@ -303,12 +303,14 @@ MY_CONFIG = os.getenv("MY_CONFIG", "default")  # 热更新后不会变化
 
 #### 热更新测试规范
 
+**⚠️ 重要：每次开发完成后必须自动触发热更新！**
+
 **每次代码修改后必须验证**：
 ```bash
 # 1. 检查热更新状态
 curl http://localhost:8001/api/v1/hot-reload/status
 
-# 2. 手动触发热更新
+# 2. 手动触发热更新（必须！）
 curl -X POST http://localhost:8001/api/v1/hot-reload/check
 
 # 3. 验证版本号更新
@@ -317,6 +319,14 @@ curl http://localhost:8001/api/v1/hot-reload/versions
 # 4. 验证功能正常
 # 调用相关 API 测试功能
 ```
+
+**开发完成后的标准流程**：
+1. ✅ 代码修改完成
+2. ✅ 运行测试验证
+3. ✅ **自动触发热更新**（必须！）
+4. ✅ 验证热更新成功
+5. ✅ 验证功能正常
+6. ✅ 提交代码
 
 **微服务热更新测试流程**：
 ```bash
@@ -434,8 +444,10 @@ curl -X POST http://localhost:8001/api/v1/hot-reload/rollback
 - [ ] 单例类是否提供了 `reset()` 方法
 - [ ] 缓存是否支持清理
 - [ ] 配置是否支持热加载
-- [ ] 是否测试了热更新功能
-- [ ] 是否验证了功能正常
+- [ ] **开发完成后是否触发热更新（必须！）**
+- [ ] **是否验证对应功能在热更新后正常工作（必须！）**
+- [ ] **如果涉及 API 端点，是否验证端点正确注册到 gRPC 网关（必须！）**
+- [ ] 是否检查热更新日志（如有错误）
 - [ ] 是否更新了热更新文档
 
 **微服务热更新专项检查**：
@@ -1146,6 +1158,51 @@ fi
 - [ ] 测试覆盖率是否 ≥ 50%
 - [ ] 所有测试是否通过
 
+##### 热更新检查
+- [ ] **开发完成后是否自动触发热更新（必须！）**
+- [ ] 是否验证热更新状态正常
+- [ ] **是否验证对应功能在热更新后正常工作（必须！）**
+- [ ] 是否检查热更新日志（如有错误）
+- [ ] **是否验证 API 端点正确注册（gRPC 网关端点）**
+
+**热更新触发方式**：
+```bash
+# 方式1：手动触发热更新（推荐）
+curl -X POST http://localhost:8001/api/v1/hot-reload/check
+
+# 方式2：检查热更新状态
+curl http://localhost:8001/api/v1/hot-reload/status
+
+# 方式3：验证版本号更新
+curl http://localhost:8001/api/v1/hot-reload/versions
+```
+
+**热更新验证流程（必须执行）**：
+```bash
+# 1. 触发热更新
+curl -X POST http://localhost:8001/api/v1/hot-reload/check
+
+# 2. 验证热更新状态
+curl http://localhost:8001/api/v1/hot-reload/status
+
+# 3. 验证对应功能（必须！）
+# 例如：修改了 /bazi/rizhu-liujiazi API，必须测试该 API 是否正常工作
+curl -X POST http://localhost:8001/api/v1/bazi/rizhu-liujiazi \
+  -H "Content-Type: application/json" \
+  -d '{"solar_date":"1990-05-15","solar_time":"14:30","gender":"male"}'
+
+# 4. 验证 gRPC 网关端点（如果涉及）
+# 通过前端页面或 API 测试工具验证端点是否可访问
+```
+
+**注意**：
+- ✅ **每次开发完成必须触发热更新**，确保代码修改立即生效
+- ✅ **热更新后必须验证对应功能正常**，确保修改生效（不单单是健康检查）
+- ✅ **如果涉及 API 端点修改，必须验证端点正确注册到 gRPC 网关**
+- ✅ 如果热更新失败，必须检查错误日志并修复问题
+- ❌ **禁止跳过热更新直接提交代码**
+- ❌ **禁止只做健康检查就认为热更新成功，必须验证实际功能**
+
 ##### 文档规范检查
 - [ ] 是否更新了 API 文档
 - [ ] 是否更新了架构文档（如需要）
@@ -1207,7 +1264,151 @@ fi
 - ❌ 禁止降低规范要求
 - ❌ 禁止跳过测试
 
-#### 3.5 规范更新机制
+#### 3.5 工程化开发流程规范 【必须遵守】
+
+> **所有功能开发必须遵循工程化流程，使用自动化工具确保一次性成功率 ≥ 98%。**
+
+##### 3.5.1 工程化工具
+
+**开发流程检查工具**：
+```bash
+# 开发前检查
+python3 scripts/dev/dev_flow_check.py --pre-dev
+
+# 检查指定文件
+python3 scripts/dev/dev_flow_check.py --files server/api/v1/xxx.py
+
+# 完整检查
+python3 scripts/dev/dev_flow_check.py --all
+```
+
+**命名规范检查工具**：
+```bash
+# 检查指定文件
+python3 scripts/dev/check_naming.py server/api/v1/xxx.py
+
+# 检查所有文件
+python3 scripts/dev/check_naming.py --all
+```
+
+**快速修改工具**：
+```bash
+# 诊断问题
+python3 scripts/dev/quick_fix.py --diagnose
+
+# 修复问题
+python3 scripts/dev/quick_fix.py --fix <问题类型>
+
+# 验证修复结果
+python3 scripts/dev/quick_fix.py --verify
+
+# 全流程（诊断、修复、验证）
+python3 scripts/dev/quick_fix.py --all
+```
+
+**测试自动化工具**：
+```bash
+# 运行所有测试
+python3 scripts/test/auto_test.py --all
+
+# 只运行单元测试
+python3 scripts/test/auto_test.py --unit
+
+# 只运行 API 测试
+python3 scripts/test/auto_test.py --api
+
+# 生成覆盖率报告
+python3 scripts/test/auto_test.py --coverage
+```
+
+**部署自动化工具**：
+```bash
+# 增量部署
+python3 scripts/deploy/auto_deploy.py --mode incremental
+
+# 完整部署
+python3 scripts/deploy/auto_deploy.py --mode full
+
+# 只检查，不部署
+python3 scripts/deploy/auto_deploy.py --check-only
+```
+
+##### 3.5.2 开发检查清单
+
+**规则开发检查清单**：`docs/checklists/rule_development_checklist.md`
+- 包含完整的规则开发流程检查项
+- 从需求分析到部署验证的完整流程
+
+**API 开发检查清单**：`docs/checklists/api_development_checklist.md`
+- 包含完整的 API 开发流程检查项
+- 从需求分析到部署验证的完整流程
+
+**前端开发检查清单**：`docs/checklists/frontend_development_checklist.md`
+- 包含完整的前端开发流程检查项
+- 从需求分析到部署验证的完整流程
+
+**数据库变更检查清单**：`docs/checklists/db_change_checklist.md`
+- 包含完整的数据库变更流程检查项
+- 从变更前准备到回滚准备的完整流程
+
+##### 3.5.3 工程化开发流程
+
+**标准开发流程**：
+```
+1. 开发前准备
+   ├─ 运行开发流程检查工具（--pre-dev）
+   ├─ 确认开发环境
+   └─ 创建功能分支
+   ↓
+2. 开发阶段
+   ├─ 编写代码
+   ├─ 运行自动化检查（每次修改后）
+   ├─ 运行单元测试
+   └─ 验证热更新
+   ↓
+3. 开发完成检查
+   ├─ 运行完整检查（--all）
+   ├─ 运行所有测试
+   ├─ 检查测试覆盖率
+   └─ 代码审查
+   ↓
+4. 部署阶段
+   ├─ 代码提交到 Git
+   ├─ 推送到 GitHub
+   ├─ 增量部署
+   └─ 验证部署结果
+```
+
+**必须执行的检查**：
+- ✅ 开发前：`python3 scripts/dev/dev_flow_check.py --pre-dev`
+- ✅ 开发中：`python3 scripts/dev/dev_flow_check.py --files <修改的文件>`
+- ✅ 开发完成：`python3 scripts/dev/dev_flow_check.py --all`
+- ✅ 测试：`python3 scripts/test/auto_test.py --all`
+- ✅ 部署：`python3 scripts/deploy/auto_deploy.py --mode incremental`
+
+##### 3.5.4 一次性成功率要求
+
+**目标**：功能开发一次性成功率 ≥ 98%
+
+**实现方式**：
+1. **自动化检查**：使用工程化工具自动检查所有规范
+2. **完整测试**：运行所有测试确保功能正常
+3. **部署验证**：部署后自动验证功能正常
+4. **问题预防**：在开发阶段就发现问题并修复
+
+**检查清单使用**：
+- 规则开发：使用 `docs/checklists/rule_development_checklist.md`
+- API 开发：使用 `docs/checklists/api_development_checklist.md`
+- 前端开发：使用 `docs/checklists/frontend_development_checklist.md`
+- 数据库变更：使用 `docs/checklists/db_change_checklist.md`
+
+**禁止操作**：
+- ❌ 禁止跳过程序化检查
+- ❌ 禁止跳过程序化测试
+- ❌ 禁止跳过程序化部署验证
+- ❌ 禁止在检查未通过时提交代码
+
+#### 3.6 规范更新机制
 
 **当规范更新时**：
 

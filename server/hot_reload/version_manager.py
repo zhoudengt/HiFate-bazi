@@ -9,7 +9,8 @@ import os
 from typing import Dict, Optional
 
 # 添加项目根目录到路径
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+# 从 server/hot_reload/version_manager.py 到项目根目录：上移3级
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
 from server.db.rule_content_dao import RuleContentDAO

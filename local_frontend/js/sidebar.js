@@ -32,6 +32,10 @@ class Sidebar {
                         <span class="nav-item-icon">📖</span>
                         <span class="nav-item-text">命书</span>
                     </a>
+                    <div class="nav-submenu">
+                        <a href="pan.html" class="nav-submenu-item" data-page="pan">基础八字排盘</a>
+                        <a href="rizhu-liujiazi.html" class="nav-submenu-item" data-page="rizhu-liujiazi">日元-六十甲子</a>
+                    </div>
                     <a href="basic-info.html" class="nav-item" data-page="basic-info">
                         <span class="nav-item-icon">📋</span>
                         <span class="nav-item-text">基本信息</span>
@@ -75,11 +79,15 @@ class Sidebar {
             currentPage === 'fortune' || 
             currentPage === 'year-report' || 
             currentPage === 'dayun-liunian' || 
-            currentPage === 'shengong-minggong') {
-            const submenu = document.querySelector('.nav-submenu');
-            if (submenu) {
-                submenu.style.display = 'block';
-            }
+            currentPage === 'shengong-minggong' ||
+            currentPage === 'pan' ||
+            currentPage === 'rizhu-liujiazi') {
+            const submenus = document.querySelectorAll('.nav-submenu');
+            submenus.forEach(submenu => {
+                if (submenu) {
+                    submenu.style.display = 'block';
+                }
+            });
         }
     }
 
@@ -88,6 +96,7 @@ class Sidebar {
         const filename = path.split('/').pop() || 'index.html';
         
         if (filename.includes('basic-info')) return 'basic-info';
+        if (filename.includes('rizhu-liujiazi')) return 'rizhu-liujiazi';
         if (filename.includes('pan')) return 'pan';
         if (filename.includes('shengong-minggong')) return 'shengong-minggong';
         if (filename.includes('daily-fortune-calendar')) return 'daily-fortune-calendar';

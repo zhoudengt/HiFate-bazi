@@ -18,7 +18,8 @@ import os
 from typing import Dict, Any, Optional, List
 
 # 添加项目根目录到路径
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+# 从 server/hot_reload/reloaders.py 到项目根目录：上移3级
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
 
@@ -179,116 +180,123 @@ class SourceCodeReloader:
                     mtime = os.path.getmtime(full_path)
                     mtime_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
                     
-                    # 从sys.modules中获取模块
+                    # 从sys.modules中获取模块，如果未加载则尝试导入
                     if module_name in sys.modules:
                         module = sys.modules[module_name]
-                        
-                        # 打印模块信息
-                        print(f"\n  📦 模块: {module_name}")
-                        print(f"     📄 文件: {file_path}")
-                        print(f"     📝 功能: {description}")
-                        print(f"     🕒 修改时间: {mtime_str}")
-                        
-                        # ⭐ 特殊处理：如果是 grpc_gateway 模块，需要先处理端点注册
-                        if module_name == 'server.api.grpc_gateway':
-                            try:
-                                # 1. 先获取当前的端点字典
-                                from server.api.grpc_gateway import SUPPORTED_ENDPOINTS
-                                old_count = len(SUPPORTED_ENDPOINTS)
-                                print(f"     🔄 重新注册前端点数量: {old_count}")
-                                
-                                # 2. 清空端点字典（避免残留旧端点）
-                                SUPPORTED_ENDPOINTS.clear()
-                                
-                                # 3. 重新加载模块（触发装饰器 @_register 重新执行）
-                                importlib.reload(module)
-                                
-                                # 4. 重新获取端点字典（装饰器已执行）
-                                from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as NEW_ENDPOINTS
-                                new_count = len(NEW_ENDPOINTS)
-                                print(f"     🔄 重新加载后端点数量: {new_count}")
-                                
-                                # 5. 如果端点仍未注册，手动触发重新注册函数
-                                if new_count == 0:
-                                    print(f"     ⚠️  装饰器未注册端点，尝试手动重新注册...")
-                                    # 重新获取模块对象（因为 reload 后模块对象已更新）
-                                    import server.api.grpc_gateway as gateway_module
-                                    if hasattr(gateway_module, '_reload_endpoints'):
-                                        success = gateway_module._reload_endpoints()
-                                        if success:
-                                            from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_ENDPOINTS
-                                            final_count = len(FINAL_ENDPOINTS)
-                                            print(f"     ✅ 手动重新注册成功（端点数量: {final_count}）")
-                                        else:
-                                            print(f"     ❌ 手动重新注册失败")
-                                    else:
-                                        print(f"     ❌ 未找到 _reload_endpoints 函数")
-                                else:
-                                    print(f"     ✅ gRPC 端点已重新注册（端点数量: {new_count}）")
-                                
-                                # 6. 验证关键端点是否已注册
-                                from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_CHECK
-                                key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong']
-                                missing_endpoints = [ep for ep in key_endpoints if ep not in FINAL_CHECK]
-                                if missing_endpoints:
-                                    print(f"     ⚠️  关键端点未注册: {missing_endpoints}")
-                                else:
-                                    print(f"     ✅ 关键端点验证通过")
-                                    
-                            except Exception as e:
-                                print(f"     ❌ gRPC 端点重新注册失败: {e}")
-                                import traceback
-                                traceback.print_exc()
-                        else:
-                            # 普通模块：直接重新加载
-                            importlib.reload(module)
-                        
-                        # ⭐ 特殊处理：如果是 server.main 模块，需要重新注册路由
-                        if module_name == 'server.main':
-                            try:
-                                print(f"     🔄 检测到 server.main 模块更新，重新注册路由...")
-                                # 等待模块重新加载完成
-                                import time
-                                time.sleep(0.1)  # 短暂延迟，确保模块重新加载完成
-                                
-                                from server.utils.router_manager import RouterManager
-                                router_manager = RouterManager.get_instance()
-                                if router_manager:
-                                    # 尝试重新注册路由信息（如果 server.main 已重新加载，_register_all_routers_to_manager 会被重新执行）
-                                    # 但是为了确保路由信息是最新的，我们需要确保它已执行
-                                    try:
-                                        # 尝试调用 _register_all_routers_to_manager（如果存在）
-                                        if 'server.main' in sys.modules:
-                                            main_module = sys.modules['server.main']
-                                            if hasattr(main_module, '_register_all_routers_to_manager'):
-                                                main_module._register_all_routers_to_manager()
-                                                print(f"     ✅ 路由信息已重新注册到管理器")
-                                    except Exception as e2:
-                                        print(f"     ⚠️  重新注册路由信息到管理器失败: {e2}")
-                                    
-                                    # 清除注册状态，强制重新注册到 FastAPI 应用
-                                    router_manager.clear_registered_state()
-                                    # 重新注册所有路由到 FastAPI 应用
-                                    results = router_manager.register_all_routers(force=True)
-                                    success_count = sum(1 for v in results.values() if v)
-                                    failed_count = sum(1 for v in results.values() if not v)
-                                    print(f"     ✅ 路由重新注册到 FastAPI 应用完成: {success_count} 成功, {failed_count} 失败")
-                                else:
-                                    print(f"     ⚠️  路由管理器未初始化，跳过路由重新注册")
-                            except Exception as e:
-                                print(f"     ⚠️  路由重新注册失败（不影响模块重载）: {e}")
-                                import traceback
-                                traceback.print_exc()
-                        
-                        reloaded_modules.append({
-                            'module': module_name,
-                            'file': file_path,
-                            'description': description,
-                            'mtime': mtime_str
-                        })
-                        print(f"     ✅ 重载成功")
                     else:
-                        print(f"  ⚠ 模块 {module_name} 未加载，跳过")
+                        # ⭐ 如果模块未加载，尝试导入（延迟加载的模块）
+                        try:
+                            import importlib
+                            module = importlib.import_module(module_name)
+                            print(f"     🔄 模块未加载，已导入: {module_name}")
+                        except ImportError as e:
+                            print(f"     ⚠ 模块未加载且无法导入: {module_name} ({e})")
+                            continue
+                    
+                    # 打印模块信息（无论是否已加载）
+                    print(f"\n  📦 模块: {module_name}")
+                    print(f"     📄 文件: {file_path}")
+                    print(f"     📝 功能: {description}")
+                    print(f"     🕒 修改时间: {mtime_str}")
+                    
+                    # ⭐ 特殊处理：如果是 grpc_gateway 模块，需要先处理端点注册
+                    if module_name == 'server.api.grpc_gateway':
+                        try:
+                            # 1. 先获取当前的端点字典
+                            from server.api.grpc_gateway import SUPPORTED_ENDPOINTS
+                            old_count = len(SUPPORTED_ENDPOINTS)
+                            print(f"     🔄 重新注册前端点数量: {old_count}")
+                            
+                            # 2. 清空端点字典（避免残留旧端点）
+                            SUPPORTED_ENDPOINTS.clear()
+                            
+                            # 3. 重新加载模块（触发装饰器 @_register 重新执行）
+                            importlib.reload(module)
+                            
+                            # 4. 重新获取端点字典（装饰器已执行）
+                            from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as NEW_ENDPOINTS
+                            new_count = len(NEW_ENDPOINTS)
+                            print(f"     🔄 重新加载后端点数量: {new_count}")
+                            
+                            # 5. 如果端点仍未注册，手动触发重新注册函数
+                            if new_count == 0:
+                                print(f"     ⚠️  装饰器未注册端点，尝试手动重新注册...")
+                                # 重新获取模块对象（因为 reload 后模块对象已更新）
+                                import server.api.grpc_gateway as gateway_module
+                                if hasattr(gateway_module, '_reload_endpoints'):
+                                    success = gateway_module._reload_endpoints()
+                                    if success:
+                                        from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_ENDPOINTS
+                                        final_count = len(FINAL_ENDPOINTS)
+                                        print(f"     ✅ 手动重新注册成功（端点数量: {final_count}）")
+                                    else:
+                                        print(f"     ❌ 手动重新注册失败")
+                                else:
+                                    print(f"     ❌ 未找到 _reload_endpoints 函数")
+                            else:
+                                print(f"     ✅ gRPC 端点已重新注册（端点数量: {new_count}）")
+                            
+                            # 6. 验证关键端点是否已注册
+                            from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_CHECK
+                            key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi']
+                            missing_endpoints = [ep for ep in key_endpoints if ep not in FINAL_CHECK]
+                            if missing_endpoints:
+                                print(f"     ⚠️  关键端点未注册: {missing_endpoints}")
+                            else:
+                                print(f"     ✅ 关键端点验证通过")
+                                
+                        except Exception as e:
+                            print(f"     ❌ gRPC 端点重新注册失败: {e}")
+                            import traceback
+                            traceback.print_exc()
+                    else:
+                        # 普通模块：直接重新加载
+                        importlib.reload(module)
+                    
+                    # ⭐ 特殊处理：如果是 server.main 模块，需要重新注册路由
+                    if module_name == 'server.main':
+                        try:
+                            print(f"     🔄 检测到 server.main 模块更新，重新注册路由...")
+                            # 等待模块重新加载完成
+                            import time
+                            time.sleep(0.1)  # 短暂延迟，确保模块重新加载完成
+                            
+                            from server.utils.router_manager import RouterManager
+                            router_manager = RouterManager.get_instance()
+                            if router_manager:
+                                # 尝试重新注册路由信息（如果 server.main 已重新加载，_register_all_routers_to_manager 会被重新执行）
+                                # 但是为了确保路由信息是最新的，我们需要确保它已执行
+                                try:
+                                    # 尝试调用 _register_all_routers_to_manager（如果存在）
+                                    if 'server.main' in sys.modules:
+                                        main_module = sys.modules['server.main']
+                                        if hasattr(main_module, '_register_all_routers_to_manager'):
+                                            main_module._register_all_routers_to_manager()
+                                            print(f"     ✅ 路由信息已重新注册到管理器")
+                                except Exception as e2:
+                                    print(f"     ⚠️  重新注册路由信息到管理器失败: {e2}")
+                                
+                                # 清除注册状态，强制重新注册到 FastAPI 应用
+                                router_manager.clear_registered_state()
+                                # 重新注册所有路由到 FastAPI 应用
+                                results = router_manager.register_all_routers(force=True)
+                                success_count = sum(1 for v in results.values() if v)
+                                failed_count = sum(1 for v in results.values() if not v)
+                                print(f"     ✅ 路由重新注册到 FastAPI 应用完成: {success_count} 成功, {failed_count} 失败")
+                            else:
+                                print(f"     ⚠️  路由管理器未初始化，跳过路由重新注册")
+                        except Exception as e:
+                            print(f"     ⚠️  路由重新注册失败（不影响模块重载）: {e}")
+                            import traceback
+                            traceback.print_exc()
+                    
+                    reloaded_modules.append({
+                        'module': module_name,
+                        'file': file_path,
+                        'description': description,
+                        'mtime': mtime_str
+                    })
+                    print(f"     ✅ 重载成功")
                         
                 except Exception as e:
                     error_msg = str(e)

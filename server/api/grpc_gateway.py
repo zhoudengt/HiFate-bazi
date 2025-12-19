@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+from json import JSONDecodeError
 import logging
 import os
 from typing import Any, Callable, Dict, Tuple
@@ -83,6 +84,17 @@ from server.api.v1.daily_fortune_calendar import (
     query_daily_fortune_calendar,
 )
 from server.api.v1.bazi import BaziInterfaceRequest, ShengongMinggongRequest, get_shengong_minggong
+try:
+    from server.api.v1.rizhu_liujiazi import RizhuLiujiaziRequest, get_rizhu_liujiazi
+    RIZHU_LIUJIAZI_AVAILABLE = True
+except ImportError as e:
+    import logging
+    logger_temp = logging.getLogger(__name__)
+    logger_temp.warning(f"⚠️  无法导入 rizhu_liujiazi 模块: {e}")
+    RIZHU_LIUJIAZI_AVAILABLE = False
+    # 创建占位符以避免 NameError
+    RizhuLiujiaziRequest = None
+    get_rizhu_liujiazi = None
 from server.services.bazi_interface_service import BaziInterfaceService
 
 # 文件上传相关
@@ -153,7 +165,7 @@ def _reload_endpoints():
         logger.info(f"重新加载后端点数量: {endpoint_count}")
         
         # 如果端点数量为0或缺少关键端点，手动重新注册
-        key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong']
+        key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi']
         missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
         
         if endpoint_count == 0 or missing:
@@ -196,11 +208,22 @@ def _reload_endpoints():
                         return result.dict()
                     return result
                 
+                # 手动注册 /bazi/rizhu-liujiazi 端点
+                from server.api.v1.rizhu_liujiazi import (
+                    RizhuLiujiaziRequest,
+                    get_rizhu_liujiazi,
+                )
+                async def _handle_rizhu_liujiazi_reload(payload: Dict[str, Any]):
+                    """处理日元-六十甲子查询请求（热更新后重新注册）"""
+                    request_model = RizhuLiujiaziRequest(**payload)
+                    return await get_rizhu_liujiazi(request_model)
+                
                 # 注册到 SUPPORTED_ENDPOINTS
                 SUPPORTED_ENDPOINTS['/bazi/interface'] = _handle_bazi_interface
                 SUPPORTED_ENDPOINTS['/bazi/shengong-minggong'] = _handle_shengong_minggong
+                SUPPORTED_ENDPOINTS['/bazi/rizhu-liujiazi'] = _handle_rizhu_liujiazi_reload
                 
-                logger.info(f"✅ 手动注册关键端点成功")
+                logger.info(f"✅ 手动注册关键端点成功（包含 /bazi/rizhu-liujiazi）")
             except Exception as e:
                 logger.error(f"❌ 手动注册端点失败: {e}", exc_info=True)
         
@@ -211,7 +234,7 @@ def _reload_endpoints():
         if endpoint_count > 0:
             logger.debug(f"已注册的端点: {list(SUPPORTED_ENDPOINTS.keys())[:10]}...")
             # 验证关键端点
-            key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong']
+            key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi']
             missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
             if missing:
                 logger.warning(f"⚠️  关键端点未注册: {missing}")
@@ -231,7 +254,7 @@ def _register(endpoint: str):
 
     def decorator(func: Callable[[Dict[str, Any]], Any]):
         SUPPORTED_ENDPOINTS[endpoint] = func
-        logger.debug(f"注册 gRPC 端点: {endpoint}")
+        logger.info(f"✅ 注册 gRPC 端点: {endpoint} (总端点数: {len(SUPPORTED_ENDPOINTS)})")
         return func
 
     return decorator
@@ -409,6 +432,17 @@ async def _handle_shengong_minggong(payload: Dict[str, Any]):
     elif hasattr(result, 'dict'):
         return result.dict()
     return result
+
+
+# 只有在模块可用时才注册端点
+if RIZHU_LIUJIAZI_AVAILABLE:
+    @_register("/bazi/rizhu-liujiazi")
+    async def _handle_rizhu_liujiazi(payload: Dict[str, Any]):
+        """处理日元-六十甲子查询请求"""
+        request_model = RizhuLiujiaziRequest(**payload)
+        return await get_rizhu_liujiazi(request_model)
+else:
+    logger.warning("⚠️  /bazi/rizhu-liujiazi 端点未注册（模块不可用）")
 
 
 @_register("/payment/unified/create")
@@ -689,6 +723,8 @@ async def grpc_web_gateway(request: Request):
     - 调度到已有业务 handler
     - 将响应再编码为 gRPC-Web 帧
     """
+    # 确保 json 模块在函数作用域内可用（避免 UnboundLocalError）
+    import json
     
     raw_body = await request.body()
 
@@ -708,7 +744,7 @@ async def grpc_web_gateway(request: Request):
 
     try:
         payload = json.loads(payload_json) if payload_json else {}
-    except json.JSONDecodeError as exc:
+    except JSONDecodeError as exc:
         error_msg = f"payload_json 解析失败: {exc}"
         logger.warning(error_msg)
         return _build_error_response(error_msg, http_status=400, grpc_status=3)
@@ -723,6 +759,7 @@ async def grpc_web_gateway(request: Request):
         "/api/v2/desk-fengshui/analyze",  # 办公桌风水分析不需要认证（公开功能）
         "/api/v2/desk-fengshui/health",   # 健康检查不需要认证
         "/api/v2/desk-fengshui/rules",   # 规则列表不需要认证（公开功能）
+        "/bazi/rizhu-liujiazi",  # 日元-六十甲子查询不需要认证（公开功能）
     }
     
     if endpoint not in whitelist_endpoints:
@@ -747,6 +784,7 @@ async def grpc_web_gateway(request: Request):
             return _build_error_response("认证服务暂时不可用，请稍后重试", http_status=503, grpc_status=14)
 
     handler = SUPPORTED_ENDPOINTS.get(endpoint)
+    logger.debug(f"🔍 查找端点处理器: {endpoint}, 是否存在: {handler is not None}, 总端点数: {len(SUPPORTED_ENDPOINTS)}")
     if not handler:
         # 如果端点未找到，尝试动态注册（用于热更新后恢复）
         if endpoint == "/daily-fortune-calendar/query":
@@ -762,6 +800,23 @@ async def grpc_web_gateway(request: Request):
                 SUPPORTED_ENDPOINTS["/daily-fortune-calendar/query"] = _handle_daily_fortune_calendar_query
                 handler = _handle_daily_fortune_calendar_query
                 logger.info("✅ 动态注册端点: /daily-fortune-calendar/query")
+            except Exception as e:
+                logger.error(f"动态注册端点失败: {e}", exc_info=True)
+        
+        # 动态注册 /bazi/rizhu-liujiazi 端点（用于热更新后恢复）
+        if endpoint == "/bazi/rizhu-liujiazi":
+            try:
+                from server.api.v1.rizhu_liujiazi import (
+                    RizhuLiujiaziRequest,
+                    get_rizhu_liujiazi,
+                )
+                async def _handle_rizhu_liujiazi_dynamic(payload: Dict[str, Any]):
+                    """处理日元-六十甲子查询请求（动态注册）"""
+                    request_model = RizhuLiujiaziRequest(**payload)
+                    return await get_rizhu_liujiazi(request_model)
+                SUPPORTED_ENDPOINTS["/bazi/rizhu-liujiazi"] = _handle_rizhu_liujiazi_dynamic
+                handler = _handle_rizhu_liujiazi_dynamic
+                logger.info("✅ 动态注册端点: /bazi/rizhu-liujiazi")
             except Exception as e:
                 logger.error(f"动态注册端点失败: {e}", exc_info=True)
         
@@ -1066,8 +1121,9 @@ def _ensure_endpoints_registered():
     global SUPPORTED_ENDPOINTS
     
     # 检查关键端点是否已注册
-    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong"]
+    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi"]
     missing_endpoints = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
+    logger.debug(f"检查关键端点注册状态: key_endpoints={key_endpoints}, missing_endpoints={missing_endpoints}, supported_endpoints_count={len(SUPPORTED_ENDPOINTS)}")
     
     if missing_endpoints:
         logger.warning(f"检测到缺失端点: {missing_endpoints}，尝试手动注册...")
@@ -1086,6 +1142,22 @@ def _ensure_endpoints_registered():
                 
                 SUPPORTED_ENDPOINTS["/daily-fortune-calendar/query"] = _handle_daily_fortune_calendar_query
                 logger.info("✅ 手动注册端点: /daily-fortune-calendar/query")
+            
+            # 手动注册 /bazi/rizhu-liujiazi 端点
+            if "/bazi/rizhu-liujiazi" in missing_endpoints:
+                try:
+                    from server.api.v1.rizhu_liujiazi import (
+                        RizhuLiujiaziRequest,
+                        get_rizhu_liujiazi,
+                    )
+                    async def _handle_rizhu_liujiazi_manual(payload: Dict[str, Any]):
+                        """处理日元-六十甲子查询请求（手动注册）"""
+                        request_model = RizhuLiujiaziRequest(**payload)
+                        return await get_rizhu_liujiazi(request_model)
+                    SUPPORTED_ENDPOINTS["/bazi/rizhu-liujiazi"] = _handle_rizhu_liujiazi_manual
+                    logger.info("✅ 手动注册端点: /bazi/rizhu-liujiazi")
+                except Exception as e:
+                    logger.error(f"❌ 手动注册 /bazi/rizhu-liujiazi 端点失败: {e}", exc_info=True)
         except Exception as e:
             logger.error(f"手动注册端点失败: {e}", exc_info=True)
 
@@ -1123,5 +1195,13 @@ except ImportError as e:
 # 在模块加载时调用（用于热更新后恢复）
 try:
     _ensure_endpoints_registered()
+    # 验证关键端点是否已注册
+    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi"]
+    missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
+    if missing:
+        logger.warning(f"⚠️  模块加载后关键端点缺失: {missing}，当前端点数量: {len(SUPPORTED_ENDPOINTS)}")
+        logger.info(f"已注册的端点: {list(SUPPORTED_ENDPOINTS.keys())[:30]}")
+    else:
+        logger.info(f"✅ 所有关键端点已注册（总端点数: {len(SUPPORTED_ENDPOINTS)}）")
 except Exception as e:
-    logger.warning(f"初始化端点注册检查失败: {e}")
+    logger.error(f"❌ 初始化端点注册检查失败: {e}", exc_info=True)

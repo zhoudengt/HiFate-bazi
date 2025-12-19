@@ -74,7 +74,7 @@ class DailyFortuneCalendarRequest(BaseModel):
 class JianchuInfo(BaseModel):
     """建除信息模型"""
     name: Optional[str] = None  # 建除名称（如：危）
-    score: Optional[int] = None  # 分数（如：90）
+    energy: Optional[int] = None  # 能量（如：90）
     summary: Optional[str] = None  # 能量小结内容
 
 
@@ -108,8 +108,8 @@ class DailyFortuneCalendarResponse(BaseModel):
     zodiac_relations: Optional[str] = None  # 生肖简运
     # 新增功能
     master_info: Optional[MasterInfo] = None  # 命主信息（日主、今日十神）
-    lucky_colors: Optional[str] = None  # 幸运颜色（逗号分隔）
-    guiren_directions: Optional[str] = None  # 贵人指路（逗号分隔）
+    wuxing_wear: Optional[str] = None  # 五行穿搭（逗号分隔）
+    guiren_fangwei: Optional[str] = None  # 贵人方位（逗号分隔）
     wenshen_directions: Optional[str] = None  # 瘟神方位（逗号分隔）
     error: Optional[str] = None
 
@@ -126,8 +126,8 @@ async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
     - 十神提示（根据日干与用户生辰日干计算，需要用户生辰信息）
     - 生肖简运（根据日支匹配生肖刑冲破害）
     - 命主信息（日主、今日十神）
-    - 幸运颜色（万年历方位颜色+十神颜色）
-    - 贵人指路（喜神、福神方位+日干方位）
+    - 五行穿搭（万年历方位颜色+十神颜色）
+    - 贵人方位（喜神、福神方位+日干方位）
     - 瘟神方位（万年历煞方位+日支方位）
     
     **参数说明**：
@@ -163,7 +163,7 @@ async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
             if jianchu_info and isinstance(jianchu_info, dict):
                 jianchu_model = JianchuInfo(
                     name=jianchu_info.get('name'),
-                    score=jianchu_info.get('score'),
+                    energy=jianchu_info.get('energy'),
                     summary=jianchu_info.get('summary')
                 )
             
@@ -194,8 +194,8 @@ async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
                 shishen_hint=result.get('shishen_hint'),
                 zodiac_relations=result.get('zodiac_relations'),
                 master_info=master_info_model,
-                lucky_colors=result.get('lucky_colors') if result.get('lucky_colors') else None,  # 空字符串转为None
-                guiren_directions=result.get('guiren_directions'),
+                wuxing_wear=result.get('wuxing_wear') if result.get('wuxing_wear') else None,  # 空字符串转为None
+                guiren_fangwei=result.get('guiren_fangwei'),
                 wenshen_directions=result.get('wenshen_directions')
             )
         else:

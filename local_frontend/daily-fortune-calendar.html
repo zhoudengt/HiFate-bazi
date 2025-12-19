@@ -244,7 +244,7 @@
                                         <span class="info-value" id="jianchuName"></span>
                                     </div>
                                     <div class="info-row">
-                                        <span class="info-label">分数：</span>
+                                        <span class="info-label">能量：</span>
                                         <span class="info-value" id="jianchuScore"></span>
                                     </div>
                                     <div class="info-row">
@@ -270,9 +270,9 @@
                                 </div>
                                 
                                 <div class="info-card" style="margin-top: 20px;">
-                                    <h2>🎨 幸运颜色</h2>
+                                    <h2>🎨 五行穿搭</h2>
                                     <div class="info-row">
-                                        <span class="info-label">幸运颜色：</span>
+                                        <span class="info-label">五行穿搭：</span>
                                         <span class="info-value" id="luckyColors"></span>
                                     </div>
                                 </div>
@@ -280,7 +280,7 @@
                                 <div class="info-card" style="margin-top: 20px;">
                                     <h2>🧭 方位指引</h2>
                                     <div class="info-row">
-                                        <span class="info-label">贵人指路：</span>
+                                        <span class="info-label">贵人方位：</span>
                                         <span class="info-value" id="guirenDirections"></span>
                                     </div>
                                     <div class="info-row">
@@ -425,10 +425,11 @@
             document.getElementById('he').textContent = chongHeSha.he || '暂无';
             document.getElementById('sha').textContent = chongHeSha.sha || '暂无';
             
-            // 建除（包含分数）
+            // 建除（包含能量值）
             const jianchu = data.jianchu || {};
+            console.log('建除数据:', jianchu);
             document.getElementById('jianchuName').textContent = jianchu.name || '暂无';
-            document.getElementById('jianchuScore').textContent = jianchu.score !== null && jianchu.score !== undefined ? jianchu.score : '暂无';
+            document.getElementById('jianchuScore').textContent = jianchu.energy !== null && jianchu.energy !== undefined ? jianchu.energy : '暂无';
             
             // 胎神
             document.getElementById('taishen').textContent = data.taishen || '暂无';
@@ -455,11 +456,13 @@
                 todayShishenEl.textContent = '登录后可查看基于您生辰的今日十神';
             }
             
-            // 幸运颜色
-            document.getElementById('luckyColors').textContent = data.lucky_colors || '暂无';
+            // 五行穿搭（原幸运颜色）
+            console.log('五行穿搭数据:', data.wuxing_wear, '原始数据:', data);
+            document.getElementById('luckyColors').textContent = data.wuxing_wear || '暂无';
             
             // 方位指引
-            document.getElementById('guirenDirections').textContent = data.guiren_directions || '暂无';
+            console.log('贵人方位数据:', data.guiren_fangwei);
+            document.getElementById('guirenDirections').textContent = data.guiren_fangwei || '暂无';
             document.getElementById('wenshenDirections').textContent = data.wenshen_directions || '暂无';
             
             // 保存宜忌数据用于生成行动建议

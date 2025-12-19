@@ -75,6 +75,38 @@ EOF
     fi
 }
 
+# 保护 frontend 目录函数（在 git 操作前后保护 frontend 目录不被删除）
+protect_frontend_directory() {
+    local host=$1
+    local action=$2  # "backup" 或 "restore"
+    
+    if [ "$action" = "backup" ]; then
+        # 备份 frontend 目录（如果存在）
+        ssh_exec $host "cd $PROJECT_DIR && \
+            if [ -d frontend ] && [ -n \"\$(ls -A frontend 2>/dev/null)\" ]; then
+                BACKUP_DIR=\"frontend.backup.\$(date +%s)\"
+                cp -r frontend \"\$BACKUP_DIR\" 2>/dev/null && \
+                echo \"✅ frontend 目录已备份到 \$BACKUP_DIR\" || true
+            fi"
+    elif [ "$action" = "restore" ]; then
+        # 恢复 frontend 目录（如果被删除）
+        ssh_exec $host "cd $PROJECT_DIR && \
+            if [ ! -d frontend ] || [ -z \"\$(ls -A frontend 2>/dev/null)\" ]; then
+                # 查找最新的备份
+                LATEST_BACKUP=\$(ls -td frontend.backup.* 2>/dev/null | head -1)
+                if [ -n \"\$LATEST_BACKUP\" ] && [ -d \"\$LATEST_BACKUP\" ]; then
+                    cp -r \"\$LATEST_BACKUP\" frontend && \
+                    echo \"✅ frontend 目录已从备份恢复: \$LATEST_BACKUP\" || true
+                elif [ -d local_frontend ]; then
+                    cp -r local_frontend frontend && \
+                    echo \"✅ frontend 目录已从 local_frontend 恢复\" || true
+                fi
+            else
+                echo \"✅ frontend 目录存在且不为空，无需恢复\" || true
+            fi"
+    fi
+}
+
 # 检查命令是否存在
 check_command() {
     if ! command -v $1 &> /dev/null; then
@@ -288,14 +320,24 @@ if [ -n "$LOCAL_CHANGES_NODE1" ]; then
     echo -e "${YELLOW}⚠️  警告：Node1 上有本地未提交的更改，将被保存（git stash）${NC}"
 fi
 
+# 🔒 保护 frontend 目录：在 git pull 之前备份
+echo "🔒 保护 frontend 目录（备份）..."
+protect_frontend_directory $NODE1_PUBLIC_IP "backup"
+
 ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && \
     git fetch origin && \
     git checkout $GIT_BRANCH && \
     (git stash || true) && \
     git pull origin $GIT_BRANCH" || {
     echo -e "${RED}❌ Node1 代码拉取失败${NC}"
+    # 即使失败也要尝试恢复 frontend 目录
+    protect_frontend_directory $NODE1_PUBLIC_IP "restore"
     exit 1
 }
+
+# 🔒 保护 frontend 目录：在 git pull 之后恢复（如果被删除）
+echo "🔒 保护 frontend 目录（恢复检查）..."
+protect_frontend_directory $NODE1_PUBLIC_IP "restore"
 
 # 验证 Node1 代码与 GitHub 一致
 NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)

@@ -157,14 +157,14 @@ class DailyFortuneCalendarService:
             day_branch = DailyFortuneCalendarService._get_day_branch(target_date)
             zodiac_relations = DailyFortuneCalendarService.get_zodiac_relations(day_branch) if day_branch else None
             
-            # 6. 获取建除十二神能量小结（包含分数）
+            # 6. 获取建除十二神能量小结（包含能量值）
             jianchu = calendar_result.get('other', {}).get('zhixing', '')  # 建除十二神
             jianchu_info = None
             if jianchu:
                 jianchu_info = DailyFortuneCalendarService.get_jianchu_info(jianchu)
                 # 如果查询失败，至少返回名称
                 if not jianchu_info:
-                    jianchu_info = {'name': jianchu, 'score': None, 'summary': None}
+                    jianchu_info = {'name': jianchu, 'energy': None, 'summary': None}
             else:
                 # 即使万年历API失败，也尝试从日期计算建除（需要lunar_python）
                 # 如果lunar_python不可用，至少返回一个默认值
@@ -176,7 +176,7 @@ class DailyFortuneCalendarService:
                     if jianchu:
                         jianchu_info = DailyFortuneCalendarService.get_jianchu_info(jianchu)
                         if not jianchu_info:
-                            jianchu_info = {'name': jianchu, 'score': None, 'summary': None}
+                            jianchu_info = {'name': jianchu, 'energy': None, 'summary': None}
                 except ImportError:
                     # lunar_python不可用，跳过
                     pass
@@ -204,13 +204,13 @@ class DailyFortuneCalendarService:
                     print(f"计算日主失败: {e}")
                     pass
             
-            # 9. 获取幸运颜色
-            lucky_colors = DailyFortuneCalendarService.get_lucky_colors(
+            # 9. 获取五行穿搭（原幸运颜色）
+            wuxing_wear = DailyFortuneCalendarService.get_lucky_colors(
                 target_date, user_solar_date, user_solar_time, user_gender, calendar_result
             )
             
-            # 10. 获取贵人指路
-            guiren_directions = DailyFortuneCalendarService.get_guiren_directions(
+            # 10. 获取贵人方位（原贵人指路）
+            guiren_fangwei = DailyFortuneCalendarService.get_guiren_directions(
                 target_date, calendar_result
             )
             
@@ -233,7 +233,7 @@ class DailyFortuneCalendarService:
                 'luck_level': calendar_result.get('luck_level', ''),
                 'deities': calendar_result.get('deities', {}),
                 'chong_he_sha': calendar_result.get('chong_he_sha', {}),
-                # 建除信息（包含分数）
+                # 建除信息（包含能量值）
                 'jianchu': jianchu_info,
                 # 胎神信息
                 'taishen': taishen,
@@ -244,8 +244,8 @@ class DailyFortuneCalendarService:
                 'zodiac_relations': zodiac_relations,
                 # 新增功能
                 'master_info': master_info,
-                'lucky_colors': lucky_colors,
-                'guiren_directions': guiren_directions,
+                'wuxing_wear': wuxing_wear,
+                'guiren_fangwei': guiren_fangwei,
                 'wenshen_directions': wenshen_directions
             }
             
@@ -568,13 +568,13 @@ class DailyFortuneCalendarService:
     @staticmethod
     def get_jianchu_info(jianchu: str) -> Optional[Dict[str, Any]]:
         """
-        获取建除十二神信息（包含分数）
+        获取建除十二神信息（包含能量值）
         
         Args:
             jianchu: 建除十二神（如："定"）
             
         Returns:
-            dict: 包含 name, score, summary 的字典，如果未找到返回None
+            dict: 包含 name, energy, summary 的字典，如果未找到返回None
         """
         if not jianchu:
             return None
@@ -606,13 +606,13 @@ class DailyFortuneCalendarService:
                     # 只有score为None时才返回None
                     return {
                         'name': result.get('jianchu', jianchu),
-                        'score': score_value,  # 保留原始值（包括0）
+                        'energy': score_value,  # 保留原始值（包括0），字段名改为energy
                         'summary': result.get('content', '')
                     }
                 # 如果数据库中没有数据，至少返回名称
                 return {
                     'name': jianchu,
-                    'score': None,
+                    'energy': None,
                     'summary': None
                 }
         except Exception as e:
@@ -738,6 +738,48 @@ class DailyFortuneCalendarService:
                     pass
     
     @staticmethod
+    def _filter_colors_to_limit(colors: list, max_count: int = 4) -> list:
+        """
+        如果颜色数量超过限制，删除相近的颜色
+        
+        Args:
+            colors: 颜色列表
+            max_count: 最大颜色数量（默认4）
+            
+        Returns:
+            筛选后的颜色列表
+        """
+        if len(colors) <= max_count:
+            return colors
+        
+        import difflib
+        
+        # 找出两个最相近的颜色
+        max_similarity = 0.0
+        similar_pair = None
+        
+        for i in range(len(colors)):
+            for j in range(i + 1, len(colors)):
+                color1 = colors[i]
+                color2 = colors[j]
+                # 计算字符串相似度
+                similarity = difflib.SequenceMatcher(None, color1, color2).ratio()
+                if similarity > max_similarity:
+                    max_similarity = similarity
+                    similar_pair = (i, j)
+        
+        # 如果找到相近的颜色对（相似度 >= 0.6），删除其中一个
+        if similar_pair and max_similarity >= 0.6:
+            # 保留列表中靠前的颜色，删除靠后的
+            remove_index = similar_pair[1]
+            filtered_colors = [c for idx, c in enumerate(colors) if idx != remove_index]
+            # 递归调用，确保最终数量 <= max_count
+            return DailyFortuneCalendarService._filter_colors_to_limit(filtered_colors, max_count)
+        else:
+            # 如果没有找到相近的颜色，删除最后一个（保持顺序）
+            return colors[:max_count]
+    
+    @staticmethod
     def get_lucky_colors(
         target_date: date,
         user_solar_date: Optional[str],
@@ -836,7 +878,11 @@ class DailyFortuneCalendarService:
         
         # 去重并返回
         unique_colors = list(dict.fromkeys(colors))  # 保持顺序的去重
-        result = '、'.join(unique_colors) if unique_colors else ''
+        
+        # 如果颜色数量 > 4，删除相近的颜色
+        filtered_colors = DailyFortuneCalendarService._filter_colors_to_limit(unique_colors, max_count=4)
+        
+        result = '、'.join(filtered_colors) if filtered_colors else ''
         # 如果没有任何颜色，返回None而不是空字符串，让前端显示"暂无"
         if not result:
             return None

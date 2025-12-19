@@ -204,6 +204,15 @@ except ImportError as e:
     monthly_fortune_router = None
     MONTHLY_FORTUNE_ROUTER_AVAILABLE = False
 
+# 新增：日元-六十甲子路由
+try:
+    from server.api.v1.rizhu_liujiazi import router as rizhu_liujiazi_router
+    RIZHU_LIUJIAZI_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"日元-六十甲子路由导入失败（可选功能）: {e}")
+    rizhu_liujiazi_router = None
+    RIZHU_LIUJIAZI_ROUTER_AVAILABLE = False
+
 # 新增：算法公式规则分析路由（808条规则）
 try:
     from server.api.v1.formula_analysis import router as formula_analysis_router
@@ -823,6 +832,15 @@ def _register_all_routers_to_manager():
         prefix="/api/v1",
         tags=["可观测性"],
         enabled_getter=lambda: get_observability_router() is not None
+    )
+    
+    # 日元-六十甲子路由（条件可用）
+    router_manager.register_router(
+        "rizhu_liujiazi",
+        lambda: rizhu_liujiazi_router,
+        prefix="/api/v1",
+        tags=["日元-六十甲子"],
+        enabled_getter=lambda: RIZHU_LIUJIAZI_ROUTER_AVAILABLE and rizhu_liujiazi_router is not None
     )
 
 

@@ -69,6 +69,11 @@ node_modules/
 *.pt
 yolov8n.pt
 
+# Frontend directories
+# 注意：frontend 目录已重命名为 local_frontend
+# 但为了保护服务器上可能存在的 frontend 目录不被 Git 删除，添加到 .gitignore
+frontend/
+
 # MyPy
 .mypy_cache/
 .dmypy.json

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日元-六十甲子 - HiFate</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-layout.css">
+    <script src="js/sidebar.js?v=20250115"></script>
+    <style>
+        .analysis-content {
+            background: #fff;
+            border-radius: 8px;
+            padding: 24px;
+            margin-top: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            white-space: pre-wrap;
+            line-height: 1.8;
+            font-size: 15px;
+        }
+        .analysis-content h3 {
+            color: #333;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .analysis-content h3:first-child {
+            margin-top: 0;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .no-birth-info {
+            background: #fff3cd;
+            color: #856404;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .no-birth-info a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .no-birth-info a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="main-content">
+            <div class="content-header">
+                <div class="header-left">
+                    <button class="back-btn" onclick="history.back()">←</button>
+                    <h1 class="header-title">日元-六十甲子</h1>
+                </div>
+                <div class="header-user">
+                    <span id="userName">用户</span>
+                    <span>·</span>
+                    <span id="userGender">男</span>
+                </div>
+            </div>
+
+            <div class="content-body">
+                <div class="form-section" id="formSection">
+                    <div id="userInfoDisplay" style="display: none;">
+                        <div class="user-info-card">
+                            <div class="user-info-content">
+                                <div class="user-info-item">
+                                    <span class="user-info-label">出生日期</span>
+                                    <span class="user-info-value" id="display_date"></span>
+                                </div>
+                                <div class="user-info-item">
+                                    <span class="user-info-label">出生时间</span>
+                                    <span class="user-info-value" id="display_time"></span>
+                                </div>
+                                <div class="user-info-item">
+                                    <span class="user-info-label">性别</span>
+                                    <span class="user-info-value" id="display_gender"></span>
+                                </div>
+                            </div>
+                            <button type="button" id="editBtn" class="btn btn-secondary">编辑</button>
+                        </div>
+                    </div>
+                    <form id="rizhuForm" class="form-card" style="display: none;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>出生日期</label>
+                                <input type="date" id="solar_date" value="1990-05-15" required>
+                            </div>
+                            <div class="form-group">
+                                <label>出生时间</label>
+                                <input type="time" id="solar_time" value="14:30" required>
+                            </div>
+                            <div class="form-group">
+                                <label>性别</label>
+                                <select id="gender" required>
+                                    <option value="male">男</option>
+                                    <option value="female">女</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">查询解析</button>
+                    </form>
+                </div>
+
+                <div id="result"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/rizhu-liujiazi.js"></script>
+    <script>
+        Auth.checkAuth();
+    </script>
+</body>
+</html>
+
