@@ -35,6 +35,7 @@ class Sidebar {
                     <div class="nav-submenu">
                         <a href="pan.html" class="nav-submenu-item" data-page="pan">基础八字排盘</a>
                         <a href="rizhu-liujiazi.html" class="nav-submenu-item" data-page="rizhu-liujiazi">日元-六十甲子</a>
+                        <a href="wuxing-proportion.html" class="nav-submenu-item" data-page="wuxing-proportion">五行占比</a>
                     </div>
                     <a href="basic-info.html" class="nav-item" data-page="basic-info">
                         <span class="nav-item-icon">📋</span>
@@ -81,7 +82,8 @@ class Sidebar {
             currentPage === 'dayun-liunian' || 
             currentPage === 'shengong-minggong' ||
             currentPage === 'pan' ||
-            currentPage === 'rizhu-liujiazi') {
+            currentPage === 'rizhu-liujiazi' ||
+            currentPage === 'wuxing-proportion') {
             const submenus = document.querySelectorAll('.nav-submenu');
             submenus.forEach(submenu => {
                 if (submenu) {
@@ -104,6 +106,7 @@ class Sidebar {
         if (filename.includes('yigua')) return 'yigua';
         if (filename.includes('dayun')) return 'dayun';
         if (filename.includes('liunian')) return 'liunian';
+        if (filename.includes('wuxing-proportion')) return 'wuxing-proportion';
         return 'index';
     }
 }

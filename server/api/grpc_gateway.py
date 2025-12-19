@@ -95,6 +95,10 @@ except ImportError as e:
     # 创建占位符以避免 NameError
     RizhuLiujiaziRequest = None
     get_rizhu_liujiazi = None
+from server.api.v1.wuxing_proportion import (
+    WuxingProportionRequest,
+    get_wuxing_proportion,
+)
 from server.services.bazi_interface_service import BaziInterfaceService
 
 # 文件上传相关
@@ -443,6 +447,13 @@ if RIZHU_LIUJIAZI_AVAILABLE:
         return await get_rizhu_liujiazi(request_model)
 else:
     logger.warning("⚠️  /bazi/rizhu-liujiazi 端点未注册（模块不可用）")
+
+
+@_register("/bazi/wuxing-proportion")
+async def _handle_wuxing_proportion(payload: Dict[str, Any]):
+    """处理五行占比查询请求"""
+    request_model = WuxingProportionRequest(**payload)
+    return await get_wuxing_proportion(request_model)
 
 
 @_register("/payment/unified/create")

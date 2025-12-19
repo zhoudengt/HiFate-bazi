@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>五行占比分析 - HiFate</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-layout.css">
+    <script src="js/sidebar.js?v=20250115"></script>
+    <style>
+        .wuxing-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .wuxing-table th,
+        .wuxing-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .wuxing-table th {
+            background: #f5f5f5;
+            font-weight: 600;
+            color: #333;
+        }
+        .wuxing-table tr:last-child td {
+            border-bottom: none;
+        }
+        .element-name {
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+        .element-count {
+            color: #666;
+        }
+        .element-percentage {
+            font-weight: 600;
+            color: #667eea;
+        }
+        .element-details {
+            color: #999;
+            font-size: 0.9em;
+        }
+        .analysis-section {
+            display: none;
+            margin-top: 30px;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .analysis-section.active {
+            display: block;
+        }
+        .analysis-content {
+            line-height: 1.8;
+            color: #333;
+        }
+        .analysis-content.streaming {
+            position: relative;
+        }
+        .streaming-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1.2em;
+            background: #667eea;
+            animation: blink 1s infinite;
+            margin-left: 2px;
+            vertical-align: middle;
+        }
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+        .error-message {
+            padding: 15px;
+            background: #fee;
+            border-left: 4px solid #f44;
+            border-radius: 4px;
+            color: #c33;
+        }
+        .status-text {
+            padding: 10px;
+            background: #f0f4ff;
+            border-left: 4px solid #667eea;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="main-content">
+            <div class="content-header">
+                <div class="header-left">
+                    <button class="back-btn" onclick="history.back()">←</button>
+                    <h1 class="header-title">五行占比分析</h1>
+                </div>
+                <div class="header-user">
+                    <span id="userName">用户</span>
+                    <span>·</span>
+                    <span id="userGender">男</span>
+                </div>
+            </div>
+
+            <div class="content-body">
+                <div class="form-section" id="formSection">
+                    <div id="userInfoDisplay" style="display: none;">
+                        <div class="user-info-card">
+                            <div class="user-info-content">
+                                <div class="user-info-item">
+                                    <span class="user-info-label">出生日期</span>
+                                    <span class="user-info-value" id="display_date"></span>
+                                </div>
+                                <div class="user-info-item">
+                                    <span class="user-info-label">出生时间</span>
+                                    <span class="user-info-value" id="display_time"></span>
+                                </div>
+                                <div class="user-info-item">
+                                    <span class="user-info-label">性别</span>
+                                    <span class="user-info-value" id="display_gender"></span>
+                                </div>
+                            </div>
+                            <button type="button" id="editBtn" class="btn btn-secondary">编辑</button>
+                        </div>
+                    </div>
+                    <form id="wuxingForm" class="form-card" style="display: none;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>出生日期</label>
+                                <input type="date" id="solar_date" value="1990-05-15" required>
+                            </div>
+                            <div class="form-group">
+                                <label>出生时间</label>
+                                <input type="time" id="solar_time" value="14:30" required>
+                            </div>
+                            <div class="form-group">
+                                <label>性别</label>
+                                <select id="gender" required>
+                                    <option value="male">男</option>
+                                    <option value="female">女</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">分析五行占比</button>
+                    </form>
+                </div>
+
+                <!-- 五行占比展示区域 -->
+                <div id="proportionSection" class="analysis-section">
+                    <h2>五行占比统计</h2>
+                    <div id="statusText" class="status-text" style="display: none;"></div>
+                    <table class="wuxing-table" id="wuxingTable">
+                        <thead>
+                            <tr>
+                                <th>五行</th>
+                                <th>数量</th>
+                                <th>占比</th>
+                                <th>对应天干地支</th>
+                            </tr>
+                        </thead>
+                        <tbody id="wuxingTableBody">
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 大模型分析区域 -->
+                <div id="llmAnalysisSection" class="analysis-section">
+                    <h2>AI深度分析</h2>
+                    <div id="llmAnalysisContent" class="analysis-content"></div>
+                </div>
+
+                <!-- 错误显示区域 -->
+                <div id="errorSection" class="analysis-section">
+                    <div class="error-message" id="errorMessage"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/wuxing-proportion.js"></script>
+    <script>
+        Auth.checkAuth();
+    </script>
+</body>
+</html>
+

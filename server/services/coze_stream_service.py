@@ -259,6 +259,192 @@ class CozeStreamService:
             'content': f"Coze API 调用失败: {last_error or '未知错误'}"
         }
     
+    async def stream_custom_analysis(
+        self,
+        prompt: str,
+        bot_id: Optional[str] = None
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        流式生成自定义分析（通用方法）
+        
+        Args:
+            prompt: 提示词
+            bot_id: Bot ID（可选，默认使用初始化时的bot_id）
+            
+        Yields:
+            dict: 包含 type 和 content 的字典
+                - type: 'progress' 或 'complete' 或 'error'
+                - content: 内容文本
+        """
+        used_bot_id = bot_id or self.bot_id
+        
+        if not used_bot_id:
+            yield {
+                'type': 'error',
+                'content': 'Coze Bot ID 未设置'
+            }
+            return
+        
+        # Coze API 端点（流式）
+        possible_endpoints = [
+            "/open_api/v2/chat",  # Coze v2 标准端点
+            "/open_api/v2/chat/completions",
+            "/v2/chat",
+        ]
+        
+        # 流式 payload 格式
+        payload = {
+            "bot_id": str(used_bot_id),
+            "user": "wuxing_analysis",
+            "query": prompt,
+            "stream": True
+        }
+        
+        last_error = None
+        
+        # 尝试不同的端点
+        for endpoint in possible_endpoints:
+            url = f"{self.api_base}{endpoint}"
+            
+            # 尝试两种认证方式
+            for headers_to_use in [self.headers, self.headers_pat]:
+                try:
+                    # 发送流式请求（在线程池中运行，避免阻塞）
+                    loop = asyncio.get_event_loop()
+                    response = await loop.run_in_executor(
+                        None,
+                        lambda: requests.post(
+                            url,
+                            headers=headers_to_use,
+                            json=payload,
+                            stream=True,
+                            timeout=60
+                        )
+                    )
+                    
+                    if response.status_code == 200:
+                        # 处理流式响应
+                        buffer = ""
+                        has_content = False
+                        for line in response.iter_lines():
+                            if not line:
+                                continue
+                            
+                            # 让出控制权，避免阻塞
+                            await asyncio.sleep(0)
+                            
+                            line_str = line.decode('utf-8')
+                            
+                            # SSE 格式：data: {...} 或 data:{...} 或 data {...}
+                            data_str = None
+                            if line_str.startswith('data: '):
+                                data_str = line_str[6:]  # 移除 "data: " 前缀
+                            elif line_str.startswith('data:'):
+                                data_str = line_str[5:]  # 移除 "data:" 前缀（没有空格）
+                            elif line_str.startswith('data'):
+                                # 处理 data{...} 格式（没有冒号）
+                                data_str = line_str[4:]  # 移除 "data" 前缀
+                            
+                            if data_str:
+                                if data_str.strip() == '[DONE]':
+                                    # 流结束
+                                    if buffer.strip():
+                                        yield {
+                                            'type': 'complete',
+                                            'content': buffer.strip()
+                                        }
+                                    else:
+                                        yield {
+                                            'type': 'error',
+                                            'content': 'Coze API 返回空内容，请检查Bot配置和提示词'
+                                        }
+                                    return
+                                
+                                try:
+                                    data = json.loads(data_str)
+                                    
+                                    # 跳过技术性消息（如 generate_answer_finish）
+                                    if data.get('msg_type') in ['generate_answer_finish', 'conversation_finish']:
+                                        continue
+                                    
+                                    # 提取内容（根据Coze API响应格式）
+                                    content = self._extract_content_from_response(data)
+                                    if content:
+                                        # 过滤掉提示词和指令文本
+                                        if self._is_prompt_or_instruction(content):
+                                            continue
+                                        
+                                        has_content = True
+                                        buffer += content
+                                        yield {
+                                            'type': 'progress',
+                                            'content': content
+                                        }
+                                except json.JSONDecodeError as e:
+                                    # 忽略无效的JSON，但记录日志
+                                    import logging
+                                    logger = logging.getLogger(__name__)
+                                    logger.debug(f"JSON解析失败: {e}, 原始数据: {data_str[:100]}")
+                                    continue
+                            
+                            # 直接JSON格式
+                            elif line_str.startswith('{'):
+                                try:
+                                    data = json.loads(line_str)
+                                    
+                                    # 跳过技术性消息
+                                    if data.get('msg_type') in ['generate_answer_finish', 'conversation_finish']:
+                                        continue
+                                    
+                                    content = self._extract_content_from_response(data)
+                                    if content:
+                                        # 过滤掉提示词和指令文本
+                                        if self._is_prompt_or_instruction(content):
+                                            continue
+                                        
+                                        has_content = True
+                                        buffer += content
+                                        yield {
+                                            'type': 'progress',
+                                            'content': content
+                                        }
+                                except json.JSONDecodeError:
+                                    continue
+                        
+                        # 流结束
+                        if has_content and buffer.strip():
+                            yield {
+                                'type': 'complete',
+                                'content': buffer.strip()
+                            }
+                        else:
+                            # 如果没有收到任何内容，返回错误
+                            yield {
+                                'type': 'error',
+                                'content': f'Coze API 返回空内容。响应状态: {response.status_code}，请检查Bot配置、提示词和API端点'
+                            }
+                        return
+                    
+                    elif response.status_code in [401, 403]:
+                        last_error = f"认证失败: {response.text[:200]}"
+                        continue
+                    elif response.status_code == 404:
+                        # 端点不存在，尝试下一个
+                        break
+                    else:
+                        last_error = f"HTTP {response.status_code}: {response.text[:200]}"
+                        continue
+                        
+                except Exception as e:
+                    last_error = str(e)
+                    continue
+        
+        # 所有尝试都失败
+        yield {
+            'type': 'error',
+            'content': f"Coze API 调用失败: {last_error or '未知错误'}"
+        }
+    
     def _extract_content_from_response(self, data: Dict[str, Any]) -> str:
         """
         从Coze API响应中提取内容
