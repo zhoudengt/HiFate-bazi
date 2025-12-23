@@ -179,7 +179,7 @@ def _reload_endpoints():
         logger.info(f"重新加载后端点数量: {endpoint_count}")
         
         # 如果端点数量为0或缺少关键端点，手动重新注册
-        key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi']
+        key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi', '/auth/login']
         missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
         
         if endpoint_count == 0 or missing:
@@ -232,12 +232,20 @@ def _reload_endpoints():
                     request_model = RizhuLiujiaziRequest(**payload)
                     return await get_rizhu_liujiazi(request_model)
                 
+                # 手动注册 /auth/login 端点
+                from server.api.v1.auth import LoginRequest, login
+                async def _handle_login_reload(payload: Dict[str, Any]):
+                    """处理登录请求（热更新后重新注册）"""
+                    request_model = LoginRequest(**payload)
+                    return await login(request_model)
+                
                 # 注册到 SUPPORTED_ENDPOINTS
                 SUPPORTED_ENDPOINTS['/bazi/interface'] = _handle_bazi_interface
                 SUPPORTED_ENDPOINTS['/bazi/shengong-minggong'] = _handle_shengong_minggong
                 SUPPORTED_ENDPOINTS['/bazi/rizhu-liujiazi'] = _handle_rizhu_liujiazi_reload
+                SUPPORTED_ENDPOINTS['/auth/login'] = _handle_login_reload
                 
-                logger.info(f"✅ 手动注册关键端点成功（包含 /bazi/rizhu-liujiazi）")
+                logger.info(f"✅ 手动注册关键端点成功（包含 /bazi/rizhu-liujiazi 和 /auth/login）")
             except Exception as e:
                 logger.error(f"❌ 手动注册端点失败: {e}", exc_info=True)
         
@@ -248,7 +256,7 @@ def _reload_endpoints():
         if endpoint_count > 0:
             logger.debug(f"已注册的端点: {list(SUPPORTED_ENDPOINTS.keys())[:10]}...")
             # 验证关键端点
-            key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi']
+            key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi', '/auth/login']
             missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
             if missing:
                 logger.warning(f"⚠️  关键端点未注册: {missing}")
@@ -1192,7 +1200,7 @@ def _ensure_endpoints_registered():
     global SUPPORTED_ENDPOINTS
     
     # 检查关键端点是否已注册
-    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi"]
+    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
     missing_endpoints = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
     logger.debug(f"检查关键端点注册状态: key_endpoints={key_endpoints}, missing_endpoints={missing_endpoints}, supported_endpoints_count={len(SUPPORTED_ENDPOINTS)}")
     
@@ -1229,6 +1237,19 @@ def _ensure_endpoints_registered():
                     logger.info("✅ 手动注册端点: /bazi/rizhu-liujiazi")
                 except Exception as e:
                     logger.error(f"❌ 手动注册 /bazi/rizhu-liujiazi 端点失败: {e}", exc_info=True)
+            
+            # 手动注册 /auth/login 端点
+            if "/auth/login" in missing_endpoints:
+                try:
+                    from server.api.v1.auth import LoginRequest, login
+                    async def _handle_login_manual(payload: Dict[str, Any]):
+                        """处理登录请求（手动注册）"""
+                        request_model = LoginRequest(**payload)
+                        return await login(request_model)
+                    SUPPORTED_ENDPOINTS["/auth/login"] = _handle_login_manual
+                    logger.info("✅ 手动注册端点: /auth/login")
+                except Exception as e:
+                    logger.error(f"❌ 手动注册 /auth/login 端点失败: {e}", exc_info=True)
         except Exception as e:
             logger.error(f"手动注册端点失败: {e}", exc_info=True)
 
