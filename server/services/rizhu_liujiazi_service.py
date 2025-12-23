@@ -38,6 +38,14 @@ class RizhuLiujiaziService:
             if not conn:
                 return None
             
+            # 确保使用新的连接，避免事务冲突
+            # 如果连接在事务中，先提交或回滚
+            try:
+                if conn.in_transaction:
+                    conn.rollback()
+            except:
+                pass
+            
             with conn.cursor() as cursor:
                 # 使用多种方式尝试查询，确保兼容性
                 # 方式1: BINARY精确匹配，enabled = 1（兼容布尔值）
@@ -104,15 +112,18 @@ class RizhuLiujiaziService:
                     
                     # 检查表中是否有数据（各种方式）
                     debug_queries = [
-                        ("总数", "SELECT COUNT(*) as count FROM rizhu_liujiazi"),
-                        ("启用数(enabled=1)", "SELECT COUNT(*) as count FROM rizhu_liujiazi WHERE enabled = 1"),
-                        ("启用数(enabled=TRUE)", "SELECT COUNT(*) as count FROM rizhu_liujiazi WHERE enabled = TRUE"),
-                        ("包含该日柱的", f"SELECT COUNT(*) as count FROM rizhu_liujiazi WHERE rizhu = '{rizhu}'"),
+                        ("总数", "SELECT COUNT(*) as count FROM rizhu_liujiazi", None),
+                        ("启用数(enabled=1)", "SELECT COUNT(*) as count FROM rizhu_liujiazi WHERE enabled = 1", None),
+                        ("启用数(enabled=TRUE)", "SELECT COUNT(*) as count FROM rizhu_liujiazi WHERE enabled = TRUE", None),
+                        ("包含该日柱的", "SELECT COUNT(*) as count FROM rizhu_liujiazi WHERE rizhu = %s", (rizhu,)),
                     ]
                     
-                    for desc, query in debug_queries:
+                    for desc, query, params in debug_queries:
                         try:
-                            cursor.execute(query)
+                            if params:
+                                cursor.execute(query, params)
+                            else:
+                                cursor.execute(query)
                             count_result = cursor.fetchone()
                             if isinstance(count_result, dict):
                                 total_count = count_result.get('count', 0)
