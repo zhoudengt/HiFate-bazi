@@ -17,6 +17,7 @@
 
 import sys
 import os
+import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict, List
@@ -27,6 +28,8 @@ sys.path.insert(0, project_root)
 
 from .hot_reload_manager import HotReloadManager
 from .version_manager import VersionManager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
