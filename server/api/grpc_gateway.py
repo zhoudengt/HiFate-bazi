@@ -1212,27 +1212,15 @@ def _ensure_endpoints_registered():
     """确保所有端点被注册（用于热更新后恢复）"""
     global SUPPORTED_ENDPOINTS
     
-    # ⭐ 关键修复：如果端点列表为空，说明热更新后装饰器未执行，需要恢复所有端点
+    # ⭐ 关键修复：如果端点列表为空，说明热更新后装饰器未执行，直接手动注册所有关键端点
     if len(SUPPORTED_ENDPOINTS) == 0:
-        logger.warning(f"⚠️  端点列表为空，尝试重新加载模块以恢复所有端点...")
-        try:
-            # 尝试重新加载模块以触发装饰器执行
-            import importlib
-            import sys
-            if 'server.api.grpc_gateway' in sys.modules:
-                gateway_module = sys.modules['server.api.grpc_gateway']
-                importlib.reload(gateway_module)
-                # 重新获取端点字典
-                from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as RELOADED_ENDPOINTS
-                if len(RELOADED_ENDPOINTS) > 0:
-                    logger.info(f"✅ 重新加载模块后端点数量: {len(RELOADED_ENDPOINTS)}")
-                    return
-        except Exception as e:
-            logger.error(f"❌ 重新加载模块失败: {e}", exc_info=True)
-    
-    # 检查关键端点是否已注册
-    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
-    missing_endpoints = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
+        logger.warning(f"⚠️  端点列表为空，直接手动注册所有关键端点...")
+        # 直接进入手动注册逻辑，跳过重新加载模块（因为重新加载后端点仍然是空的）
+        missing_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
+    else:
+        # 检查关键端点是否已注册
+        key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
+        missing_endpoints = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
     logger.debug(f"检查关键端点注册状态: key_endpoints={key_endpoints}, missing_endpoints={missing_endpoints}, supported_endpoints_count={len(SUPPORTED_ENDPOINTS)}")
     
     if missing_endpoints:
