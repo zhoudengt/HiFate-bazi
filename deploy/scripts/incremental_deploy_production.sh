@@ -383,11 +383,18 @@ fi
 echo "========================================"
 echo ""
 
-read -p "确认继续部署？(y/N): " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "部署已取消"
-    exit 1
+# 检查是否在非交互式环境（CI/CD 或通过管道输入）
+if [ -t 0 ] && [ -z "$CI" ]; then
+    # 交互式环境，需要用户确认
+    read -p "确认继续部署？(y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "部署已取消"
+        exit 1
+    fi
+else
+    # 非交互式环境，自动继续
+    echo -e "${GREEN}✅ 非交互式环境，自动继续部署${NC}"
 fi
 
 echo ""
