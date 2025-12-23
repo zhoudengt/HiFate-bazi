@@ -1219,7 +1219,7 @@ def _ensure_endpoints_registered():
     # ⭐ 关键修复：如果端点列表为空，说明热更新后装饰器未执行，直接手动注册所有关键端点
     key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
     if len(SUPPORTED_ENDPOINTS) == 0:
-        logger.warning(f"⚠️  端点列表为空，直接手动注册所有关键端点...")
+        logger.error(f"🚨 端点列表为空！直接手动注册所有关键端点...")
         # 直接进入手动注册逻辑，跳过重新加载模块（因为重新加载后端点仍然是空的）
         missing_endpoints = key_endpoints
     else:
@@ -1243,7 +1243,7 @@ def _ensure_endpoints_registered():
                     return await query_daily_fortune_calendar(request_model)
                 
                 SUPPORTED_ENDPOINTS["/daily-fortune-calendar/query"] = _handle_daily_fortune_calendar_query
-                logger.info("✅ 手动注册端点: /daily-fortune-calendar/query")
+                logger.error(f"🚨 手动注册端点: /daily-fortune-calendar/query, 当前端点数量: {len(SUPPORTED_ENDPOINTS)}")
             
             # 手动注册 /bazi/interface 端点
             if "/bazi/interface" in missing_endpoints:
