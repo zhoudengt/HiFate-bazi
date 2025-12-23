@@ -22,6 +22,7 @@ from server.services import selector_service
 from server.services import nlg_service
 from server.utils.auth import get_current_user
 from server.utils.data_validator import validate_bazi_data
+from server.api.v1.models.bazi_base_models import BaziBaseRequest
 
 # 尝试导入限流器（可选功能）
 try:
