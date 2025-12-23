@@ -122,23 +122,36 @@ async def reload_endpoints():
         success = _reload_endpoints()
         new_count = len(SUPPORTED_ENDPOINTS)
         
-        # 如果重新加载后端点数量为0，手动注册关键端点
-        if new_count == 0:
-            logger.warning("端点重新加载后数量为0，尝试手动注册端点...")
+        # 如果重新加载后端点数量为0或缺少关键端点，手动注册关键端点
+        key_endpoints = ['/auth/login', '/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi', '/daily-fortune-calendar/query']
+        missing_endpoints = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
+        
+        if new_count == 0 or missing_endpoints:
+            logger.warning(f"端点重新加载后数量为0或缺少关键端点（总数: {new_count}, 缺失: {missing_endpoints}），尝试手动注册端点...")
             try:
+                # 手动注册 /auth/login 端点
+                if "/auth/login" in missing_endpoints:
+                    from server.api.v1.auth import LoginRequest, login
+                    async def _handle_login_manual(payload: Dict[str, Any]):
+                        """处理登录请求（手动注册）"""
+                        request_model = LoginRequest(**payload)
+                        return await login(request_model)
+                    SUPPORTED_ENDPOINTS["/auth/login"] = _handle_login_manual
+                    logger.info("✅ 手动注册端点: /auth/login")
+                
                 # 手动注册每日运势端点
-                from server.api.v1.daily_fortune_calendar import (
-                    DailyFortuneCalendarRequest,
-                    query_daily_fortune_calendar,
-                )
+                if "/daily-fortune-calendar/query" in missing_endpoints:
+                    from server.api.v1.daily_fortune_calendar import (
+                        DailyFortuneCalendarRequest,
+                        query_daily_fortune_calendar,
+                    )
+                    async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
+                        """处理每日运势日历查询请求"""
+                        request_model = DailyFortuneCalendarRequest(**payload)
+                        return await query_daily_fortune_calendar(request_model)
+                    SUPPORTED_ENDPOINTS["/daily-fortune-calendar/query"] = _handle_daily_fortune_calendar_query
+                    logger.info("✅ 手动注册端点: /daily-fortune-calendar/query")
                 
-                async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
-                    """处理每日运势日历查询请求"""
-                    request_model = DailyFortuneCalendarRequest(**payload)
-                    return await query_daily_fortune_calendar(request_model)
-                
-                SUPPORTED_ENDPOINTS["/daily-fortune-calendar/query"] = _handle_daily_fortune_calendar_query
-                logger.info("✅ 手动注册端点: /daily-fortune-calendar/query")
                 new_count = len(SUPPORTED_ENDPOINTS)
             except Exception as e:
                 logger.error(f"手动注册端点失败: {e}", exc_info=True)
