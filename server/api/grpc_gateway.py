@@ -1241,6 +1241,48 @@ def _ensure_endpoints_registered():
                 SUPPORTED_ENDPOINTS["/daily-fortune-calendar/query"] = _handle_daily_fortune_calendar_query
                 logger.info("✅ 手动注册端点: /daily-fortune-calendar/query")
             
+            # 手动注册 /bazi/interface 端点
+            if "/bazi/interface" in missing_endpoints:
+                try:
+                    from server.api.v1.bazi import BaziInterfaceRequest, generate_bazi_interface
+                    from fastapi import Request
+                    from unittest.mock import MagicMock
+                    async def _handle_bazi_interface_manual(payload: Dict[str, Any]):
+                        """处理八字接口请求（手动注册）"""
+                        request_model = BaziInterfaceRequest(**payload)
+                        mock_request = MagicMock(spec=Request)
+                        result = await generate_bazi_interface(request_model, mock_request)
+                        if hasattr(result, 'model_dump'):
+                            return result.model_dump()
+                        elif hasattr(result, 'dict'):
+                            return result.dict()
+                        return result
+                    SUPPORTED_ENDPOINTS["/bazi/interface"] = _handle_bazi_interface_manual
+                    logger.info("✅ 手动注册端点: /bazi/interface")
+                except Exception as e:
+                    logger.error(f"❌ 手动注册 /bazi/interface 端点失败: {e}", exc_info=True)
+            
+            # 手动注册 /bazi/shengong-minggong 端点
+            if "/bazi/shengong-minggong" in missing_endpoints:
+                try:
+                    from server.api.v1.bazi import ShengongMinggongRequest, get_shengong_minggong
+                    from fastapi import Request
+                    from unittest.mock import MagicMock
+                    async def _handle_shengong_minggong_manual(payload: Dict[str, Any]):
+                        """处理身宫命宫请求（手动注册）"""
+                        request_model = ShengongMinggongRequest(**payload)
+                        mock_request = MagicMock(spec=Request)
+                        result = await get_shengong_minggong(request_model, mock_request)
+                        if hasattr(result, 'model_dump'):
+                            return result.model_dump()
+                        elif hasattr(result, 'dict'):
+                            return result.dict()
+                        return result
+                    SUPPORTED_ENDPOINTS["/bazi/shengong-minggong"] = _handle_shengong_minggong_manual
+                    logger.info("✅ 手动注册端点: /bazi/shengong-minggong")
+                except Exception as e:
+                    logger.error(f"❌ 手动注册 /bazi/shengong-minggong 端点失败: {e}", exc_info=True)
+            
             # 手动注册 /bazi/rizhu-liujiazi 端点
             if "/bazi/rizhu-liujiazi" in missing_endpoints:
                 try:
