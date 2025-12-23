@@ -248,9 +248,33 @@ echo ""
 echo "🔍 检测数据库变更..."
 DB_SYNC_NEEDED=false
 
-# 运行数据库变更检测
-DB_DETECT_OUTPUT=$(python3 scripts/db/detect_db_changes.py 2>&1)
-DB_DETECT_EXIT=$?
+# 运行数据库变更检测（设置超时，避免卡住）
+if command -v timeout &> /dev/null; then
+    DB_DETECT_OUTPUT=$(timeout 10 python3 scripts/db/detect_db_changes.py 2>&1 || echo "数据库变更检测超时或失败")
+    DB_DETECT_EXIT=$?
+    if [ $DB_DETECT_EXIT -eq 124 ]; then
+        DB_DETECT_EXIT=1  # 超时视为失败
+    fi
+elif command -v gtimeout &> /dev/null; then
+    DB_DETECT_OUTPUT=$(gtimeout 10 python3 scripts/db/detect_db_changes.py 2>&1 || echo "数据库变更检测超时或失败")
+    DB_DETECT_EXIT=$?
+    if [ $DB_DETECT_EXIT -eq 124 ]; then
+        DB_DETECT_EXIT=1  # 超时视为失败
+    fi
+else
+    # 如果没有 timeout 命令，使用后台进程和 kill
+    DB_DETECT_OUTPUT=$(python3 scripts/db/detect_db_changes.py 2>&1 &)
+    DB_DETECT_PID=$!
+    sleep 10
+    if kill -0 $DB_DETECT_PID 2>/dev/null; then
+        kill $DB_DETECT_PID 2>/dev/null
+        DB_DETECT_OUTPUT="数据库变更检测超时或失败"
+        DB_DETECT_EXIT=1
+    else
+        wait $DB_DETECT_PID
+        DB_DETECT_EXIT=$?
+    fi
+fi
 
 if [ $DB_DETECT_EXIT -eq 0 ]; then
     # 检查输出中是否包含变更信息
