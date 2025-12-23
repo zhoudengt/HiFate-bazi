@@ -836,6 +836,19 @@ async def grpc_web_gateway(request: Request):
 
     handler = SUPPORTED_ENDPOINTS.get(endpoint)
     logger.debug(f"🔍 查找端点处理器: {endpoint}, 是否存在: {handler is not None}, 总端点数: {len(SUPPORTED_ENDPOINTS)}")
+    
+    # ⭐ 关键修复：如果端点列表为空，说明热更新后装饰器未执行，立即恢复所有端点
+    if len(SUPPORTED_ENDPOINTS) == 0:
+        logger.warning(f"⚠️  端点列表为空，可能是热更新后装饰器未执行，立即恢复所有端点...")
+        try:
+            # 调用 _ensure_endpoints_registered 恢复关键端点
+            _ensure_endpoints_registered()
+            # 重新获取 handler
+            handler = SUPPORTED_ENDPOINTS.get(endpoint)
+            logger.info(f"✅ 端点恢复完成，当前端点数量: {len(SUPPORTED_ENDPOINTS)}, 目标端点是否存在: {handler is not None}")
+        except Exception as e:
+            logger.error(f"❌ 端点恢复失败: {e}", exc_info=True)
+    
     if not handler:
         # 如果端点未找到，尝试动态注册（用于热更新后恢复）
         if endpoint == "/daily-fortune-calendar/query":
