@@ -251,7 +251,7 @@ DB_SYNC_NEEDED=false
 # 运行数据库变更检测（设置超时，避免卡住）
 if command -v timeout &> /dev/null; then
     DB_DETECT_OUTPUT=$(timeout 10 python3 scripts/db/detect_db_changes.py 2>&1 || echo "数据库变更检测超时或失败")
-    DB_DETECT_EXIT=$?
+DB_DETECT_EXIT=$?
     if [ $DB_DETECT_EXIT -eq 124 ]; then
         DB_DETECT_EXIT=1  # 超时视为失败
     fi
@@ -324,8 +324,8 @@ if [ $DB_DETECT_EXIT -eq 0 ]; then
             # 非交互式环境，自动跳过
             if [ ! -t 0 ] || [ -n "$CI" ]; then
                 echo -e "${YELLOW}⚠️  数据库同步脚本生成已跳过（非交互式环境）${NC}"
-            else
-                echo -e "${YELLOW}⚠️  数据库同步脚本生成已跳过${NC}"
+        else
+            echo -e "${YELLOW}⚠️  数据库同步脚本生成已跳过${NC}"
             fi
         fi
     else
@@ -353,21 +353,21 @@ if python3 scripts/config/detect_config_changes.py 2>/dev/null; then
         # 检查是否在非交互式环境
         if [ -t 0 ] && [ -z "$CI" ]; then
             # 交互式环境，询问是否同步配置
-            read -p "是否同步配置到生产环境（Node1）？(y/N): " -n 1 -r
+        read -p "是否同步配置到生产环境（Node1）？(y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo "🔄 同步配置到 Node1..."
+            bash scripts/config/sync_production_config.sh --node node1
+            
+            # 询问是否同步到Node2
+            read -p "是否同步到 Node2？(y/N): " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
-                echo "🔄 同步配置到 Node1..."
-                bash scripts/config/sync_production_config.sh --node node1
-                
-                # 询问是否同步到Node2
-                read -p "是否同步到 Node2？(y/N): " -n 1 -r
-                echo
-                if [[ $REPLY =~ ^[Yy]$ ]]; then
-                    echo "🔄 同步配置到 Node2..."
-                    bash scripts/config/sync_production_config.sh --node node2
-                fi
-            else
-                echo -e "${YELLOW}⚠️  配置同步已跳过，请稍后手动执行：${NC}"
+                echo "🔄 同步配置到 Node2..."
+                bash scripts/config/sync_production_config.sh --node node2
+            fi
+        else
+            echo -e "${YELLOW}⚠️  配置同步已跳过，请稍后手动执行：${NC}"
                 echo "  bash scripts/config/sync_production_config.sh --node node1"
             fi
         else
@@ -398,11 +398,11 @@ echo ""
 # 检查是否在非交互式环境（CI/CD 或通过管道输入）
 if [ -t 0 ] && [ -z "$CI" ]; then
     # 交互式环境，需要用户确认
-    read -p "确认继续部署？(y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "部署已取消"
-        exit 1
+read -p "确认继续部署？(y/N): " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "部署已取消"
+    exit 1
     fi
 else
     # 非交互式环境，自动继续

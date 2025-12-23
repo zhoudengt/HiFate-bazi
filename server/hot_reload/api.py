@@ -141,14 +141,14 @@ async def reload_endpoints():
                 
                 # 手动注册每日运势端点
                 if "/daily-fortune-calendar/query" in missing_endpoints:
-                    from server.api.v1.daily_fortune_calendar import (
-                        DailyFortuneCalendarRequest,
-                        query_daily_fortune_calendar,
-                    )
-                    async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
-                        """处理每日运势日历查询请求"""
-                        request_model = DailyFortuneCalendarRequest(**payload)
-                        return await query_daily_fortune_calendar(request_model)
+                from server.api.v1.daily_fortune_calendar import (
+                    DailyFortuneCalendarRequest,
+                    query_daily_fortune_calendar,
+                )
+                async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
+                    """处理每日运势日历查询请求"""
+                    request_model = DailyFortuneCalendarRequest(**payload)
+                    return await query_daily_fortune_calendar(request_model)
                     SUPPORTED_ENDPOINTS["/daily-fortune-calendar/query"] = _handle_daily_fortune_calendar_query
                     logger.info("✅ 手动注册端点: /daily-fortune-calendar/query")
                 
