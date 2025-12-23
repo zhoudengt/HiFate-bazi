@@ -845,13 +845,38 @@ async def grpc_web_gateway(request: Request):
             _ensure_endpoints_registered()
             # 重新获取 handler
             handler = SUPPORTED_ENDPOINTS.get(endpoint)
-            logger.error(f"🚨 端点恢复完成，当前端点数量: {len(SUPPORTED_ENDPOINTS)}, 目标端点: {endpoint}, 是否存在: {handler is not None}, 已注册端点: {list(SUPPORTED_ENDPOINTS.keys())[:10]}")
+            endpoint_count = len(SUPPORTED_ENDPOINTS)
+            logger.error(f"🚨 端点恢复完成，当前端点数量: {endpoint_count}, 目标端点: {endpoint}, 是否存在: {handler is not None}, 已注册端点: {list(SUPPORTED_ENDPOINTS.keys())[:10]}")
             if not handler:
                 logger.error(f"🚨 端点恢复后仍然未找到: {endpoint}, 已注册端点: {list(SUPPORTED_ENDPOINTS.keys())}")
+                # 如果恢复后仍然未找到，尝试直接注册该端点
+                if endpoint == "/auth/login":
+                    try:
+                        from server.api.v1.auth import LoginRequest, login
+                        async def _handle_login_immediate(payload: Dict[str, Any]):
+                            request_model = LoginRequest(**payload)
+                            return await login(request_model)
+                        SUPPORTED_ENDPOINTS["/auth/login"] = _handle_login_immediate
+                        handler = _handle_login_immediate
+                        logger.error(f"🚨 直接注册 /auth/login 成功")
+                    except Exception as e2:
+                        logger.error(f"🚨 直接注册 /auth/login 失败: {e2}", exc_info=True)
         except Exception as e:
             logger.error(f"🚨 端点恢复失败: {e}", exc_info=True)
             import traceback
             logger.error(f"🚨 端点恢复失败堆栈: {traceback.format_exc()}")
+            # 即使恢复失败，也尝试直接注册该端点作为最后的兜底
+            if endpoint == "/auth/login" and not handler:
+                try:
+                    from server.api.v1.auth import LoginRequest, login
+                    async def _handle_login_fallback(payload: Dict[str, Any]):
+                        request_model = LoginRequest(**payload)
+                        return await login(request_model)
+                    SUPPORTED_ENDPOINTS["/auth/login"] = _handle_login_fallback
+                    handler = _handle_login_fallback
+                    logger.error(f"🚨 兜底注册 /auth/login 成功")
+                except Exception as e3:
+                    logger.error(f"🚨 兜底注册 /auth/login 失败: {e3}", exc_info=True)
     
     if not handler:
         # 如果端点未找到，尝试动态注册（用于热更新后恢复）
@@ -1228,7 +1253,7 @@ def _ensure_endpoints_registered():
     logger.debug(f"检查关键端点注册状态: key_endpoints={key_endpoints}, missing_endpoints={missing_endpoints}, supported_endpoints_count={len(SUPPORTED_ENDPOINTS)}")
     
     if missing_endpoints:
-        logger.warning(f"检测到缺失端点: {missing_endpoints}，尝试手动注册...")
+        logger.error(f"🚨 检测到缺失端点: {missing_endpoints}，尝试手动注册...")
         try:
             # 手动注册每日运势日历端点
             if "/daily-fortune-calendar/query" in missing_endpoints:
@@ -1262,7 +1287,7 @@ def _ensure_endpoints_registered():
                             return result.dict()
                         return result
                     SUPPORTED_ENDPOINTS["/bazi/interface"] = _handle_bazi_interface_manual
-                    logger.info("✅ 手动注册端点: /bazi/interface")
+                    logger.error("🚨 手动注册端点: /bazi/interface")
                 except Exception as e:
                     logger.error(f"❌ 手动注册 /bazi/interface 端点失败: {e}", exc_info=True)
             
@@ -1283,7 +1308,7 @@ def _ensure_endpoints_registered():
                             return result.dict()
                         return result
                     SUPPORTED_ENDPOINTS["/bazi/shengong-minggong"] = _handle_shengong_minggong_manual
-                    logger.info("✅ 手动注册端点: /bazi/shengong-minggong")
+                    logger.error("🚨 手动注册端点: /bazi/shengong-minggong")
                 except Exception as e:
                     logger.error(f"❌ 手动注册 /bazi/shengong-minggong 端点失败: {e}", exc_info=True)
             
@@ -1299,7 +1324,7 @@ def _ensure_endpoints_registered():
                         request_model = RizhuLiujiaziRequest(**payload)
                         return await get_rizhu_liujiazi(request_model)
                     SUPPORTED_ENDPOINTS["/bazi/rizhu-liujiazi"] = _handle_rizhu_liujiazi_manual
-                    logger.info("✅ 手动注册端点: /bazi/rizhu-liujiazi")
+                    logger.error("🚨 手动注册端点: /bazi/rizhu-liujiazi")
                 except Exception as e:
                     logger.error(f"❌ 手动注册 /bazi/rizhu-liujiazi 端点失败: {e}", exc_info=True)
             
@@ -1312,7 +1337,7 @@ def _ensure_endpoints_registered():
                         request_model = LoginRequest(**payload)
                         return await login(request_model)
                     SUPPORTED_ENDPOINTS["/auth/login"] = _handle_login_manual
-                    logger.info("✅ 手动注册端点: /auth/login")
+                    logger.error("🚨 手动注册端点: /auth/login")
                 except Exception as e:
                     logger.error(f"❌ 手动注册 /auth/login 端点失败: {e}", exc_info=True)
         except Exception as e:

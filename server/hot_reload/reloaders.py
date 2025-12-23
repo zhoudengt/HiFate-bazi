@@ -218,30 +218,42 @@ class SourceCodeReloader:
                             new_count = len(NEW_ENDPOINTS)
                             print(f"     🔄 重新加载后端点数量: {new_count}")
                             
-                            # 5. 如果端点仍未注册，手动触发重新注册函数
+                            # 5. 如果端点仍未注册，直接调用 _ensure_endpoints_registered 手动注册
                             if new_count == 0:
-                                print(f"     ⚠️  装饰器未注册端点，尝试手动重新注册...")
-                                # 重新获取模块对象（因为 reload 后模块对象已更新）
-                                import server.api.grpc_gateway as gateway_module
-                                if hasattr(gateway_module, '_reload_endpoints'):
-                                    success = gateway_module._reload_endpoints()
-                                    if success:
-                                        from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_ENDPOINTS
-                                        final_count = len(FINAL_ENDPOINTS)
-                                        print(f"     ✅ 手动重新注册成功（端点数量: {final_count}）")
-                                    else:
-                                        print(f"     ❌ 手动重新注册失败")
-                                else:
-                                    print(f"     ❌ 未找到 _reload_endpoints 函数")
+                                print(f"     ⚠️  装饰器未注册端点，直接手动注册所有关键端点...")
+                                try:
+                                    from server.api.grpc_gateway import _ensure_endpoints_registered
+                                    _ensure_endpoints_registered()
+                                    from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_ENDPOINTS
+                                    final_count = len(FINAL_ENDPOINTS)
+                                    print(f"     ✅ 手动注册成功（端点数量: {final_count}）")
+                                except Exception as e:
+                                    print(f"     ❌ 手动注册失败: {e}")
+                                    import traceback
+                                    traceback.print_exc()
                             else:
                                 print(f"     ✅ gRPC 端点已重新注册（端点数量: {new_count}）")
                             
-                            # 6. 验证关键端点是否已注册
+                            # 6. 验证关键端点是否已注册（无论端点数量是否为0）
                             from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_CHECK
-                            key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi', '/auth/login']
+                            key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi', '/auth/login', '/daily-fortune-calendar/query']
                             missing_endpoints = [ep for ep in key_endpoints if ep not in FINAL_CHECK]
                             if missing_endpoints:
-                                print(f"     ⚠️  关键端点未注册: {missing_endpoints}")
+                                print(f"     ⚠️  关键端点未注册: {missing_endpoints}，再次尝试手动注册...")
+                                try:
+                                    from server.api.grpc_gateway import _ensure_endpoints_registered
+                                    _ensure_endpoints_registered()
+                                    from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_CHECK2
+                                    final_count2 = len(FINAL_CHECK2)
+                                    missing_endpoints2 = [ep for ep in key_endpoints if ep not in FINAL_CHECK2]
+                                    if missing_endpoints2:
+                                        print(f"     ❌ 关键端点仍然缺失: {missing_endpoints2}")
+                                    else:
+                                        print(f"     ✅ 关键端点验证通过（端点数量: {final_count2}）")
+                                except Exception as e:
+                                    print(f"     ❌ 关键端点恢复失败: {e}")
+                                    import traceback
+                                    traceback.print_exc()
                             else:
                                 print(f"     ✅ 关键端点验证通过")
                                 
