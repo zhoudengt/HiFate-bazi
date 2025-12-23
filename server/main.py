@@ -314,6 +314,28 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠ 打印 gRPC 端点失败: {e}")
     
+    # ⭐ 第一层防护：服务启动时强制注册所有端点（不依赖装饰器）
+    try:
+        from server.api.grpc_gateway import _ensure_endpoints_registered, SUPPORTED_ENDPOINTS
+        _ensure_endpoints_registered()
+        
+        # 验证关键端点
+        key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
+        missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
+        if missing:
+            logger.error(f"🚨 服务启动后关键端点缺失: {missing}，当前端点数量: {len(SUPPORTED_ENDPOINTS)}")
+            # 再次尝试注册
+            _ensure_endpoints_registered()
+            missing_after = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
+            if missing_after:
+                logger.critical(f"🚨🚨 服务启动后关键端点仍然缺失: {missing_after}，系统可能无法正常工作！")
+            else:
+                logger.info(f"✅ 关键端点已恢复（总端点数: {len(SUPPORTED_ENDPOINTS)}）")
+        else:
+            logger.info(f"✅ 所有关键端点已注册（总端点数: {len(SUPPORTED_ENDPOINTS)}）")
+    except Exception as e:
+        logger.critical(f"🚨🚨 端点注册失败: {e}", exc_info=True)
+    
     try:
         # 启动统一的热更新管理器（替代原来的规则热加载）
         from server.hot_reload.hot_reload_manager import HotReloadManager

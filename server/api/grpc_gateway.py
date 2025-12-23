@@ -839,6 +839,8 @@ async def grpc_web_gateway(request: Request):
     
     # ⭐ 关键修复：如果端点列表为空，说明热更新后装饰器未执行，立即恢复所有端点
     if len(SUPPORTED_ENDPOINTS) == 0:
+        # 使用 print 强制输出（不依赖日志配置）
+        print(f"🚨🚨 端点列表为空！端点: {endpoint}, 立即恢复所有端点...", flush=True)
         logger.error(f"🚨 端点列表为空！端点: {endpoint}, 立即恢复所有端点...")
         try:
             # 调用 _ensure_endpoints_registered 恢复关键端点
@@ -846,8 +848,10 @@ async def grpc_web_gateway(request: Request):
             # 重新获取 handler
             handler = SUPPORTED_ENDPOINTS.get(endpoint)
             endpoint_count = len(SUPPORTED_ENDPOINTS)
+            print(f"🚨 端点恢复完成，当前端点数量: {endpoint_count}, 目标端点: {endpoint}, 是否存在: {handler is not None}", flush=True)
             logger.error(f"🚨 端点恢复完成，当前端点数量: {endpoint_count}, 目标端点: {endpoint}, 是否存在: {handler is not None}, 已注册端点: {list(SUPPORTED_ENDPOINTS.keys())[:10]}")
             if not handler:
+                print(f"🚨 端点恢复后仍然未找到: {endpoint}, 已注册端点: {list(SUPPORTED_ENDPOINTS.keys())}", flush=True)
                 logger.error(f"🚨 端点恢复后仍然未找到: {endpoint}, 已注册端点: {list(SUPPORTED_ENDPOINTS.keys())}")
                 # 如果恢复后仍然未找到，尝试直接注册该端点
                 if endpoint == "/auth/login":
@@ -858,12 +862,16 @@ async def grpc_web_gateway(request: Request):
                             return await login(request_model)
                         SUPPORTED_ENDPOINTS["/auth/login"] = _handle_login_immediate
                         handler = _handle_login_immediate
+                        print(f"🚨 直接注册 /auth/login 成功", flush=True)
                         logger.error(f"🚨 直接注册 /auth/login 成功")
                     except Exception as e2:
+                        print(f"🚨 直接注册 /auth/login 失败: {e2}", flush=True)
                         logger.error(f"🚨 直接注册 /auth/login 失败: {e2}", exc_info=True)
         except Exception as e:
-            logger.error(f"🚨 端点恢复失败: {e}", exc_info=True)
+            print(f"🚨 端点恢复失败: {e}", flush=True)
             import traceback
+            print(f"🚨 端点恢复失败堆栈: {traceback.format_exc()}", flush=True)
+            logger.error(f"🚨 端点恢复失败: {e}", exc_info=True)
             logger.error(f"🚨 端点恢复失败堆栈: {traceback.format_exc()}")
             # 即使恢复失败，也尝试直接注册该端点作为最后的兜底
             if endpoint == "/auth/login" and not handler:
@@ -874,8 +882,10 @@ async def grpc_web_gateway(request: Request):
                         return await login(request_model)
                     SUPPORTED_ENDPOINTS["/auth/login"] = _handle_login_fallback
                     handler = _handle_login_fallback
+                    print(f"🚨 兜底注册 /auth/login 成功", flush=True)
                     logger.error(f"🚨 兜底注册 /auth/login 成功")
                 except Exception as e3:
+                    print(f"🚨 兜底注册 /auth/login 失败: {e3}", flush=True)
                     logger.error(f"🚨 兜底注册 /auth/login 失败: {e3}", exc_info=True)
     
     if not handler:
@@ -1376,14 +1386,20 @@ except ImportError as e:
 
 # 在模块加载时调用（用于热更新后恢复）
 try:
+    print(f"🔧 模块加载时检查端点注册状态...", flush=True)
     _ensure_endpoints_registered()
     # 验证关键端点是否已注册
     key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
     missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
     if missing:
+        print(f"⚠️  模块加载后关键端点缺失: {missing}，当前端点数量: {len(SUPPORTED_ENDPOINTS)}", flush=True)
         logger.warning(f"⚠️  模块加载后关键端点缺失: {missing}，当前端点数量: {len(SUPPORTED_ENDPOINTS)}")
         logger.info(f"已注册的端点: {list(SUPPORTED_ENDPOINTS.keys())[:30]}")
     else:
+        print(f"✅ 所有关键端点已注册（总端点数: {len(SUPPORTED_ENDPOINTS)}）", flush=True)
         logger.info(f"✅ 所有关键端点已注册（总端点数: {len(SUPPORTED_ENDPOINTS)}）")
 except Exception as e:
+    print(f"❌ 初始化端点注册检查失败: {e}", flush=True)
+    import traceback
+    print(f"❌ 堆栈: {traceback.format_exc()}", flush=True)
     logger.error(f"❌ 初始化端点注册检查失败: {e}", exc_info=True)

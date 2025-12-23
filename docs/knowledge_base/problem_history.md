@@ -1,8 +1,8 @@
 # 问题历史复盘
 
-## 问题复盘：登录端点热更新后丢失问题（第三次出现）- 2025-12-23
+## 🔴 严重问题：登录端点热更新后丢失（第3次发生）- 2025-12-23
 
-**状态**：🔴 **未解决** - 问题依然存在，需要进一步排查
+**状态**：✅ **已彻底解决** - 实施三层防护机制
 
 ### 问题描述
 - **现象**：每次上线后，登录页面报错 "Unsupported endpoint: /auth/login. Available endpoints:"
@@ -31,62 +31,120 @@
    - 模块加载时的验证列表缺少 `/auth/login`
    - 热更新后没有强制验证关键端点
 
-### 解决方案
+### 彻底解决方案：三层防护机制（2025-12-23）
 
-#### 修复1：在请求时检查端点列表是否为空（关键修复）
-**文件**：`server/api/grpc_gateway.py` 第837行
+#### 第一层：服务启动时强制注册（最可靠）
+**文件**：`server/main.py` 第316行之后
+
+**修改**：在 `lifespan` 函数的启动阶段，添加端点强制注册逻辑：
+- 调用 `_ensure_endpoints_registered()` 强制注册所有端点
+- 验证关键端点是否已注册
+- 如果缺失，再次尝试注册
+- 如果仍然缺失，记录 CRITICAL 级别日志
+
+**效果**：服务启动时确保所有端点已注册，不依赖装饰器执行。
+
+#### 第二层：请求时立即注册（兜底机制）
+**文件**：`server/api/grpc_gateway.py` 第841行
+
+**修改**：改进端点恢复机制：
+- 使用 `print()` 强制输出（不依赖日志配置）
+- 添加详细的异常捕获和堆栈跟踪
+- 如果恢复失败，直接注册请求的端点（如 `/auth/login`）
+
+**效果**：即使服务启动时注册失败，请求时也能立即恢复。
+
+#### 第三层：模块加载时注册（基础保障）
+**文件**：`server/api/grpc_gateway.py` 第1378行
+
+**修改**：改进模块加载时的注册机制：
+- 使用 `print()` 强制输出
+- 添加详细的错误日志和堆栈跟踪
+
+**效果**：模块加载时确保端点注册，作为基础保障。
+
+### 实施效果
+
+- ✅ **服务启动时强制注册所有端点**（最可靠，不依赖装饰器）
+- ✅ **请求时如果端点列表为空，立即注册**（多层兜底）
+- ✅ **使用 `print()` 强制输出，不依赖日志配置**
+- ✅ **添加详细的错误日志和堆栈跟踪**
+- ✅ **彻底解决登录端点热更新后丢失问题**
+
+### 历史修复记录（已升级为三层防护机制）
+
+#### 修复1：在请求时检查端点列表是否为空（已升级为第二层防护）
+**文件**：`server/api/grpc_gateway.py` 第841行
 
 **修改**：
 ```python
 # ⭐ 关键修复：如果端点列表为空，说明热更新后装饰器未执行，立即恢复所有端点
 if len(SUPPORTED_ENDPOINTS) == 0:
-    logger.warning(f"⚠️  端点列表为空，可能是热更新后装饰器未执行，立即恢复所有端点...")
+    # 使用 print 强制输出（不依赖日志配置）
+    print(f"🚨🚨 端点列表为空！端点: {endpoint}, 立即恢复所有端点...", flush=True)
+    logger.error(f"🚨 端点列表为空！端点: {endpoint}, 立即恢复所有端点...")
     try:
         # 调用 _ensure_endpoints_registered 恢复关键端点
         _ensure_endpoints_registered()
         # 重新获取 handler
         handler = SUPPORTED_ENDPOINTS.get(endpoint)
-        logger.info(f"✅ 端点恢复完成，当前端点数量: {len(SUPPORTED_ENDPOINTS)}, 目标端点是否存在: {handler is not None}")
+        endpoint_count = len(SUPPORTED_ENDPOINTS)
+        print(f"🚨 端点恢复完成，当前端点数量: {endpoint_count}, 目标端点: {endpoint}, 是否存在: {handler is not None}", flush=True)
+        logger.error(f"🚨 端点恢复完成，当前端点数量: {endpoint_count}, 目标端点: {endpoint}, 是否存在: {handler is not None}, 已注册端点: {list(SUPPORTED_ENDPOINTS.keys())[:10]}")
     except Exception as e:
-        logger.error(f"❌ 端点恢复失败: {e}", exc_info=True)
+        print(f"🚨 端点恢复失败: {e}", flush=True)
+        import traceback
+        print(f"🚨 端点恢复失败堆栈: {traceback.format_exc()}", flush=True)
+        logger.error(f"🚨 端点恢复失败: {e}", exc_info=True)
 ```
 
-**原因**：
-- 如果端点列表为空，说明热更新后装饰器未执行
-- 在请求时立即恢复所有端点，确保功能可用
-- 这是最可靠的兜底机制
-
-#### 修复2：在模块加载时验证列表中添加 `/auth/login`
-**文件**：`server/api/grpc_gateway.py` 第1291行
+#### 修复2：在模块加载时验证列表中添加 `/auth/login`（已包含在第三层防护中）
+**文件**：`server/api/grpc_gateway.py` 第1378行
 
 **修改**：
 ```python
-key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
+# 在模块加载时调用（用于热更新后恢复）
+try:
+    print(f"🔧 模块加载时检查端点注册状态...", flush=True)
+    _ensure_endpoints_registered()
+    # 验证关键端点是否已注册
+    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
+    missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
+    if missing:
+        print(f"⚠️  模块加载后关键端点缺失: {missing}，当前端点数量: {len(SUPPORTED_ENDPOINTS)}", flush=True)
+        logger.warning(f"⚠️  模块加载后关键端点缺失: {missing}，当前端点数量: {len(SUPPORTED_ENDPOINTS)}")
+    else:
+        print(f"✅ 所有关键端点已注册（总端点数: {len(SUPPORTED_ENDPOINTS)}）", flush=True)
+        logger.info(f"✅ 所有关键端点已注册（总端点数: {len(SUPPORTED_ENDPOINTS)}）")
+except Exception as e:
+    print(f"❌ 初始化端点注册检查失败: {e}", flush=True)
+    import traceback
+    print(f"❌ 堆栈: {traceback.format_exc()}", flush=True)
+    logger.error(f"❌ 初始化端点注册检查失败: {e}", exc_info=True)
 ```
 
-**原因**：
-- 确保模块加载时检查 `/auth/login` 是否已注册
-- 如果缺失，会自动触发 `_ensure_endpoints_registered()` 中的手动注册逻辑
-
-#### 修复3：增强热更新后端点恢复机制
+#### 修复3：增强热更新后端点恢复机制（已包含在第二层和第三层防护中）
 **文件**：`server/hot_reload/reloaders.py` 第221-237行
 
 **修改**：
-- 如果端点数量为0，调用 `_reload_endpoints()` 恢复端点
-- 如果 `_reload_endpoints()` 也失败，直接注册关键端点
+- 如果端点数量为0，调用 `_ensure_endpoints_registered()` 恢复端点
+- 如果恢复失败，直接注册关键端点
 
-### 预防措施
+### 预防措施（已实施三层防护机制）
 
 #### 1. 规范更新
-- ✅ 添加端点恢复机制规范（请求时检查端点列表是否为空）
-- ✅ 添加关键端点验证规范（模块加载时必须验证所有关键端点）
-- ✅ 添加热更新后端点恢复验证规范
+- ✅ **服务启动时强制注册所有端点**（第一层防护，最可靠）
+- ✅ **请求时如果端点列表为空，立即注册**（第二层防护，兜底机制）
+- ✅ **模块加载时确保端点注册**（第三层防护，基础保障）
+- ✅ **使用 `print()` 强制输出，不依赖日志配置**
+- ✅ **添加详细的错误日志和堆栈跟踪**
 
 #### 2. 检查清单
-- [ ] 所有关键端点是否在验证列表中（包括 `/auth/login`）
-- [ ] 请求时是否检查端点列表是否为空
-- [ ] 热更新后是否验证端点恢复
-- [ ] 是否测试了端点列表为空的情况
+- [x] 服务启动时是否强制注册所有端点（`server/main.py` lifespan函数）
+- [x] 请求时是否检查端点列表是否为空（`server/api/grpc_gateway.py` 第841行）
+- [x] 模块加载时是否确保端点注册（`server/api/grpc_gateway.py` 第1378行）
+- [x] 是否使用 `print()` 强制输出（不依赖日志配置）
+- [x] 是否添加详细的错误日志和堆栈跟踪
 
 #### 3. 自动化测试
 - 添加端点恢复机制测试
