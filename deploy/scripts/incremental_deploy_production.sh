@@ -321,7 +321,12 @@ if [ $DB_DETECT_EXIT -eq 0 ]; then
                 echo -e "${YELLOW}⚠️  同步脚本生成失败${NC}"
             fi
         else
-            echo -e "${YELLOW}⚠️  数据库同步脚本生成已跳过${NC}"
+            # 非交互式环境，自动跳过
+            if [ ! -t 0 ] || [ -n "$CI" ]; then
+                echo -e "${YELLOW}⚠️  数据库同步脚本生成已跳过（非交互式环境）${NC}"
+            else
+                echo -e "${YELLOW}⚠️  数据库同步脚本生成已跳过${NC}"
+            fi
         fi
     else
         echo "$DB_DETECT_OUTPUT" | tail -20
@@ -345,22 +350,29 @@ if python3 scripts/config/detect_config_changes.py 2>/dev/null; then
         echo -e "${YELLOW}⚠️  发现配置变更${NC}"
         CONFIG_SYNC_NEEDED=true
         
-        # 询问是否同步配置
-        read -p "是否同步配置到生产环境（Node1）？(y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            echo "🔄 同步配置到 Node1..."
-            bash scripts/config/sync_production_config.sh --node node1
-            
-            # 询问是否同步到Node2
-            read -p "是否同步到 Node2？(y/N): " -n 1 -r
+        # 检查是否在非交互式环境
+        if [ -t 0 ] && [ -z "$CI" ]; then
+            # 交互式环境，询问是否同步配置
+            read -p "是否同步配置到生产环境（Node1）？(y/N): " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
-                echo "🔄 同步配置到 Node2..."
-                bash scripts/config/sync_production_config.sh --node node2
+                echo "🔄 同步配置到 Node1..."
+                bash scripts/config/sync_production_config.sh --node node1
+                
+                # 询问是否同步到Node2
+                read -p "是否同步到 Node2？(y/N): " -n 1 -r
+                echo
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    echo "🔄 同步配置到 Node2..."
+                    bash scripts/config/sync_production_config.sh --node node2
+                fi
+            else
+                echo -e "${YELLOW}⚠️  配置同步已跳过，请稍后手动执行：${NC}"
+                echo "  bash scripts/config/sync_production_config.sh --node node1"
             fi
         else
-            echo -e "${YELLOW}⚠️  配置同步已跳过，请稍后手动执行：${NC}"
+            # 非交互式环境，自动跳过配置同步
+            echo -e "${YELLOW}⚠️  配置同步已跳过（非交互式环境），请稍后手动执行：${NC}"
             echo "  bash scripts/config/sync_production_config.sh --node node1"
         fi
     fi
