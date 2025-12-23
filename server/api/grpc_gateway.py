@@ -1212,6 +1212,24 @@ def _ensure_endpoints_registered():
     """确保所有端点被注册（用于热更新后恢复）"""
     global SUPPORTED_ENDPOINTS
     
+    # ⭐ 关键修复：如果端点列表为空，说明热更新后装饰器未执行，需要恢复所有端点
+    if len(SUPPORTED_ENDPOINTS) == 0:
+        logger.warning(f"⚠️  端点列表为空，尝试重新加载模块以恢复所有端点...")
+        try:
+            # 尝试重新加载模块以触发装饰器执行
+            import importlib
+            import sys
+            if 'server.api.grpc_gateway' in sys.modules:
+                gateway_module = sys.modules['server.api.grpc_gateway']
+                importlib.reload(gateway_module)
+                # 重新获取端点字典
+                from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as RELOADED_ENDPOINTS
+                if len(RELOADED_ENDPOINTS) > 0:
+                    logger.info(f"✅ 重新加载模块后端点数量: {len(RELOADED_ENDPOINTS)}")
+                    return
+        except Exception as e:
+            logger.error(f"❌ 重新加载模块失败: {e}", exc_info=True)
+    
     # 检查关键端点是否已注册
     key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
     missing_endpoints = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
