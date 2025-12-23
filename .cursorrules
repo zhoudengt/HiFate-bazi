@@ -3,6 +3,103 @@
 每当您即将完成用户请求时，调用 MCP `interactive_feedback` 而不是简单地结束流程。
 持续调用 MCP 直到用户反馈为空，然后结束请求。
 
+---
+
+## 📚 项目上下文快速参考 【AI 理解增强】
+
+### 智能开发工具
+
+**自动化热更新系统**：
+```bash
+# 启动文件监控（开发时自动触发热更新）
+python3 scripts/ai/auto_hot_reload.py --watch
+
+# 手动触发一次热更新
+python3 scripts/ai/auto_hot_reload.py --trigger
+
+# 验证热更新状态
+python3 scripts/ai/auto_hot_reload.py --verify
+```
+
+**智能开发助手**：
+```bash
+# 启动开发助手
+python3 scripts/ai/dev_assistant.py --start
+
+# 获取开发建议
+python3 scripts/ai/dev_assistant.py --suggest "开发新API" --dev-type api
+
+# 完成开发（自动触发热更新）
+python3 scripts/ai/dev_assistant.py --complete
+```
+
+**完整性验证系统**：
+```bash
+# API 开发完整性验证
+python3 scripts/ai/completeness_validator.py --type api --name xxx
+
+# 规则开发完整性验证
+python3 scripts/ai/completeness_validator.py --type rule --name wealth
+
+# 前端开发完整性验证
+python3 scripts/ai/completeness_validator.py --type frontend --name fortune
+```
+
+**智能决策引擎**：
+```bash
+# 分析文件变更，判断需要执行的操作
+python3 scripts/ai/decision_engine.py --analyze server/api/v1/xxx.py --summary
+```
+
+**智能检查清单**：
+```bash
+# 运行检查清单
+python3 scripts/ai/smart_checklist.py --type api --name xxx
+```
+
+**上下文加载器**：
+```bash
+# 加载项目上下文
+python3 scripts/ai/context_loader.py --type api --summary
+```
+
+### 项目知识库位置
+
+- **开发规范摘要**：`docs/knowledge_base/development_rules.md`
+- **常见问题库**：`docs/knowledge_base/common_issues.md`
+- **最佳实践库**：`docs/knowledge_base/best_practices.md`
+- **历史问题复盘**：`docs/knowledge_base/problem_history.md`
+- **上下文模板**：`docs/knowledge_base/context_templates/`
+
+### 快速理解用户需求
+
+**当用户描述需求时，自动**：
+1. 加载项目上下文（使用 `context_loader.py`）
+2. 根据开发类型加载对应知识库
+3. 使用智能开发助手获取建议
+4. 提供完整的开发步骤和检查清单
+
+**常见需求模式**：
+- "开发新API" → 使用 `dev_assistant.py --suggest "开发新API" --dev-type api`
+- "添加新规则" → 使用 `dev_assistant.py --suggest "添加新规则" --dev-type rule`
+- "修改前端页面" → 使用 `dev_assistant.py --suggest "修改前端页面" --dev-type frontend`
+
+### 开发完成后的标准流程
+
+1. ✅ 代码修改完成
+2. ✅ 运行完整性验证：`python3 scripts/ai/completeness_validator.py --type <type> --name <name>`
+3. ✅ **自动触发热更新**：`python3 scripts/ai/auto_hot_reload.py --trigger`（或使用 `dev_assistant.py --complete`）
+4. ✅ 验证热更新成功：`python3 scripts/ai/auto_hot_reload.py --verify`
+5. ✅ 验证功能正常（必须！）
+6. ✅ 提交代码
+
+**禁止操作**：
+- ❌ **禁止重启服务**（必须使用热更新）
+- ❌ **禁止跳过热更新直接提交代码**
+- ❌ **禁止只做健康检查就认为热更新成功，必须验证实际功能**
+
+---
+
 
 > **🚨 重要提示**：**所有新功能的增加、修改、扩展都必须严格遵守本开发规范！**
 > 
@@ -4986,6 +5083,20 @@ curl -X POST http://47.243.160.43:8001/api/v1/hot-reload/rollback
 - [ ] 关键模块可以导入
 - [ ] 无循环依赖
 
+#### 数据库变更检查（必须）
+- [ ] 数据库变更已检测（运行 `python3 scripts/db/detect_db_changes.py`）
+- [ ] 数据库同步脚本已生成（如有变更）
+- [ ] 数据库同步脚本已预览（dry-run模式，查看同步内容）
+- [ ] 数据库同步已执行（如有变更，Node1和Node2）
+- [ ] 数据库同步后已验证（运行 `python3 scripts/db/verify_data_consistency.py`）
+- [ ] 数据一致性验证通过（本地和生产数据一致）
+
+#### 配置变更检查（必须）
+- [ ] 配置变更已检测（运行 `python3 scripts/config/detect_config_changes.py`）
+- [ ] 配置变更报告已查看（新增、修改、删除的配置项）
+- [ ] 配置同步已执行（如有变更，Node1和Node2）
+- [ ] 配置同步后已验证（验证配置文件格式正确）
+
 #### 服务器连接检查
 - [ ] Node1 SSH 连接正常
 - [ ] Node2 SSH 连接正常
@@ -5000,25 +5111,123 @@ curl -X POST http://47.243.160.43:8001/api/v1/hot-reload/rollback
 - [ ] 热更新状态正常
 - [ ] 关键功能验证通过（可选）
 
+### 🔴 数据库和配置同步强制检查 【必须遵守】
+
+#### 数据库变更同步规范
+
+**检测命令**：
+```bash
+# 检测数据库变更
+python3 scripts/db/detect_db_changes.py
+
+# 生成同步脚本
+python3 scripts/db/detect_db_changes.py --generate-sync-script
+
+# 预览同步脚本（dry-run模式）
+bash scripts/db/sync_production_db.sh --node node1 --deployment-id <ID> --dry-run
+
+# 执行同步
+bash scripts/db/sync_production_db.sh --node node1 --deployment-id <ID>
+bash scripts/db/sync_production_db.sh --node node2 --deployment-id <ID>
+
+# 验证数据一致性
+python3 scripts/db/verify_data_consistency.py
+```
+
+**同步流程**：
+1. 运行数据库变更检测
+2. 如果有变更，生成同步脚本
+3. 预览同步脚本内容（dry-run）
+4. 确认后同步到 Node1（灰度节点）
+5. 验证 Node1 数据一致性
+6. 同步到 Node2（生产节点）
+7. 验证 Node2 数据一致性
+
+**强制要求**：
+- ✅ **部署前必须检测数据库变更**
+- ✅ **如有变更，必须生成同步脚本**
+- ✅ **必须预览同步脚本内容**
+- ✅ **必须同步到双机（Node1 和 Node2）**
+- ✅ **同步后必须验证数据一致性**
+
+#### 配置变更同步规范
+
+**检测命令**：
+```bash
+# 检测配置变更
+python3 scripts/config/detect_config_changes.py
+
+# 预览配置同步（dry-run模式）
+bash scripts/config/sync_production_config.sh --node node1 --dry-run
+
+# 执行配置同步
+bash scripts/config/sync_production_config.sh --node node1
+bash scripts/config/sync_production_config.sh --node node2
+```
+
+**同步流程**：
+1. 运行配置变更检测
+2. 查看配置变更报告
+3. 确认后同步到 Node1
+4. 同步到 Node2
+5. 验证配置格式正确性
+6. 如需要，重启相关服务
+
+**强制要求**：
+- ✅ **部署前必须检测配置变更**
+- ✅ **如有变更，必须查看变更报告**
+- ✅ **必须同步到双机（Node1 和 Node2）**
+- ✅ **同步后必须验证配置正确性**
+
+#### 自动集成检查
+
+**增量部署脚本已集成**：
+- ✅ 自动检测数据库变更（`deploy/scripts/incremental_deploy_production.sh` 第 1.7 步）
+- ✅ 自动检测配置变更（`deploy/scripts/incremental_deploy_production.sh` 第 1.8 步）
+- ✅ 自动提示同步操作
+- ✅ 自动验证同步结果
+
+**使用方式**：
+```bash
+# 运行增量部署脚本（自动检测并提示同步）
+bash deploy/scripts/incremental_deploy_production.sh
+```
+
+脚本会自动：
+1. 检测数据库变更并提示生成同步脚本
+2. 检测配置变更并提示同步
+3. 要求确认后才继续部署
+
 ### 🚨 增量部署注意事项
 
 1. **代码必须已推送**
    - 增量部署脚本会拉取远程代码
    - 未推送的代码不会被部署
 
-2. **不适用依赖变更**
+2. **数据库变更必须同步**
+   - 部署前必须检测数据库变更
+   - 如有变更，必须同步到生产环境
+   - 同步后必须验证数据一致性
+
+3. **配置变更必须同步**
+   - 部署前必须检测配置变更
+   - 如有变更，必须同步到生产环境
+   - 同步后必须验证配置正确性
+
+4. **不适用依赖变更**
    - 修改 `requirements.txt` 必须使用完整部署
    - 新增系统依赖必须使用完整部署
 
-3. **双机同步**
+5. **双机同步**
    - 在 Node1 上触发热更新会自动同步到 Node2
    - 确保 Redis 连接正常（用于双机同步）
+   - 数据库和配置必须同步到双机
 
-4. **监控和告警**
+6. **监控和告警**
    - 部署后持续监控服务状态
    - 发现问题立即回滚
 
-5. **测试优先**
+7. **测试优先**
    - 重要变更先在测试环境验证
    - 生产环境部署后立即验证
 
@@ -5543,8 +5752,156 @@ bash scripts/db/rollback_db.sh --node node1 --rollback-file scripts/db/rollback/
 - **数据库变更检测脚本**：`scripts/db/detect_db_changes.py`
 - **数据库同步脚本**：`scripts/db/sync_production_db.sh`
 - **数据库回滚脚本**：`scripts/db/rollback_db.sh`
+- **数据一致性验证**：`scripts/db/verify_data_consistency.py`
 - **灰度发布脚本**：`deploy/scripts/grayscale_deploy_production.sh`（集成数据库同步）
 - **完整部署流程**：见"🚀 CI/CD 标准流程"章节
+
+---
+
+## ⚙️ 配置同步规范 【必须遵守】
+
+### 🔴 核心原则
+
+> **所有配置变更必须通过配置同步机制处理，确保本地、Node1、Node2 配置完全一致，包括 bot_id、支付相关id等所有环境变量。**
+
+### 📋 配置同步流程
+
+```
+1. 配置变更检测（本地）
+   ├─ 对比本地和生产环境变量文件
+   ├─ 检测新增配置项
+   ├─ 检测修改的配置项
+   ├─ 检测删除的配置项（生产有但本地没有）
+   └─ 生成配置变更报告
+   ↓
+2. 查看配置变更报告
+   ├─ 查看新增配置项
+   ├─ 查看修改的配置项（敏感信息部分显示）
+   └─ 查看删除的配置项
+   ↓
+3. 执行配置同步（Node1 灰度节点）
+   ├─ 备份生产环境配置
+   ├─ 上传配置文件到 Node1
+   ├─ 验证配置文件格式
+   └─ 提示需要重启的服务（如需要）
+   ↓
+4. Node1 配置验证
+   ├─ 验证配置文件格式正确性
+   ├─ 验证关键配置项（bot_id、支付相关等）
+   └─ 如需要，重启相关服务
+   ↓
+5. 执行配置同步（Node2 生产节点）
+   ├─ 备份生产环境配置
+   ├─ 上传配置文件到 Node2
+   ├─ 验证配置文件格式
+   └─ 提示需要重启的服务（如需要）
+   ↓
+6. Node2 配置验证
+   ├─ 验证配置文件格式正确性
+   └─ 确保配置一致性
+```
+
+### 🔧 配置变更检测
+
+**检测脚本**：`scripts/config/detect_config_changes.py`
+
+**使用方法**：
+```bash
+# 检测配置变更
+python3 scripts/config/detect_config_changes.py
+
+# 自定义生产环境主机
+python3 scripts/config/detect_config_changes.py --prod-host 8.210.52.217
+
+# 输出报告到文件
+python3 scripts/config/detect_config_changes.py --output config_changes_report.txt
+```
+
+**检测内容**：
+- 新增配置项（本地有但生产没有）
+- 修改的配置项（值不同）
+- 删除的配置项（生产有但本地没有）
+- 敏感信息保护（密码、密钥、Token等只显示部分）
+
+**输出报告**：
+- 配置变更报告（控制台输出）
+- 可选：保存到文件（`--output` 参数）
+
+### 🔄 配置同步执行
+
+**同步脚本**：`scripts/config/sync_production_config.sh`
+
+**使用方法**：
+```bash
+# 同步到 Node1（灰度节点）
+bash scripts/config/sync_production_config.sh --node node1
+
+# 同步到 Node2（生产节点）
+bash scripts/config/sync_production_config.sh --node node2
+
+# 预览模式（不执行实际变更）
+bash scripts/config/sync_production_config.sh --node node1 --dry-run
+```
+
+**同步流程**：
+1. 备份生产环境配置文件（`.env.backup.YYYYMMDD_HHMMSS`）
+2. 上传本地配置文件到生产环境
+3. 验证配置文件格式
+4. 提示需要重启的服务（如需要）
+
+### ✅ 配置同步检查清单
+
+每次配置变更前必须检查：
+
+- [ ] 配置变更已检测（运行 `detect_config_changes.py`）
+- [ ] 配置变更报告已查看（新增、修改、删除的配置项）
+- [ ] 新增配置项已确认（如 bot_id、支付相关id等）
+- [ ] 修改配置项已确认（特别是敏感配置）
+- [ ] Node1 配置同步成功
+- [ ] Node1 配置格式验证通过
+- [ ] Node2 配置同步成功
+- [ ] Node2 配置格式验证通过
+- [ ] 双机配置完全一致
+- [ ] 相关服务已重启（如需要）
+
+### 🚨 配置同步注意事项
+
+1. **敏感信息保护**
+   - 密码、密钥、Token等敏感信息在报告中只显示部分
+   - 同步时确保配置文件权限正确（600）
+
+2. **配置格式验证**
+   - 同步后自动验证配置文件格式
+   - 格式错误时自动恢复备份
+
+3. **服务重启**
+   - 修改应用配置（如 bot_id）可能需要重启 Web 服务
+   - 修改数据库配置需要重启数据库服务
+   - 修改 Redis 配置需要重启 Redis 服务
+
+4. **配置备份**
+   - 每次同步前自动备份生产环境配置
+   - 备份文件命名：`.env.backup.YYYYMMDD_HHMMSS`
+
+5. **双机同步**
+   - 配置必须同步到双机（Node1 和 Node2）
+   - 确保双机配置完全一致
+
+### 📊 配置同步性能指标
+
+| 指标 | 目标值 | 说明 |
+|------|--------|------|
+| **同步时间** | < 10秒 | 单个节点同步时间 |
+| **格式验证** | 100% | 配置文件格式验证成功率 |
+| **一致性** | 100% | 双机配置完全一致 |
+| **成功率** | > 99% | 配置同步成功率 |
+
+### 📚 相关文档
+
+- **配置变更检测脚本**：`scripts/config/detect_config_changes.py`
+- **配置同步脚本**：`scripts/config/sync_production_config.sh`
+- **增量部署脚本**：`deploy/scripts/incremental_deploy_production.sh`（集成配置检测）
+- **环境变量模板**：`env.template`
 
 ---
 

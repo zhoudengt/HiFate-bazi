@@ -31,6 +31,7 @@ protobuf>=4.25.3,<5  # mediapipe 要求 protobuf<5
 # 八字计算
 lunar_python==1.4.7
 zhdate==0.1
+pytz>=2024.1  # 时区转换和夏令时处理
 
 # 工具
 click==8.1.8
@@ -41,6 +42,7 @@ PyJWT>=2.8.0
 cryptography>=41.0.0
 pillow>=10.0.0
 python-docx>=1.2.0  # API文档生成工具
+watchdog>=3.0.0  # 文件监控（用于自动化热更新）
 
 # AI/LLM（如需要）
 # openai==2.7.1
