@@ -1288,7 +1288,7 @@ except ImportError as e:
 try:
     _ensure_endpoints_registered()
     # 验证关键端点是否已注册
-    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi"]
+    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
     missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
     if missing:
         logger.warning(f"⚠️  模块加载后关键端点缺失: {missing}，当前端点数量: {len(SUPPORTED_ENDPOINTS)}")
