@@ -1213,13 +1213,13 @@ def _ensure_endpoints_registered():
     global SUPPORTED_ENDPOINTS
     
     # ⭐ 关键修复：如果端点列表为空，说明热更新后装饰器未执行，直接手动注册所有关键端点
+    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
     if len(SUPPORTED_ENDPOINTS) == 0:
         logger.warning(f"⚠️  端点列表为空，直接手动注册所有关键端点...")
         # 直接进入手动注册逻辑，跳过重新加载模块（因为重新加载后端点仍然是空的）
-        missing_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
+        missing_endpoints = key_endpoints
     else:
         # 检查关键端点是否已注册
-        key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
         missing_endpoints = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
     logger.debug(f"检查关键端点注册状态: key_endpoints={key_endpoints}, missing_endpoints={missing_endpoints}, supported_endpoints_count={len(SUPPORTED_ENDPOINTS)}")
     
