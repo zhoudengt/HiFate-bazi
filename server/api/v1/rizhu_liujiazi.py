@@ -19,6 +19,8 @@ sys.path.insert(0, project_root)
 from server.services.rizhu_liujiazi_service import RizhuLiujiaziService
 from server.services.bazi_service import BaziService
 from server.utils.data_validator import validate_bazi_data
+from server.api.v1.models.bazi_base_models import BaziBaseRequest
+from server.utils.bazi_input_processor import BaziInputProcessor
 
 router = APIRouter()
 
@@ -29,38 +31,9 @@ max_workers = min(cpu_count * 2, 100)
 executor = ThreadPoolExecutor(max_workers=max_workers)
 
 
-class RizhuLiujiaziRequest(BaseModel):
+class RizhuLiujiaziRequest(BaziBaseRequest):
     """日元-六十甲子请求模型"""
-    solar_date: str = Field(..., description="阳历日期，格式：YYYY-MM-DD", example="1990-05-15")
-    solar_time: str = Field(..., description="出生时间，格式：HH:MM", example="14:30")
-    gender: str = Field(..., description="性别：male(男) 或 female(女)", example="male")
-    
-    @validator('solar_date')
-    def validate_solar_date(cls, v):
-        """验证日期格式"""
-        try:
-            from datetime import datetime
-            datetime.strptime(v, '%Y-%m-%d')
-        except ValueError:
-            raise ValueError('日期格式错误，应为 YYYY-MM-DD')
-        return v
-    
-    @validator('solar_time')
-    def validate_solar_time(cls, v):
-        """验证时间格式"""
-        try:
-            from datetime import datetime
-            datetime.strptime(v, '%H:%M')
-        except ValueError:
-            raise ValueError('时间格式错误，应为 HH:MM')
-        return v
-    
-    @validator('gender')
-    def validate_gender(cls, v):
-        """验证性别"""
-        if v not in ['male', 'female']:
-            raise ValueError('性别必须为 male 或 female')
-        return v
+    pass
 
 
 class RizhuLiujiaziResponse(BaseModel):
@@ -90,12 +63,22 @@ async def get_rizhu_liujiazi(request: RizhuLiujiaziRequest):
         # 在线程池中执行CPU密集型计算
         loop = asyncio.get_event_loop()
         
+        # 0. 处理农历输入和时区转换
+        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+            request.solar_date,
+            request.solar_time,
+            request.calendar_type or "solar",
+            request.location,
+            request.latitude,
+            request.longitude
+        )
+        
         # 1. 获取八字排盘结果
         bazi_result = await loop.run_in_executor(
             executor,
             BaziService.calculate_bazi_full,
-            request.solar_date,
-            request.solar_time,
+            final_solar_date,
+            final_solar_time,
             request.gender
         )
         
@@ -131,10 +114,29 @@ async def get_rizhu_liujiazi(request: RizhuLiujiaziRequest):
         )
         
         if not analysis_data:
+            # 添加详细的错误信息，帮助排查问题
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"未找到日柱 {rizhu} 的解析内容（日期: {request.solar_date}, 时间: {request.solar_time}, 性别: {request.gender}）")
+            
+            # 尝试获取数据库中的总记录数（用于诊断）
+            try:
+                total_count = await loop.run_in_executor(
+                    executor,
+                    RizhuLiujiaziService.get_total_count
+                )
+                logger.warning(f"当前数据库中总记录数: {total_count}")
+            except:
+                pass
+            
             return RizhuLiujiaziResponse(
                 success=False,
-                error=f"未找到日柱 {rizhu} 的解析内容"
+                error=f"未找到日柱 {rizhu} 的解析内容。请检查数据库中是否有该日柱的数据。"
             )
+        
+        # 添加转换信息到结果（如果有转换）
+        if analysis_data and isinstance(analysis_data, dict) and conversion_info and (conversion_info.get('converted') or conversion_info.get('timezone_info')):
+            analysis_data['conversion_info'] = conversion_info
         
         return RizhuLiujiaziResponse(
             success=True,

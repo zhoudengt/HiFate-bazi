@@ -146,6 +146,19 @@ class DevFlowChecker:
         if not self._check_test_coverage():
             return False
         
+        # 8. 自动触发热更新（如果检查通过）
+        print(f"\n{BLUE}8. 自动触发热更新{NC}")
+        try:
+            from scripts.ai.auto_hot_reload import AutoHotReload
+            auto_reload = AutoHotReload()
+            result = auto_reload.trigger_and_verify()
+            if result.get("success"):
+                print(f"  {GREEN}✓{NC} 热更新成功")
+            else:
+                print(f"  {YELLOW}⚠{NC} 热更新失败（不影响检查结果）: {result.get('message')}")
+        except Exception as e:
+            print(f"  {YELLOW}⚠{NC} 热更新工具不可用（不影响检查结果）: {e}")
+        
         return True
     
     def _check_dev_env(self) -> bool:

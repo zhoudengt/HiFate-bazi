@@ -385,7 +385,6 @@ class SingletonReloader:
     # 需要重置的单例列表
     SINGLETON_CLASSES = [
         ('server.services.rule_service', 'RuleService', ['_engine', '_cache', '_cached_content_version', '_cached_rule_version']),
-        ('server.services.formula_rule_service', 'FormulaRuleService', ['_rules_cache']),
         ('server.observability.metrics_collector', 'MetricsCollector', ['_instance']),
         ('server.observability.alert_manager', 'AlertManager', ['_instance']),
         ('server.observability.tracer', 'Tracer', ['_instance']),

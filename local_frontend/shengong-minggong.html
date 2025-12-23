@@ -188,6 +188,73 @@
         .user-info-item strong {
             color: #666;
         }
+        
+        /* 大运流年流月相关样式 */
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .card-header {
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .card-title {
+            margin: 0;
+            color: #333;
+            font-size: 1.2em;
+        }
+        
+        .card-body {
+            padding: 15px 0;
+        }
+        
+        .timeline-container {
+            overflow-x: auto;
+            margin-top: 10px;
+        }
+        
+        .timeline-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+        
+        .timeline-table th,
+        .timeline-table td {
+            padding: 8px;
+            text-align: center;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .timeline-table th {
+            background: #f8f9fa;
+            font-weight: bold;
+        }
+        
+        .timeline-table tbody tr:hover {
+            background: #f0f7ff;
+        }
+        
+        .timeline-age {
+            color: #666;
+            font-size: 0.85em;
+        }
+        
+        .current-badge {
+            display: inline-block;
+            background: #ffc107;
+            color: #333;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            margin-left: 8px;
+        }
     </style>
 </head>
 <body>
@@ -264,6 +331,7 @@
     <script src="config.js"></script>
     <script src="js/api.js"></script>
     <script src="js/auth.js"></script>
+    <script src="js/fortune-timeline.js"></script>
     <script src="js/shengong-minggong.js"></script>
 </body>
 </html>

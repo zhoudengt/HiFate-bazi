@@ -17,6 +17,8 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.daily_fortune_service import DailyFortuneService
+from server.api.v1.models.bazi_base_models import BaziBaseRequest
+from server.utils.bazi_input_processor import BaziInputProcessor
 
 router = APIRouter()
 
@@ -27,39 +29,12 @@ max_workers = min(cpu_count * 2, 100)
 executor = ThreadPoolExecutor(max_workers=max_workers)
 
 
-class DailyFortuneRequest(BaseModel):
+class DailyFortuneRequest(BaziBaseRequest):
     """今日运势分析请求模型"""
-    solar_date: str = Field(..., description="用户出生日期（阳历），格式：YYYY-MM-DD", example="1990-05-15")
-    solar_time: str = Field(..., description="用户出生时间，格式：HH:MM", example="14:30")
-    gender: str = Field(..., description="性别：male(男) 或 female(女)", example="male")
     target_date: Optional[str] = Field(None, description="目标日期（可选，默认为今天），格式：YYYY-MM-DD", example="2025-01-17")
     use_llm: Optional[bool] = Field(False, description="是否使用 LLM 生成（可选，默认使用规则匹配）", example=False)
     access_token: Optional[str] = Field(None, description="Coze Access Token（可选，use_llm=True 时需要）")
     bot_id: Optional[str] = Field(None, description="Coze Bot ID（可选，use_llm=True 时需要）")
-    
-    @validator('solar_date')
-    def validate_solar_date(cls, v):
-        from datetime import datetime
-        try:
-            datetime.strptime(v, '%Y-%m-%d')
-        except ValueError:
-            raise ValueError('出生日期格式错误，应为 YYYY-MM-DD')
-        return v
-    
-    @validator('solar_time')
-    def validate_solar_time(cls, v):
-        from datetime import datetime
-        try:
-            datetime.strptime(v, '%H:%M')
-        except ValueError:
-            raise ValueError('出生时间格式错误，应为 HH:MM')
-        return v
-    
-    @validator('gender')
-    def validate_gender(cls, v):
-        if v not in ['male', 'female']:
-            raise ValueError('性别必须为 male 或 female')
-        return v
     
     @validator('target_date')
     def validate_target_date(cls, v):
@@ -113,18 +88,35 @@ async def get_daily_fortune(request: DailyFortuneRequest):
     返回今日运势分析结果
     """
     try:
+        # 处理农历输入和时区转换
+        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+            request.solar_date,
+            request.solar_time,
+            request.calendar_type or "solar",
+            request.location,
+            request.latitude,
+            request.longitude
+        )
+        
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             executor,
             DailyFortuneService.calculate_daily_fortune,
-            request.solar_date,
-            request.solar_time,
+            final_solar_date,
+            final_solar_time,
             request.gender,
             request.target_date,
             request.use_llm,
             request.access_token,
             request.bot_id
         )
+        
+        # 添加转换信息到结果
+        if result and isinstance(result, dict) and result.get('success') and (conversion_info.get('converted') or conversion_info.get('timezone_info')):
+            if 'fortune' in result:
+                result['fortune']['conversion_info'] = conversion_info
+            else:
+                result['conversion_info'] = conversion_info
         
         if result.get('success'):
             return DailyFortuneResponse(

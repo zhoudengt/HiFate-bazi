@@ -675,16 +675,17 @@ class BaziCalculator:
         dayun_sequence = []
 
         max_age_limit = 120
-        first_end_age = max(int(math.floor(qiyun_total_age)), 0)
+        # ✅ 虚岁计算：小运结束年龄 = 1 + 起运年数（使用qiyun_years，不考虑月份和天数）
+        first_end_age_virtual = 1 + qiyun_years  # 小运结束年龄（虚岁）
 
-        # 第一段：出生至起运年龄（从 0 岁开始）
-        age_start = 0
-        age_end = min(first_end_age, max_age_limit)
+        # 第一段：小运阶段（从 1 岁开始，虚岁）
+        age_start = 1  # 虚岁从1开始
+        age_end = min(first_end_age_virtual, max_age_limit)  # 1 + 起运年数
         year_start = birth_year
-        year_end = birth_year + age_end
+        year_end = birth_year + (age_end - 1)  # 虚岁转周岁计算年份
 
         step = 1
-        age_display = f"{age_start}-{age_end}岁" if age_end > 0 else "0岁"
+        age_display = f"{age_start}-{age_end}岁"  # 小运显示范围格式
         dayun_sequence.append({
             'step': step,
             'stem': "小运",
@@ -696,11 +697,11 @@ class BaziCalculator:
             'year_end': year_end
         })
 
-        # 第二段：起运年龄开始（共享上一段的结束年龄）
-        age_start = age_end + 1 if age_end > 0 else 1  # 如果起运年龄是0，则从1开始
+        # 第二段：第一个大运（从小运结束年龄开始，虚岁）
+        age_start = age_end  # 第一个大运从小运结束年龄开始（虚岁）
         age_end = min(age_start + 9, max_age_limit)
-        year_start = birth_year + age_start
-        year_end = birth_year + age_end
+        year_start = birth_year + (age_start - 1)  # 虚岁转周岁计算年份
+        year_end = birth_year + (age_end - 1)  # 虚岁转周岁计算年份
 
         # 初始化计算器（用于计算大运详细信息）
         star_calc = StarFortuneCalculator()
@@ -734,7 +735,7 @@ class BaziCalculator:
                 'kongwang': dayun_detail.get('kongwang', ''),
                 'nayin': dayun_detail.get('nayin', ''),
                 'deities': dayun_detail.get('deities', []),
-                'age_display': f"{age_start}-{age_end}岁",
+                'age_display': f"{age_start}岁",  # 大运只显示起始年龄
                 'age_range': {"start": age_start, "end": age_end},  # 新增：便于前端使用
                 'year_start': year_start,
                 'year_end': year_end
@@ -744,8 +745,8 @@ class BaziCalculator:
             if age_start > max_age_limit:
                 break
             age_end = min(age_start + 9, max_age_limit)
-            year_start = birth_year + age_start
-            year_end = birth_year + age_end
+            year_start = birth_year + (age_start - 1)  # 虚岁转周岁计算年份
+            year_end = birth_year + (age_end - 1)  # 虚岁转周岁计算年份
             offset += 1
 
         self.details['dayun_sequence'] = dayun_sequence
@@ -754,7 +755,69 @@ class BaziCalculator:
         for dayun in dayun_sequence:
             print(f"  第{dayun['step']}步大运: {dayun['stem']}{dayun['branch']} ({dayun['main_star']}) - {dayun['age_display']} - {dayun['year_start']}~{dayun['year_end']}年")
 
-    def _generate_liunian_for_range(self, day_stem: str, start_year: int, end_year: int):
+    def _calculate_liunian_relations(
+        self,
+        liunian_stem: str,
+        liunian_branch: str,
+        dayun_stem: str,
+        dayun_branch: str,
+        bazi_pillars: Dict[str, Dict[str, str]]
+    ) -> list:
+        """
+        计算流年关系
+        
+        Args:
+            liunian_stem: 流年天干
+            liunian_branch: 流年地支
+            dayun_stem: 大运天干
+            dayun_branch: 大运地支
+            bazi_pillars: 四柱信息字典，格式：{'year': {'stem': '甲', 'branch': '子'}, ...}
+        
+        Returns:
+            List[str]: 关系列表，如 ["岁运并临", "年柱-天克地冲", "月柱-天合地合"]
+        """
+        from src.data.relations import STEM_HE, BRANCH_LIUHE, BRANCH_CHONG, STEM_KE
+        
+        relations = []
+        
+        # 1. 岁运并临：流年天干地支与大运天干地支完全相同
+        if liunian_stem == dayun_stem and liunian_branch == dayun_branch:
+            relations.append("岁运并临")
+        
+        # 2. 天克地冲：流年与四柱的天克地冲关系
+        pillar_names = {'year': '年柱', 'month': '月柱', 'day': '日柱', 'hour': '时柱'}
+        for pillar_type, pillar in bazi_pillars.items():
+            pillar_stem = pillar.get('stem', '')
+            pillar_branch = pillar.get('branch', '')
+            
+            # 天克：流年天干克制四柱天干
+            is_stem_ke = pillar_stem in STEM_KE.get(liunian_stem, [])
+            # 地冲：流年地支与四柱地支相冲
+            is_branch_chong = BRANCH_CHONG.get(liunian_branch) == pillar_branch
+            
+            if is_stem_ke and is_branch_chong:
+                pillar_name = pillar_names.get(pillar_type, pillar_type)
+                relations.append(f"{pillar_name}-天克地冲")
+        
+        # 3. 天合地合：流年与四柱的天合地合关系
+        for pillar_type, pillar in bazi_pillars.items():
+            pillar_stem = pillar.get('stem', '')
+            pillar_branch = pillar.get('branch', '')
+            
+            # 天合：流年天干与四柱天干相合
+            is_stem_he = STEM_HE.get(liunian_stem) == pillar_stem
+            # 地合：流年地支与四柱地支相合
+            is_branch_he = BRANCH_LIUHE.get(liunian_branch) == pillar_branch
+            
+            if is_stem_he and is_branch_he:
+                pillar_name = pillar_names.get(pillar_type, pillar_type)
+                relations.append(f"{pillar_name}-天合地合")
+        
+        return relations
+
+    def _generate_liunian_for_range(self, day_stem: str, start_year: int, end_year: int, 
+                                     dayun_stem: str = None, dayun_branch: str = None, 
+                                     bazi_pillars: Dict[str, Dict[str, str]] = None):
         """根据年份区间生成流年列表，并附带流月信息"""
         from lunar_python import Solar
 
@@ -763,10 +826,29 @@ class BaziCalculator:
 
         liunians = []
         star_calc = StarFortuneCalculator()
+        
+        # ✅ 修复：如果传入的 dayun_stem 和 dayun_branch 为 None，尝试从 self.details 中查找
+        # 这确保了即使传入的参数为 None，也能正确计算关系
+        if (dayun_stem is None or dayun_branch is None) and hasattr(self, 'details') and self.details:
+            dayun_sequence = self.details.get('dayun_sequence', [])
+            if dayun_sequence:
+                # 查找包含 start_year 到 end_year 范围内的大运
+                for d in dayun_sequence:
+                    d_stem = d.get('stem', '')
+                    d_branch = d.get('branch', '')
+                    d_year_start = d.get('year_start', 0)
+                    d_year_end = d.get('year_end', 0)
+                    # 如果大运年份范围与流年年份范围有重叠
+                    if (d_stem and d_stem != '小运' and 
+                        d_branch and
+                        not (d_year_end < start_year or d_year_start > end_year)):
+                        dayun_stem = d_stem
+                        dayun_branch = d_branch
+                        break
         deities_calc = DeitiesCalculator()
         for year in range(start_year, end_year + 1):
-            # 计算年龄
-            age = year - birth_year
+            # 计算年龄（虚岁：出生即1岁）
+            age = year - birth_year + 1  # 虚岁计算
             age_display = f"{age}岁"
             
             solar = Solar.fromYmdHms(year, 2, 5, 0, 0, 0)
@@ -779,6 +861,87 @@ class BaziCalculator:
             # ✅ 修复问题3：传递年份参数，用于获取实际年份的节气日期
             liuyue_sequence = self._generate_liuyue_for_year(year_stem, year)
 
+            # 计算流年关系（如果提供了大运和四柱信息）
+            # ✅ 修复：优先从 self.details 中查找包含该流年的大运，如果找不到则使用传入的大运
+            relations = []
+            if bazi_pillars:
+                # 查找包含该流年的大运
+                year_dayun_stem = None
+                year_dayun_branch = None
+                
+                # 从 self.details 中查找（dayun_sequence 应该已经计算完成）
+                if hasattr(self, 'details') and self.details:
+                    dayun_sequence = self.details.get('dayun_sequence', [])
+                    # ✅ 调试日志：记录dayun_sequence状态和self.details的keys
+                    if year == 2024:
+                        try:
+                            with open('/tmp/bazi_debug.log', 'a', encoding='utf-8') as f:
+                                f.write(f"[关系计算] 流年2024年 self.details.keys(): {list(self.details.keys())}\n")
+                                f.write(f"[关系计算] 流年2024年 dayun_sequence长度: {len(dayun_sequence)}\n")
+                                if dayun_sequence:
+                                    for i, d in enumerate(dayun_sequence[:5]):  # 显示前5个
+                                        f.write(f"  dayun_sequence[{i}]: stem={d.get('stem')}, branch={d.get('branch')}, year_start={d.get('year_start')}, year_end={d.get('year_end')}\n")
+                                else:
+                                    f.write(f"[关系计算] 流年2024年 dayun_sequence为空！\n")
+                        except Exception as e:
+                            try:
+                                with open('/tmp/bazi_debug.log', 'a', encoding='utf-8') as f:
+                                    f.write(f"[关系计算] 调试日志写入失败: {e}\n")
+                            except:
+                                pass
+                    if dayun_sequence:
+                        for d in dayun_sequence:
+                            d_stem = d.get('stem', '')
+                            d_branch = d.get('branch', '')
+                            d_year_start = d.get('year_start', 0)
+                            d_year_end = d.get('year_end', 0)
+                            # ✅ 修复：确保正确匹配大运（排除小运，确保有stem和branch）
+                            # 注意：stem 和 branch 应该是字符串，不是字典
+                            if (d_stem and isinstance(d_stem, str) and d_stem != '小运' and 
+                                d_branch and isinstance(d_branch, str) and
+                                d_year_start <= year <= d_year_end):
+                                year_dayun_stem = d_stem
+                                year_dayun_branch = d_branch
+                                # ✅ 调试日志：记录找到的大运（使用文件写入，避免被redirect_stdout抑制）
+                                try:
+                                    with open('/tmp/bazi_debug.log', 'a', encoding='utf-8') as f:
+                                        f.write(f"[关系计算] 流年{year}年({year_stem}{year_branch}) 找到大运: {year_dayun_stem}{year_dayun_branch} (年份范围: {d_year_start}-{d_year_end})\n")
+                                except:
+                                    pass
+                                break
+                    else:
+                        # ✅ 调试日志：记录dayun_sequence为空的情况
+                        if year == 2024:
+                            try:
+                                with open('/tmp/bazi_debug.log', 'a', encoding='utf-8') as f:
+                                    f.write(f"[关系计算] 流年2024年 dayun_sequence为空，无法查找大运\n")
+                            except:
+                                pass
+                
+                # 如果找到了对应的大运，使用它；否则使用传入的大运（向后兼容）
+                final_dayun_stem = year_dayun_stem if year_dayun_stem else dayun_stem
+                final_dayun_branch = year_dayun_branch if year_dayun_branch else dayun_branch
+                
+                # ✅ 修复：如果仍然没有找到大运，尝试从传入的dayun_stem和dayun_branch使用（如果它们不为None）
+                # 这确保了即使dayun_sequence查找失败，也能使用传入的大运信息
+                if (final_dayun_stem is None or final_dayun_branch is None) and dayun_stem and dayun_branch:
+                    final_dayun_stem = dayun_stem
+                    final_dayun_branch = dayun_branch
+                
+                # ✅ 修复：确保所有参数都存在且不为空
+                # 注意：year_stem 和 year_branch 是从 bazi[0] 获取的，应该是字符串
+                if (final_dayun_stem is not None and final_dayun_branch is not None and 
+                    bazi_pillars and year_stem and year_branch):
+                    # ✅ 确保 year_stem 和 year_branch 是字符串
+                    if isinstance(year_stem, str) and isinstance(year_branch, str):
+                        relations = self._calculate_liunian_relations(
+                            year_stem, year_branch, final_dayun_stem, final_dayun_branch, bazi_pillars
+                        )
+                    else:
+                        relations = []
+                else:
+                    relations = []
+
             liunians.append({
                 'year': year,
                 'age': age,  # 新增：年龄（整数）
@@ -786,7 +949,8 @@ class BaziCalculator:
                 'stem': year_stem,
                 'branch': year_branch,
                 **detail,
-                'liuyue_sequence': liuyue_sequence
+                'liuyue_sequence': liuyue_sequence,
+                'relations': relations  # 新增：关系列表
             })
         return liunians
 
@@ -1371,7 +1535,31 @@ class BaziCalculator:
         }
 
     def _generate_current_liunian_window(self, context: Dict[str, Any]) -> None:
+        # ✅ 调试日志：记录函数被调用
+        try:
+            with open('/tmp/bazi_debug.log', 'a', encoding='utf-8') as f:
+                f.write(f"[_generate_current_liunian_window] 函数被调用\n")
+                f.write(f"[_generate_current_liunian_window] self.details.keys(): {list(self.details.keys())}\n")
+        except:
+            pass
+        
         dayun_sequence = self.details.get('dayun_sequence', [])
+        # ✅ 调试日志：记录dayun_sequence状态
+        try:
+            with open('/tmp/bazi_debug.log', 'a', encoding='utf-8') as f:
+                f.write(f"[_generate_current_liunian_window] dayun_sequence长度: {len(dayun_sequence)}\n")
+                if dayun_sequence:
+                    for i, d in enumerate(dayun_sequence[:5]):  # 显示前5个
+                        f.write(f"  dayun_sequence[{i}]: stem={d.get('stem')}, branch={d.get('branch')}, year_start={d.get('year_start')}, year_end={d.get('year_end')}\n")
+                else:
+                    f.write(f"[_generate_current_liunian_window] ⚠️  dayun_sequence为空！\n")
+        except Exception as e:
+            try:
+                with open('/tmp/bazi_debug.log', 'a', encoding='utf-8') as f:
+                    f.write(f"[_generate_current_liunian_window] 调试日志写入失败: {e}\n")
+            except:
+                pass
+        
         if not dayun_sequence:
             self.details['liunian_sequence'] = []
             self.details['liuyue_sequence'] = []
@@ -1381,10 +1569,58 @@ class BaziCalculator:
         dayun_idx = max(0, min(dayun_idx, len(dayun_sequence) - 1))
         dayun = dayun_sequence[dayun_idx]
 
+        # 获取大运天干地支（用于关系计算，但不改变原有逻辑）
+        # 如果是小运，设置为None，关系计算会被跳过
+        dayun_stem = dayun.get('stem', '') if dayun.get('stem', '') != '小运' else None
+        dayun_branch = dayun.get('branch', '') if dayun.get('stem', '') != '小运' else None
+        
+        # ✅ 修复：确保使用正确的大运信息计算关系
+        # 如果当前大运是小运，需要查找包含目标年份的大运
+        selected_year = context.get('selected_year', dayun.get('year_start'))
+        
+        # ✅ 修复：如果当前大运是小运，查找包含目标年份的大运（用于关系计算）
+        # 注意：这里只用于关系计算，不改变原有的 dayun 对象（保持原有逻辑不变）
+        relation_dayun_stem = dayun_stem
+        relation_dayun_branch = dayun_branch
+        
+        # ✅ 修复：如果当前大运是小运，或者年份范围不包含目标年份，查找包含目标年份的大运
+        if (dayun_stem is None or dayun_stem == '小运' or 
+            (dayun.get('year_start', 0) > selected_year or dayun.get('year_end', 0) < selected_year)):
+            # 查找包含目标年份的大运（优先查找非小运的大运）
+            for d in dayun_sequence:
+                d_stem = d.get('stem', '')
+                d_branch = d.get('branch', '')
+                if (d_stem and d_stem != '小运' and 
+                    d_branch and
+                    d.get('year_start', 0) <= selected_year <= d.get('year_end', 0)):
+                    relation_dayun_stem = d_stem
+                    relation_dayun_branch = d_branch
+                    break
+        
+        # 使用找到的大运信息（用于关系计算）
+        dayun_stem = relation_dayun_stem
+        dayun_branch = relation_dayun_branch
+        
+        # ✅ 调试日志：记录调用参数
+        try:
+            with open('/tmp/bazi_debug.log', 'a', encoding='utf-8') as f:
+                f.write(f"[_generate_current_liunian_window] 调用_generate_liunian_for_range\n")
+                f.write(f"  dayun_stem: {dayun_stem}, dayun_branch: {dayun_branch}\n")
+                f.write(f"  year_start: {dayun['year_start']}, year_end: {dayun['year_end']}\n")
+                f.write(f"  selected_year: {selected_year}\n")
+                f.write(f"  self.details.keys(): {list(self.details.keys())}\n")
+                f.write(f"  dayun_sequence长度: {len(self.details.get('dayun_sequence', []))}\n")
+        except:
+            pass
+        
+        # 生成流年列表，传入大运和四柱信息用于计算关系（可选参数，不影响原有逻辑）
         liunians = self._generate_liunian_for_range(
             self.bazi_pillars['day']['stem'],
             dayun['year_start'],
-            dayun['year_end']
+            dayun['year_end'],
+            dayun_stem=dayun_stem,  # 新增：可选参数，用于关系计算
+            dayun_branch=dayun_branch,  # 新增：可选参数，用于关系计算
+            bazi_pillars=self.bazi_pillars  # 新增：可选参数，用于关系计算
         )
         dayun['liunian_sequence'] = liunians
         self.details['liunian_sequence'] = liunians

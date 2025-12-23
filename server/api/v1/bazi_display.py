@@ -18,6 +18,8 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.bazi_display_service import BaziDisplayService
+from server.api.v1.models.bazi_base_models import BaziBaseRequest
+from server.utils.bazi_input_processor import BaziInputProcessor
 
 router = APIRouter()
 
@@ -27,35 +29,9 @@ max_workers = min(cpu_count * 2, 100)
 executor = ThreadPoolExecutor(max_workers=max_workers)
 
 
-class BaziDisplayRequest(BaseModel):
+class BaziDisplayRequest(BaziBaseRequest):
     """八字展示请求模型"""
-    solar_date: str = Field(..., description="阳历日期，格式：YYYY-MM-DD")
-    solar_time: str = Field(..., description="出生时间，格式：HH:MM")
-    gender: str = Field(..., description="性别：male(男) 或 female(女)")
-    
-    @validator('solar_date')
-    def validate_date(cls, v):
-        from datetime import datetime
-        try:
-            datetime.strptime(v, '%Y-%m-%d')
-        except ValueError:
-            raise ValueError('日期格式错误，应为 YYYY-MM-DD')
-        return v
-    
-    @validator('solar_time')
-    def validate_time(cls, v):
-        from datetime import datetime
-        try:
-            datetime.strptime(v, '%H:%M')
-        except ValueError:
-            raise ValueError('时间格式错误，应为 HH:MM')
-        return v
-    
-    @validator('gender')
-    def validate_gender(cls, v):
-        if v not in ['male', 'female']:
-            raise ValueError('性别必须为 male 或 female')
-        return v
+    pass
 
 
 class DayunDisplayRequest(BaziDisplayRequest):
@@ -89,26 +65,44 @@ async def get_pan_display(request: BaziDisplayRequest):
     
     返回数组格式的四柱数据，便于前端 v-for 渲染
     
-    - **solar_date**: 阳历日期 (YYYY-MM-DD)
+    - **solar_date**: 阳历日期 (YYYY-MM-DD) 或农历日期（当calendar_type=lunar时）
     - **solar_time**: 出生时间 (HH:MM)
     - **gender**: 性别 (male/female)
+    - **calendar_type**: 历法类型 (solar/lunar)，默认solar
+    - **location**: 出生地点（可选，用于时区转换）
+    - **latitude**: 纬度（可选，用于时区转换）
+    - **longitude**: 经度（可选，用于时区转换和真太阳时计算）
     
     返回前端友好的排盘数据，包括：
     - 基本信息
     - 四柱数组（便于前端循环渲染）
     - 五行统计（包含百分比）
+    - conversion_info: 转换信息（如果进行了农历转换或时区转换）
     """
     try:
+        # 处理农历输入和时区转换
+        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+            request.solar_date,
+            request.solar_time,
+            request.calendar_type or "solar",
+            request.location,
+            request.latitude,
+            request.longitude
+        )
+        
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             executor,
             BaziDisplayService.get_pan_display,
-            request.solar_date,
-            request.solar_time,
+            final_solar_date,
+            final_solar_time,
             request.gender
         )
         
         if result.get('success'):
+            # 添加转换信息到结果
+            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+                result['conversion_info'] = conversion_info
             return result
         else:
             raise HTTPException(status_code=500, detail=result.get('error', '计算失败'))
@@ -127,9 +121,13 @@ async def get_dayun_display(request: DayunDisplayRequest):
     
     返回数组格式的大运数据，包含明确的当前状态标识
     
-    - **solar_date**: 阳历日期 (YYYY-MM-DD)
+    - **solar_date**: 阳历日期 (YYYY-MM-DD) 或农历日期（当calendar_type=lunar时）
     - **solar_time**: 出生时间 (HH:MM)
     - **gender**: 性别 (male/female)
+    - **calendar_type**: 历法类型 (solar/lunar)，默认solar
+    - **location**: 出生地点（可选，用于时区转换）
+    - **latitude**: 纬度（可选，用于时区转换）
+    - **longitude**: 经度（可选，用于时区转换和真太阳时计算）
     - **current_time**: 当前时间（可选）(YYYY-MM-DD HH:MM)
     
     返回前端友好的大运数据，包括：
@@ -137,8 +135,19 @@ async def get_dayun_display(request: DayunDisplayRequest):
     - 大运列表（数组格式，便于前端渲染）
     - 起运和交运信息
     - 年龄范围（对象格式，便于前端计算）
+    - conversion_info: 转换信息（如果进行了农历转换或时区转换）
     """
     try:
+        # 处理农历输入和时区转换
+        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+            request.solar_date,
+            request.solar_time,
+            request.calendar_type or "solar",
+            request.location,
+            request.latitude,
+            request.longitude
+        )
+        
         current_time = None
         if request.current_time:
             current_time = datetime.strptime(request.current_time, "%Y-%m-%d %H:%M")
@@ -147,13 +156,16 @@ async def get_dayun_display(request: DayunDisplayRequest):
         result = await loop.run_in_executor(
             executor,
             BaziDisplayService.get_dayun_display,
-            request.solar_date,
-            request.solar_time,
+            final_solar_date,
+            final_solar_time,
             request.gender,
             current_time
         )
         
         if result.get('success'):
+            # 添加转换信息到结果
+            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+                result['conversion_info'] = conversion_info
             return result
         else:
             raise HTTPException(status_code=500, detail=result.get('error', '计算失败'))
@@ -172,28 +184,46 @@ async def get_liunian_display(request: LiunianDisplayRequest):
     
     返回数组格式的流年数据，包含年龄字段
     
-    - **solar_date**: 阳历日期 (YYYY-MM-DD)
+    - **solar_date**: 阳历日期 (YYYY-MM-DD) 或农历日期（当calendar_type=lunar时）
     - **solar_time**: 出生时间 (HH:MM)
     - **gender**: 性别 (male/female)
+    - **calendar_type**: 历法类型 (solar/lunar)，默认solar
+    - **location**: 出生地点（可选，用于时区转换）
+    - **latitude**: 纬度（可选，用于时区转换）
+    - **longitude**: 经度（可选，用于时区转换和真太阳时计算）
     - **year_range**: 年份范围（可选）{"start": 2020, "end": 2030}
     
     返回前端友好的流年数据，包括：
     - 当前流年（明确标识）
     - 流年列表（数组格式，便于前端渲染）
     - 年龄字段（整数和显示格式）
+    - conversion_info: 转换信息（如果进行了农历转换或时区转换）
     """
     try:
+        # 处理农历输入和时区转换
+        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+            request.solar_date,
+            request.solar_time,
+            request.calendar_type or "solar",
+            request.location,
+            request.latitude,
+            request.longitude
+        )
+        
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             executor,
             BaziDisplayService.get_liunian_display,
-            request.solar_date,
-            request.solar_time,
+            final_solar_date,
+            final_solar_time,
             request.gender,
             request.year_range
         )
         
         if result.get('success'):
+            # 添加转换信息到结果
+            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+                result['conversion_info'] = conversion_info
             return result
         else:
             raise HTTPException(status_code=500, detail=result.get('error', '计算失败'))
@@ -212,28 +242,46 @@ async def get_liuyue_display(request: LiuyueDisplayRequest):
     
     返回数组格式的流月数据
     
-    - **solar_date**: 阳历日期 (YYYY-MM-DD)
+    - **solar_date**: 阳历日期 (YYYY-MM-DD) 或农历日期（当calendar_type=lunar时）
     - **solar_time**: 出生时间 (HH:MM)
     - **gender**: 性别 (male/female)
+    - **calendar_type**: 历法类型 (solar/lunar)，默认solar
+    - **location**: 出生地点（可选，用于时区转换）
+    - **latitude**: 纬度（可选，用于时区转换）
+    - **longitude**: 经度（可选，用于时区转换和真太阳时计算）
     - **target_year**: 目标年份（可选），用于计算该年份的流月
     
     返回前端友好的流月数据，包括：
     - 当前流月（明确标识）
     - 流月列表（数组格式，便于前端渲染）
     - 节气信息
+    - conversion_info: 转换信息（如果进行了农历转换或时区转换）
     """
     try:
+        # 处理农历输入和时区转换
+        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+            request.solar_date,
+            request.solar_time,
+            request.calendar_type or "solar",
+            request.location,
+            request.latitude,
+            request.longitude
+        )
+        
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             executor,
             BaziDisplayService.get_liuyue_display,
-            request.solar_date,
-            request.solar_time,
+            final_solar_date,
+            final_solar_time,
             request.gender,
             request.target_year
         )
         
         if result.get('success'):
+            # 添加转换信息到结果
+            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+                result['conversion_info'] = conversion_info
             return result
         else:
             raise HTTPException(status_code=500, detail=result.get('error', '计算失败'))
@@ -252,19 +300,36 @@ async def get_fortune_display(request: FortuneDisplayRequest):
     
     **性能优化**：只计算一次，避免重复调用
     
-    - **solar_date**: 阳历日期 (YYYY-MM-DD)
+    - **solar_date**: 阳历日期 (YYYY-MM-DD) 或农历日期（当calendar_type=lunar时）
     - **solar_time**: 出生时间 (HH:MM)
     - **gender**: 性别 (male/female)
+    - **calendar_type**: 历法类型 (solar/lunar)，默认solar
+    - **location**: 出生地点（可选，用于时区转换）
+    - **latitude**: 纬度（可选，用于时区转换）
+    - **longitude**: 经度（可选，用于时区转换和真太阳时计算）
     - **current_time**: 当前时间（可选）(YYYY-MM-DD HH:MM)
     - **dayun_index**: 大运索引（可选），指定要显示的大运，只返回该大运范围内的流年（性能优化）
+    - **dayun_year_start**: 大运起始年份（可选）
+    - **dayun_year_end**: 大运结束年份（可选）
     - **target_year**: 目标年份（可选），用于计算该年份的流月
     
     返回前端友好的数据，包括：
     - 大运数据（当前大运、大运列表、起运交运信息）
     - 流年数据（当前流年、流年列表）
     - 流月数据（当前流月、流月列表）
+    - conversion_info: 转换信息（如果进行了农历转换或时区转换）
     """
     try:
+        # 处理农历输入和时区转换
+        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+            request.solar_date,
+            request.solar_time,
+            request.calendar_type or "solar",
+            request.location,
+            request.latitude,
+            request.longitude
+        )
+        
         current_time = None
         if request.current_time:
             current_time = datetime.strptime(request.current_time, "%Y-%m-%d %H:%M")
@@ -274,8 +339,8 @@ async def get_fortune_display(request: FortuneDisplayRequest):
         result = await loop.run_in_executor(
             executor,
             lambda: BaziDisplayService.get_fortune_display(
-                request.solar_date,
-                request.solar_time,
+                final_solar_date,
+                final_solar_time,
                 request.gender,
                 current_time,
                 dayun_index=request.dayun_index,  # 兼容旧接口
@@ -286,6 +351,9 @@ async def get_fortune_display(request: FortuneDisplayRequest):
         )
         
         if result.get('success'):
+            # 添加转换信息到结果
+            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+                result['conversion_info'] = conversion_info
             return result
         else:
             raise HTTPException(status_code=500, detail=result.get('error', '计算失败'))

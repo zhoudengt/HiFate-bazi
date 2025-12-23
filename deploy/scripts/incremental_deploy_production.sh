@@ -243,6 +243,129 @@ EOF
 # 不因为本地导入失败而阻止部署，服务器端会进行完整验证
 echo -e "${GREEN}✅ 本地验证完成（服务器端将进行完整验证）${NC}"
 
+# 1.7 数据库变更检测（必须检查）
+echo ""
+echo "🔍 检测数据库变更..."
+DB_SYNC_NEEDED=false
+
+# 运行数据库变更检测
+DB_DETECT_OUTPUT=$(python3 scripts/db/detect_db_changes.py 2>&1)
+DB_DETECT_EXIT=$?
+
+if [ $DB_DETECT_EXIT -eq 0 ]; then
+    # 检查输出中是否包含变更信息
+    if echo "$DB_DETECT_OUTPUT" | grep -qE "(新增表|新增字段|修改字段|新增表的数据|表数据差异)" && ! echo "$DB_DETECT_OUTPUT" | grep -q "✅ 无数据库变更"; then
+        echo "$DB_DETECT_OUTPUT"
+        echo -e "${YELLOW}⚠️  发现数据库变更${NC}"
+        DB_SYNC_NEEDED=true
+        
+        # 询问是否生成同步脚本
+        read -p "是否生成数据库同步脚本？(y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            DEPLOYMENT_ID=$(date +%Y%m%d_%H%M%S)
+            echo "生成同步脚本..."
+            python3 scripts/db/detect_db_changes.py --generate-sync-script 2>&1 | tail -5
+            SYNC_SCRIPT="scripts/db/sync_${DEPLOYMENT_ID}.sql"
+            
+            # 查找最新生成的同步脚本
+            LATEST_SYNC_SCRIPT=$(ls -t scripts/db/sync_*.sql 2>/dev/null | head -1)
+            if [ -n "$LATEST_SYNC_SCRIPT" ] && [ -f "$LATEST_SYNC_SCRIPT" ]; then
+                DEPLOYMENT_ID=$(basename "$LATEST_SYNC_SCRIPT" | sed 's/sync_//;s/.sql//')
+                SYNC_SCRIPT="$LATEST_SYNC_SCRIPT"
+                echo -e "${GREEN}✅ 同步脚本已生成: $SYNC_SCRIPT${NC}"
+                
+                # 询问是否立即同步
+                read -p "是否立即同步到生产环境（Node1）？(y/N): " -n 1 -r
+                echo
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    echo "🔄 同步数据库到 Node1..."
+                    bash scripts/db/sync_production_db.sh --node node1 --deployment-id $DEPLOYMENT_ID
+                    
+                    # 询问是否同步到Node2
+                    read -p "是否同步到 Node2？(y/N): " -n 1 -r
+                    echo
+                    if [[ $REPLY =~ ^[Yy]$ ]]; then
+                        echo "🔄 同步数据库到 Node2..."
+                        bash scripts/db/sync_production_db.sh --node node2 --deployment-id $DEPLOYMENT_ID
+                    fi
+                else
+                    echo -e "${YELLOW}⚠️  数据库同步已跳过，请稍后手动执行：${NC}"
+                    echo "  bash scripts/db/sync_production_db.sh --node node1 --deployment-id $DEPLOYMENT_ID"
+                fi
+            else
+                echo -e "${YELLOW}⚠️  同步脚本生成失败${NC}"
+            fi
+        else
+            echo -e "${YELLOW}⚠️  数据库同步脚本生成已跳过${NC}"
+        fi
+    else
+        echo "$DB_DETECT_OUTPUT" | tail -20
+        echo -e "${GREEN}✅ 无数据库变更${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠️  数据库变更检测失败（可能是连接问题），继续部署${NC}"
+    echo "$DB_DETECT_OUTPUT" | tail -5
+fi
+
+# 1.8 配置变更检测（必须检查）
+echo ""
+echo "🔍 检测配置变更..."
+if python3 scripts/config/detect_config_changes.py 2>/dev/null; then
+    CONFIG_CHANGES_OUTPUT=$(python3 scripts/config/detect_config_changes.py 2>&1)
+    if echo "$CONFIG_CHANGES_OUTPUT" | grep -q "✅ 无配置变更"; then
+        echo -e "${GREEN}✅ 无配置变更${NC}"
+        CONFIG_SYNC_NEEDED=false
+    else
+        echo "$CONFIG_CHANGES_OUTPUT"
+        echo -e "${YELLOW}⚠️  发现配置变更${NC}"
+        CONFIG_SYNC_NEEDED=true
+        
+        # 询问是否同步配置
+        read -p "是否同步配置到生产环境（Node1）？(y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo "🔄 同步配置到 Node1..."
+            bash scripts/config/sync_production_config.sh --node node1
+            
+            # 询问是否同步到Node2
+            read -p "是否同步到 Node2？(y/N): " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                echo "🔄 同步配置到 Node2..."
+                bash scripts/config/sync_production_config.sh --node node2
+            fi
+        else
+            echo -e "${YELLOW}⚠️  配置同步已跳过，请稍后手动执行：${NC}"
+            echo "  bash scripts/config/sync_production_config.sh --node node1"
+        fi
+    fi
+else
+    echo -e "${YELLOW}⚠️  配置变更检测脚本不可用，跳过检查${NC}"
+    CONFIG_SYNC_NEEDED=false
+fi
+
+# 1.9 部署前最终确认
+echo ""
+echo "========================================"
+echo "📋 部署前检查总结"
+echo "========================================"
+if [ "$DB_SYNC_NEEDED" = true ]; then
+    echo -e "${YELLOW}⚠️  数据库变更需要同步（已处理或已跳过）${NC}"
+fi
+if [ "$CONFIG_SYNC_NEEDED" = true ]; then
+    echo -e "${YELLOW}⚠️  配置变更需要同步（已处理或已跳过）${NC}"
+fi
+echo "========================================"
+echo ""
+
+read -p "确认继续部署？(y/N): " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "部署已取消"
+    exit 1
+fi
+
 echo ""
 echo -e "${GREEN}✅ 部署前检查全部通过${NC}"
 echo ""

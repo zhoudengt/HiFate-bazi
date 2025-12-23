@@ -118,16 +118,91 @@ class DatabaseComparator:
                 'indexes': indexes
             }
     
+    def get_table_row_count(self, conn, table_name: str) -> int:
+        """获取表的记录数"""
+        with conn.cursor() as cursor:
+            cursor.execute(f"SELECT COUNT(*) as count FROM `{table_name}`")
+            result = cursor.fetchone()
+            return result['count'] if result else 0
+    
+    def get_table_primary_key(self, conn, table_name: str) -> List[str]:
+        """获取表的主键字段列表"""
+        with conn.cursor() as cursor:
+            cursor.execute(f"""
+                SELECT COLUMN_NAME
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+                WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME = %s
+                AND CONSTRAINT_NAME = 'PRIMARY'
+                ORDER BY ORDINAL_POSITION
+            """, (table_name,))
+            result = cursor.fetchall()
+            return [row['COLUMN_NAME'] for row in result] if result else []
+    
+    def get_table_data_diff(self, table_name: str, primary_keys: List[str]) -> List[Dict]:
+        """
+        检测表数据差异（本地有但生产没有的数据）
+        
+        Returns:
+            本地有但生产没有的数据行列表
+        """
+        diff_rows = []
+        
+        # 如果表没有主键，无法精确对比，只能对比记录数
+        if not primary_keys:
+            return diff_rows
+        
+        # 获取本地所有数据的主键值
+        with self.local_conn.cursor() as local_cursor:
+            pk_columns = ', '.join([f"`{pk}`" for pk in primary_keys])
+            local_cursor.execute(f"SELECT {pk_columns} FROM `{table_name}`")
+            local_rows = local_cursor.fetchall()
+            local_pk_set = {tuple(row.values()) for row in local_rows}
+        
+        # 获取生产所有数据的主键值
+        with self.prod_conn.cursor() as prod_cursor:
+            prod_cursor.execute(f"SELECT {pk_columns} FROM `{table_name}`")
+            prod_rows = prod_cursor.fetchall()
+            prod_pk_set = {tuple(row.values()) for row in prod_rows}
+        
+        # 找出本地有但生产没有的主键
+        diff_pk_set = local_pk_set - prod_pk_set
+        
+        # 获取这些主键对应的完整数据行
+        if diff_pk_set:
+            pk_conditions = []
+            for pk_values in diff_pk_set:
+                condition_parts = []
+                for i, pk in enumerate(primary_keys):
+                    value = list(pk_values)[i]
+                    if isinstance(value, str):
+                        escaped_value = value.replace("\\", "\\\\").replace("'", "\\'")
+                        condition_parts.append(f"`{pk}` = '{escaped_value}'")
+                    else:
+                        condition_parts.append(f"`{pk}` = {value}")
+                pk_conditions.append("(" + " AND ".join(condition_parts) + ")")
+            
+            with self.local_conn.cursor() as local_cursor:
+                where_clause = " OR ".join(pk_conditions)
+                local_cursor.execute(f"SELECT * FROM `{table_name}` WHERE {where_clause}")
+                diff_rows = local_cursor.fetchall()
+        
+        return diff_rows
+    
     def detect_changes(self) -> Dict:
         """
-        检测数据库变更
+        检测数据库变更（包括表结构和数据）
         
         Returns:
             {
                 'new_tables': [...],
                 'new_columns': [...],
                 'modified_columns': [...],
-                'new_indexes': [...]
+                'new_indexes': [...],
+                'data_changes': {
+                    'new_tables_data': [...],  # 新增表的数据
+                    'table_data_diff': [...]    # 表数据差异
+                }
             }
         """
         local_tables = set(self.get_tables(self.local_conn))
@@ -137,19 +212,34 @@ class DatabaseComparator:
             'new_tables': [],
             'new_columns': [],
             'modified_columns': [],
-            'new_indexes': []
+            'new_indexes': [],
+            'data_changes': {
+                'new_tables_data': [],  # 新增表的数据
+                'table_data_diff': []    # 表数据差异
+            }
         }
         
         # 检测新增表
         new_tables = local_tables - prod_tables
         for table in new_tables:
             structure = self.get_table_structure(self.local_conn, table)
+            local_row_count = self.get_table_row_count(self.local_conn, table)
             changes['new_tables'].append({
                 'table': table,
-                'structure': structure
+                'structure': structure,
+                'row_count': local_row_count
             })
+            
+            # 检测新增表的数据
+            if local_row_count > 0:
+                primary_keys = self.get_table_primary_key(self.local_conn, table)
+                changes['data_changes']['new_tables_data'].append({
+                    'table': table,
+                    'row_count': local_row_count,
+                    'primary_keys': primary_keys
+                })
         
-        # 检测每个表的字段变更
+        # 检测每个表的字段变更和数据差异
         common_tables = local_tables & prod_tables
         for table in common_tables:
             local_structure = self.get_table_structure(self.local_conn, table)
@@ -182,11 +272,53 @@ class DatabaseComparator:
                         'local': local_col,
                         'production': prod_col
                     })
+            
+            # 检测数据差异（对比记录数）
+            local_row_count = self.get_table_row_count(self.local_conn, table)
+            prod_row_count = self.get_table_row_count(self.prod_conn, table)
+            
+            if local_row_count > prod_row_count:
+                # 本地记录数大于生产，可能存在新增数据
+                primary_keys = self.get_table_primary_key(self.local_conn, table)
+                if primary_keys:
+                    # 尝试获取数据差异
+                    diff_rows = self.get_table_data_diff(table, primary_keys)
+                    if diff_rows:
+                        changes['data_changes']['table_data_diff'].append({
+                            'table': table,
+                            'local_count': local_row_count,
+                            'prod_count': prod_row_count,
+                            'diff_count': len(diff_rows),
+                            'primary_keys': primary_keys,
+                            'sample_rows': diff_rows[:10]  # 只保留前10条作为示例
+                        })
         
         return changes
     
+    def generate_insert_sql(self, table_name: str, row: Dict) -> str:
+        """生成单条INSERT语句"""
+        columns = list(row.keys())
+        values = []
+        
+        for col in columns:
+            value = row[col]
+            if value is None:
+                values.append("NULL")
+            elif isinstance(value, (int, float)):
+                values.append(str(value))
+            elif isinstance(value, bool):
+                values.append("1" if value else "0")
+            else:
+                # 转义字符串
+                escaped_value = str(value).replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r")
+                values.append(f"'{escaped_value}'")
+        
+        columns_str = ", ".join([f"`{col}`" for col in columns])
+        values_str = ", ".join(values)
+        return f"INSERT INTO `{table_name}` ({columns_str}) VALUES ({values_str});"
+    
     def generate_sync_script(self, changes: Dict, deployment_id: str) -> str:
-        """生成数据库同步脚本"""
+        """生成数据库同步脚本（包括表结构和数据）"""
         script_lines = []
         script_lines.append(f"-- 数据库同步脚本")
         script_lines.append(f"-- 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -242,6 +374,76 @@ class DatabaseComparator:
                 script_lines.append(f"-- 本地: {local_col['COLUMN_TYPE']} {local_col['IS_NULLABLE']}")
                 script_lines.append(f"-- 生产: {prod_col['COLUMN_TYPE']} {prod_col['IS_NULLABLE']}")
                 script_lines.append(f"-- ALTER TABLE `{table}` MODIFY COLUMN `{col_name}` ...;")
+                script_lines.append("")
+        
+        # 生成数据同步 SQL（新增表的数据）
+        data_changes = changes.get('data_changes', {})
+        if data_changes.get('new_tables_data'):
+            script_lines.append("-- ==================== 新增表的数据 ====================")
+            for table_data_info in data_changes['new_tables_data']:
+                table = table_data_info['table']
+                row_count = table_data_info['row_count']
+                script_lines.append(f"-- 表 {table} 有 {row_count} 条数据需要同步")
+                
+                # 获取所有数据
+                with self.local_conn.cursor() as cursor:
+                    cursor.execute(f"SELECT * FROM `{table}`")
+                    rows = cursor.fetchall()
+                    
+                    for row in rows:
+                        insert_sql = self.generate_insert_sql(table, row)
+                        script_lines.append(insert_sql)
+                
+                script_lines.append("")
+        
+        # 生成数据同步 SQL（表数据差异）
+        if data_changes.get('table_data_diff'):
+            script_lines.append("-- ==================== 表数据差异（需要同步的数据）====================")
+            for diff_info in data_changes['table_data_diff']:
+                table = diff_info['table']
+                diff_count = diff_info['diff_count']
+                script_lines.append(f"-- 表 {table} 有 {diff_count} 条数据需要同步（本地有但生产没有）")
+                
+                # 获取差异数据
+                sample_rows = diff_info.get('sample_rows', [])
+                primary_keys = diff_info.get('primary_keys', [])
+                
+                # 如果有主键，获取完整的差异数据
+                if primary_keys and sample_rows:
+                    # 从sample_rows中获取主键值，然后查询完整数据
+                    pk_columns = ', '.join([f"`{pk}`" for pk in primary_keys])
+                    pk_values_list = []
+                    for row in sample_rows:
+                        pk_values = tuple(row[pk] for pk in primary_keys)
+                        pk_values_list.append(pk_values)
+                    
+                    # 构建WHERE条件
+                    if len(pk_values_list) <= 100:  # 限制一次查询的数据量
+                        with self.local_conn.cursor() as cursor:
+                            where_conditions = []
+                            for pk_values in pk_values_list:
+                                condition_parts = []
+                                for i, pk in enumerate(primary_keys):
+                                    value = pk_values[i]
+                                    if isinstance(value, str):
+                                        escaped_value = value.replace("\\", "\\\\").replace("'", "\\'")
+                                        condition_parts.append(f"`{pk}` = '{escaped_value}'")
+                                    else:
+                                        condition_parts.append(f"`{pk}` = {value}")
+                                where_conditions.append("(" + " AND ".join(condition_parts) + ")")
+                            
+                            if where_conditions:
+                                where_clause = " OR ".join(where_conditions)
+                                cursor.execute(f"SELECT * FROM `{table}` WHERE {where_clause}")
+                                diff_rows = cursor.fetchall()
+                                
+                                for row in diff_rows:
+                                    # 使用 INSERT IGNORE 或 INSERT ... ON DUPLICATE KEY UPDATE 避免重复
+                                    insert_sql = self.generate_insert_sql(table, row)
+                                    # 改为 INSERT IGNORE 避免主键冲突
+                                    insert_sql = insert_sql.replace("INSERT INTO", "INSERT IGNORE INTO")
+                                    script_lines.append(insert_sql)
+                
                 script_lines.append("")
         
         script_lines.append("COMMIT;")
@@ -386,7 +588,26 @@ def main():
         else:
             print("\n✅ 无修改字段")
         
+        # 显示数据变更
+        data_changes = changes.get('data_changes', {})
+        if data_changes.get('new_tables_data'):
+            print(f"\n📋 新增表的数据 ({len(data_changes['new_tables_data'])} 个表):")
+            for table_data_info in data_changes['new_tables_data']:
+                print(f"  - {table_data_info['table']}: {table_data_info['row_count']} 条记录")
+        else:
+            print("\n✅ 无新增表数据")
+        
+        if data_changes.get('table_data_diff'):
+            print(f"\n📋 表数据差异 ({len(data_changes['table_data_diff'])} 个表):")
+            for diff_info in data_changes['table_data_diff']:
+                print(f"  - {diff_info['table']}: 本地 {diff_info['local_count']} 条，生产 {diff_info['prod_count']} 条，差异 {diff_info['diff_count']} 条")
+        else:
+            print("\n✅ 无表数据差异")
+        
         print("\n" + "=" * 80)
+        
+        # 获取数据变更信息（用于后续处理）
+        data_changes = changes.get('data_changes', {})
         
         # 生成同步脚本
         if args.generate_sync_script:
@@ -417,13 +638,23 @@ def main():
                     'changes': {
                         'new_tables': [t['table'] for t in changes['new_tables']],
                         'new_columns': [f"{c['table']}.{c['column']['COLUMN_NAME']}" for c in changes['new_columns']],
-                        'modified_columns': [f"{c['table']}.{c['column']}" for c in changes['modified_columns']]
+                        'modified_columns': [f"{c['table']}.{c['column']}" for c in changes['modified_columns']],
+                        'new_tables_data': [{'table': t['table'], 'row_count': t['row_count']} for t in data_changes.get('new_tables_data', [])],
+                        'table_data_diff': [{'table': d['table'], 'diff_count': d['diff_count']} for d in data_changes.get('table_data_diff', [])]
                     }
                 }, f, ensure_ascii=False, indent=2)
             print(f"✅ 变更信息已保存: {changes_file}")
         
         # 如果有变更，返回非零退出码
-        if any([changes['new_tables'], changes['new_columns'], changes['modified_columns']]):
+        has_changes = any([
+            changes['new_tables'],
+            changes['new_columns'],
+            changes['modified_columns'],
+            data_changes.get('new_tables_data'),
+            data_changes.get('table_data_diff')
+        ])
+        
+        if has_changes:
             return 0
         else:
             print("\n✅ 无数据库变更")

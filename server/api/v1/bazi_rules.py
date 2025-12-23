@@ -105,49 +105,10 @@ def check_rate_limit_dependency(http_request: Request):
         _rate_limit_storage[key].append((current_time, 1))
 
 
-class BaziRulesRequest(BaseModel):
+class BaziRulesRequest(BaziBaseRequest):
     """八字规则匹配请求模型"""
-    solar_date: str = Field(..., description="阳历日期，格式：YYYY-MM-DD", example="1990-05-15")
-    solar_time: str = Field(..., description="出生时间，格式：HH:MM", example="14:30")
-    gender: str = Field(..., description="性别：male(男) 或 female(女)", example="male")
     rule_types: Optional[List[str]] = Field(None, description="要匹配的规则类型列表，不指定则匹配所有类型", example=["rizhu_gender", "deity"])
     include_bazi: Optional[bool] = Field(True, description="是否包含八字计算结果", example=True)
-    
-    @validator('solar_date')
-    def validate_date(cls, v):
-        """验证日期格式"""
-        from server.utils.api_helpers import validate_bazi_request
-        try:
-            validate_bazi_request(v, "00:00", "male")  # 只验证日期格式
-        except ValueError as e:
-            if "日期格式" in str(e):
-                raise ValueError('日期格式错误，应为 YYYY-MM-DD')
-            raise
-        return v
-    
-    @validator('solar_time')
-    def validate_time(cls, v):
-        """验证时间格式"""
-        from server.utils.api_helpers import validate_bazi_request
-        try:
-            validate_bazi_request("2000-01-01", v, "male")  # 只验证时间格式
-        except ValueError as e:
-            if "时间格式" in str(e):
-                raise ValueError('时间格式错误，应为 HH:MM')
-            raise
-        return v
-    
-    @validator('gender')
-    def validate_gender(cls, v):
-        """验证性别"""
-        from server.utils.api_helpers import validate_bazi_request
-        try:
-            validate_bazi_request("2000-01-01", "00:00", v)  # 只验证性别
-        except ValueError as e:
-            if "性别" in str(e):
-                raise ValueError('性别必须为 male 或 female')
-            raise
-        return v
 
 
 class BaziRulesResponse(BaseModel):
@@ -180,12 +141,22 @@ async def match_bazi_rules(request: BaziRulesRequest, http_request: Request):
     返回匹配的规则列表和八字数据
     """
     try:
+        # 处理农历输入和时区转换
+        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+            request.solar_date,
+            request.solar_time,
+            request.calendar_type or "solar",
+            request.location,
+            request.latitude,
+            request.longitude
+        )
+        
         # 在线程池中执行CPU密集型计算
         loop = asyncio.get_event_loop()
         
         # 1. 构造规则引擎需要的八字数据（包含流年信息）
         from src.tool.BaziCalculator import BaziCalculator
-        calculator = BaziCalculator(request.solar_date, request.solar_time, request.gender)
+        calculator = BaziCalculator(final_solar_date, final_solar_time, request.gender)
         bazi_data = await loop.run_in_executor(
             executor,
             calculator.build_rule_input
@@ -221,12 +192,18 @@ async def match_bazi_rules(request: BaziRulesRequest, http_request: Request):
             True  # 使用缓存
         )
         
-        return BaziRulesResponse(
-            success=True,
-            bazi_data=bazi_result if request.include_bazi else None,
-            matched_rules=matched_rules,
-            rule_count=len(matched_rules)
-        )
+        # 添加转换信息到结果
+        response_data = {
+            'success': True,
+            'bazi_data': bazi_result if request.include_bazi else None,
+            'matched_rules': matched_rules,
+            'rule_count': len(matched_rules)
+        }
+        
+        if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+            response_data['conversion_info'] = conversion_info
+        
+        return BaziRulesResponse(**response_data)
         
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

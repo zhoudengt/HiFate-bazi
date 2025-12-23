@@ -83,7 +83,13 @@ from server.api.v1.daily_fortune_calendar import (
     DailyFortuneCalendarRequest,
     query_daily_fortune_calendar,
 )
-from server.api.v1.bazi import BaziInterfaceRequest, ShengongMinggongRequest, get_shengong_minggong
+from server.api.v1.bazi import (
+    BaziInterfaceRequest, 
+    ShengongMinggongRequest, 
+    get_shengong_minggong,
+    process_date_time_input
+)
+from server.utils.bazi_input_processor import BaziInputProcessor
 try:
     from server.api.v1.rizhu_liujiazi import RizhuLiujiaziRequest, get_rizhu_liujiazi
     RIZHU_LIUJIAZI_AVAILABLE = True
@@ -98,6 +104,10 @@ except ImportError as e:
 from server.api.v1.wuxing_proportion import (
     WuxingProportionRequest,
     get_wuxing_proportion,
+)
+from server.api.v1.xishen_jishen import (
+    XishenJishenRequest,
+    get_xishen_jishen,
 )
 from server.services.bazi_interface_service import BaziInterfaceService
 
@@ -398,19 +408,33 @@ async def _handle_bazi_interface(payload: Dict[str, Any]):
     import asyncio
     request_model = BaziInterfaceRequest(**payload)
     
+    # 处理农历输入和时区转换
+    final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+        request_model.solar_date,
+        request_model.solar_time,
+        request_model.calendar_type or "solar",
+        request_model.location,
+        request_model.latitude,
+        request_model.longitude
+    )
+    
     # 在线程池中执行CPU密集型计算
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
         None,  # 使用默认线程池
         BaziInterfaceService.generate_interface_full,
-        request_model.solar_date,
-        request_model.solar_time,
+        final_solar_date,
+        final_solar_time,
         request_model.gender,
         request_model.name or "",
         request_model.location or "未知地",
         request_model.latitude or 39.00,
         request_model.longitude or 120.00
     )
+    
+    # 添加转换信息到结果
+    if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+        result['conversion_info'] = conversion_info
     
     # 返回格式与 REST API 一致
     return {
@@ -447,6 +471,13 @@ if RIZHU_LIUJIAZI_AVAILABLE:
         return await get_rizhu_liujiazi(request_model)
 else:
     logger.warning("⚠️  /bazi/rizhu-liujiazi 端点未注册（模块不可用）")
+
+
+@_register("/bazi/xishen-jishen")
+async def _handle_xishen_jishen(payload: Dict[str, Any]):
+    """处理喜神忌神查询请求"""
+    request_model = XishenJishenRequest(**payload)
+    return await get_xishen_jishen(request_model)
 
 
 @_register("/bazi/wuxing-proportion")
@@ -771,6 +802,7 @@ async def grpc_web_gateway(request: Request):
         "/api/v2/desk-fengshui/health",   # 健康检查不需要认证
         "/api/v2/desk-fengshui/rules",   # 规则列表不需要认证（公开功能）
         "/bazi/rizhu-liujiazi",  # 日元-六十甲子查询不需要认证（公开功能）
+        "/bazi/xishen-jishen",  # 喜神忌神查询不需要认证（公开功能）
     }
     
     if endpoint not in whitelist_endpoints:
@@ -828,6 +860,34 @@ async def grpc_web_gateway(request: Request):
                 SUPPORTED_ENDPOINTS["/bazi/rizhu-liujiazi"] = _handle_rizhu_liujiazi_dynamic
                 handler = _handle_rizhu_liujiazi_dynamic
                 logger.info("✅ 动态注册端点: /bazi/rizhu-liujiazi")
+            except Exception as e:
+                logger.error(f"动态注册端点失败: {e}", exc_info=True)
+        
+        # 动态注册 /auth/login 端点（用于热更新后恢复）
+        if endpoint == "/auth/login":
+            try:
+                from server.api.v1.auth import LoginRequest, login
+                async def _handle_login_dynamic(payload: Dict[str, Any]):
+                    """处理登录请求（动态注册）"""
+                    request_model = LoginRequest(**payload)
+                    return await login(request_model)
+                SUPPORTED_ENDPOINTS["/auth/login"] = _handle_login_dynamic
+                handler = _handle_login_dynamic
+                logger.info("✅ 动态注册端点: /auth/login")
+            except Exception as e:
+                logger.error(f"动态注册端点失败: {e}", exc_info=True)
+        
+        # 动态注册 /bazi/xishen-jishen 端点（用于热更新后恢复）
+        if endpoint == "/bazi/xishen-jishen":
+            try:
+                from server.api.v1.xishen_jishen import XishenJishenRequest, get_xishen_jishen
+                async def _handle_xishen_jishen_dynamic(payload: Dict[str, Any]):
+                    """处理喜神忌神查询请求（动态注册）"""
+                    request_model = XishenJishenRequest(**payload)
+                    return await get_xishen_jishen(request_model)
+                SUPPORTED_ENDPOINTS["/bazi/xishen-jishen"] = _handle_xishen_jishen_dynamic
+                handler = _handle_xishen_jishen_dynamic
+                logger.info("✅ 动态注册端点: /bazi/xishen-jishen")
             except Exception as e:
                 logger.error(f"动态注册端点失败: {e}", exc_info=True)
         

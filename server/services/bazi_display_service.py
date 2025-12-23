@@ -145,7 +145,7 @@ class BaziDisplayService:
         if current_time:
             current_year = current_time.year
             birth_year = int(solar_date.split('-')[0])
-            current_age = current_year - birth_year
+            current_age = current_year - birth_year + 1  # 虚岁计算
             
             for dayun in dayun_sequence:
                 age_range = dayun.get('age_range', {})
@@ -561,11 +561,12 @@ class BaziDisplayService:
                 if match:
                     age_range = {"start": int(match.group(1)), "end": int(match.group(2))}
                 else:
-                    # 处理 "0岁" 这种情况
+                    # 支持"10岁"格式（大运，只显示起始年龄）
                     match = re.match(r'(\d+)岁', age_display)
                     if match:
                         age_val = int(match.group(1))
-                        age_range = {"start": age_val, "end": age_val}
+                        # 大运：起始年龄到起始年龄+9岁
+                        age_range = {"start": age_val, "end": age_val + 9}
         
         # ✅ 添加详细信息（用于细盘表格）
         # ✅ 添加五行属性（由后端计算，前端只负责展示）
@@ -630,6 +631,7 @@ class BaziDisplayService:
             "self_sitting": liunian.get('self_sitting', ''),
             "kongwang": liunian.get('kongwang', ''),
             "deities": liunian.get('deities', []),
+            "relations": liunian.get('relations', []),  # 新增：关系列表
             "is_current": False  # 由调用方设置
         }
     
@@ -745,7 +747,7 @@ class BaziDisplayService:
         if current_time:
             current_year = current_time.year
             birth_year = int(solar_date.split('-')[0])
-            current_age = current_year - birth_year
+            current_age = current_year - birth_year + 1  # 虚岁计算
             
             for dayun in dayun_sequence:
                 age_range = dayun.get('age_range', {})
@@ -876,6 +878,9 @@ class BaziDisplayService:
                 "current": BaziDisplayService._format_liuyue_item(current_liuyue or (liuyue_sequence[0] if liuyue_sequence else {})),
                 "list": formatted_liuyue_list,
                 "target_year": target_year_for_liuyue
+            },
+            "details": {
+                "dayun_sequence": dayun_sequence  # ✅ 添加大运序列，供前端使用
             }
         }
 

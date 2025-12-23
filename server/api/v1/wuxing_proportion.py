@@ -16,6 +16,8 @@ from typing import Optional, Dict, Any
 
 from server.services.wuxing_proportion_service import WuxingProportionService
 from server.services.coze_stream_service import CozeStreamService
+from server.api.v1.models.bazi_base_models import BaziBaseRequest
+from server.utils.bazi_input_processor import BaziInputProcessor
 
 router = APIRouter()
 
@@ -23,38 +25,9 @@ router = APIRouter()
 WUXING_PROPORTION_BOT_ID = "7585498208202473523"
 
 
-class WuxingProportionRequest(BaseModel):
+class WuxingProportionRequest(BaziBaseRequest):
     """五行占比查询请求模型"""
-    solar_date: str = Field(..., description="阳历日期，格式：YYYY-MM-DD", example="1990-01-15")
-    solar_time: str = Field(..., description="出生时间，格式：HH:MM", example="12:00")
-    gender: str = Field(..., description="性别：male(男) 或 female(女)", example="male")
-    
-    @validator('solar_date')
-    def validate_date(cls, v):
-        """验证日期格式"""
-        try:
-            from datetime import datetime
-            datetime.strptime(v, '%Y-%m-%d')
-        except ValueError:
-            raise ValueError('日期格式错误，应为 YYYY-MM-DD')
-        return v
-    
-    @validator('solar_time')
-    def validate_time(cls, v):
-        """验证时间格式"""
-        try:
-            from datetime import datetime
-            datetime.strptime(v, '%H:%M')
-        except ValueError:
-            raise ValueError('时间格式错误，应为 HH:MM')
-        return v
-    
-    @validator('gender')
-    def validate_gender(cls, v):
-        """验证性别"""
-        if v not in ['male', 'female']:
-            raise ValueError('性别必须为 male 或 female')
-        return v
+    pass
 
 
 class WuxingProportionResponse(BaseModel):
@@ -83,9 +56,19 @@ async def get_wuxing_proportion(request: WuxingProportionRequest):
     返回五行占比分析数据
     """
     try:
-        result = WuxingProportionService.calculate_proportion(
+        # 处理农历输入和时区转换
+        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
             request.solar_date,
             request.solar_time,
+            request.calendar_type or "solar",
+            request.location,
+            request.latitude,
+            request.longitude
+        )
+        
+        result = WuxingProportionService.calculate_proportion(
+            final_solar_date,
+            final_solar_time,
             request.gender
         )
         
@@ -94,6 +77,10 @@ async def get_wuxing_proportion(request: WuxingProportionRequest):
                 success=False,
                 error=result.get('error', '计算失败')
             )
+        
+        # 添加转换信息到结果
+        if result and isinstance(result, dict) and (conversion_info.get('converted') or conversion_info.get('timezone_info')):
+            result['conversion_info'] = conversion_info
         
         return WuxingProportionResponse(
             success=True,

@@ -71,6 +71,41 @@ async def get_hot_reload_status():
         raise HTTPException(status_code=500, detail=f"获取状态失败: {str(e)}")
 
 
+@router.post("/hot-reload/reload-routers", summary="强制重新注册 FastAPI 路由")
+async def reload_routers():
+    """
+    强制重新注册所有 FastAPI 路由
+    
+    用于修复热更新后路由丢失的问题
+    """
+    try:
+        from server.main import router_manager
+        
+        old_count = len(router_manager.get_registered_routers())
+        
+        # 强制重新注册所有路由
+        results = router_manager.register_all_routers(force=True)
+        
+        new_count = len(router_manager.get_registered_routers())
+        
+        success_count = sum(1 for success in results.values() if success)
+        failed_count = len(results) - success_count
+        
+        return {
+            "success": failed_count == 0,
+            "message": f"路由重新注册完成（旧: {old_count}, 新: {new_count}, 成功: {success_count}, 失败: {failed_count}）",
+            "old_count": old_count,
+            "new_count": new_count,
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "results": results,
+            "registered_routers": router_manager.get_registered_routers()
+        }
+    except Exception as e:
+        logger.error(f"重新注册路由失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"重新注册路由失败: {str(e)}")
+
+
 @router.post("/hot-reload/reload-endpoints", summary="强制重新注册 gRPC 端点")
 async def reload_endpoints():
     """

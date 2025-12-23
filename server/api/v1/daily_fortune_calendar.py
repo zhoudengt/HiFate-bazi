@@ -21,6 +21,7 @@ sys.path.insert(0, project_root)
 
 from server.services.daily_fortune_calendar_service import DailyFortuneCalendarService
 from server.services.coze_stream_service import CozeStreamService
+from server.utils.bazi_input_processor import BaziInputProcessor
 
 router = APIRouter()
 
@@ -28,9 +29,13 @@ router = APIRouter()
 class DailyFortuneCalendarRequest(BaseModel):
     """每日运势日历请求模型"""
     date: Optional[str] = Field(None, description="日期（可选，默认为今天），格式：YYYY-MM-DD", example="2025-01-15")
-    solar_date: Optional[str] = Field(None, description="用户生辰阳历日期（可选，用于十神提示），格式：YYYY-MM-DD", example="1990-01-15")
+    solar_date: Optional[str] = Field(None, description="用户生辰阳历日期（可选，用于十神提示），格式：YYYY-MM-DD 或农历日期（当calendar_type=lunar时）", example="1990-01-15")
     solar_time: Optional[str] = Field(None, description="用户生辰时间（可选），格式：HH:MM", example="12:00")
     gender: Optional[str] = Field(None, description="用户性别（可选），male/female", example="male")
+    calendar_type: Optional[str] = Field("solar", description="历法类型：solar(阳历) 或 lunar(农历)，默认solar", example="solar")
+    location: Optional[str] = Field(None, description="出生地点（可选，用于时区转换）", example="北京")
+    latitude: Optional[float] = Field(None, description="纬度（可选，用于时区转换）", example=39.90)
+    longitude: Optional[float] = Field(None, description="经度（可选，用于时区转换和真太阳时计算）", example=116.40)
     
     @validator('date')
     def validate_date(cls, v):
@@ -43,13 +48,23 @@ class DailyFortuneCalendarRequest(BaseModel):
         return v
     
     @validator('solar_date')
-    def validate_solar_date(cls, v):
+    def validate_solar_date(cls, v, values):
+        """验证用户生辰日期格式（支持农历）"""
         if v is None:
             return v
+        
+        # 如果是农历类型，允许任何格式（包括中文）
+        calendar_type = values.get('calendar_type', 'solar')
+        if calendar_type == 'lunar':
+            return v
+        
+        # 阳历日期尝试验证格式，但不强制（允许农历字符串格式）
         try:
             datetime.strptime(v, '%Y-%m-%d')
         except ValueError:
-            raise ValueError('用户生辰日期格式错误，应为 YYYY-MM-DD')
+            # 可能是农历格式，允许通过，在 BaziInputProcessor 中处理
+            pass
+        
         return v
     
     @validator('solar_time')
@@ -143,11 +158,32 @@ async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
     返回完整的每日运势信息
     """
     try:
+        # 处理用户生辰的农历输入和时区转换（如果提供了生辰信息）
+        user_final_solar_date = request.solar_date
+        user_final_solar_time = request.solar_time
+        conversion_info = None
+        
+        if request.solar_date and request.solar_time and request.gender:
+            try:
+                user_final_solar_date, user_final_solar_time, conversion_info = BaziInputProcessor.process_input(
+                    request.solar_date,
+                    request.solar_time,
+                    request.calendar_type or "solar",
+                    request.location,
+                    request.latitude,
+                    request.longitude
+                )
+            except Exception as e:
+                # 转换失败不影响主流程，使用原始值
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"用户生辰转换失败，使用原始值: {e}")
+        
         # 使用模块级别的导入（已在文件顶部导入）
         result = DailyFortuneCalendarService.get_daily_fortune_calendar(
             date_str=request.date,
-            user_solar_date=request.solar_date,
-            user_solar_time=request.solar_time,
+            user_solar_date=user_final_solar_date,
+            user_solar_time=user_final_solar_time,
             user_gender=request.gender
         )
         
@@ -176,28 +212,35 @@ async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
                     today_shishen=master_info.get('today_shishen')
                 )
             
-            return DailyFortuneCalendarResponse(
-                success=True,
-                solar_date=result.get('solar_date'),
-                lunar_date=result.get('lunar_date'),
-                weekday=result.get('weekday'),
-                weekday_en=result.get('weekday_en'),
-                yi=result.get('yi', []),
-                ji=result.get('ji', []),
-                luck_level=result.get('luck_level'),
-                deities=result.get('deities', {}),
-                chong_he_sha=result.get('chong_he_sha', {}),
-                jianchu=jianchu_model,
-                taishen=result.get('taishen'),
-                taishen_explanation=result.get('taishen_explanation'),
-                jiazi_fortune=result.get('jiazi_fortune'),
-                shishen_hint=result.get('shishen_hint'),
-                zodiac_relations=result.get('zodiac_relations'),
-                master_info=master_info_model,
-                wuxing_wear=result.get('wuxing_wear') if result.get('wuxing_wear') else None,  # 空字符串转为None
-                guiren_fangwei=result.get('guiren_fangwei'),
-                wenshen_directions=result.get('wenshen_directions')
-            )
+            # 构建响应数据
+            response_dict = {
+                'success': True,
+                'solar_date': result.get('solar_date'),
+                'lunar_date': result.get('lunar_date'),
+                'weekday': result.get('weekday'),
+                'weekday_en': result.get('weekday_en'),
+                'yi': result.get('yi', []),
+                'ji': result.get('ji', []),
+                'luck_level': result.get('luck_level'),
+                'deities': result.get('deities', {}),
+                'chong_he_sha': result.get('chong_he_sha', {}),
+                'jianchu': jianchu_model,
+                'taishen': result.get('taishen'),
+                'taishen_explanation': result.get('taishen_explanation'),
+                'jiazi_fortune': result.get('jiazi_fortune'),
+                'shishen_hint': result.get('shishen_hint'),
+                'zodiac_relations': result.get('zodiac_relations'),
+                'master_info': master_info_model,
+                'wuxing_wear': result.get('wuxing_wear') if result.get('wuxing_wear') else None,  # 空字符串转为None
+                'guiren_fangwei': result.get('guiren_fangwei'),
+                'wenshen_directions': result.get('wenshen_directions')
+            }
+            
+            # 添加转换信息到结果（如果进行了转换）
+            if conversion_info and (conversion_info.get('converted') or conversion_info.get('timezone_info')):
+                response_dict['conversion_info'] = conversion_info
+            
+            return DailyFortuneCalendarResponse(**response_dict)
         else:
             return DailyFortuneCalendarResponse(
                 success=False,

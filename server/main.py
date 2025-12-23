@@ -222,6 +222,15 @@ except ImportError as e:
     wuxing_proportion_router = None
     WUXING_PROPORTION_ROUTER_AVAILABLE = False
 
+# 喜神忌神路由（条件可用）
+try:
+    from server.api.v1.xishen_jishen import router as xishen_jishen_router
+    XISHEN_JISHEN_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"喜神忌神路由导入失败（可选功能）: {e}")
+    xishen_jishen_router = None
+    XISHEN_JISHEN_ROUTER_AVAILABLE = False
+
 # 新增：算法公式规则分析路由（808条规则）
 try:
     from server.api.v1.formula_analysis import router as formula_analysis_router
@@ -668,6 +677,15 @@ def _register_all_routers_to_manager():
         prefix="/api/v1",
         tags=["五行占比"],
         enabled_getter=lambda: WUXING_PROPORTION_ROUTER_AVAILABLE and wuxing_proportion_router is not None
+    )
+    
+    # 喜神忌神路由（条件可用）
+    router_manager.register_router(
+        "xishen_jishen",
+        lambda: xishen_jishen_router,
+        prefix="/api/v1",
+        tags=["八字命理"],
+        enabled_getter=lambda: XISHEN_JISHEN_ROUTER_AVAILABLE and xishen_jishen_router is not None
     )
     
     # 用户反馈路由（条件可用）

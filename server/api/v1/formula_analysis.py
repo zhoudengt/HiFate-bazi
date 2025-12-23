@@ -14,16 +14,15 @@ import json
 from server.services.bazi_service import BaziService
 from server.services.rule_service import RuleService
 from server.utils.data_validator import validate_bazi_data
+from server.api.v1.models.bazi_base_models import BaziBaseRequest
+from server.utils.bazi_input_processor import BaziInputProcessor
 # ⚠️ FormulaRuleService 已完全废弃，所有规则匹配统一使用 RuleService
 
 router = APIRouter()
 
 
-class FormulaAnalysisRequest(BaseModel):
+class FormulaAnalysisRequest(BaziBaseRequest):
     """算法公式分析请求"""
-    solar_date: str = Field(..., description="阳历日期，格式：YYYY-MM-DD")
-    solar_time: str = Field(..., description="阳历时间，格式：HH:MM")
-    gender: str = Field(..., description="性别：male/female")
     rule_types: Optional[List[str]] = Field(None, description="规则类型列表，可选值：wealth/marriage/career/children/character/summary/health/peach_blossom/shishen/parents")
 
 
@@ -54,10 +53,20 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
     - parents: 父母规则
     """
     try:
+        # 处理农历输入和时区转换
+        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+            request.solar_date,
+            request.solar_time,
+            request.calendar_type or "solar",
+            request.location,
+            request.latitude,
+            request.longitude
+        )
+        
         # 1. 计算八字
         bazi_result = BaziService.calculate_bazi_full(
-            solar_date=request.solar_date,
-            solar_time=request.solar_time,
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
             gender=request.gender
         )
         
@@ -133,6 +142,10 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
                 'parents_count': len(matched_result['matched_rules'].get('parents', []))
             }
         }
+        
+        # 添加转换信息到结果
+        if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+            response_data['conversion_info'] = conversion_info
         
         return FormulaAnalysisResponse(success=True, data=response_data)
     

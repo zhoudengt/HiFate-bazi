@@ -17,6 +17,8 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.bazi_ai_service import BaziAIService
+from server.api.v1.models.bazi_base_models import BaziBaseRequest
+from server.utils.bazi_input_processor import BaziInputProcessor
 
 router = APIRouter()
 
@@ -28,43 +30,13 @@ max_workers = min(cpu_count * 2, 100)
 executor = ThreadPoolExecutor(max_workers=max_workers)
 
 
-class BaziAIRequest(BaseModel):
+class BaziAIRequest(BaziBaseRequest):
     """八字AI分析请求模型"""
-    solar_date: str = Field(..., description="阳历日期，格式：YYYY-MM-DD", example="1990-05-15")
-    solar_time: str = Field(..., description="出生时间，格式：HH:MM", example="14:30")
-    gender: str = Field(..., description="性别：male(男) 或 female(女)", example="male")
     user_question: Optional[str] = Field(None, description="用户的问题或分析需求", example="请分析我的财运和事业")
     access_token: Optional[str] = Field(None, description="Coze Access Token，如果不提供则使用环境变量 COZE_ACCESS_TOKEN", example="pat_...")
     bot_id: Optional[str] = Field(None, description="Coze Bot ID，如果不提供则使用环境变量 COZE_BOT_ID", example="1234567890")
     api_base: Optional[str] = Field(None, description="Coze API 基础URL，默认 https://api.coze.cn/v1", example="https://api.coze.cn/v1")
     include_rizhu_analysis: Optional[bool] = Field(True, description="是否包含日柱性别分析结果", example=True)
-    
-    @validator('solar_date')
-    def validate_date(cls, v):
-        """验证日期格式"""
-        try:
-            from datetime import datetime
-            datetime.strptime(v, '%Y-%m-%d')
-        except ValueError:
-            raise ValueError('日期格式错误，应为 YYYY-MM-DD')
-        return v
-    
-    @validator('solar_time')
-    def validate_time(cls, v):
-        """验证时间格式"""
-        try:
-            from datetime import datetime
-            datetime.strptime(v, '%H:%M')
-        except ValueError:
-            raise ValueError('时间格式错误，应为 HH:MM')
-        return v
-    
-    @validator('gender')
-    def validate_gender(cls, v):
-        """验证性别"""
-        if v not in ['male', 'female']:
-            raise ValueError('性别必须为 male 或 female')
-        return v
 
 
 class BaziAIResponse(BaseModel):

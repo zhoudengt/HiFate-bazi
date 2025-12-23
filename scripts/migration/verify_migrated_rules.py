@@ -4,7 +4,8 @@
 验证迁移后的规则
 1. 检查数据库中的规则
 2. 测试规则匹配
-3. 对比FormulaRuleService和RuleService的匹配结果
+
+注意：FormulaRuleService 已废弃并删除，所有规则匹配统一使用 RuleService
 """
 
 import json
@@ -130,76 +131,6 @@ def test_rule_matching():
         return False
 
 
-def compare_with_formula_service():
-    """对比FormulaRuleService和RuleService的匹配结果"""
-    try:
-        from server.services.formula_rule_service import FormulaRuleService
-        from server.services.rule_service import RuleService
-        from server.services.bazi_service import BaziService
-        
-        print("\n" + "=" * 60)
-        print("对比FormulaRuleService和RuleService的匹配结果")
-        print("=" * 60)
-        
-        # 测试用例
-        solar_date = "1990-05-15"
-        solar_time = "14:30"
-        gender = "male"
-        
-        # 计算八字
-        bazi_result = BaziService.calculate_bazi_full(solar_date, solar_time, gender)
-        bazi_data = bazi_result.get('bazi', {})
-        
-        # FormulaRuleService匹配
-        formula_result = FormulaRuleService.match_rules(bazi_data, rule_types=['wealth'])
-        formula_matched = formula_result.get('matched_rules', {}).get('wealth', [])
-        
-        # RuleService匹配
-        rule_data = {
-            'basic_info': bazi_data.get('basic_info', {}),
-            'bazi_pillars': bazi_data.get('bazi_pillars', {}),
-            'details': bazi_data.get('details', {}),
-            'ten_gods_stats': bazi_data.get('ten_gods_stats', {}),
-            'elements': bazi_data.get('elements', {}),
-            'element_counts': bazi_data.get('element_counts', {}),
-            'relationships': bazi_data.get('relationships', {})
-        }
-        rule_matched = RuleService.match_rules(rule_data, rule_types=['wealth'], use_cache=False)
-        rule_migrated = [r for r in rule_matched if r.get('rule_id', '').startswith('FORMULA_')]
-        
-        print(f"\nFormulaRuleService匹配: {len(formula_matched)} 条财富规则")
-        print(f"RuleService匹配（迁移规则）: {len(rule_migrated)} 条财富规则")
-        
-        # 对比规则ID
-        formula_ids = set([str(rid) for rid in formula_matched])
-        rule_ids = set([r.get('rule_id', '').replace('FORMULA_', '') for r in rule_migrated])
-        
-        print(f"\nFormulaRuleService规则ID: {sorted(formula_ids)[:10]}...")
-        print(f"RuleService规则ID: {sorted(rule_ids)[:10]}...")
-        
-        # 计算交集
-        common = formula_ids & rule_ids
-        only_formula = formula_ids - rule_ids
-        only_rule = rule_ids - formula_ids
-        
-        print(f"\n共同匹配: {len(common)} 条")
-        print(f"仅FormulaRuleService匹配: {len(only_formula)} 条")
-        print(f"仅RuleService匹配: {len(only_rule)} 条")
-        
-        if only_formula:
-            print(f"\n仅FormulaRuleService匹配的规则ID: {sorted(only_formula)[:10]}")
-        if only_rule:
-            print(f"\n仅RuleService匹配的规则ID: {sorted(only_rule)[:10]}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ 对比失败: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
 if __name__ == '__main__':
     print("=" * 60)
     print("验证迁移后的规则")
@@ -212,15 +143,11 @@ if __name__ == '__main__':
         # 2. 测试规则匹配
         test_match = test_rule_matching()
         
-        # 3. 对比两个服务
-        compare = compare_with_formula_service()
-        
         print("\n" + "=" * 60)
         print("验证完成")
         print("=" * 60)
         print(f"数据库检查: {'✓' if check_db else '✗'}")
         print(f"规则匹配测试: {'✓' if test_match else '✗'}")
-        print(f"服务对比: {'✓' if compare else '✗'}")
     else:
         print("\n⚠️  数据库检查失败，跳过后续测试")
 

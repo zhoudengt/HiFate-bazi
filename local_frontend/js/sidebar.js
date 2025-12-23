@@ -36,6 +36,7 @@ class Sidebar {
                         <a href="pan.html" class="nav-submenu-item" data-page="pan">基础八字排盘</a>
                         <a href="rizhu-liujiazi.html" class="nav-submenu-item" data-page="rizhu-liujiazi">日元-六十甲子</a>
                         <a href="wuxing-proportion.html" class="nav-submenu-item" data-page="wuxing-proportion">五行占比</a>
+                        <a href="xishen-jishen.html" class="nav-submenu-item" data-page="xishen-jishen">八字命理-喜神与忌神</a>
                     </div>
                     <a href="basic-info.html" class="nav-item" data-page="basic-info">
                         <span class="nav-item-icon">📋</span>
@@ -83,7 +84,8 @@ class Sidebar {
             currentPage === 'shengong-minggong' ||
             currentPage === 'pan' ||
             currentPage === 'rizhu-liujiazi' ||
-            currentPage === 'wuxing-proportion') {
+            currentPage === 'wuxing-proportion' ||
+            currentPage === 'xishen-jishen') {
             const submenus = document.querySelectorAll('.nav-submenu');
             submenus.forEach(submenu => {
                 if (submenu) {
@@ -107,6 +109,7 @@ class Sidebar {
         if (filename.includes('dayun')) return 'dayun';
         if (filename.includes('liunian')) return 'liunian';
         if (filename.includes('wuxing-proportion')) return 'wuxing-proportion';
+        if (filename.includes('xishen-jishen')) return 'xishen-jishen';
         return 'index';
     }
 }

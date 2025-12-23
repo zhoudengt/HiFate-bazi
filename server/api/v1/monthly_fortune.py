@@ -15,15 +15,14 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.monthly_fortune_service import MonthlyFortuneService
+from server.api.v1.models.bazi_base_models import BaziBaseRequest
+from server.utils.bazi_input_processor import BaziInputProcessor
 
 router = APIRouter()
 
 
-class MonthlyFortuneRequest(BaseModel):
+class MonthlyFortuneRequest(BaziBaseRequest):
     """月运势请求模型"""
-    solar_date: str = Field(..., description="阳历出生日期，格式：YYYY-MM-DD")
-    solar_time: str = Field(..., description="出生时间，格式：HH:MM")
-    gender: str = Field(..., description="性别：male/female")
     target_month: Optional[str] = Field(None, description="目标月份，格式：YYYY-MM，默认为本月")
     use_llm: bool = Field(False, description="是否使用LLM生成")
     access_token: Optional[str] = Field(None, description="Coze Access Token（use_llm=True时需要）")
@@ -42,15 +41,32 @@ async def calculate_monthly_fortune(request: MonthlyFortuneRequest):
         dict: 包含月运势分析结果
     """
     try:
+        # 处理农历输入和时区转换
+        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+            request.solar_date,
+            request.solar_time,
+            request.calendar_type or "solar",
+            request.location,
+            request.latitude,
+            request.longitude
+        )
+        
         result = MonthlyFortuneService.calculate_monthly_fortune(
-            solar_date=request.solar_date,
-            solar_time=request.solar_time,
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
             gender=request.gender,
             target_month=request.target_month,
             use_llm=request.use_llm,
             access_token=request.access_token,
             bot_id=request.bot_id
         )
+        
+        # 添加转换信息到结果
+        if result and isinstance(result, dict) and result.get('success') and (conversion_info.get('converted') or conversion_info.get('timezone_info')):
+            if 'fortune' in result:
+                result['fortune']['conversion_info'] = conversion_info
+            else:
+                result['conversion_info'] = conversion_info
         
         if not result.get('success'):
             raise HTTPException(status_code=500, detail=result.get('error', '月运势计算失败'))

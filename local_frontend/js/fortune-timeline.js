@@ -55,10 +55,30 @@ function renderDayunTimeline(dayunData) {
     html += '<tr>';
     html += '<th></th>';
     validList.forEach(item => {
+        // ✅ 修复：判断是否是小运
+        const isXiaoyun = item.stem?.char === '小运' || item.stem === '小运';
         const ageRange = item.age_range || {};
-        const ageText = ageRange.start !== undefined && ageRange.end !== undefined 
-            ? `${ageRange.start}-${ageRange.end}岁` 
-            : item.age_display || '';
+        
+        let ageText = '';
+        if (isXiaoyun) {
+            // 小运：显示年龄范围，如 "0-1岁" 或 "1-1岁"
+            if (ageRange.start !== undefined && ageRange.end !== undefined) {
+                ageText = `${ageRange.start}-${ageRange.end}岁`;
+            } else {
+                ageText = item.age_display || '';
+            }
+        } else {
+            // 其他大运：只显示开始年龄，如 "1"、"11"、"21" 等（不显示"岁"）
+            if (ageRange.start !== undefined) {
+                ageText = `${ageRange.start}`;
+            } else if (item.age_display) {
+                // 如果 age_display 是 "1岁" 格式，提取数字
+                const match = item.age_display.match(/^(\d+)/);
+                ageText = match ? match[1] : item.age_display;
+            } else {
+                ageText = '';
+            }
+        }
         html += `<td class="timeline-age">${ageText}</td>`;
     });
     html += '</tr>';
@@ -239,6 +259,16 @@ function renderLiunianTimeline(liunianData) {
     validList.forEach(item => {
         const tenGods = item.ten_gods || '';
         html += `<td class="timeline-term">${tenGods}</td>`;
+    });
+    html += '</tr>';
+    
+    // 关系行
+    html += '<tr>';
+    html += '<th>关系</th>';
+    validList.forEach(item => {
+        const relations = item.relations || [];
+        const relationsText = relations.length > 0 ? relations.join('、') : '-';
+        html += `<td class="timeline-relations">${relationsText}</td>`;
     });
     html += '</tr>';
     

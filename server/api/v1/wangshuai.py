@@ -16,17 +16,17 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.wangshuai_service import WangShuaiService
+from server.api.v1.models.bazi_base_models import BaziBaseRequest
+from server.utils.bazi_input_processor import BaziInputProcessor
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-class WangShuaiRequest(BaseModel):
+class WangShuaiRequest(BaziBaseRequest):
     """旺衰计算请求"""
-    solar_date: str = Field(..., description="出生日期 (YYYY-MM-DD)", example="1987-01-07")
-    solar_time: str = Field(..., description="出生时间 (HH:MM)", example="09:55")
-    gender: str = Field(..., description="性别 (male/female)", example="male")
+    pass
 
 
 class WangShuaiResponse(BaseModel):
@@ -48,15 +48,40 @@ async def calculate_wangshuai(request: WangShuaiRequest):
     
     最终判定：极旺、身旺、身弱、极弱、平衡
     并计算喜神和忌神的五行
+    
+    - **solar_date**: 阳历日期 (YYYY-MM-DD) 或农历日期（当calendar_type=lunar时）
+    - **solar_time**: 出生时间 (HH:MM)
+    - **gender**: 性别 (male/female)
+    - **calendar_type**: 历法类型 (solar/lunar)，默认solar
+    - **location**: 出生地点（可选，用于时区转换）
+    - **latitude**: 纬度（可选，用于时区转换）
+    - **longitude**: 经度（可选，用于时区转换和真太阳时计算）
     """
     logger.info(f"📥 收到旺衰计算请求: {request.solar_date} {request.solar_time} {request.gender}")
     
     try:
-        result = WangShuaiService.calculate_wangshuai(
+        # 处理农历输入和时区转换
+        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
             request.solar_date,
             request.solar_time,
+            request.calendar_type or "solar",
+            request.location,
+            request.latitude,
+            request.longitude
+        )
+        
+        result = WangShuaiService.calculate_wangshuai(
+            final_solar_date,
+            final_solar_time,
             request.gender
         )
+        
+        # 添加转换信息到结果
+        if result.get('success') and (conversion_info.get('converted') or conversion_info.get('timezone_info')):
+            if 'data' in result:
+                result['data']['conversion_info'] = conversion_info
+            else:
+                result['conversion_info'] = conversion_info
         
         if not result['success']:
             logger.error(f"❌ 旺衰计算失败: {result.get('error')}")

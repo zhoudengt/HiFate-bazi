@@ -407,6 +407,8 @@ function renderLiunian() {
                         ${item.age !== undefined ? `${item.age}岁` : item.age_display || ''}
                         ${item.is_current ? '<span class="current-badge">当前</span>' : ''}
                     </div>
+                    ${item.relations && item.relations.length > 0 ? 
+                        `<div class="liunian-relations">${item.relations.join('、')}</div>` : ''}
                 </div>
             `;
         });
@@ -534,9 +536,17 @@ async function selectDayun(dayunIndex) {
             
             // ✅ 直接使用后端返回的数据，不做任何前端计算或过滤
             currentData.liunian = response.liunian;
+            // ✅ 同步更新 window.currentData（数据联动）
+            if (window.currentData) {
+                window.currentData.liunian = response.liunian;
+            }
             
             // ✅ 清除流月数据，等待重新加载
             currentData.liuyue = null;
+            // ✅ 同步清除 window.currentData（数据联动）
+            if (window.currentData) {
+                window.currentData.liuyue = null;
+            }
             
             // 清空流月显示
             const liuyueTable = document.getElementById('liuyueTable');
@@ -550,6 +560,11 @@ async function selectDayun(dayunIndex) {
             // ✅ 更新细盘表格
             if (typeof renderXipanTable === 'function') {
                 renderXipanTable(currentData);
+            }
+            
+            // ✅ 显示起运交运信息
+            if (response.dayun) {
+                displayQiyunInfo(response.dayun);
             }
             
             // ✅ 自动选择流年首年（year_start），并加载其流月
@@ -633,11 +648,20 @@ async function selectLiunian(year) {
             
             // ✅ 确保流月数据正确更新
             currentData.liuyue = response.liuyue;
+            // ✅ 同步更新 window.currentData（数据联动）
+            if (window.currentData) {
+                window.currentData.liuyue = response.liuyue;
+            }
             renderLiuyue();
             
             // ✅ 更新细盘表格
             if (typeof renderXipanTable === 'function') {
                 renderXipanTable(currentData);
+            }
+            
+            // ✅ 显示起运交运信息（如果响应中包含 dayun 数据）
+            if (response.dayun) {
+                displayQiyunInfo(response.dayun);
             }
         } else {
             console.error('获取流月数据失败:', response.error || '没有返回流月数据');
@@ -673,13 +697,14 @@ function displayQiyunInfo(dayunData) {
     const jiaoyunAgeEl = document.getElementById('jiaoyunAge');
     const qiyunInfoCard = document.getElementById('qiyunInfoCard');
     
-    if (qiyunDateEl) qiyunDateEl.textContent = qiyunInfo.date || '-';
+    // ✅ 修复：使用 description 字段显示起运交运信息
+    if (qiyunDateEl) qiyunDateEl.textContent = qiyunInfo.description || qiyunInfo.date || '-';
     if (qiyunAgeEl) qiyunAgeEl.textContent = qiyunInfo.age_display ? `(${qiyunInfo.age_display})` : '';
-    if (jiaoyunDateEl) jiaoyunDateEl.textContent = jiaoyunInfo.date || '-';
+    if (jiaoyunDateEl) jiaoyunDateEl.textContent = jiaoyunInfo.description || jiaoyunInfo.date || '-';
     if (jiaoyunAgeEl) jiaoyunAgeEl.textContent = jiaoyunInfo.age_display ? `(${jiaoyunInfo.age_display})` : '';
     
-    // 显示起运交运信息卡片
-    if (qiyunInfoCard && (qiyunInfo.date || jiaoyunInfo.date)) {
+    // ✅ 修复：只要有 description 或 date 就显示卡片
+    if (qiyunInfoCard && (qiyunInfo.description || qiyunInfo.date || jiaoyunInfo.description || jiaoyunInfo.date)) {
         qiyunInfoCard.style.display = 'block';
     }
 }

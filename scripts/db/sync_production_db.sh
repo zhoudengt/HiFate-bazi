@@ -184,7 +184,38 @@ echo -e "${GREEN}✅ 数据库同步成功${NC}"
 # 验证同步结果
 echo ""
 echo "🔍 验证同步结果..."
-# 这里可以添加验证逻辑，比如检查表是否存在、字段是否添加成功等
+echo "----------------------------------------"
+
+# 验证表是否存在
+echo "验证表结构同步..."
+VALIDATION_SQL="SELECT COUNT(*) as table_count FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ("
+TABLE_NAMES=()
+
+# 从同步脚本中提取表名（如果有新增表）
+if grep -q "CREATE TABLE" "$SYNC_SCRIPT"; then
+    while IFS= read -r line; do
+        if [[ "$line" =~ CREATE\ TABLE.*\`([^\`]+)\` ]]; then
+            TABLE_NAMES+=("${BASH_REMATCH[1]}")
+        fi
+    done < "$SYNC_SCRIPT"
+fi
+
+if [ ${#TABLE_NAMES[@]} -gt 0 ]; then
+    for table in "${TABLE_NAMES[@]}"; do
+        TABLE_EXISTS=$(ssh_exec "cd $PROJECT_DIR && \
+            mysql -h\${MYSQL_HOST:-localhost} -P\${MYSQL_PORT:-3306} -u\${MYSQL_USER:-root} -p\${MYSQL_PASSWORD:-Yuanqizhan@163} \${MYSQL_DATABASE:-hifate_bazi} -e \"SHOW TABLES LIKE '$table'\" 2>&1" | grep -c "$table" || echo "0")
+        if [ "$TABLE_EXISTS" -gt 0 ]; then
+            echo -e "  ✅ 表 $table 已创建"
+        else
+            echo -e "  ❌ 表 $table 创建失败"
+        fi
+    done
+fi
+
+# 提示运行数据一致性验证
+echo ""
+echo -e "${YELLOW}💡 建议运行数据一致性验证：${NC}"
+echo "  python3 scripts/db/verify_data_consistency.py"
 
 echo ""
 echo -e "${GREEN}✅ 数据库同步完成${NC}"
