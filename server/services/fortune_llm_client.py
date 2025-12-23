@@ -710,8 +710,7 @@ class FortuneLLMClient:
             # 设置响应编码为 UTF-8
             response.encoding = 'utf-8'
             
-            # 发送开始事件
-            yield {'type': 'start', 'content': '', 'error': None}
+            # 注意：start 事件已在第 685 行发送，这里不再重复发送
             
             # 逐行读取SSE数据（使用更大的chunk避免UTF-8截断）
             buffer = ""
