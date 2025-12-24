@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>八字命理-感情婚姻 - HiFate</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-layout.css">
+    <script src="js/sidebar.js?v=20250115"></script>
+    <style>
+        .marriage-analysis-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .form-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .form-card h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .analyze-btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .analyze-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .analyze-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .result-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: none;
+        }
+        
+        .result-card.active {
+            display: block;
+        }
+        
+        .result-card h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        
+        .result-section {
+            margin-bottom: 30px;
+        }
+        
+        .result-section h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+        
+        .result-content {
+            line-height: 1.8;
+            color: #333;
+            white-space: pre-wrap;
+            min-height: 100px;
+        }
+        
+        .result-content.streaming {
+            border-left: 4px solid #4caf50;
+            padding-left: 15px;
+        }
+        
+        .result-content .streaming-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1.2em;
+            background: #4caf50;
+            animation: blink 1s infinite;
+            margin-left: 2px;
+        }
+        
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        
+        .user-info-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .user-info-content {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .user-info-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .user-info-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .user-info-value {
+            font-size: 16px;
+            font-weight: 500;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="main-content">
+            <div class="content-header">
+                <div class="header-left">
+                    <button class="back-btn" onclick="history.back()">←</button>
+                    <h1 class="header-title">八字命理-感情婚姻</h1>
+                </div>
+            </div>
+
+            <div class="content-body">
+                <div class="marriage-analysis-container">
+                    <!-- 用户信息显示 -->
+                    <div id="userInfoCard" class="user-info-card" style="display: none;">
+                        <div class="user-info-content">
+                            <div class="user-info-item">
+                                <span class="user-info-label">出生日期</span>
+                                <span class="user-info-value" id="displayDate"></span>
+                            </div>
+                            <div class="user-info-item">
+                                <span class="user-info-label">出生时间</span>
+                                <span class="user-info-value" id="displayTime"></span>
+                            </div>
+                            <div class="user-info-item">
+                                <span class="user-info-label">性别</span>
+                                <span class="user-info-value" id="displayGender"></span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 输入表单 -->
+                    <div class="form-card">
+                        <h2>输入生辰信息</h2>
+                        <form id="marriageForm" onsubmit="return false;">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>出生日期</label>
+                                    <input type="date" id="solarDate" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>出生时间</label>
+                                    <input type="time" id="solarTime" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>性别</label>
+                                    <select id="gender" required>
+                                        <option value="male">男</option>
+                                        <option value="female">女</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button type="submit" class="analyze-btn" onclick="startAnalysis()">
+                                🚀 开始分析
+                            </button>
+                        </form>
+                    </div>
+                    
+                    <!-- 结果展示 -->
+                    <div class="result-card" id="resultCard">
+                        <h2>感情婚姻分析</h2>
+                        
+                        <!-- 命盘总论 -->
+                        <div class="result-section">
+                            <h3>1. 命盘总论</h3>
+                            <div id="mingpanContent" class="result-content">
+                                <div class="loading">正在生成...</div>
+                            </div>
+                        </div>
+                        
+                        <!-- 配偶特征 -->
+                        <div class="result-section">
+                            <h3>2. 配偶特征</h3>
+                            <div id="peiouContent" class="result-content">
+                                <div class="loading">正在生成...</div>
+                            </div>
+                        </div>
+                        
+                        <!-- 感情走势 -->
+                        <div class="result-section">
+                            <h3>3. 感情走势</h3>
+                            <div id="ganqingContent" class="result-content">
+                                <div class="loading">正在生成...</div>
+                            </div>
+                        </div>
+                        
+                        <!-- 神煞点睛 -->
+                        <div class="result-section">
+                            <h3>4. 神煞点睛</h3>
+                            <div id="shenshaContent" class="result-content">
+                                <div class="loading">正在生成...</div>
+                            </div>
+                        </div>
+                        
+                        <!-- 建议方向 -->
+                        <div class="result-section">
+                            <h3>5. 建议方向</h3>
+                            <div id="jianyiContent" class="result-content">
+                                <div class="loading">正在生成...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/marriage-analysis.js"></script>
+    <script>
+        Auth.checkAuth();
+    </script>
+</body>
+</html>
+

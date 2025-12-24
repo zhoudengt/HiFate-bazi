@@ -5,18 +5,11 @@
 """
 
 import logging
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
 
 from server.db.feedback_dao import FeedbackDAO
-# 可选认证依赖
-try:
-    from server.utils.auth import get_current_user
-except ImportError:
-    def get_current_user():
-        """默认用户（如果认证模块不可用）"""
-        return {'user_id': 'anonymous'}
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +40,7 @@ class RuleFeedbackStatsResponse(BaseModel):
 
 @router.post("/feedback", response_model=FeedbackResponse, summary="提交用户反馈")
 async def submit_feedback(
-    request: FeedbackRequest,
-    user=Depends(get_current_user)
+    request: FeedbackRequest
 ):
     """
     提交用户反馈
@@ -60,8 +52,8 @@ async def submit_feedback(
     - 评论
     """
     try:
-        # 处理用户ID（从token payload中提取）
-        user_id = user.get('sub', 'anonymous') if user else 'anonymous'
+        # 使用匿名用户（认证功能已移除）
+        user_id = 'anonymous'
         
         success = FeedbackDAO.add_feedback(
             user_id=user_id,
@@ -113,15 +105,14 @@ async def get_rule_feedback_stats(
 
 @router.get("/feedback/user", summary="获取用户反馈历史")
 async def get_user_feedback(
-    limit: int = 50,
-    user=Depends(get_current_user)
+    limit: int = 50
 ):
     """
     获取当前用户的反馈历史
     """
     try:
-        # 处理用户ID（从token payload中提取）
-        user_id = user.get('sub', 'anonymous') if user else 'anonymous'
+        # 使用匿名用户（认证功能已移除）
+        user_id = 'anonymous'
         
         feedback_list = FeedbackDAO.get_user_feedback(user_id, limit)
         

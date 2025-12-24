@@ -37,6 +37,7 @@ class Sidebar {
                         <a href="rizhu-liujiazi.html" class="nav-submenu-item" data-page="rizhu-liujiazi">日元-六十甲子</a>
                         <a href="wuxing-proportion.html" class="nav-submenu-item" data-page="wuxing-proportion">五行占比</a>
                         <a href="xishen-jishen.html" class="nav-submenu-item" data-page="xishen-jishen">八字命理-喜神与忌神</a>
+                        <a href="marriage-analysis.html" class="nav-submenu-item" data-page="marriage-analysis">八字命理-感情婚姻</a>
                     </div>
                     <a href="basic-info.html" class="nav-item" data-page="basic-info">
                         <span class="nav-item-icon">📋</span>
@@ -85,7 +86,8 @@ class Sidebar {
             currentPage === 'pan' ||
             currentPage === 'rizhu-liujiazi' ||
             currentPage === 'wuxing-proportion' ||
-            currentPage === 'xishen-jishen') {
+            currentPage === 'xishen-jishen' ||
+            currentPage === 'marriage-analysis') {
             const submenus = document.querySelectorAll('.nav-submenu');
             submenus.forEach(submenu => {
                 if (submenu) {
@@ -110,6 +112,7 @@ class Sidebar {
         if (filename.includes('liunian')) return 'liunian';
         if (filename.includes('wuxing-proportion')) return 'wuxing-proportion';
         if (filename.includes('xishen-jishen')) return 'xishen-jishen';
+        if (filename.includes('marriage-analysis')) return 'marriage-analysis';
         return 'index';
     }
 }

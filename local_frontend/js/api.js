@@ -19,8 +19,7 @@ class GrpcGatewayClient {
             throw new Error(`gRPC 网关未启用或未授权端点: ${endpoint}`);
         }
 
-        const token = localStorage.getItem(TOKEN_KEY) || '';
-        const requestBody = this._buildGrpcWebBody(endpoint, payload, token);
+        const requestBody = this._buildGrpcWebBody(endpoint, payload);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
@@ -30,8 +29,7 @@ class GrpcGatewayClient {
                 headers: {
                     'Content-Type': 'application/grpc-web+proto',
                     'X-Grpc-Web': '1',
-                    'X-User-Agent': 'grpc-web-js/0.1',
-                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    'X-User-Agent': 'grpc-web-js/0.1'
                 },
                 body: requestBody,
                 signal: controller.signal,
@@ -128,7 +126,7 @@ class GrpcGatewayClient {
         }
     }
 
-    _buildGrpcWebBody(endpoint, payload, token) {
+    _buildGrpcWebBody(endpoint, payload) {
         // 安全地序列化 payload，避免 Maximum call stack exceeded
         let payloadJson;
         try {
@@ -145,11 +143,7 @@ class GrpcGatewayClient {
             }
         }
         
-        const message = this._encodeRequest(
-            endpoint,
-            payloadJson,
-            token || ''
-        );
+        const message = this._encodeRequest(endpoint, payloadJson);
         return this._wrapFrame(0x00, message);
     }
     
@@ -194,7 +188,7 @@ class GrpcGatewayClient {
         }
     }
 
-    _encodeRequest(endpoint, payloadJson, authToken) {
+    _encodeRequest(endpoint, payloadJson) {
         // 使用 Uint8Array 而不是数组，避免大数组展开导致栈溢出
         const parts = [];
 
@@ -204,9 +198,7 @@ class GrpcGatewayClient {
         if (payloadJson) {
             parts.push(this._encodeStringField(2, payloadJson));
         }
-        if (authToken) {
-            parts.push(this._encodeStringField(3, authToken));
-        }
+        // authToken (field 3) 已移除，不再编码
 
         // 计算总长度
         let totalLength = 0;

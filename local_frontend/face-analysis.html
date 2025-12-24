@@ -379,16 +379,12 @@
                     formData.append('gender', gender);
                 }
 
-                const token = localStorage.getItem('bazi_token');
                 const apiKey = API_CONFIG.fortuneApiKey || 'fortune_analysis_default_key_2024';
                 
                 // 使用流式接口（添加 API Key 认证）
                 const headers = {
                     'X-API-Key': apiKey
                 };
-                if (token) {
-                    headers['Authorization'] = `Bearer ${token}`;
-                }
                 
                 const response = await fetch(`${API_CONFIG.baseURL}/fortune/face/analyze/stream`, {
                     method: 'POST',

@@ -1,6 +1,9 @@
-# HiFate-bazi 标准 CI/CD 流程
+# HiFate-bazi 标准 CI/CD 流程 - 构建 Docker 镜像
 # 触发条件：推送到 master 或 develop 分支
 # 功能：构建 Docker 镜像并推送到阿里云容器镜像服务 (ACR)
+# 
+# 注意：此 workflow 仅负责构建镜像，不负责部署
+# 部署请使用增量部署脚本：bash deploy/scripts/incremental_deploy_production.sh
 
 name: 🐳 Build and Push Docker Image
 

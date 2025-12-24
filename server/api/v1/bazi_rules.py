@@ -20,7 +20,6 @@ from server.services.bazi_service import BaziService
 from server.services.rule_service import RuleService
 from server.services import selector_service
 from server.services import nlg_service
-from server.utils.auth import get_current_user
 from server.utils.data_validator import validate_bazi_data
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 
@@ -226,8 +225,7 @@ class CuratedRequest(BaziRulesRequest):
 @router.post("/bazi/rules/curated", summary="精选规则（去冲突+多样化，可选NLG）")
 async def curated_bazi_rules(
     request: CuratedRequest, 
-    http_request: Request, 
-    user=Depends(get_current_user)
+    http_request: Request
 ):
     """
     在不改变现有逻辑的前提下，基于已匹配规则做：

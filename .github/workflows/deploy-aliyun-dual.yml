@@ -1,5 +1,8 @@
 # .github/workflows/deploy-aliyun-dual.yml
-# 阿里云双机部署工作流
+# 阿里云双机部署工作流（已禁用自动触发）
+# 
+# ⚠️ 注意：此 workflow 已禁用自动触发，仅支持手动触发
+# 推荐使用增量部署脚本：bash deploy/scripts/incremental_deploy_production.sh
 # 
 # 功能：
 # - 构建 Docker 镜像并推送到 ACR
@@ -7,15 +10,15 @@
 # - 自动健康检查和回滚
 #
 # 触发条件：
-# - 推送到 master 分支
-# - 手动触发（可选择部署目标）
+# - 仅手动触发（workflow_dispatch）
 
 name: 🚀 Deploy to Aliyun (Dual Nodes)
 
 on:
-  push:
-    branches: [master]
-  workflow_dispatch:
+  # 已禁用自动触发，使用增量部署脚本替代
+  # push:
+  #   branches: [master]
+  workflow_dispatch:  # 仅手动触发
     inputs:
       deploy_target:
         description: '部署目标'

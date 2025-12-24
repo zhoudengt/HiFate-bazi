@@ -24,17 +24,7 @@ from fastapi.encoders import jsonable_encoder
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DEBUG_LOG_PATH = os.path.join(PROJECT_ROOT, 'logs', 'debug.log')
 
-from server.api.v1.auth import LoginRequest, login
-from server.api.v1.oauth import (
-    AuthorizeRequest,
-    TokenRequest,
-    RefreshTokenRequest,
-    RevokeTokenRequest,
-    authorize,
-    token,
-    refresh_token,
-    revoke_token,
-)
+# 认证相关代码已移除
 from server.api.v1.bazi_display import (
     BaziDisplayRequest,
     DayunDisplayRequest,
@@ -179,7 +169,7 @@ def _reload_endpoints():
         logger.info(f"重新加载后端点数量: {endpoint_count}")
         
         # 如果端点数量为0或缺少关键端点，手动重新注册
-        key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi', '/auth/login']
+        key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi']
         missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
         
         if endpoint_count == 0 or missing:
@@ -232,20 +222,12 @@ def _reload_endpoints():
                     request_model = RizhuLiujiaziRequest(**payload)
                     return await get_rizhu_liujiazi(request_model)
                 
-                # 手动注册 /auth/login 端点
-                from server.api.v1.auth import LoginRequest, login
-                async def _handle_login_reload(payload: Dict[str, Any]):
-                    """处理登录请求（热更新后重新注册）"""
-                    request_model = LoginRequest(**payload)
-                    return await login(request_model)
-                
                 # 注册到 SUPPORTED_ENDPOINTS
                 SUPPORTED_ENDPOINTS['/bazi/interface'] = _handle_bazi_interface
                 SUPPORTED_ENDPOINTS['/bazi/shengong-minggong'] = _handle_shengong_minggong
                 SUPPORTED_ENDPOINTS['/bazi/rizhu-liujiazi'] = _handle_rizhu_liujiazi_reload
-                SUPPORTED_ENDPOINTS['/auth/login'] = _handle_login_reload
                 
-                logger.info(f"✅ 手动注册关键端点成功（包含 /bazi/rizhu-liujiazi 和 /auth/login）")
+                logger.info(f"✅ 手动注册关键端点成功（包含 /bazi/rizhu-liujiazi）")
             except Exception as e:
                 logger.error(f"❌ 手动注册端点失败: {e}", exc_info=True)
         
@@ -256,7 +238,7 @@ def _reload_endpoints():
         if endpoint_count > 0:
             logger.debug(f"已注册的端点: {list(SUPPORTED_ENDPOINTS.keys())[:10]}...")
             # 验证关键端点
-            key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi', '/auth/login']
+            key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi']
             missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
             if missing:
                 logger.warning(f"⚠️  关键端点未注册: {missing}")
@@ -324,29 +306,7 @@ async def _handle_yigua(payload: Dict[str, Any]):
     return await divinate(request_model)
 
 
-@_register("/auth/login")
-async def _handle_login(payload: Dict[str, Any]):
-    request_model = LoginRequest(**payload)
-    return await login(request_model)
-
-
-@_register("/oauth/token")
-async def _handle_oauth_token(payload: Dict[str, Any]):
-    """OAuth 2.0 Token 获取端点"""
-    request_model = TokenRequest(**payload)
-    return await token(request_model)
-
-
-@_register("/oauth/refresh")
-async def _handle_oauth_refresh(payload: Dict[str, Any]):
-    """OAuth 2.0 Token 刷新端点"""
-    request_model = RefreshTokenRequest(**payload)
-    return await refresh_token(request_model)
-
-
-@_register("/oauth/revoke")
-async def _handle_oauth_revoke(payload: Dict[str, Any]):
-    """OAuth 2.0 Token 撤销端点"""
+# 认证相关端点已移除
     request_model = RevokeTokenRequest(**payload)
     return await revoke_token(request_model)
 
@@ -790,7 +750,6 @@ async def grpc_web_gateway(request: Request):
 
     endpoint = frontend_request["endpoint"]
     payload_json = frontend_request["payload_json"]
-    auth_token = frontend_request.get("auth_token", "")
 
     try:
         payload = json.loads(payload_json) if payload_json else {}
@@ -799,40 +758,7 @@ async def grpc_web_gateway(request: Request):
         logger.warning(error_msg)
         return _build_error_response(error_msg, http_status=400, grpc_status=3)
 
-    # ⭐ 认证检查：对于需要认证的端点，验证 Token
-    # 白名单端点（不需要认证）
-    whitelist_endpoints = {
-        "/auth/login",
-        "/oauth/authorize",
-        "/oauth/token",
-        "/oauth/refresh",
-        "/api/v2/desk-fengshui/analyze",  # 办公桌风水分析不需要认证（公开功能）
-        "/api/v2/desk-fengshui/health",   # 健康检查不需要认证
-        "/api/v2/desk-fengshui/rules",   # 规则列表不需要认证（公开功能）
-        "/bazi/rizhu-liujiazi",  # 日元-六十甲子查询不需要认证（公开功能）
-        "/bazi/xishen-jishen",  # 喜神忌神查询不需要认证（公开功能）
-    }
-    
-    if endpoint not in whitelist_endpoints:
-        # 需要认证的端点
-        if not auth_token:
-            error_msg = "未提供认证信息，请在请求头中添加 Authorization: Bearer <token>"
-            logger.warning(f"gRPC 网关: {endpoint} 需要认证，但未提供 Token")
-            return _build_error_response(error_msg, http_status=401, grpc_status=16)
-        
-        # 验证 Token
-        try:
-            from src.clients.auth_client_grpc import get_auth_client
-            auth_client = get_auth_client()
-            result = auth_client.verify_token(auth_token)
-            
-            if not result.get("valid", False):
-                error_msg = result.get("error", "Token 无效或已过期")
-                logger.warning(f"gRPC 网关: {endpoint} Token 验证失败: {error_msg}")
-                return _build_error_response(error_msg, http_status=401, grpc_status=16)
-        except Exception as e:
-            logger.error(f"gRPC 网关: 认证服务错误: {str(e)}", exc_info=True)
-            return _build_error_response("认证服务暂时不可用，请稍后重试", http_status=503, grpc_status=14)
+    # 认证功能已移除，所有端点无需认证即可访问
 
     handler = SUPPORTED_ENDPOINTS.get(endpoint)
     logger.debug(f"🔍 查找端点处理器: {endpoint}, 是否存在: {handler is not None}, 总端点数: {len(SUPPORTED_ENDPOINTS)}")
@@ -853,40 +779,12 @@ async def grpc_web_gateway(request: Request):
             if not handler:
                 print(f"🚨 端点恢复后仍然未找到: {endpoint}, 已注册端点: {list(SUPPORTED_ENDPOINTS.keys())}", flush=True)
                 logger.error(f"🚨 端点恢复后仍然未找到: {endpoint}, 已注册端点: {list(SUPPORTED_ENDPOINTS.keys())}")
-                # 如果恢复后仍然未找到，尝试直接注册该端点
-                if endpoint == "/auth/login":
-                    try:
-                        from server.api.v1.auth import LoginRequest, login
-                        async def _handle_login_immediate(payload: Dict[str, Any]):
-                            request_model = LoginRequest(**payload)
-                            return await login(request_model)
-                        SUPPORTED_ENDPOINTS["/auth/login"] = _handle_login_immediate
-                        handler = _handle_login_immediate
-                        print(f"🚨 直接注册 /auth/login 成功", flush=True)
-                        logger.error(f"🚨 直接注册 /auth/login 成功")
-                    except Exception as e2:
-                        print(f"🚨 直接注册 /auth/login 失败: {e2}", flush=True)
-                        logger.error(f"🚨 直接注册 /auth/login 失败: {e2}", exc_info=True)
         except Exception as e:
             print(f"🚨 端点恢复失败: {e}", flush=True)
             import traceback
             print(f"🚨 端点恢复失败堆栈: {traceback.format_exc()}", flush=True)
             logger.error(f"🚨 端点恢复失败: {e}", exc_info=True)
             logger.error(f"🚨 端点恢复失败堆栈: {traceback.format_exc()}")
-            # 即使恢复失败，也尝试直接注册该端点作为最后的兜底
-            if endpoint == "/auth/login" and not handler:
-                try:
-                    from server.api.v1.auth import LoginRequest, login
-                    async def _handle_login_fallback(payload: Dict[str, Any]):
-                        request_model = LoginRequest(**payload)
-                        return await login(request_model)
-                    SUPPORTED_ENDPOINTS["/auth/login"] = _handle_login_fallback
-                    handler = _handle_login_fallback
-                    print(f"🚨 兜底注册 /auth/login 成功", flush=True)
-                    logger.error(f"🚨 兜底注册 /auth/login 成功")
-                except Exception as e3:
-                    print(f"🚨 兜底注册 /auth/login 失败: {e3}", flush=True)
-                    logger.error(f"🚨 兜底注册 /auth/login 失败: {e3}", exc_info=True)
     
     if not handler:
         # 如果端点未找到，尝试动态注册（用于热更新后恢复）
@@ -920,20 +818,6 @@ async def grpc_web_gateway(request: Request):
                 SUPPORTED_ENDPOINTS["/bazi/rizhu-liujiazi"] = _handle_rizhu_liujiazi_dynamic
                 handler = _handle_rizhu_liujiazi_dynamic
                 logger.info("✅ 动态注册端点: /bazi/rizhu-liujiazi")
-            except Exception as e:
-                logger.error(f"动态注册端点失败: {e}", exc_info=True)
-        
-        # 动态注册 /auth/login 端点（用于热更新后恢复）
-        if endpoint == "/auth/login":
-            try:
-                from server.api.v1.auth import LoginRequest, login
-                async def _handle_login_dynamic(payload: Dict[str, Any]):
-                    """处理登录请求（动态注册）"""
-                    request_model = LoginRequest(**payload)
-                    return await login(request_model)
-                SUPPORTED_ENDPOINTS["/auth/login"] = _handle_login_dynamic
-                handler = _handle_login_dynamic
-                logger.info("✅ 动态注册端点: /auth/login")
             except Exception as e:
                 logger.error(f"动态注册端点失败: {e}", exc_info=True)
         
@@ -1113,7 +997,6 @@ def _decode_frontend_request(message: bytes) -> Dict[str, str]:
     """手动解析 FrontendJsonRequest"""
     endpoint = ""
     payload_json = ""
-    auth_token = ""
 
     idx = 0
     length = len(message)
@@ -1134,12 +1017,11 @@ def _decode_frontend_request(message: bytes) -> Dict[str, str]:
                 endpoint = value
             elif field_number == 2:
                 payload_json = value
-            elif field_number == 3:
-                auth_token = value
+            # field_number == 3 (auth_token) 已移除，不再解析
         else:
             raise ValueError(f"不支持的 wire_type: {wire_type}")
 
-    return {"endpoint": endpoint, "payload_json": payload_json, "auth_token": auth_token}
+    return {"endpoint": endpoint, "payload_json": payload_json}
 
 
 def _encode_frontend_response(
@@ -1252,7 +1134,7 @@ def _ensure_endpoints_registered():
     global SUPPORTED_ENDPOINTS
     
     # ⭐ 关键修复：如果端点列表为空，说明热更新后装饰器未执行，直接手动注册所有关键端点
-    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
+    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi"]
     if len(SUPPORTED_ENDPOINTS) == 0:
         logger.error(f"🚨 端点列表为空！直接手动注册所有关键端点...")
         # 直接进入手动注册逻辑，跳过重新加载模块（因为重新加载后端点仍然是空的）
@@ -1338,18 +1220,6 @@ def _ensure_endpoints_registered():
                 except Exception as e:
                     logger.error(f"❌ 手动注册 /bazi/rizhu-liujiazi 端点失败: {e}", exc_info=True)
             
-            # 手动注册 /auth/login 端点
-            if "/auth/login" in missing_endpoints:
-                try:
-                    from server.api.v1.auth import LoginRequest, login
-                    async def _handle_login_manual(payload: Dict[str, Any]):
-                        """处理登录请求（手动注册）"""
-                        request_model = LoginRequest(**payload)
-                        return await login(request_model)
-                    SUPPORTED_ENDPOINTS["/auth/login"] = _handle_login_manual
-                    logger.error("🚨 手动注册端点: /auth/login")
-                except Exception as e:
-                    logger.error(f"❌ 手动注册 /auth/login 端点失败: {e}", exc_info=True)
         except Exception as e:
             logger.error(f"手动注册端点失败: {e}", exc_info=True)
 
@@ -1389,7 +1259,7 @@ try:
     print(f"🔧 模块加载时检查端点注册状态...", flush=True)
     _ensure_endpoints_registered()
     # 验证关键端点是否已注册
-    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
+    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi"]
     missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
     if missing:
         print(f"⚠️  模块加载后关键端点缺失: {missing}，当前端点数量: {len(SUPPORTED_ENDPOINTS)}", flush=True)

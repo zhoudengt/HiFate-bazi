@@ -81,14 +81,6 @@ except ImportError as e:
     wangshuai_router = None
     WANGSHUAI_ROUTER_AVAILABLE = False
 from server.api.v1.bazi_ai import router as bazi_ai_router
-from server.api.v1.auth import router as auth_router
-try:
-    from server.api.v1.oauth import router as oauth_router
-    OAUTH_ROUTER_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"OAuth 路由导入失败（可选功能）: {e}")
-    oauth_router = None
-    OAUTH_ROUTER_AVAILABLE = False
 from server.api.grpc_gateway import router as grpc_gateway_router
 
 # 新增：支付路由（魔方西元）
@@ -231,6 +223,15 @@ except ImportError as e:
     xishen_jishen_router = None
     XISHEN_JISHEN_ROUTER_AVAILABLE = False
 
+# 感情婚姻分析路由（条件可用）
+try:
+    from server.api.v1.marriage_analysis import router as marriage_analysis_router
+    MARRIAGE_ANALYSIS_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"感情婚姻分析路由导入失败（可选功能）: {e}")
+    marriage_analysis_router = None
+    MARRIAGE_ANALYSIS_ROUTER_AVAILABLE = False
+
 # 新增：算法公式规则分析路由（808条规则）
 try:
     from server.api.v1.formula_analysis import router as formula_analysis_router
@@ -320,7 +321,7 @@ async def lifespan(app: FastAPI):
         _ensure_endpoints_registered()
         
         # 验证关键端点
-        key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/auth/login"]
+        key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi"]
         missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
         if missing:
             logger.error(f"🚨 服务启动后关键端点缺失: {missing}，当前端点数量: {len(SUPPORTED_ENDPOINTS)}")
@@ -466,17 +467,7 @@ app.add_middleware(
 # 添加GZip压缩中间件
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# ✅ 添加 OAuth 2.0 认证中间件（在异常处理之前，确保认证错误能被正确处理）
-# ⚠️ 注意：中间件在应用启动时实例化，修改代码后必须重启服务才能生效
-try:
-    from server.middleware.auth_middleware import AuthMiddleware, WHITELIST_PREFIXES
-    # ⚠️ 临时禁用: app.add_middleware(AuthMiddleware)
-    logger.warning("⚠ 认证中间件已临时禁用（紧急修复）")
-    logger.info(f"   白名单前缀: {list(WHITELIST_PREFIXES)}")
-except ImportError as e:
-    logger.warning(f"⚠ 认证中间件导入失败（可选功能）: {e}")
-except Exception as e:
-    logger.warning(f"⚠ 认证中间件启用失败: {e}")
+# 认证中间件已移除，所有接口无需认证即可访问
 
 # ✅ 添加统一异常处理中间件（最后添加，确保能捕获所有异常）
 try:
@@ -508,25 +499,10 @@ def _register_all_routers_to_manager():
         tags=["AI分析"]
     )
     router_manager.register_router(
-        "auth",
-        lambda: auth_router,
-        prefix="/api/v1",
-        tags=["鉴权"]
-    )
-    router_manager.register_router(
         "grpc_gateway",
         lambda: grpc_gateway_router,
         prefix="/api",
         tags=["gRPC-Web"]
-    )
-    
-    # OAuth 路由（条件可用）
-    router_manager.register_router(
-        "oauth",
-        lambda: oauth_router,
-        prefix="/api/v1",
-        tags=["OAuth 2.0"],
-        enabled_getter=lambda: OAUTH_ROUTER_AVAILABLE and oauth_router is not None
     )
     
     # 旺衰分析路由（条件可用）
@@ -708,6 +684,15 @@ def _register_all_routers_to_manager():
         prefix="/api/v1",
         tags=["八字命理"],
         enabled_getter=lambda: XISHEN_JISHEN_ROUTER_AVAILABLE and xishen_jishen_router is not None
+    )
+    
+    # 感情婚姻分析路由（条件可用）
+    router_manager.register_router(
+        "marriage_analysis",
+        lambda: marriage_analysis_router,
+        prefix="/api/v1",
+        tags=["八字命理"],
+        enabled_getter=lambda: MARRIAGE_ANALYSIS_ROUTER_AVAILABLE and marriage_analysis_router is not None
     )
     
     # 用户反馈路由（条件可用）

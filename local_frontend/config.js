@@ -67,8 +67,7 @@ const GRPC_CONFIG = (function() {
     };
 })();
 
-// 存储 Token 的 key
-const TOKEN_KEY = 'bazi_token';
+// Token 功能已移除
 
 // 调试信息（生产环境自动隐藏）
 if (API_CONFIG.env === 'development') {

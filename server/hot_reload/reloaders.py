@@ -236,7 +236,7 @@ class SourceCodeReloader:
                             
                             # 6. 验证关键端点是否已注册（无论端点数量是否为0）
                             from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_CHECK
-                            key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi', '/auth/login', '/daily-fortune-calendar/query']
+                            key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi', '/daily-fortune-calendar/query']
                             missing_endpoints = [ep for ep in key_endpoints if ep not in FINAL_CHECK]
                             if missing_endpoints:
                                 print(f"     ⚠️  关键端点未注册: {missing_endpoints}，再次尝试手动注册...")
