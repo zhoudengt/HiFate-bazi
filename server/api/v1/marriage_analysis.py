@@ -385,6 +385,15 @@ async def marriage_analysis_stream_generator(
                 'content': f"流式生成失败: {str(e)}"
             }
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+    
+    except Exception as e:
+        import traceback
+        logger.error(f"流式生成器异常: {e}\n{traceback.format_exc()}")
+        error_msg = {
+            'type': 'error',
+            'content': f"流式生成失败: {str(e)}"
+        }
+        yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
 
 
 @router.post("/bazi/marriage-analysis/stream", summary="流式生成感情婚姻分析")
