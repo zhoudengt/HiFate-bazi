@@ -93,20 +93,85 @@ class CacheReloader:
     @staticmethod
     def reload() -> bool:
         """
-        清空缓存
+        清空缓存（包括 Redis 缓存和服务类缓存）
         
         Returns:
             bool: 是否成功
         """
+        success = True
+        
+        # 1. 清理 Redis 缓存（L1内存 + L2 Redis）
         try:
             from server.utils.cache_multi_level import get_multi_cache
             cache = get_multi_cache()
+            # 清理 L1 内存缓存
             cache.clear()
-            print("✓ 缓存已清空")
-            return True
+            
+            # 清理 L2 Redis 缓存中的特定模式（bazi_detail 和 special_liunians）
+            try:
+                from server.config.redis_config import get_redis_client
+                redis_client = get_redis_client()
+                if redis_client:
+                    # 清理 bazi_detail:* 模式的键
+                    cursor = 0
+                    deleted_count = 0
+                    while True:
+                        cursor, keys = redis_client.scan(cursor, match='bazi_detail:*', count=100)
+                        if keys:
+                            redis_client.delete(*keys)
+                            deleted_count += len(keys)
+                        if cursor == 0:
+                            break
+                    if deleted_count > 0:
+                        print(f"   ✓ 清理了 {deleted_count} 个 bazi_detail 缓存键")
+                    
+                    # 清理 special_liunians:* 模式的键
+                    cursor = 0
+                    deleted_count = 0
+                    while True:
+                        cursor, keys = redis_client.scan(cursor, match='special_liunians:*', count=100)
+                        if keys:
+                            redis_client.delete(*keys)
+                            deleted_count += len(keys)
+                        if cursor == 0:
+                            break
+                    if deleted_count > 0:
+                        print(f"   ✓ 清理了 {deleted_count} 个 special_liunians 缓存键")
+            except Exception as e:
+                print(f"   ⚠ Redis 特定缓存清理失败: {e}")
+                # 不设置 success = False，因为这是可选的
+            
+            print("   ✓ 缓存已清空（L1内存 + L2 Redis）")
         except Exception as e:
-            print(f"⚠ 缓存重载失败: {e}")
-            return False
+            print(f"   ⚠ 缓存清理失败: {e}")
+            success = False
+        
+        # 2. 清理 IndustryService 缓存
+        try:
+            from server.services.industry_service import IndustryService
+            IndustryService.clear_cache()
+            print("   ✓ IndustryService 缓存已清理")
+        except Exception as e:
+            print(f"   ⚠ IndustryService 缓存清理失败: {e}")
+            # 不设置 success = False，因为这是可选的
+        
+        # 3. 清理 ConfigService 缓存（如果存在）
+        try:
+            from server.services.config_service import ConfigService
+            # ConfigService 使用类级别缓存，直接设置为 None
+            ConfigService._element_cache = None
+            ConfigService._mingge_cache = None
+            print("   ✓ ConfigService 缓存已清理")
+        except Exception as e:
+            print(f"   ⚠ ConfigService 缓存清理失败: {e}")
+            # 不设置 success = False，因为这是可选的
+        
+        if success:
+            print("✓ 缓存重载完成")
+        else:
+            print("⚠ 缓存重载部分失败")
+        
+        return success
 
 
 class SourceCodeReloader:

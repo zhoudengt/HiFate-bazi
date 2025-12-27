@@ -688,15 +688,19 @@ class BaziDisplayService:
         Returns:
             dict: 包含大运、流年、流月的前端友好数据
         """
-        # ✅ 修复：根据年份范围查找大运索引（如果提供了年份范围）
+        # ✅ 优化：根据年份范围查找大运索引（如果提供了年份范围）
+        # 优化：如果已经提供了 dayun_year_start 和 dayun_year_end，先调用一次获取大运列表（利用缓存）
+        # 然后从结果中提取大运索引，避免第二次调用时重复计算
         resolved_dayun_index = dayun_index
+        detail_result_for_index = None
+        
         if dayun_year_start is not None and dayun_year_end is not None and dayun_index is None:
-            # 先计算一次获取大运列表，然后根据年份范围查找对应的大运
-            # 注意：这里只计算大运序列，不计算流年，性能影响较小
-            temp_result = BaziDetailService.calculate_detail_full(
+            # ✅ 优化：先调用一次获取大运列表（利用缓存，如果之前调用过会命中缓存）
+            # 注意：这里调用会利用缓存，性能影响已经减小
+            detail_result_for_index = BaziDetailService.calculate_detail_full(
                 solar_date, solar_time, gender, current_time, None, None
             )
-            temp_details = temp_result.get('details', {})
+            temp_details = detail_result_for_index.get('details', {}) if detail_result_for_index else {}
             temp_dayun_sequence = temp_details.get('dayun_sequence', [])
             
             # ✅ 修复：根据年份范围查找对应的大运（使用step作为唯一标识）
@@ -727,10 +731,17 @@ class BaziDisplayService:
                 for dayun in temp_dayun_sequence:
                     logger.warning(f"  大运 step={dayun.get('step')}: {dayun.get('year_start')}-{dayun.get('year_end')}")
         
-        # 只调用一次详细计算（如果指定了大运索引，只计算该大运范围内的流年）
-        detail_result = BaziDetailService.calculate_detail_full(
-            solar_date, solar_time, gender, current_time, resolved_dayun_index, target_year
-        )
+        # ✅ 优化：如果已经获取了完整结果（用于查找大运索引），且不需要指定大运索引，直接使用该结果
+        # 这样可以避免第二次调用（如果 resolved_dayun_index 为 None，说明需要所有大运的数据）
+        if detail_result_for_index and resolved_dayun_index is None and target_year is None:
+            # 已经获取了完整结果，直接使用
+            detail_result = detail_result_for_index
+        else:
+            # 只调用一次详细计算（如果指定了大运索引，只计算该大运范围内的流年）
+            # 注意：如果第一次调用命中了缓存，第二次调用也会命中缓存（相同的参数）
+            detail_result = BaziDetailService.calculate_detail_full(
+                solar_date, solar_time, gender, current_time, resolved_dayun_index, target_year
+            )
         if not detail_result:
             return {"success": False, "error": "详细计算失败"}
         

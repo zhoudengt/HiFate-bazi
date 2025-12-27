@@ -48,29 +48,82 @@ class BaziDetailService:
             elif gender == "女":
                 gender = "female"
         
+        # 1. 生成缓存键（包含所有影响结果的参数）
+        current_time_iso = current_time.isoformat() if current_time else None
+        cache_key_parts = [
+            'bazi_detail',
+            solar_date,
+            solar_time,
+            gender,
+            current_time_iso or 'default',
+            str(dayun_index) if dayun_index is not None else 'all',
+            str(target_year) if target_year is not None else 'all'
+        ]
+        cache_key = ':'.join(cache_key_parts)
+        
+        # 2. 先查缓存（L1内存 + L2 Redis）
+        try:
+            from server.utils.cache_multi_level import get_multi_cache
+            cache = get_multi_cache()
+            # 设置 L2 Redis TTL 为 30 天（2592000秒）
+            cache.l2.ttl = 2592000
+            cached_result = cache.get(cache_key)
+            if cached_result:
+                logger.info(f"✅ [缓存命中] BaziDetailService.calculate_detail_full: {cache_key[:50]}...")
+                return cached_result
+        except Exception as e:
+            # Redis不可用，降级到直接计算
+            logger.warning(f"⚠️  Redis缓存不可用，降级到直接计算: {e}")
+        
+        # 3. 缓存未命中，执行计算
+        logger.info(f"⏱️ [缓存未命中] BaziDetailService.calculate_detail_full: {cache_key[:50]}...")
+        
+        # ⚠️ 如果指定了 dayun_index 或 dayun_year_start/dayun_year_end，必须使用本地计算
+        # 因为 gRPC 客户端不支持这些参数，且本地计算的 relations 格式更完整（字典列表）
         fortune_service_url = os.getenv("BAZI_FORTUNE_SERVICE_URL")
-        if fortune_service_url:
+        if fortune_service_url and dayun_index is None:
             try:
                 # 使用30秒超时，确保有足够时间处理大运流年计算
                 client = BaziFortuneClient(base_url=fortune_service_url, timeout=30.0)
-                return client.calculate_detail(
+                result = client.calculate_detail(
                     solar_date,
                     solar_time,
                     gender,
                     current_time=current_time.isoformat() if current_time else None,
                 )
+                # 写入缓存
+                try:
+                    cache = get_multi_cache()
+                    cache.l2.ttl = 2592000  # 30天
+                    cache.set(cache_key, result)
+                    logger.info(f"✅ [缓存写入] BaziDetailService.calculate_detail_full: {cache_key[:50]}...")
+                except Exception:
+                    pass  # 缓存写入失败不影响业务
+                return result
             except Exception as exc:  # pragma: no cover
                 logger.warning("调用 bazi-fortune-service 失败，自动回退本地计算: %s", exc)
                 if os.getenv("BAZI_FORTUNE_SERVICE_STRICT", "0") == "1":
                     raise
 
         # fallback to local computation
-        return compute_local_detail(
+        # ✅ 使用本地计算确保 relations 格式正确（字典列表）且支持 dayun_index
+        result = compute_local_detail(
             solar_date, solar_time, gender, 
             current_time=current_time, 
             dayun_index=dayun_index,
             target_year=target_year
         )
+        
+        # 4. 写入缓存（仅成功时）
+        try:
+            cache = get_multi_cache()
+            cache.l2.ttl = 2592000  # 30天
+            cache.set(cache_key, result)
+            logger.info(f"✅ [缓存写入] BaziDetailService.calculate_detail_full: {cache_key[:50]}...")
+        except Exception:
+            pass  # 缓存写入失败不影响业务
+        
+        return result
     
     @staticmethod
     def _format_detail_result(detail_result: dict, bazi_result: dict) -> dict:
