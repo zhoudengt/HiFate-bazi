@@ -43,11 +43,12 @@ for var in $REQUIRED_VARS; do
     fi
 done
 
-# 替换 Nginx 配置中的 IP
-echo ""
-echo "[1/5] 配置 Nginx..."
-sed -i "s/NODE1_IP/${NODE1_IP}/g" ${DEPLOY_DIR}/nginx/conf.d/hifate.conf
-sed -i "s/NODE2_IP/${NODE2_IP}/g" ${DEPLOY_DIR}/nginx/conf.d/hifate.conf
+# 🚫 注意：Nginx 配置由前端团队管理，后端部署脚本不再修改 Nginx 配置
+# 如果 deploy/nginx 目录存在，说明是旧版本，应该已被删除
+if [ -d "${DEPLOY_DIR}/nginx" ]; then
+    echo -e "\033[1;33m⚠️  警告：发现 deploy/nginx 目录（应该已被删除）\033[0m"
+    echo -e "\033[1;33m⚠️  Nginx 配置由前端团队管理，后端不再修改\033[0m"
+fi
 
 # 替换 Redis 从库配置中的主库 IP（仅 node2）
 if [ "$NODE_TYPE" = "node2" ]; then

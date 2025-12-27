@@ -75,35 +75,24 @@ EOF
     fi
 }
 
-# 保护 frontend 目录函数（在 git 操作前后保护 frontend 目录不被删除）
-protect_frontend_directory() {
+# 删除前端相关目录和文件函数（前端团队已独立部署，禁止同步）
+remove_frontend_files() {
     local host=$1
-    local action=$2  # "backup" 或 "restore"
+    local node_name=$2
     
-    if [ "$action" = "backup" ]; then
-        # 备份 frontend 目录（如果存在）
-        ssh_exec $host "cd $PROJECT_DIR && \
-            if [ -d frontend ] && [ -n \"\$(ls -A frontend 2>/dev/null)\" ]; then
-                BACKUP_DIR=\"frontend.backup.\$(date +%s)\"
-                cp -r frontend \"\$BACKUP_DIR\" 2>/dev/null && \
-                echo \"✅ frontend 目录已备份到 \$BACKUP_DIR\" || true
-            fi"
-    elif [ "$action" = "restore" ]; then
-        # 恢复 frontend 目录（如果被删除）
-        ssh_exec $host "cd $PROJECT_DIR && \
-            if [ ! -d frontend ] || [ -z \"\$(ls -A frontend 2>/dev/null)\" ]; then
-                # 查找最新的备份
-                LATEST_BACKUP=\$(ls -td frontend.backup.* 2>/dev/null | head -1)
-                if [ -n \"\$LATEST_BACKUP\" ] && [ -d \"\$LATEST_BACKUP\" ]; then
-                    cp -r \"\$LATEST_BACKUP\" frontend && \
-                    echo \"✅ frontend 目录已从备份恢复: \$LATEST_BACKUP\" || true
-                elif [ -d local_frontend ]; then
-                    cp -r local_frontend frontend && \
-                    echo \"✅ frontend 目录已从 local_frontend 恢复\" || true
-                fi
-            else
-                echo \"✅ frontend 目录存在且不为空，无需恢复\" || true
-            fi"
+    echo "🚫 删除 $node_name 前端相关目录和文件（前端团队已独立部署，禁止同步）..."
+    ssh_exec $host "cd $PROJECT_DIR && \
+        rm -rf local_frontend frontend frontend-config nginx deploy/nginx 2>/dev/null || true && \
+        rm -f docker-compose.frontend.yml docker-compose.nginx.yml 2>/dev/null || true && \
+        rm -f scripts/deploy-frontend.sh scripts/deploy_nacos_proxy.sh scripts/deploy_frontend_proxy_dual_nodes.sh 2>/dev/null || true && \
+        rm -f scripts/rollback_frontend_proxy_dual_nodes.sh scripts/protect_frontend_directory.sh scripts/restore_frontend_directory.sh scripts/check_frontend_directory.sh 2>/dev/null || true && \
+        echo '✅ 前端相关目录和文件已删除（前端团队独立部署）'"
+    
+    # 验证删除结果
+    if ssh_exec $host "cd $PROJECT_DIR && [ -d local_frontend ] || [ -d frontend ] || [ -d frontend-config ] || [ -d nginx ] || [ -d deploy/nginx ]" 2>/dev/null; then
+        echo -e "${YELLOW}⚠️  警告：部分前端目录可能未完全删除，请手动检查${NC}"
+    else
+        echo -e "${GREEN}✅ $node_name 前端目录删除验证通过${NC}"
     fi
 }
 
@@ -320,24 +309,17 @@ if [ -n "$LOCAL_CHANGES_NODE1" ]; then
     echo -e "${YELLOW}⚠️  警告：Node1 上有本地未提交的更改，将被保存（git stash）${NC}"
 fi
 
-# 🔒 保护 frontend 目录：在 git pull 之前备份
-echo "🔒 保护 frontend 目录（备份）..."
-protect_frontend_directory $NODE1_PUBLIC_IP "backup"
-
 ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && \
     git fetch origin && \
     git checkout $GIT_BRANCH && \
     (git stash || true) && \
     git pull origin $GIT_BRANCH" || {
     echo -e "${RED}❌ Node1 代码拉取失败${NC}"
-    # 即使失败也要尝试恢复 frontend 目录
-    protect_frontend_directory $NODE1_PUBLIC_IP "restore"
     exit 1
 }
 
-# 🔒 保护 frontend 目录：在 git pull 之后恢复（如果被删除）
-echo "🔒 保护 frontend 目录（恢复检查）..."
-protect_frontend_directory $NODE1_PUBLIC_IP "restore"
+# 🚫 删除前端相关目录和文件（前端团队已独立部署，禁止同步）
+remove_frontend_files $NODE1_PUBLIC_IP "Node1"
 
 # 验证 Node1 代码与 GitHub 一致
 NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
@@ -351,14 +333,7 @@ if [ "$NODE1_COMMIT" != "$LOCAL_COMMIT" ]; then
 fi
 echo -e "${GREEN}✅ Node1 代码拉取完成（版本: ${NODE1_COMMIT:0:8}）${NC}"
 
-# 3.2 修复 Node1 Nginx 配置
-echo "🔧 修复 Node1 Nginx 配置..."
-ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && \
-    source .env 2>/dev/null || true && \
-    NODE1_IP=\${NODE1_IP:-$NODE1_PRIVATE_IP} && \
-    NODE2_IP=\${NODE2_IP:-$NODE2_PRIVATE_IP} && \
-    sed -i \"s/NODE1_IP/\$NODE1_IP/g\" deploy/nginx/conf.d/hifate.conf && \
-    sed -i \"s/NODE2_IP/\$NODE2_IP/g\" deploy/nginx/conf.d/hifate.conf"
+# 🚫 注意：Nginx 配置由前端团队管理，后端部署脚本不再修改 Nginx 配置
 
 # 3.3 执行数据库同步（如有变更）
 echo ""
@@ -514,6 +489,9 @@ ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && \
     exit 1
 }
 
+# 🚫 删除前端相关目录和文件（前端团队已独立部署，禁止同步）
+remove_frontend_files $NODE2_PUBLIC_IP "Node2"
+
 # 验证 Node2 代码与 Node1 一致
 NODE2_COMMIT=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
 if [ "$NODE2_COMMIT" != "$NODE1_COMMIT" ]; then
@@ -524,14 +502,7 @@ if [ "$NODE2_COMMIT" != "$NODE1_COMMIT" ]; then
 fi
 echo -e "${GREEN}✅ Node2 代码拉取完成（版本: ${NODE2_COMMIT:0:8}）${NC}"
 
-# 5.2 修复 Node2 Nginx 配置
-echo "🔧 修复 Node2 Nginx 配置..."
-ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && \
-    source .env 2>/dev/null || true && \
-    NODE1_IP=\${NODE1_IP:-$NODE1_PRIVATE_IP} && \
-    NODE2_IP=\${NODE2_IP:-$NODE2_PRIVATE_IP} && \
-    sed -i \"s/NODE1_IP/\$NODE1_IP/g\" deploy/nginx/conf.d/hifate.conf && \
-    sed -i \"s/NODE2_IP/\$NODE2_IP/g\" deploy/nginx/conf.d/hifate.conf"
+# 🚫 注意：Nginx 配置由前端团队管理，后端部署脚本不再修改 Nginx 配置
 
 # 5.3 执行数据库同步（如有变更）
 if [ -f "scripts/db/sync_production_db.sh" ] && [ -f "scripts/db/sync_${DEPLOYMENT_ID}.sql" ]; then

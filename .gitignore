@@ -69,10 +69,22 @@ node_modules/
 *.pt
 yolov8n.pt
 
-# Frontend directories
-# 注意：frontend 目录已重命名为 local_frontend
-# 但为了保护服务器上可能存在的 frontend 目录不被 Git 删除，添加到 .gitignore
+# Frontend directories and files (前端团队独立部署，禁止同步)
+# 注意：前端团队已独立部署前端，后端部署脚本必须排除所有前端相关文件
+local_frontend/
 frontend/
+frontend-config/
+nginx/
+deploy/nginx/
+docker-compose.frontend.yml
+docker-compose.nginx.yml
+scripts/deploy-frontend.sh
+scripts/deploy_nacos_proxy.sh
+scripts/deploy_frontend_proxy_dual_nodes.sh
+scripts/rollback_frontend_proxy_dual_nodes.sh
+scripts/protect_frontend_directory.sh
+scripts/restore_frontend_directory.sh
+scripts/check_frontend_directory.sh
 
 # MyPy
 .mypy_cache/

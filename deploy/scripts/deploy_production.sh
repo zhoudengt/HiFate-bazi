@@ -51,6 +51,27 @@ scp_upload() {
     sshpass -p "$SSH_PASSWORD" scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 $src root@$host:$dst
 }
 
+# 删除前端相关目录和文件函数（前端团队已独立部署，禁止同步）
+remove_frontend_files() {
+    local host=$1
+    local node_name=$2
+    
+    echo "🚫 删除 $node_name 前端相关目录和文件（前端团队已独立部署，禁止同步）..."
+    ssh_exec $host "cd /opt/HiFate-bazi && \
+        rm -rf local_frontend frontend frontend-config nginx deploy/nginx 2>/dev/null || true && \
+        rm -f docker-compose.frontend.yml docker-compose.nginx.yml 2>/dev/null || true && \
+        rm -f scripts/deploy-frontend.sh scripts/deploy_nacos_proxy.sh scripts/deploy_frontend_proxy_dual_nodes.sh 2>/dev/null || true && \
+        rm -f scripts/rollback_frontend_proxy_dual_nodes.sh scripts/protect_frontend_directory.sh scripts/restore_frontend_directory.sh scripts/check_frontend_directory.sh 2>/dev/null || true && \
+        echo '✅ 前端相关目录和文件已删除（前端团队独立部署）'"
+    
+    # 验证删除结果
+    if ssh_exec $host "cd /opt/HiFate-bazi && [ -d local_frontend ] || [ -d frontend ] || [ -d frontend-config ] || [ -d nginx ] || [ -d deploy/nginx ]" 2>/dev/null; then
+        echo -e "${YELLOW}⚠️  警告：部分前端目录可能未完全删除，请手动检查${NC}"
+    else
+        echo -e "${GREEN}✅ $node_name 前端目录删除验证通过${NC}"
+    fi
+}
+
 echo "========================================"
 echo "生产环境双机部署"
 echo "========================================"
@@ -134,6 +155,8 @@ ssh_exec $NODE1_PUBLIC_IP "cd /opt/HiFate-bazi && if [ -d '.git' ]; then echo '�
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}Node1 代码克隆/更新完成${NC}"
+    # 🚫 删除前端相关目录和文件（前端团队已独立部署，禁止同步）
+    remove_frontend_files $NODE1_PUBLIC_IP "Node1"
 else
     echo -e "${RED}Node1 代码克隆失败${NC}"
     exit 1
@@ -149,6 +172,8 @@ ssh_exec $NODE2_PUBLIC_IP "cd /opt/HiFate-bazi && if [ -d '.git' ]; then echo '�
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}Node2 代码克隆/更新完成${NC}"
+    # 🚫 删除前端相关目录和文件（前端团队已独立部署，禁止同步）
+    remove_frontend_files $NODE2_PUBLIC_IP "Node2"
 else
     echo -e "${RED}Node2 代码克隆失败${NC}"
     exit 1
