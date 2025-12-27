@@ -306,9 +306,12 @@ async def _handle_yigua(payload: Dict[str, Any]):
     return await divinate(request_model)
 
 
-# 认证相关端点已移除
-    request_model = RevokeTokenRequest(**payload)
-    return await revoke_token(request_model)
+@_register("/auth/login")
+async def _handle_login(payload: Dict[str, Any]):
+    """处理登录请求"""
+    from server.api.v1.auth import LoginRequest, login
+    request_model = LoginRequest(**payload)
+    return await login(request_model)
 
 
 @_register("/payment/create-session")
@@ -439,6 +442,14 @@ if RIZHU_LIUJIAZI_AVAILABLE:
         return await get_rizhu_liujiazi(request_model)
 else:
     logger.warning("⚠️  /bazi/rizhu-liujiazi 端点未注册（模块不可用）")
+
+
+@_register("/bazi/data")
+async def _handle_bazi_data(payload: Dict[str, Any]):
+    """处理统一数据获取请求"""
+    from server.api.v1.bazi_data import BaziDataRequest, get_bazi_data
+    request_model = BaziDataRequest(**payload)
+    return await get_bazi_data(request_model)
 
 
 @_register("/bazi/xishen-jishen")

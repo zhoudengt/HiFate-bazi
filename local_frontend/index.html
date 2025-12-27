@@ -15,9 +15,7 @@
                 <div class="header-left">
                     <h1 class="header-title">HiFate系统</h1>
                 </div>
-                <div class="header-user">
-                    <button onclick="Auth.logout()" class="btn btn-secondary">退出</button>
-                </div>
+                <!-- 认证功能已移除，不再需要退出按钮 -->
             </div>
             
             <div class="content-body">
@@ -96,11 +94,8 @@
 
     <script src="config.js"></script>
     <script src="js/api.js"></script>
-    <script src="js/auth.js"></script>
+    <!-- 认证功能已移除，不再需要 auth.js -->
     <script src="js/calendar.js"></script>
-    <script>
-        Auth.checkAuth();
-    </script>
 </body>
 </html>
 

@@ -360,15 +360,7 @@
 
     <script src="config.js"></script>
     <script src="js/api.js"></script>
-    <script src="js/auth.js"></script>
-    <script src="js/basic-info.js"></script>
-    <script>
-        // 检查认证，如果未登录则跳转到登录页
-        if (typeof Auth !== 'undefined') {
-            Auth.checkAuth();
-        } else {
-            console.warn('Auth 未定义，跳过认证检查');
-        }
-    </script>
+    <!-- 认证功能已移除，不再需要 auth.js -->
+<script src="js/basic-info.js"></script>
 </body>
 </html>

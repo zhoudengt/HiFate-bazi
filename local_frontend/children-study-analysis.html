@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>八字命理-子女学习 - HiFate</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-layout.css">
+    <script src="js/sidebar.js?v=20250115"></script>
+    <style>
+        .children-study-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .form-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .form-card h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #28a745;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #28a745;
+            box-shadow: 0 0 0 2px rgba(40,167,69,0.1);
+        }
+        
+        .submit-btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(40,167,69,0.3);
+        }
+        
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .result-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: none;
+        }
+        
+        .result-card.active {
+            display: block;
+        }
+        
+        .user-info {
+            background: #f8f9fa;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .user-info-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .user-info-label {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .user-info-value {
+            color: #333;
+            font-weight: 500;
+            font-size: 15px;
+        }
+        
+        .section-header {
+            font-size: 20px;
+            font-weight: 600;
+            color: #28a745;
+            margin: 30px 0 15px 0;
+            padding-left: 10px;
+            border-left: 4px solid #28a745;
+        }
+        
+        .section-content {
+            line-height: 1.8;
+            color: #333;
+            font-size: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            min-height: 100px;
+        }
+        
+        .section-content p {
+            margin-bottom: 10px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(40,167,69,0.3);
+            border-radius: 50%;
+            border-top-color: #28a745;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            padding: 12px;
+            border-radius: 4px;
+            border-left: 4px solid #dc3545;
+        }
+        
+        .info-tip {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 12px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #1976D2;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar"></div>
+    
+    <div class="main-content">
+        <div class="children-study-container">
+            <div class="form-card">
+                <h2>八字命理-子女学习</h2>
+                
+                <div class="info-tip">
+                    💡 基于您的八字命理，分析子女星、子女宫、生育时机和养育建议，为您提供子女教育的专业指导。
+                </div>
+                
+                <form onsubmit="event.preventDefault(); startAnalysis();">
+                    <div class="form-group">
+                        <label for="solarDate">出生日期（阳历）*</label>
+                        <input type="date" id="solarDate" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="solarTime">出生时间*</label>
+                        <input type="time" id="solarTime" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="gender">性别*</label>
+                        <select id="gender" required>
+                            <option value="">请选择</option>
+                            <option value="male">男</option>
+                            <option value="female">女</option>
+                        </select>
+                    </div>
+                    
+                    <button type="submit" class="submit-btn" id="submitBtn">
+                        开始分析
+                    </button>
+                </form>
+            </div>
+            
+            <div class="result-card" id="resultCard">
+                <h2>分析结果</h2>
+                
+                <div class="user-info">
+                    <div class="user-info-item">
+                        <span class="user-info-label">出生日期：</span>
+                        <span class="user-info-value" id="displayDate">-</span>
+                    </div>
+                    <div class="user-info-item">
+                        <span class="user-info-label">出生时间：</span>
+                        <span class="user-info-value" id="displayTime">-</span>
+                    </div>
+                    <div class="user-info-item">
+                        <span class="user-info-label">性别：</span>
+                        <span class="user-info-value" id="displayGender">-</span>
+                    </div>
+                </div>
+                
+                <!-- 1. 命盘子女总论 -->
+                <div class="section-header">一、命盘子女总论</div>
+                <div class="section-content" id="section1Content">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>正在分析命盘格局...</p>
+                    </div>
+                </div>
+                
+                <!-- 2. 子女星与子女宫 -->
+                <div class="section-header">二、子女星与子女宫</div>
+                <div class="section-content" id="section2Content">
+                    <div class="loading">等待命盘分析完成...</div>
+                </div>
+                
+                <!-- 3. 生育时机 -->
+                <div class="section-header">三、生育时机</div>
+                <div class="section-content" id="section3Content">
+                    <div class="loading">等待子女星分析完成...</div>
+                </div>
+                
+                <!-- 4. 养育建议 -->
+                <div class="section-header">四、养育建议</div>
+                <div class="section-content" id="section4Content">
+                    <div class="loading">等待生育时机分析完成...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="js/config.js?v=20250115"></script>
+    <script src="js/children-study-analysis.js?v=20250115"></script>
+</body>
+</html>
+

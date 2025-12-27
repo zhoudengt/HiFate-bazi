@@ -259,6 +259,14 @@ class RuleParser:
         if cond1 == "天干":
             return cls._parse_stem(cond2)
         
+        # ========== 新增：日干条件类型 ==========
+        if cond1 == "日干":
+            return cls._parse_rigan(cond2)
+        
+        # ========== 新增：月令条件类型 ==========
+        if cond1 == "月令":
+            return cls._parse_yueling(cond2)
+        
         # 复合条件类型（用逗号分隔）
         if "，" in cond1 or "," in cond1:
             return cls._parse_composite(cond1, cond2, qty)
@@ -391,6 +399,11 @@ class RuleParser:
             shensha = cond2.replace("四柱中有神煞", "").strip()
             return ParseResult(True, conditions={"deities_in_any_pillar": shensha})
         
+        # ========== 新增：四柱神煞中有XXX（无"有"字） ==========
+        if "四柱神煞中有" in cond2:
+            shensha = cond2.replace("四柱神煞中有", "").strip()
+            return ParseResult(True, conditions={"deities_in_any_pillar": shensha})
+        
         return ParseResult(False, reason=f"未识别的神煞条件: {cond2}")
     
     @classmethod
@@ -446,6 +459,217 @@ class RuleParser:
             return ParseResult(True, conditions={
                 "pillar_in": {"pillar": "day", "part": "stem", "values": [stem]}
             })
+        
+        # ========== 新增：多个日柱选择（"XX、YY、ZZ其中之一"） ==========
+        if "其中之一" in clean_cond:
+            # 提取所有干支
+            ganzhi_pattern = r'[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]'
+            ganzhi_list = re.findall(ganzhi_pattern, clean_cond)
+            if ganzhi_list:
+                # 检查是否有附加条件（"并且"、"且"等）
+                if "并且" in clean_cond or "且" in clean_cond:
+                    # 有附加条件，需要组合处理
+                    conds = [{
+                        "pillar_equals": {"pillar": "day", "values": ganzhi_list}
+                    }]
+                    
+                    # 解析副星条件（"副星有..."）
+                    if "副星有" in clean_cond or "副星" in clean_cond:
+                        # 提取十神名称
+                        ten_gods_found = [tg for tg in TEN_GODS if tg in clean_cond]
+                        if ten_gods_found:
+                            # 检查是否有数量要求（"这4个"）
+                            count_match = re.search(r'这(\d+)个', clean_cond)
+                            if count_match:
+                                required_count = int(count_match.group(1))
+                                conds.append({
+                                    "ten_gods_sub": {
+                                        "names": ten_gods_found,
+                                        "pillars": ["day"],
+                                        "min": required_count
+                                    }
+                                })
+                            else:
+                                conds.append({
+                                    "ten_gods_sub": {
+                                        "names": ten_gods_found,
+                                        "pillars": ["day"],
+                                        "min": len(ten_gods_found)
+                                    }
+                                })
+                    
+                    # 解析神煞条件（"自坐禄神"）
+                    if "自坐禄神" in clean_cond or "禄神" in clean_cond:
+                        conds.append({"deities_in_day": "禄神"})
+                    
+                    if len(conds) > 1:
+                        return ParseResult(True, conditions={"all": conds})
+                    else:
+                        return ParseResult(True, conditions=conds[0])
+                else:
+                    # 没有附加条件，直接返回多个日柱选择
+                    return ParseResult(True, conditions={
+                        "pillar_equals": {"pillar": "day", "values": ganzhi_list}
+                    })
+        
+        # ========== 新增：特定日柱配合特定时柱 ==========
+        if "特定日柱" in clean_cond and ("特定时柱" in clean_cond or "时柱" in clean_cond):
+            # 提取日柱和时柱（从括号中，如"如乙丑、己巳"等）
+            day_pillar_match = re.search(r'如([甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥])', clean_cond)
+            if day_pillar_match:
+                day_pillar = day_pillar_match.group(1)
+                # 尝试提取多个日柱（如果有"等"）
+                if "等" in clean_cond:
+                    # 提取所有日柱
+                    ganzhi_pattern = r'[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]'
+                    day_pillars = re.findall(ganzhi_pattern, clean_cond.split("特定时柱")[0])
+                    if not day_pillars:
+                        day_pillars = [day_pillar]
+                else:
+                    day_pillars = [day_pillar]
+                
+                # 提取时柱（如果有具体时柱）
+                hour_pillar_match = re.search(r'时柱[是]?([甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥])', clean_cond)
+                if hour_pillar_match:
+                    hour_pillar = hour_pillar_match.group(1)
+                    return ParseResult(True, conditions={
+                        "all": [
+                            {"pillar_equals": {"pillar": "day", "values": day_pillars}},
+                            {"pillar_equals": {"pillar": "hour", "values": [hour_pillar]}}
+                        ]
+                    })
+                else:
+                    # 没有具体时柱，只返回日柱条件（标记为需要时柱匹配）
+                    return ParseResult(True, conditions={
+                        "pillar_equals": {"pillar": "day", "values": day_pillars}
+                    })
+        
+        # ========== 新增：特定日柱配合特定格局/神煞 ==========
+        if "特定日柱" in clean_cond and ("格局" in clean_cond or "天医星" in clean_cond or "龙德贵人" in clean_cond):
+            # 提取日柱
+            ganzhi_pattern = r'[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]'
+            day_pillars = re.findall(ganzhi_pattern, clean_cond.split("特定日柱")[1].split("配合")[0])
+            
+            conds = []
+            if day_pillars:
+                conds.append({"pillar_equals": {"pillar": "day", "values": day_pillars}})
+            
+            # 提取神煞
+            if "天医星" in clean_cond:
+                conds.append({"deities_in_any_pillar": "天医"})
+            elif "龙德贵人" in clean_cond:
+                conds.append({"deities_in_any_pillar": "龙德"})
+            
+            if len(conds) > 1:
+                return ParseResult(True, conditions={"all": conds})
+            elif conds:
+                return ParseResult(True, conditions=conds[0])
+        
+        # ========== 新增：日柱配合神煞 ==========
+        if "日柱配合" in clean_cond:
+            # 提取神煞名称
+            shensha_match = re.search(r'日柱配合(.+?)(?:，|$)', clean_cond)
+            if shensha_match:
+                shensha = shensha_match.group(1).strip()
+                return ParseResult(True, conditions={
+                    "deities_in_day": shensha
+                })
+        
+        # ========== 新增：日柱 + 其他柱条件（"XX其中之一，年柱、月柱或时柱是YY"） ==========
+        other_pillar_match = re.search(r'(年柱|月柱|时柱)[，,]?或(年柱|月柱|时柱)是([甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥])', clean_cond)
+        if other_pillar_match and "其中之一" in clean_cond:
+            # 先提取日柱列表
+            ganzhi_pattern = r'[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]'
+            day_pillars = re.findall(ganzhi_pattern, clean_cond.split("其中之一")[0])
+            
+            pillar_name = other_pillar_match.group(1)
+            target_pillar = other_pillar_match.group(3)
+            pillar_key = cls._pillar_to_key(pillar_name)
+            
+            conds = [{"pillar_equals": {"pillar": "day", "values": day_pillars}}]
+            conds.append({
+                "any": [
+                    {"pillar_equals": {"pillar": "year", "values": [target_pillar]}},
+                    {"pillar_equals": {"pillar": "month", "values": [target_pillar]}},
+                    {"pillar_equals": {"pillar": "hour", "values": [target_pillar]}}
+                ]
+            })
+            return ParseResult(True, conditions={"all": conds})
+        
+        # ========== 新增：日柱 + 地支条件（"XX其中之一，地支中有Y"） ==========
+        if "其中之一" in clean_cond and "地支中有" in clean_cond:
+            # 提取日柱列表
+            ganzhi_pattern = r'[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]'
+            day_pillars = re.findall(ganzhi_pattern, clean_cond.split("其中之一")[0])
+            
+            # 提取地支
+            branch_match = re.search(r'地支中有([子丑寅卯辰巳午未申酉戌亥])', clean_cond)
+            if day_pillars and branch_match:
+                branch = branch_match.group(1)
+                return ParseResult(True, conditions={
+                    "all": [
+                        {"pillar_equals": {"pillar": "day", "values": day_pillars}},
+                        {"branches_count": {"names": [branch], "min": 1}}
+                    ]
+                })
+        
+        # ========== 新增：日柱神煞条件（"日柱神煞有XX"） ==========
+        day_shensha_match = re.match(r'日柱神煞有(.+)', clean_cond)
+        if day_shensha_match:
+            shensha = day_shensha_match.group(1).strip()
+            return ParseResult(True, conditions={"deities_in_day": shensha})
+        
+        # ========== 新增：大运流年触发的格局（先解析基础条件） ==========
+        # "（甲子日主，年月时至少再有一个子，遇到大运流年巳火时，被触发成格）"
+        if "日主" in clean_cond and "遇到大运流年" in clean_cond:
+            # 提取日柱（如"甲子日主"）
+            day_pillar_match = re.search(r'([甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥])日主', clean_cond)
+            if day_pillar_match:
+                day_pillar = day_pillar_match.group(1)
+                conds = [{"pillar_equals": {"pillar": "day", "values": [day_pillar]}}]
+                
+                # 提取地支条件（"年月时至少再有一个子"）
+                branch_match = re.search(r'至少再有一个([子丑寅卯辰巳午未申酉戌亥])', clean_cond)
+                if branch_match:
+                    branch = branch_match.group(1)
+                    conds.append({
+                        "all": [
+                            {"branches_count": {"names": [branch], "min": 2}}  # 至少2个（日柱1个+其他柱至少1个）
+                        ]
+                    })
+                
+                # 标记需要大运流年触发（需要在规则引擎中支持）
+                # 这里先返回基础条件，大运流年部分需要在规则引擎中实现
+                if len(conds) > 1:
+                    return ParseResult(True, conditions={"all": conds})
+                else:
+                    return ParseResult(True, conditions=conds[0])
+        
+        # ========== 新增：遥合格局（先解析基础条件） ==========
+        # "辛丑、癸丑日通过丑土遥合巳中丙火（日主必须是辛丑日或者癸丑日，年月时的地支中必须至少再有一个丑土，等到大运流年遇到巳申时，被触发成格）"
+        if "遥合" in clean_cond and "日主必须是" in clean_cond:
+            # 提取日柱列表（从"日主必须是XX日或者XX日"）
+            ganzhi_pattern = r'[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]'
+            day_pillars = re.findall(ganzhi_pattern, clean_cond.split("日主必须是")[1].split("，")[0])
+            
+            if day_pillars:
+                conds = [{"pillar_equals": {"pillar": "day", "values": day_pillars}}]
+                
+                # 提取地支条件（"年月时的地支中必须至少再有一个丑土"）
+                branch_match = re.search(r'至少再有一个([子丑寅卯辰巳午未申酉戌亥])', clean_cond)
+                if not branch_match:
+                    branch_match = re.search(r'再有一个([子丑寅卯辰巳午未申酉戌亥])', clean_cond)
+                if branch_match:
+                    branch = branch_match.group(1)
+                    conds.append({
+                        "branches_count": {"names": [branch], "min": 2}  # 至少2个
+                    })
+                
+                # 标记需要大运流年触发（需要在规则引擎中支持）
+                if len(conds) > 1:
+                    return ParseResult(True, conditions={"all": conds})
+                else:
+                    return ParseResult(True, conditions=conds[0])
         
         return ParseResult(False, reason=f"未识别的日柱条件: {cond2}")
     
@@ -1712,6 +1936,134 @@ class RuleParser:
                 ]
             })
         
+        # ========== 新增：十神数量相当 + 旺衰条件 ==========
+        if "数量相当" in cond2 or "数量相等" in cond2:
+            # 提取十神名称
+            ten_gods_found = [tg for tg in TEN_GODS if tg in cond2]
+            if len(ten_gods_found) >= 2:
+                conds = []
+                # 添加十神数量相等条件（需要在规则引擎中实现）
+                conds.append({
+                    "ten_gods_equal": {
+                        "names": ten_gods_found[:2]  # 取前两个
+                    }
+                })
+                
+                # 添加旺衰条件
+                if "日主身强" in cond2 or "身强" in cond2:
+                    conds.append({"wangshuai": ["身旺", "极旺"]})
+                elif "日主身弱" in cond2 or "身弱" in cond2:
+                    conds.append({"wangshuai": ["身弱"]})
+                
+                return ParseResult(True, conditions={"all": conds})
+        
+        # ========== 新增：旺衰 + 十神相邻条件 ==========
+        if "相邻" in cond2:
+            conds = []
+            # 添加旺衰条件
+            if "日主身强" in cond2 or "身强" in cond2:
+                conds.append({"wangshuai": ["身旺", "极旺"]})
+            
+            # 提取十神名称
+            ten_gods_found = [tg for tg in TEN_GODS if tg in cond2]
+            if ten_gods_found:
+                # 十神相邻条件（需要在规则引擎中实现）
+                conds.append({
+                    "ten_gods_adjacent": {
+                        "names": ten_gods_found
+                    }
+                })
+            
+            if conds:
+                return ParseResult(True, conditions={"all": conds})
+        
+        # ========== 新增：旺衰 + 十神顺次出现 ==========
+        if "顺次出现" in cond2 or "顺生组合" in cond2:
+            conds = []
+            # 添加旺衰条件
+            if "日主身强" in cond2 or "身强" in cond2:
+                conds.append({"wangshuai": ["身旺", "极旺"]})
+            
+            # 提取十神名称（财星、官星、印星等）
+            ten_gods_found = [tg for tg in TEN_GODS if tg in cond2 or ("财" in cond2 and tg in ["正财", "偏财"]) or ("官" in cond2 and tg in ["正官", "七杀"]) or ("印" in cond2 and tg in ["正印", "偏印"])]
+            if ten_gods_found:
+                # 十神顺序条件（需要在规则引擎中实现）
+                conds.append({
+                    "ten_gods_sequence": {
+                        "names": ten_gods_found
+                    }
+                })
+            
+            if conds:
+                return ParseResult(True, conditions={"all": conds})
+        
+        # ========== 新增：十神合的关系 ==========
+        if "合" in cond2 and ("官星" in cond2 or "正官" in cond2 or "七杀" in cond2):
+            # "命局（原局）、大运或流年的天干地支中，官星（正官/七杀）与其他干支发生了"合"的关系"
+            conds = []
+            # 添加十神条件（正官或七杀）
+            if "正官" in cond2:
+                conds.append({
+                    "any": [
+                        {"ten_gods_total": {"names": ["正官"], "min": 1}},
+                        {"ten_gods_total": {"names": ["七杀"], "min": 1}}
+                    ]
+                })
+            else:
+                conds.append({
+                    "ten_gods_total": {
+                        "names": ["正官", "七杀"],
+                        "min": 1
+                    }
+                })
+            
+            # 添加合的关系条件（需要在规则引擎中实现）
+            conds.append({
+                "ten_gods_he": {
+                    "names": ["正官", "七杀"]
+                }
+            })
+            
+            return ParseResult(True, conditions={"all": conds})
+        
+        # ========== 新增：禄马星被冲克后又相合 ==========
+        if "禄马星被冲克后又相合" in cond2 or "禄马星" in cond2:
+            conds = []
+            # 添加旺衰条件
+            if "日主身强" in cond2:
+                conds.append({"wangshuai": ["身旺", "极旺"]})
+            
+            # 添加十神条件（无财星或无官星）
+            if "不见财星" in cond2 or "无财星" in cond2:
+                conds.append({
+                    "not": {
+                        "ten_gods_total": {
+                            "names": ["正财", "偏财"],
+                            "min": 1
+                        }
+                    }
+                })
+            if "不见官星" in cond2 or "无官星" in cond2:
+                conds.append({
+                    "not": {
+                        "ten_gods_total": {
+                            "names": ["正官", "七杀"],
+                            "min": 1
+                        }
+                    }
+                })
+            
+            # 添加神煞条件（禄神、驿马）
+            conds.append({
+                "any": [
+                    {"deities_in_any_pillar": "禄神"},
+                    {"deities_in_any_pillar": "驿马"}
+                ]
+            })
+            
+            if conds:
+                return ParseResult(True, conditions={"all": conds})
+        
         return ParseResult(False, reason=f"未识别的十神条件: {cond2}")
     
     @classmethod
@@ -1786,6 +2138,32 @@ class RuleParser:
             if branches:
                 conds = [{"branches_count": {"names": [b], "min": 1}} for b in branches]
                 return ParseResult(True, conditions=conds)
+        
+        # ========== 新增：地支顺次排列（"地支'甲戊庚'顺次排列"） ==========
+        # 注意：这里"甲戊庚"是误写（实际是天干），但解析器尝试兼容
+        if "顺次排列" in cond2:
+            # 提取地支序列（从引号中，支持中文引号和英文引号）
+            branch_sequence_match = re.search(r'["""''""""]?([子丑寅卯辰巳午未申酉戌亥]+)["""''""""]?', cond2)
+            if branch_sequence_match:
+                branch_sequence = branch_sequence_match.group(1)
+                branches = list(branch_sequence)
+                # 地支顺序条件（需要在规则引擎中实现）
+                return ParseResult(True, conditions={
+                    "branches_sequence": {"names": branches}
+                })
+            
+            # 如果是"甲戊庚"这样的误写（实际是天干），尝试提取为天干序列
+            # 虽然条件类型是"地支"，但内容是天干，我们将其解析为天干序列条件
+            # 这样可以在规则引擎中正确匹配（规则引擎会根据实际内容匹配）
+            stem_sequence_match = re.search(r'["""''""""]?([甲乙丙丁戊己庚辛壬癸]+)["""''""""]?', cond2)
+            if stem_sequence_match:
+                stem_sequence = stem_sequence_match.group(1)
+                stems = list(stem_sequence)
+                # 返回天干序列条件（虽然条件类型是地支，但实际内容是天干）
+                # 规则引擎可以根据stems_sequence条件正确匹配
+                return ParseResult(True, conditions={
+                    "stems_sequence": {"names": stems}
+                })
         
         return ParseResult(False, reason=f"未识别的地支条件: {cond2}")
     
@@ -1878,6 +2256,10 @@ class RuleParser:
         if "日主身旺" in cond2:
             return ParseResult(True, conditions={"wangshuai": ["身旺"]})
         
+        # ========== 新增：日主极弱 ==========
+        if "极弱" in cond2 or "日主极弱" in cond2:
+            return ParseResult(True, conditions={"wangshuai": ["极弱"]})
+        
         return ParseResult(False, reason=f"未识别的旺衰条件: {cond2}")
     
     @classmethod
@@ -1923,6 +2305,18 @@ class RuleParser:
             element = element_max_match.group(1)
             max_count = int(element_max_match.group(2))
             conds.append({"element_total": {"names": [element], "max": max_count - 1}})
+        
+        # ========== 新增：八字五行金木水火土都有 ==========
+        if "五行" in cond2 and ("都有" in cond2 or "全部都有" in cond2):
+            # 检查是否包含所有五行
+            all_elements = ["木", "火", "土", "金", "水"]
+            present_elements = [e for e in all_elements if e in cond2]
+            if len(present_elements) >= 4:  # 至少有4个五行
+                conds = [{"element_total": {"names": [e], "min": 1}} for e in all_elements]
+                # 检查"无刑冲破害"条件（需要在规则引擎中实现）
+                if "无刑冲破害" in cond2 or "无刑冲" in cond2:
+                    conds.append({"no_xing_chong": True})
+                return ParseResult(True, conditions={"all": conds})
         
         if conds:
             return ParseResult(True, conditions=conds if len(conds) > 1 else conds[0])
@@ -2003,6 +2397,27 @@ class RuleParser:
             if stems:
                 conds.append({"stems_count": {"names": stems, "min": len(stems)}})
         
+        # ========== 新增：天干顺次排列（"天干'乙丙丁'顺次排列"） ==========
+        if "顺次排列" in cond2:
+            # 提取天干序列（从引号中，支持中文引号和英文引号）
+            stem_sequence_match = re.search(r'["""''""""]?([甲乙丙丁戊己庚辛壬癸]+)["""''""""]?', cond2)
+            if stem_sequence_match:
+                stem_sequence = stem_sequence_match.group(1)
+                stems = list(stem_sequence)
+                # 天干顺序条件（需要在规则引擎中实现）
+                return ParseResult(True, conditions={
+                    "stems_sequence": {"names": stems}
+                })
+        
+        # ========== 新增：天干有X ==========
+        if "天干有" in cond2:
+            stem_match = re.search(r'天干有([甲乙丙丁戊己庚辛壬癸])', cond2)
+            if stem_match:
+                stem = stem_match.group(1)
+                return ParseResult(True, conditions={
+                    "stems_count": {"names": [stem], "min": 1}
+                })
+        
         if conds:
             return ParseResult(True, conditions=conds if len(conds) > 1 else conds[0])
         
@@ -2079,7 +2494,212 @@ class RuleParser:
                     "pillar_equals": {"pillar": "hour", "values": [ganzhi]}
                 })
         
+        # ========== 新增：四柱中有特定地支排列（"四柱中有子午子，或四柱中有午子午"） ==========
+        if "四柱中有" in cond2 and ("子午子" in cond2 or "午子午" in cond2):
+            # 提取地支序列
+            branch_pattern = re.findall(r'([子丑寅卯辰巳午未申酉戌亥]{3})', cond2)
+            if branch_pattern:
+                conds = []
+                for pattern in branch_pattern:
+                    # 转换为条件：四柱中必须包含这些地支
+                    branches = list(pattern)
+                    conds.append({
+                        "all": [
+                            {"branches_count": {"names": [branches[0]], "min": 1}},
+                            {"branches_count": {"names": [branches[1]], "min": 1}},
+                            {"branches_count": {"names": [branches[2]], "min": 1}}
+                        ]
+                    })
+                if len(conds) > 1:
+                    return ParseResult(True, conditions={"any": conds})
+                else:
+                    return ParseResult(True, conditions=conds[0])
+        
+        # ========== 新增：日主身弱，四柱主星和副星中... ==========
+        if "日主身弱" in cond2 and "四柱主星和副星" in cond2:
+            conds = [{"wangshuai": ["身弱"]}]
+            
+            # 提取十神名称和数量要求
+            ten_gods_found = [tg for tg in TEN_GODS if tg in cond2]
+            if ten_gods_found:
+                # 检查数量要求（"达到3个以上"、"包含3个"）
+                count_match = re.search(r'达到(\d+)个以上|包含(\d+)个|达到(\d+)个', cond2)
+                min_count = 3  # 默认3个
+                if count_match:
+                    min_count = int(count_match.group(1) or count_match.group(2) or count_match.group(3))
+                
+                conds.append({
+                    "ten_gods_total": {
+                        "names": ten_gods_found,
+                        "min": min_count
+                    }
+                })
+            
+            # 检查"无"条件（"无正印、偏印"、"无比肩、劫财"）
+            if "无" in cond2:
+                no_ten_gods = [tg for tg in TEN_GODS if tg in cond2.split("无")[1] if tg in TEN_GODS]
+                if no_ten_gods:
+                    conds.append({
+                        "not": {
+                            "ten_gods_total": {
+                                "names": no_ten_gods,
+                                "min": 1
+                            }
+                        }
+                    })
+            
+            if len(conds) > 1:
+                return ParseResult(True, conditions={"all": conds})
+            else:
+                return ParseResult(True, conditions=conds[0])
+        
+        # ========== 新增：日主八字五行属性到达4个以上 ==========
+        if "五行属性到达" in cond2 or "五行属性达到" in cond2:
+            count_match = re.search(r'到达(\d+)个以上|达到(\d+)个以上|到达(\d+)个|达到(\d+)个', cond2)
+            if count_match:
+                min_count = int(count_match.group(1) or count_match.group(2) or count_match.group(3) or count_match.group(4))
+                # 使用五行总数条件（需要在规则引擎中支持）
+                return ParseResult(True, conditions={
+                    "wuxing_count": {"min": min_count}
+                })
+        
         return ParseResult(False, reason=f"未识别的四柱条件: {cond2}")
+    
+    @classmethod
+    def _parse_rigan(cls, cond2: str) -> ParseResult:
+        """解析日干条件"""
+        conds = []
+        
+        # ========== 日干五行属性是X，且地支必须是... ==========
+        if "五行属性是" in cond2:
+            # 提取五行
+            element_match = re.search(r'五行属性是([木火土金水])', cond2)
+            if element_match:
+                element = element_match.group(1)
+                # 日干五行对应日柱天干
+                # 需要在规则引擎中实现：根据日柱天干判断五行
+                conds.append({"day_stem_element": element})
+        
+        # ========== 地支条件（"且地支必须是..."、"且地支必须只有..."） ==========
+        if "地支" in cond2:
+            # 提取地支列表
+            branch_pattern = r'[子丑寅卯辰巳午未申酉戌亥]'
+            branches = re.findall(branch_pattern, cond2.split("地支")[-1])
+            
+            if branches:
+                # 检查是"必须是"还是"必须只有"
+                if "必须只有" in cond2 or "只有" in cond2:
+                    # 只有这些地支，不能有其他
+                    conds.append({
+                        "branches_only": {"names": branches}
+                    })
+                else:
+                    # 必须有这些地支
+                    conds.append({
+                        "branches_count": {"names": branches, "min": len(branches)}
+                    })
+        
+        # ========== 日干与月干/时干五合 ==========
+        if "五合" in cond2:
+            if "日干与月干五合" in cond2:
+                conds.append({
+                    "pillar_relation": {
+                        "pillar_a": "day",
+                        "pillar_b": "month",
+                        "relation": "he",
+                        "part": "stem"
+                    }
+                })
+            if "日干与时干五合" in cond2:
+                conds.append({
+                    "pillar_relation": {
+                        "pillar_a": "day",
+                        "pillar_b": "hour",
+                        "relation": "he",
+                        "part": "stem"
+                    }
+                })
+            if "或" in cond2:
+                # 两个都有，用any
+                return ParseResult(True, conditions={
+                    "any": [
+                        {"pillar_relation": {"pillar_a": "day", "pillar_b": "month", "relation": "he", "part": "stem"}},
+                        {"pillar_relation": {"pillar_a": "day", "pillar_b": "hour", "relation": "he", "part": "stem"}}
+                    ]
+                })
+        
+        if conds:
+            if len(conds) > 1:
+                return ParseResult(True, conditions={"all": conds})
+            else:
+                return ParseResult(True, conditions=conds[0])
+        
+        return ParseResult(False, reason=f"未识别的日干条件: {cond2}")
+    
+    @classmethod
+    def _parse_yueling(cls, cond2: str) -> ParseResult:
+        """解析月令条件"""
+        conds = []
+        
+        # ========== 月令为正印且在天干里出现 ==========
+        if "为正印" in cond2 or "为正官" in cond2 or "为正财" in cond2:
+            # 提取十神名称
+            ten_god = None
+            for tg in TEN_GODS:
+                if f"为{tg}" in cond2:
+                    ten_god = tg
+                    break
+            
+            if ten_god:
+                # 月令（月支）有该十神
+                conds.append({
+                    "ten_gods_sub": {
+                        "names": [ten_god],
+                        "pillars": ["month"],
+                        "min": 1
+                    }
+                })
+                
+                # 且在天干里出现（主星）
+                conds.append({
+                    "ten_gods_main": {
+                        "names": [ten_god],
+                        "min": 1
+                    }
+                })
+        
+        # ========== 没有正财偏财来破坏 ==========
+        if "没有" in cond2 and ("正财" in cond2 or "偏财" in cond2):
+            no_gods = []
+            if "正财" in cond2:
+                no_gods.append("正财")
+            if "偏财" in cond2:
+                no_gods.append("偏财")
+            
+            if no_gods:
+                conds.append({
+                    "not": {
+                        "ten_gods_total": {
+                            "names": no_gods,
+                            "min": 1
+                        }
+                    }
+                })
+        
+        if conds:
+            return ParseResult(True, conditions={"all": conds} if len(conds) > 1 else conds[0])
+        
+        # 默认：月令通常指月支，可以用月柱地支条件来处理
+        # 提取地支
+        branch_pattern = r'[子丑寅卯辰巳午未申酉戌亥]'
+        branches = re.findall(branch_pattern, cond2)
+        
+        if branches:
+            return ParseResult(True, conditions={
+                "pillar_in": {"pillar": "month", "part": "branch", "values": branches}
+            })
+        
+        return ParseResult(False, reason=f"未识别的月令条件: {cond2}")
     
     @classmethod
     def _parse_shishen_mingge(cls, cond2: str) -> ParseResult:
@@ -2087,6 +2707,62 @@ class RuleParser:
         # 十神作为命格
         if cond2 in TEN_GODS:
             return ParseResult(True, conditions={"shishen_ming_ge": cond2})
+        
+        # ========== 新增：金神格，且... ==========
+        if "金神格" in cond2:
+            conds = []
+            # 添加金神格条件（需要在规则引擎中支持）
+            conds.append({"special_pattern": "金神格"})
+            
+            # 解析附加条件
+            if "，且" in cond2 or "且" in cond2:
+                rest = cond2.split("，且")[-1] if "，且" in cond2 else cond2.split("且")[-1]
+                rest = rest.strip()
+                
+                # 神煞条件（"神煞有羊刃"）
+                if "神煞有" in rest:
+                    shensha = rest.replace("神煞有", "").strip()
+                    conds.append({"deities_in_any_pillar": shensha})
+                
+                # 五行条件（"八字对应五行属火数量超过3个"）
+                if "五行属" in rest and "数量超过" in rest:
+                    element_match = re.search(r'五行属([木火土金水])数量超过(\d+)个', rest)
+                    if element_match:
+                        element = element_match.group(1)
+                        min_count = int(element_match.group(2)) + 1  # 超过3个 = >= 4个
+                        conds.append({"element_total": {"element": element, "min": min_count}})
+                
+                # 天干条件（"天干有甲"）
+                if "天干有" in rest:
+                    stem_match = re.search(r'天干有([甲乙丙丁戊己庚辛壬癸])', rest)
+                    if stem_match:
+                        stem = stem_match.group(1)
+                        conds.append({"stems_count": {"names": [stem], "min": 1}})
+                
+                # 十神条件（"四柱主星和副星有XX"）
+                if "四柱主星和副星有" in rest:
+                    ten_gods_found = [tg for tg in TEN_GODS if tg in rest]
+                    if ten_gods_found:
+                        # 检查"或"连接（"正印或偏印"）
+                        if "或" in rest:
+                            conds.append({
+                                "any": [
+                                    {"ten_gods_total": {"names": [tg], "min": 1}}
+                                    for tg in ten_gods_found
+                                ]
+                            })
+                        else:
+                            conds.append({
+                                "ten_gods_total": {
+                                    "names": ten_gods_found,
+                                    "min": 1
+                                }
+                            })
+            
+            if len(conds) > 1:
+                return ParseResult(True, conditions={"all": conds})
+            else:
+                return ParseResult(True, conditions=conds[0])
         
         return ParseResult(False, reason=f"未识别的十神命格条件: {cond2}")
     

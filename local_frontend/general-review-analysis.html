@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>八字命理-总评 - HiFate</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-layout.css">
+    <script src="js/sidebar.js?v=20250115"></script>
+    <style>
+        .general-review-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .form-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .form-card h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #6f42c1;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #6f42c1;
+            box-shadow: 0 0 0 2px rgba(111,66,193,0.1);
+        }
+        
+        .submit-btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(111,66,193,0.3);
+        }
+        
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .result-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: none;
+        }
+        
+        .result-card.active {
+            display: block;
+        }
+        
+        .user-info {
+            background: #f8f9fa;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .user-info h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        .content-section {
+            margin-bottom: 30px;
+        }
+        
+        .content-section h3 {
+            color: #6f42c1;
+            border-bottom: 2px solid #6f42c1;
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .analysis-content {
+            line-height: 1.8;
+            color: #333;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="general-review-container">
+        <h1>八字命理-总评分析</h1>
+        
+        <!-- 输入表单 -->
+        <div class="form-card">
+            <h2>生辰信息</h2>
+            <form id="generalReviewForm">
+                <div class="form-group">
+                    <label for="solarDate">公历日期</label>
+                    <input type="date" id="solarDate" name="solarDate" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="solarTime">出生时间</label>
+                    <input type="time" id="solarTime" name="solarTime" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="gender">性别</label>
+                    <select id="gender" name="gender" required>
+                        <option value="">请选择</option>
+                        <option value="male">男</option>
+                        <option value="female">女</option>
+                    </select>
+                </div>
+                
+                <button type="submit" class="submit-btn" id="submitBtn">开始分析</button>
+            </form>
+        </div>
+        
+        <!-- 结果显示 -->
+        <div class="result-card" id="resultCard">
+            <div class="user-info" id="userInfo"></div>
+            
+            <div id="loadingSection" class="loading" style="display: none;">
+                <p>正在分析中，请稍候...</p>
+            </div>
+            
+            <div id="errorSection" class="error" style="display: none;"></div>
+            
+            <!-- 完整分析内容 -->
+            <div class="content-section" id="fullAnalysisSection" style="display: none;">
+                <h3>总评分析</h3>
+                <div class="analysis-content" id="fullAnalysisContent"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="js/general-review-analysis.js?v=20250115"></script>
+</body>
+</html>
+

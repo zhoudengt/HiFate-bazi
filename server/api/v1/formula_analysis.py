@@ -16,6 +16,12 @@ from server.services.rule_service import RuleService
 from server.utils.data_validator import validate_bazi_data
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
+from server.services.wangshuai_service import WangShuaiService
+from server.services.bazi_detail_service import BaziDetailService
+from server.services.health_analysis_service import HealthAnalysisService
+from server.services.bazi_display_service import BaziDisplayService
+from src.analyzers.fortune_relation_analyzer import FortuneRelationAnalyzer
+import asyncio
 # ⚠️ FormulaRuleService 已完全废弃，所有规则匹配统一使用 RuleService
 
 router = APIRouter()
@@ -82,6 +88,90 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
         # ✅ 统一类型验证：确保所有字段类型正确（防止gRPC序列化问题）
         bazi_data = validate_bazi_data(bazi_data)
         
+        # 1.1. 并行获取额外数据（喜忌、大运流年、健康分析）
+        loop = asyncio.get_event_loop()
+        executor = None
+        
+        try:
+            wangshuai_result, detail_result, health_result = await asyncio.gather(
+                loop.run_in_executor(
+                    executor,
+                    WangShuaiService.calculate_wangshuai,
+                    final_solar_date,
+                    final_solar_time,
+                    request.gender
+                ),
+                loop.run_in_executor(
+                    executor,
+                    BaziDetailService.calculate_detail_full,
+                    final_solar_date,
+                    final_solar_time,
+                    request.gender
+                ),
+                loop.run_in_executor(
+                    executor,
+                    HealthAnalysisService.analyze,
+                    bazi_data
+                ),
+                return_exceptions=True
+            )
+            
+            # 记录数据获取结果（用于调试）
+            import logging
+            logger = logging.getLogger(__name__)
+            if isinstance(wangshuai_result, Exception):
+                logger.warning(f"获取喜忌数据失败: {wangshuai_result}")
+            if isinstance(detail_result, Exception):
+                logger.warning(f"获取大运流年数据失败: {detail_result}")
+            if isinstance(health_result, Exception):
+                logger.warning(f"获取健康分析数据失败: {health_result}")
+        except Exception as e:
+            # 如果并行调用失败，使用默认值，不影响主流程
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"并行数据获取异常: {e}")
+            wangshuai_result = {}
+            detail_result = {}
+            health_result = {}
+        
+        # 提取喜忌数据
+        xi_ji_data = {}
+        if isinstance(wangshuai_result, dict) and not isinstance(wangshuai_result, Exception):
+            xi_ji_data = {
+                'xi_shen': wangshuai_result.get('xi_shen', []),
+                'ji_shen': wangshuai_result.get('ji_shen', []),
+                'xi_shen_elements': wangshuai_result.get('xi_shen_elements', []),
+                'ji_shen_elements': wangshuai_result.get('ji_shen_elements', [])
+            }
+        
+        # 提取大运流年序列
+        dayun_sequence = []
+        liunian_sequence = []
+        if isinstance(detail_result, dict) and not isinstance(detail_result, Exception):
+            dayun_sequence = detail_result.get('dayun_sequence', [])[:8]  # 限制为前8个大运
+            liunian_sequence = detail_result.get('liunian_sequence', [])
+        
+        # 提取健康分析数据
+        health_analysis = {}
+        if isinstance(health_result, dict) and not isinstance(health_result, Exception):
+            health_analysis = {
+                'wuxing_balance': health_result.get('wuxing_balance', {}),
+                'zangfu_duiying': health_result.get('body_algorithm', {}),  # 注意字段名映射
+                'jiankang_ruodian': health_result.get('pathology_tendency', {})
+            }
+        
+        # 筛选特殊流年（四柱冲合刑害、岁运并临）
+        special_liunians = _filter_special_liunians(
+            liunian_sequence,
+            dayun_sequence,
+            bazi_data.get('bazi_pillars', {})
+        )
+        
+        # 调试日志：检查数据获取情况（在所有变量定义之后）
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[FormulaAnalysis] xi_ji_data: {bool(xi_ji_data)}, dayun_sequence: {len(dayun_sequence) if dayun_sequence else 0}, special_liunians: {len(special_liunians) if special_liunians else 0}, health_analysis: {bool(health_analysis)}")
+        
         # 2. 匹配规则（使用RuleService，已迁移到数据库）
         # 构建规则匹配数据
         rule_data = {
@@ -116,6 +206,14 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
         matched_result = _convert_rule_service_to_formula_format(migrated_rules, rule_types)
         
         # 4. 格式化响应
+        # 确保新增字段始终存在（即使数据为空）
+        formatted_dayun = _format_dayun_sequence(dayun_sequence) if dayun_sequence else []
+        
+        # 调试日志：检查变量值
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[FormulaAnalysis DEBUG] Before building response_data: xi_ji_data={bool(xi_ji_data)}, formatted_dayun={len(formatted_dayun) if formatted_dayun else 0}, special_liunians={len(special_liunians) if special_liunians else 0}, health_analysis={bool(health_analysis)}")
+        
         response_data = {
             'bazi_info': {
                 'solar_date': request.solar_date,
@@ -140,12 +238,24 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
                 'peach_blossom_count': len(matched_result['matched_rules'].get('peach_blossom', [])),
                 'shishen_count': len(matched_result['matched_rules'].get('shishen', [])),
                 'parents_count': len(matched_result['matched_rules'].get('parents', []))
-            }
+            },
+            # 新增数据（确保始终存在，即使为空）
+            'xi_ji': xi_ji_data if xi_ji_data else {'xi_shen': [], 'ji_shen': [], 'xi_shen_elements': [], 'ji_shen_elements': []},
+            'dayun_sequence': formatted_dayun if formatted_dayun else [],
+            'special_liunians': special_liunians if special_liunians else [],
+            'health_analysis': health_analysis if health_analysis else {}
         }
         
         # 添加转换信息到结果
         if conversion_info.get('converted') or conversion_info.get('timezone_info'):
             response_data['conversion_info'] = conversion_info
+        
+        # 调试日志：检查最终响应数据
+        logger.info(f"[FormulaAnalysis DEBUG] Final response_data keys: {list(response_data.keys())}")
+        logger.info(f"[FormulaAnalysis DEBUG] Has xi_ji in response_data: {'xi_ji' in response_data}")
+        logger.info(f"[FormulaAnalysis DEBUG] Has dayun_sequence in response_data: {'dayun_sequence' in response_data}")
+        logger.info(f"[FormulaAnalysis DEBUG] Has special_liunians in response_data: {'special_liunians' in response_data}")
+        logger.info(f"[FormulaAnalysis DEBUG] Has health_analysis in response_data: {'health_analysis' in response_data}")
         
         return FormulaAnalysisResponse(success=True, data=response_data)
     
@@ -358,6 +468,29 @@ def _convert_rule_service_to_formula_format(migrated_rules: list, rule_types: Op
     # 计算总数
     total_matched = sum(len(rules) for rules in matched_rules.values())
     
+    # ✅ 如果十神命格规则为空，添加默认的"常格"规则
+    if not matched_rules['shishen']:
+        changge_id = 99009
+        matched_rules['shishen'].append(changge_id)
+        # 使用字符串键（与其他规则保持一致，JSON序列化后键为字符串）
+        rule_details[str(changge_id)] = {
+            'ID': changge_id,
+            'id': changge_id,
+            '类型': '十神命格',
+            'type': '十神命格',
+            '性别': '无论男女',
+            'gender': '无论男女',
+            '筛选条件1': '无',
+            'condition1': '无',
+            '筛选条件2': '',
+            'condition2': '',
+            '数量': None,
+            '结果': '常格\n解读：是八字命理中最基础、最常见的格局类型。它遵循 "五行平衡、力量中和" 的基本原则，通过日主与月令的关系确定核心特质和发展方向。',
+            'result': '常格\n解读：是八字命理中最基础、最常见的格局类型。它遵循 "五行平衡、力量中和" 的基本原则，通过日主与月令的关系确定核心特质和发展方向。'
+        }
+        # 重新计算总数（因为添加了默认规则）
+        total_matched = sum(len(rules) for rules in matched_rules.values())
+    
     return {
         'matched_rules': matched_rules,
         'rule_details': rule_details,
@@ -439,6 +572,146 @@ def _convert_conditions_to_text(conditions: dict) -> str:
             parts.append(' 或 '.join(any_parts))
     
     return '，'.join(parts) if parts else ''
+
+
+def _is_special_liunian(liunian: dict, dayun_info: dict, bazi_pillars: dict) -> bool:
+    """
+    判断流年是否有特殊关系（岁运并临、四柱冲合刑害）
+    
+    Args:
+        liunian: 流年信息（包含 relations 字段）
+        dayun_info: 对应的大运信息
+        bazi_pillars: 八字四柱
+    
+    Returns:
+        bool: 是否为特殊流年
+    """
+    # 方法1：检查原有的 relations 字段（快速判断）
+    relations = liunian.get('relations', [])
+    if relations and len(relations) > 0:
+        return True  # 有特殊关系
+    
+    # 方法2：检查岁运并临（流年天干地支与大运天干地支完全相同）
+    if dayun_info:
+        liunian_stem = liunian.get('stem', '')
+        liunian_branch = liunian.get('branch', '')
+        dayun_stem = dayun_info.get('stem', '')
+        dayun_branch = dayun_info.get('branch', '')
+        
+        if liunian_stem == dayun_stem and liunian_branch == dayun_branch:
+            return True  # 岁运并临
+    
+    return False
+
+
+def _find_dayun_for_liunian(liunian: dict, dayun_sequence: list) -> dict:
+    """
+    查找流年对应的大运信息
+    
+    Args:
+        liunian: 流年信息
+        dayun_sequence: 大运序列
+    
+    Returns:
+        dict: 对应的大运信息，如果找不到则返回空字典
+    """
+    liunian_year = liunian.get('year')
+    if not liunian_year:
+        return {}
+    
+    # 查找包含该流年的大运
+    for dayun in dayun_sequence:
+        start_year = dayun.get('start_year')
+        end_year = dayun.get('end_year')
+        
+        if start_year and end_year:
+            if start_year <= liunian_year <= end_year:
+                return dayun
+    
+    return {}
+
+
+def _filter_special_liunians(
+    liunian_sequence: list,
+    dayun_sequence: list,
+    bazi_pillars: dict
+) -> list:
+    """
+    筛选特殊流年（只返回有特殊关系的流年）
+    
+    Args:
+        liunian_sequence: 流年序列
+        dayun_sequence: 大运序列
+        bazi_pillars: 八字四柱
+    
+    Returns:
+        list: 特殊流年列表（包含详细关系分析）
+    """
+    special_liunians = []
+    
+    for liunian in liunian_sequence:
+        # 查找对应的大运信息
+        dayun_info = _find_dayun_for_liunian(liunian, dayun_sequence)
+        
+        # 判断是否为特殊流年
+        if _is_special_liunian(liunian, dayun_info, bazi_pillars):
+            # 获取详细关系分析
+            try:
+                # 准备流年和大运的格式（FortuneRelationAnalyzer 需要的格式）
+                liunian_dict = {
+                    'stem': liunian.get('stem', ''),
+                    'branch': liunian.get('branch', '')
+                }
+                dayun_dict = {
+                    'stem': dayun_info.get('stem', ''),
+                    'branch': dayun_info.get('branch', '')
+                } if dayun_info else None
+                
+                # 调用 FortuneRelationAnalyzer 获取详细关系分析
+                relation_analysis = FortuneRelationAnalyzer.analyze(
+                    bazi_pillars,
+                    liunian_dict,
+                    dayun_dict
+                )
+            except Exception as e:
+                # 如果关系分析失败，使用空字典
+                relation_analysis = {}
+            
+            # 添加到特殊流年列表
+            special_liunians.append({
+                **liunian,  # 保留原有字段（包括 relations）
+                'relation_analysis': relation_analysis,  # 添加详细关系分析
+                'dayun_info': dayun_info  # 添加对应的大运信息
+            })
+    
+    return special_liunians
+
+
+def _format_dayun_sequence(dayun_sequence: list) -> list:
+    """
+    格式化大运序列（使用 BaziDisplayService._format_dayun_item 确保格式一致）
+    
+    Args:
+        dayun_sequence: 原始大运序列
+    
+    Returns:
+        list: 格式化后的大运序列
+    """
+    formatted_sequence = []
+    
+    for dayun in dayun_sequence:
+        try:
+            # 使用 BaziDisplayService._format_dayun_item 格式化（静态方法）
+            formatted_dayun = BaziDisplayService._format_dayun_item(dayun)
+            formatted_sequence.append(formatted_dayun)
+        except Exception as e:
+            # 如果格式化失败，使用原始数据（保持向后兼容）
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"格式化大运项失败: {e}, 使用原始数据")
+            formatted_sequence.append(dayun)
+    
+    return formatted_sequence
 
 
 @router.get("/bazi/formula-rules/info")

@@ -146,15 +146,16 @@ else
     echo -e "${GREEN}✅ 当前分支：$CURRENT_BRANCH${NC}"
 fi
 
-# 1.3 检查是否有未提交的更改
+# 1.3 检查是否有未提交的更改（只检查已跟踪文件，忽略未跟踪文件）
 echo ""
 echo "🔍 检查未提交的更改..."
-if [ -n "$(git status --porcelain)" ]; then
+# 只检查已跟踪文件的更改（--untracked-files=no 忽略未跟踪文件）
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
     echo -e "${RED}❌ 错误：存在未提交的更改，请先提交代码${NC}"
-    git status --short
+    git status --short --untracked-files=no
     exit 1
 fi
-echo -e "${GREEN}✅ 无未提交的更改${NC}"
+echo -e "${GREEN}✅ 无未提交的更改（已跟踪文件）${NC}"
 
 # 1.4 检查是否有未推送的提交
 echo ""

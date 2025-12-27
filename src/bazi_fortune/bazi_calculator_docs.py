@@ -764,7 +764,7 @@ class BaziCalculator:
         bazi_pillars: Dict[str, Dict[str, str]]
     ) -> list:
         """
-        计算流年关系
+        计算流年关系（扩展版：包含更多关系类型）
         
         Args:
             liunian_stem: 流年天干
@@ -774,44 +774,111 @@ class BaziCalculator:
             bazi_pillars: 四柱信息字典，格式：{'year': {'stem': '甲', 'branch': '子'}, ...}
         
         Returns:
-            List[str]: 关系列表，如 ["岁运并临", "年柱-天克地冲", "月柱-天合地合"]
+            List[Dict]: 关系列表，每个关系包含 type 和 description 字段
+            如 [
+                {"type": "岁运并临", "description": "流年与大运完全相同"},
+                {"type": "年柱-天克地冲", "description": "流年天干克制年柱天干，流年地支与年柱地支相冲"},
+                {"type": "月柱-天合地合", "description": "流年天干与月柱天干相合，流年地支与月柱地支相合"},
+                {"type": "日柱-地冲", "description": "流年地支与日柱地支相冲"},
+                {"type": "时柱-地刑", "description": "流年地支与时柱地支相刑"},
+            ]
         """
-        from src.data.relations import STEM_HE, BRANCH_LIUHE, BRANCH_CHONG, STEM_KE
+        from src.data.relations import (
+            STEM_HE, BRANCH_LIUHE, BRANCH_CHONG, STEM_KE,
+            BRANCH_XING, BRANCH_HAI, BRANCH_PO
+        )
         
         relations = []
+        pillar_names = {'year': '年柱', 'month': '月柱', 'day': '日柱', 'hour': '时柱'}
         
         # 1. 岁运并临：流年天干地支与大运天干地支完全相同
         if liunian_stem == dayun_stem and liunian_branch == dayun_branch:
-            relations.append("岁运并临")
+            relations.append({
+                "type": "岁运并临",
+                "description": f"流年{liunian_stem}{liunian_branch}与大运{dayun_stem}{dayun_branch}完全相同"
+            })
         
-        # 2. 天克地冲：流年与四柱的天克地冲关系
-        pillar_names = {'year': '年柱', 'month': '月柱', 'day': '日柱', 'hour': '时柱'}
+        # 2. 流年与四柱的关系（扩展：包含更多关系类型）
         for pillar_type, pillar in bazi_pillars.items():
             pillar_stem = pillar.get('stem', '')
             pillar_branch = pillar.get('branch', '')
+            pillar_name = pillar_names.get(pillar_type, pillar_type)
             
-            # 天克：流年天干克制四柱天干
-            is_stem_ke = pillar_stem in STEM_KE.get(liunian_stem, [])
-            # 地冲：流年地支与四柱地支相冲
-            is_branch_chong = BRANCH_CHONG.get(liunian_branch) == pillar_branch
+            if not pillar_stem or not pillar_branch:
+                continue
             
+            # 2.1 天干关系
+            is_stem_he = STEM_HE.get(liunian_stem) == pillar_stem  # 天干相合
+            is_stem_ke = pillar_stem in STEM_KE.get(liunian_stem, [])  # 天干相克（流年克四柱）
+            is_stem_ke_reverse = liunian_stem in STEM_KE.get(pillar_stem, [])  # 天干相克（四柱克流年）
+            
+            # 2.2 地支关系
+            is_branch_chong = BRANCH_CHONG.get(liunian_branch) == pillar_branch  # 地支相冲
+            is_branch_he = BRANCH_LIUHE.get(liunian_branch) == pillar_branch  # 地支相合
+            is_branch_xing = pillar_branch in BRANCH_XING.get(liunian_branch, [])  # 地支相刑
+            is_branch_hai = pillar_branch in BRANCH_HAI.get(liunian_branch, [])  # 地支相害
+            is_branch_po = BRANCH_PO.get(liunian_branch) == pillar_branch  # 地支相破
+            
+            # 2.3 组合关系（优先级高，但如果有组合关系，不再添加单独的天干或地支关系，避免重复）
+            has_combined_relation = False
             if is_stem_ke and is_branch_chong:
-                pillar_name = pillar_names.get(pillar_type, pillar_type)
-                relations.append(f"{pillar_name}-天克地冲")
-        
-        # 3. 天合地合：流年与四柱的天合地合关系
-        for pillar_type, pillar in bazi_pillars.items():
-            pillar_stem = pillar.get('stem', '')
-            pillar_branch = pillar.get('branch', '')
+                relations.append({
+                    "type": f"{pillar_name}-天克地冲",
+                    "description": f"流年天干{liunian_stem}克制{pillar_name}天干{pillar_stem}，流年地支{liunian_branch}与{pillar_name}地支{pillar_branch}相冲"
+                })
+                has_combined_relation = True
+            elif is_stem_he and is_branch_he:
+                relations.append({
+                    "type": f"{pillar_name}-天合地合",
+                    "description": f"流年天干{liunian_stem}与{pillar_name}天干{pillar_stem}相合，流年地支{liunian_branch}与{pillar_name}地支{pillar_branch}相合"
+                })
+                has_combined_relation = True
             
-            # 天合：流年天干与四柱天干相合
-            is_stem_he = STEM_HE.get(liunian_stem) == pillar_stem
-            # 地合：流年地支与四柱地支相合
-            is_branch_he = BRANCH_LIUHE.get(liunian_branch) == pillar_branch
+            # 2.4 单独的地支关系（如果没有组合关系，才检查单独的地支关系）
+            if not has_combined_relation:
+                if is_branch_chong:
+                    relations.append({
+                        "type": f"{pillar_name}-地冲",
+                        "description": f"流年地支{liunian_branch}与{pillar_name}地支{pillar_branch}相冲"
+                    })
+                elif is_branch_he:
+                    relations.append({
+                        "type": f"{pillar_name}-地合",
+                        "description": f"流年地支{liunian_branch}与{pillar_name}地支{pillar_branch}相合"
+                    })
+                elif is_branch_xing:
+                    relations.append({
+                        "type": f"{pillar_name}-地刑",
+                        "description": f"流年地支{liunian_branch}与{pillar_name}地支{pillar_branch}相刑"
+                    })
+                elif is_branch_hai:
+                    relations.append({
+                        "type": f"{pillar_name}-地害",
+                        "description": f"流年地支{liunian_branch}与{pillar_name}地支{pillar_branch}相害"
+                    })
+                elif is_branch_po:
+                    relations.append({
+                        "type": f"{pillar_name}-地破",
+                        "description": f"流年地支{liunian_branch}与{pillar_name}地支{pillar_branch}相破"
+                    })
             
-            if is_stem_he and is_branch_he:
-                pillar_name = pillar_names.get(pillar_type, pillar_type)
-                relations.append(f"{pillar_name}-天合地合")
+            # 2.5 单独的天干关系（如果没有组合关系，才检查单独的天干关系）
+            if not has_combined_relation:
+                if is_stem_he:
+                    relations.append({
+                        "type": f"{pillar_name}-天合",
+                        "description": f"流年天干{liunian_stem}与{pillar_name}天干{pillar_stem}相合"
+                    })
+                elif is_stem_ke:
+                    relations.append({
+                        "type": f"{pillar_name}-天克",
+                        "description": f"流年天干{liunian_stem}克制{pillar_name}天干{pillar_stem}"
+                    })
+                elif is_stem_ke_reverse:
+                    relations.append({
+                        "type": f"{pillar_name}-被天克",
+                        "description": f"{pillar_name}天干{pillar_stem}克制流年天干{liunian_stem}"
+                    })
         
         return relations
 
@@ -1064,13 +1131,37 @@ class BaziCalculator:
         }
 
     def _calculate_liunian_sequence(self):
-        """占位：实际流年按需由 _generate_current_liunian_window 生成"""
-        print("\n=== 流年序列计算（占位） ===")
+        """为每个大运生成流年序列"""
+        print("\n=== 流年序列计算 ===")
         dayun_sequence = self.details.get('dayun_sequence', [])
+        
+        # ✅ 修复：为每个大运生成流年序列
+        all_liunians = []
         for dayun in dayun_sequence:
-            dayun['liunian_sequence'] = []
-
-        self.details['liunian_sequence'] = []
+            # 跳过小运（小运没有流年）
+            if dayun.get('stem', '') == '小运':
+                dayun['liunian_sequence'] = []
+                continue
+            
+            year_start = dayun.get('year_start', 0)
+            year_end = dayun.get('year_end', 0)
+            dayun_stem = dayun.get('stem', '')
+            dayun_branch = dayun.get('branch', '')
+            
+            # 为每个大运生成流年序列
+            liunians = self._generate_liunian_for_range(
+                self.bazi_pillars['day']['stem'],
+                year_start,
+                year_end,
+                dayun_stem=dayun_stem,
+                dayun_branch=dayun_branch,
+                bazi_pillars=self.bazi_pillars
+            )
+            dayun['liunian_sequence'] = liunians
+            all_liunians.extend(liunians)
+        
+        # 全局流年序列（包含所有大运的流年）
+        self.details['liunian_sequence'] = all_liunians
 
     def _calculate_liuyue_sequence(self):
         """计算流月序列 - 使用统一的农历转换方法"""
@@ -1614,16 +1705,25 @@ class BaziCalculator:
             pass
         
         # 生成流年列表，传入大运和四柱信息用于计算关系（可选参数，不影响原有逻辑）
-        liunians = self._generate_liunian_for_range(
-            self.bazi_pillars['day']['stem'],
-            dayun['year_start'],
-            dayun['year_end'],
-            dayun_stem=dayun_stem,  # 新增：可选参数，用于关系计算
-            dayun_branch=dayun_branch,  # 新增：可选参数，用于关系计算
-            bazi_pillars=self.bazi_pillars  # 新增：可选参数，用于关系计算
-        )
-        dayun['liunian_sequence'] = liunians
-        self.details['liunian_sequence'] = liunians
+        # ✅ 修复：如果当前大运已经有流年序列，直接使用；否则生成
+        if not dayun.get('liunian_sequence'):
+            liunians = self._generate_liunian_for_range(
+                self.bazi_pillars['day']['stem'],
+                dayun['year_start'],
+                dayun['year_end'],
+                dayun_stem=dayun_stem,  # 新增：可选参数，用于关系计算
+                dayun_branch=dayun_branch,  # 新增：可选参数，用于关系计算
+                bazi_pillars=self.bazi_pillars  # 新增：可选参数，用于关系计算
+            )
+            dayun['liunian_sequence'] = liunians
+        else:
+            liunians = dayun.get('liunian_sequence', [])
+        
+        # ✅ 修复：不覆盖全局流年序列，而是合并（如果全局流年序列已存在）
+        if 'liunian_sequence' not in self.details or not self.details.get('liunian_sequence'):
+            # 如果全局流年序列不存在，使用当前大运的流年序列
+            self.details['liunian_sequence'] = liunians
+        # 否则，保持全局流年序列不变（已在 _calculate_liunian_sequence 中生成）
 
         selected_year = context.get('selected_year', dayun['year_start'])
         selected_year = min(max(selected_year, dayun['year_start']), dayun['year_end'])

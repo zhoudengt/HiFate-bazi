@@ -232,6 +232,60 @@ except ImportError as e:
     marriage_analysis_router = None
     MARRIAGE_ANALYSIS_ROUTER_AVAILABLE = False
 
+# 事业财富分析路由（条件可用）
+try:
+    from server.api.v1.career_wealth_analysis import router as career_wealth_analysis_router
+    CAREER_WEALTH_ANALYSIS_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"事业财富分析路由导入失败（可选功能）: {e}")
+    career_wealth_analysis_router = None
+    CAREER_WEALTH_ANALYSIS_ROUTER_AVAILABLE = False
+
+# 子女学习分析路由（条件可用）
+try:
+    from server.api.v1.children_study_analysis import router as children_study_analysis_router
+    CHILDREN_STUDY_ANALYSIS_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"子女学习分析路由导入失败（可选功能）: {e}")
+    children_study_analysis_router = None
+    CHILDREN_STUDY_ANALYSIS_ROUTER_AVAILABLE = False
+
+# 身体健康分析路由（条件可用）
+try:
+    from server.api.v1.health_analysis import router as health_analysis_router
+    HEALTH_ANALYSIS_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"身体健康分析路由导入失败（可选功能）: {e}")
+    health_analysis_router = None
+    HEALTH_ANALYSIS_ROUTER_AVAILABLE = False
+
+# 身体健康分析路由 V2（条件可用）
+try:
+    from server.api.v1.health_analysis_v2 import router as health_analysis_v2_router
+    HEALTH_ANALYSIS_V2_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"身体健康分析路由 V2 导入失败（可选功能）: {e}")
+    health_analysis_v2_router = None
+    HEALTH_ANALYSIS_V2_ROUTER_AVAILABLE = False
+
+# 总评分析路由（条件可用）
+try:
+    from server.api.v1.general_review_analysis import router as general_review_analysis_router
+    GENERAL_REVIEW_ANALYSIS_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"总评分析路由导入失败（可选功能）: {e}")
+    general_review_analysis_router = None
+    GENERAL_REVIEW_ANALYSIS_ROUTER_AVAILABLE = False
+
+# 统一数据获取路由（新增，增量开发）
+try:
+    from server.api.v1.bazi_data import router as bazi_data_router
+    BAZI_DATA_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"统一数据获取路由导入失败（可选功能）: {e}")
+    bazi_data_router = None
+    BAZI_DATA_ROUTER_AVAILABLE = False
+
 # 新增：算法公式规则分析路由（808条规则）
 try:
     from server.api.v1.formula_analysis import router as formula_analysis_router
@@ -695,6 +749,51 @@ def _register_all_routers_to_manager():
         enabled_getter=lambda: MARRIAGE_ANALYSIS_ROUTER_AVAILABLE and marriage_analysis_router is not None
     )
     
+    # 事业财富分析路由（条件可用）
+    router_manager.register_router(
+        "career_wealth_analysis",
+        lambda: career_wealth_analysis_router,
+        prefix="/api/v1",
+        tags=["八字命理"],
+        enabled_getter=lambda: CAREER_WEALTH_ANALYSIS_ROUTER_AVAILABLE and career_wealth_analysis_router is not None
+    )
+    
+    # 子女学习分析路由（条件可用）
+    router_manager.register_router(
+        "children_study_analysis",
+        lambda: children_study_analysis_router,
+        prefix="/api/v1",
+        tags=["八字命理"],
+        enabled_getter=lambda: CHILDREN_STUDY_ANALYSIS_ROUTER_AVAILABLE and children_study_analysis_router is not None
+    )
+    
+    # 身体健康分析路由（条件可用）
+    router_manager.register_router(
+        "health_analysis",
+        lambda: health_analysis_router,
+        prefix="/api/v1",
+        tags=["八字命理"],
+        enabled_getter=lambda: HEALTH_ANALYSIS_ROUTER_AVAILABLE and health_analysis_router is not None
+    )
+    
+    # 身体健康分析路由 V2（条件可用）
+    router_manager.register_router(
+        "health_analysis_v2",
+        lambda: health_analysis_v2_router,
+        prefix="/api/v1",
+        tags=["八字命理"],
+        enabled_getter=lambda: HEALTH_ANALYSIS_V2_ROUTER_AVAILABLE and health_analysis_v2_router is not None
+    )
+    
+    # 总评分析路由（条件可用）
+    router_manager.register_router(
+        "general_review_analysis",
+        lambda: general_review_analysis_router,
+        prefix="/api/v1",
+        tags=["八字命理"],
+        enabled_getter=lambda: GENERAL_REVIEW_ANALYSIS_ROUTER_AVAILABLE and general_review_analysis_router is not None
+    )
+    
     # 用户反馈路由（条件可用）
     router_manager.register_router(
         "feedback",
@@ -884,6 +983,15 @@ def _register_all_routers_to_manager():
         prefix="/api/v1",
         tags=["日元-六十甲子"],
         enabled_getter=lambda: RIZHU_LIUJIAZI_ROUTER_AVAILABLE and rizhu_liujiazi_router is not None
+    )
+    
+    # 统一数据获取路由（新增，增量开发）
+    router_manager.register_router(
+        "bazi_data",
+        lambda: bazi_data_router,
+        prefix="/api/v1",
+        tags=["统一数据获取"],
+        enabled_getter=lambda: BAZI_DATA_ROUTER_AVAILABLE and bazi_data_router is not None
     )
 
 

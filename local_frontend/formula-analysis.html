@@ -364,6 +364,114 @@
             margin-bottom: 20px;
         }
 
+        .section-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+        }
+
+        .section-card h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .xi-ji-content {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .xi-ji-item {
+            flex: 1;
+            min-width: 200px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .xi-ji-item .elements {
+            color: #666;
+            font-size: 0.9em;
+            margin-left: 10px;
+        }
+
+        .dayun-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+        }
+
+        .dayun-item {
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .dayun-index {
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .dayun-ganzhi {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+
+        .liunian-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .liunian-item {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .liunian-header {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .liunian-year {
+            font-weight: bold;
+            font-size: 1.1em;
+            color: #667eea;
+        }
+
+        .liunian-ganzhi {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+
+        .liunian-relations {
+            color: #555;
+        }
+
+        .health-content {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .health-item {
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
         @media (max-width: 768px) {
             .form-row {
                 grid-template-columns: 1fr;
@@ -427,6 +535,11 @@
                 <h3>📊 匹配统计</h3>
                 <div class="stat-grid" id="statistics"></div>
             </div>
+
+            <div id="xiJiSection" style="display: none; margin: 20px 0;"></div>
+            <div id="dayunSection" style="display: none; margin: 20px 0;"></div>
+            <div id="specialLiuniansSection" style="display: none; margin: 20px 0;"></div>
+            <div id="healthSection" style="display: none; margin: 20px 0;"></div>
 
             <div class="tabs" id="tabs"></div>
             
@@ -507,6 +620,20 @@
 
             // 显示标签页
             displayTabs(data.matched_rules, data.rule_details);
+
+            // 显示新增数据（喜忌、大运、特殊流年、健康分析）
+            if (data.xi_ji) {
+                displayXiJi(data.xi_ji);
+            }
+            if (data.dayun_sequence) {
+                displayDayunSequence(data.dayun_sequence);
+            }
+            if (data.special_liunians) {
+                displaySpecialLiunians(data.special_liunians);
+            }
+            if (data.health_analysis) {
+                displayHealthAnalysis(data.health_analysis);
+            }
 
             // 滚动到结果区域
             document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
@@ -713,6 +840,208 @@
 
         function hideError() {
             document.getElementById('errorMessage').style.display = 'none';
+        }
+
+        // 关系合并和去重函数
+        function mergeRelations(liunian) {
+            const relations = liunian.relations || [];
+            const relationAnalysis = liunian.relation_analysis || {};
+            
+            const merged = [];
+            const seen = new Set();
+            
+            // 1. 先处理详细关系分析
+            if (relationAnalysis.liunian_dayun_relation) {
+                const dayunRel = relationAnalysis.liunian_dayun_relation;
+                if (dayunRel.stem_relation && dayunRel.branch_relation) {
+                    // 检查是否为岁运并临
+                    if (dayunRel.stem_relation.includes('相同') && dayunRel.branch_relation.includes('相同')) {
+                        merged.push('岁运并临');
+                        seen.add('岁运并临');
+                    }
+                }
+            }
+            
+            // 2. 处理流年与四柱的关系
+            if (relationAnalysis.liunian_bazi_relation) {
+                const baziRel = relationAnalysis.liunian_bazi_relation;
+                const pillarLabels = {'year': '年柱', 'month': '月柱', 'day': '日柱', 'hour': '时柱'};
+                
+                for (const [key, value] of Object.entries(baziRel)) {
+                    if (key.startsWith('vs_') && value && value !== '无特殊关系') {
+                        const pillarName = key.replace('vs_', '').replace('_pillar', '');
+                        const pillarLabel = pillarLabels[pillarName] || pillarName;
+                        
+                        if (value.includes('天克地冲')) {
+                            const relKey = `${pillarLabel}-天克地冲`;
+                            if (!seen.has(relKey)) {
+                                merged.push(relKey);
+                                seen.add(relKey);
+                            }
+                        } else if (value.includes('天合地合')) {
+                            const relKey = `${pillarLabel}-天合地合`;
+                            if (!seen.has(relKey)) {
+                                merged.push(relKey);
+                                seen.add(relKey);
+                            }
+                        } else if (value.includes('刑')) {
+                            const relKey = `${pillarLabel}-刑`;
+                            if (!seen.has(relKey)) {
+                                merged.push(relKey);
+                                seen.add(relKey);
+                            }
+                        } else if (value.includes('害')) {
+                            const relKey = `${pillarLabel}-害`;
+                            if (!seen.has(relKey)) {
+                                merged.push(relKey);
+                                seen.add(relKey);
+                            }
+                        } else if (value.includes('破')) {
+                            const relKey = `${pillarLabel}-破`;
+                            if (!seen.has(relKey)) {
+                                merged.push(relKey);
+                                seen.add(relKey);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // 3. 补充 relations 中的信息（如果 relation_analysis 中没有）
+            for (const rel of relations) {
+                if (!seen.has(rel)) {
+                    merged.push(rel);
+                    seen.add(rel);
+                }
+            }
+            
+            return merged;
+        }
+
+        // 显示喜忌数据
+        function displayXiJi(xiJi) {
+            const container = document.getElementById('xiJiSection');
+            if (!container) return;
+            
+            const html = `
+                <div class="section-card">
+                    <h3>喜忌分析</h3>
+                    <div class="xi-ji-content">
+                        <div class="xi-ji-item">
+                            <strong>喜神：</strong>
+                            <span>${(xiJi.xi_shen || []).join('、') || '无'}</span>
+                            <span class="elements">(${(xiJi.xi_shen_elements || []).join('、') || '无'})</span>
+                        </div>
+                        <div class="xi-ji-item">
+                            <strong>忌神：</strong>
+                            <span>${(xiJi.ji_shen || []).join('、') || '无'}</span>
+                            <span class="elements">(${(xiJi.ji_shen_elements || []).join('、') || '无'})</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+            container.style.display = 'block';
+        }
+
+        // 显示大运序列
+        function displayDayunSequence(dayunSequence) {
+            const container = document.getElementById('dayunSection');
+            if (!container) return;
+            
+            if (!dayunSequence || dayunSequence.length === 0) {
+                container.innerHTML = '<div class="section-card"><p>暂无大运数据</p></div>';
+                container.style.display = 'block';
+                return;
+            }
+            
+            const html = `
+                <div class="section-card">
+                    <h3>大运序列（前8个）</h3>
+                    <div class="dayun-list">
+                        ${dayunSequence.map((dayun, index) => `
+                            <div class="dayun-item">
+                                <span class="dayun-index">第${dayun.index + 1}步</span>
+                                <span class="dayun-ganzhi">${dayun.ganzhi || ''}</span>
+                                <span class="dayun-age">${dayun.age_display || ''}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+            container.style.display = 'block';
+        }
+
+        // 显示特殊流年
+        function displaySpecialLiunians(specialLiunians) {
+            const container = document.getElementById('specialLiuniansSection');
+            if (!container) return;
+            
+            if (!specialLiunians || specialLiunians.length === 0) {
+                container.innerHTML = '<div class="section-card"><p>暂无特殊流年</p></div>';
+                container.style.display = 'block';
+                return;
+            }
+            
+            const html = `
+                <div class="section-card">
+                    <h3>特殊流年（四柱冲合刑害、岁运并临）</h3>
+                    <div class="liunian-list">
+                        ${specialLiunians.map(liunian => {
+                            const mergedRelations = mergeRelations(liunian);
+                            return `
+                                <div class="liunian-item">
+                                    <div class="liunian-header">
+                                        <span class="liunian-year">${liunian.year || ''}年</span>
+                                        <span class="liunian-ganzhi">${liunian.stem || ''}${liunian.branch || ''}</span>
+                                    </div>
+                                    <div class="liunian-relations">
+                                        <strong>特殊关系：</strong>
+                                        ${mergedRelations.length > 0 ? mergedRelations.join('、') : '无'}
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+            container.style.display = 'block';
+        }
+
+        // 显示健康分析
+        function displayHealthAnalysis(healthAnalysis) {
+            const container = document.getElementById('healthSection');
+            if (!container) return;
+            
+            const html = `
+                <div class="section-card">
+                    <h3>健康分析</h3>
+                    <div class="health-content">
+                        ${healthAnalysis.wuxing_balance ? `
+                            <div class="health-item">
+                                <strong>五行平衡：</strong>
+                                <span>${JSON.stringify(healthAnalysis.wuxing_balance)}</span>
+                            </div>
+                        ` : ''}
+                        ${healthAnalysis.zangfu_duiying ? `
+                            <div class="health-item">
+                                <strong>脏腑对应：</strong>
+                                <span>${JSON.stringify(healthAnalysis.zangfu_duiying)}</span>
+                            </div>
+                        ` : ''}
+                        ${healthAnalysis.jiankang_ruodian ? `
+                            <div class="health-item">
+                                <strong>健康薄弱环节：</strong>
+                                <span>${JSON.stringify(healthAnalysis.jiankang_ruodian)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+            container.style.display = 'block';
         }
 
         // 设置默认日期为今天

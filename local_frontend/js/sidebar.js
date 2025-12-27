@@ -38,6 +38,10 @@ class Sidebar {
                         <a href="wuxing-proportion.html" class="nav-submenu-item" data-page="wuxing-proportion">五行占比</a>
                         <a href="xishen-jishen.html" class="nav-submenu-item" data-page="xishen-jishen">八字命理-喜神与忌神</a>
                         <a href="marriage-analysis.html" class="nav-submenu-item" data-page="marriage-analysis">八字命理-感情婚姻</a>
+                        <a href="career-wealth-analysis.html" class="nav-submenu-item" data-page="career-wealth-analysis">八字命理-事业财富</a>
+                        <a href="children-study-analysis.html" class="nav-submenu-item" data-page="children-study-analysis">八字命理-子女学习</a>
+                        <a href="health-analysis.html" class="nav-submenu-item" data-page="health-analysis">八字命理-身体健康</a>
+                        <a href="general-review-analysis.html" class="nav-submenu-item" data-page="general-review-analysis">八字命理-总评</a>
                     </div>
                     <a href="basic-info.html" class="nav-item" data-page="basic-info">
                         <span class="nav-item-icon">📋</span>
@@ -87,8 +91,12 @@ class Sidebar {
             currentPage === 'rizhu-liujiazi' ||
             currentPage === 'wuxing-proportion' ||
             currentPage === 'xishen-jishen' ||
-            currentPage === 'marriage-analysis') {
-            const submenus = document.querySelectorAll('.nav-submenu');
+        currentPage === 'marriage-analysis' ||
+        currentPage === 'career-wealth-analysis' ||
+        currentPage === 'children-study-analysis' ||
+        currentPage === 'health-analysis' ||
+        currentPage === 'general-review-analysis') {
+        const submenus = document.querySelectorAll('.nav-submenu');
             submenus.forEach(submenu => {
                 if (submenu) {
                     submenu.style.display = 'block';
@@ -112,8 +120,12 @@ class Sidebar {
         if (filename.includes('liunian')) return 'liunian';
         if (filename.includes('wuxing-proportion')) return 'wuxing-proportion';
         if (filename.includes('xishen-jishen')) return 'xishen-jishen';
-        if (filename.includes('marriage-analysis')) return 'marriage-analysis';
-        return 'index';
+    if (filename.includes('marriage-analysis')) return 'marriage-analysis';
+    if (filename.includes('career-wealth-analysis')) return 'career-wealth-analysis';
+    if (filename.includes('children-study-analysis')) return 'children-study-analysis';
+    if (filename.includes('health-analysis')) return 'health-analysis';
+    if (filename.includes('general-review-analysis')) return 'general-review-analysis';
+    return 'index';
     }
 }
 

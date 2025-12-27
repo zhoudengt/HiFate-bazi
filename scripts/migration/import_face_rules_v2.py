@@ -13,8 +13,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-import pymysql
-from server.config.mysql_config import MYSQL_CONFIG
+from server.config.mysql_config import get_mysql_connection, return_mysql_connection
 
 
 class FaceRuleImporter:
@@ -23,29 +22,21 @@ class FaceRuleImporter:
         self.cursor = None
         
     def connect_db(self):
-        """连接数据库"""
+        """连接数据库（使用连接池）"""
         try:
-            self.connection = pymysql.connect(
-                host=MYSQL_CONFIG['host'],
-                port=MYSQL_CONFIG['port'],
-                user=MYSQL_CONFIG['user'],
-                password=MYSQL_CONFIG['password'],
-                database=MYSQL_CONFIG['database'],
-                charset='utf8mb4',
-                cursorclass=pymysql.cursors.DictCursor
-            )
+            self.connection = get_mysql_connection()
             self.cursor = self.connection.cursor()
-            print("✓ 数据库连接成功")
+            print("✓ 数据库连接成功（使用连接池）")
         except Exception as e:
             print(f"❌ 数据库连接失败：{e}")
             sys.exit(1)
     
     def close_db(self):
-        """关闭数据库连接"""
+        """关闭数据库连接（返回到连接池）"""
         if self.cursor:
             self.cursor.close()
         if self.connection:
-            self.connection.close()
+            return_mysql_connection(self.connection)
     
     def load_json_rules(self, json_file):
         """加载JSON规则文件"""

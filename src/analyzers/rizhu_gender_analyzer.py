@@ -27,8 +27,10 @@ class RizhuGenderAnalyzer:
         """
         self.bazi_pillars = bazi_pillars
         self.gender = gender
-        self.day_stem = bazi_pillars['day']['stem']
-        self.day_branch = bazi_pillars['day']['branch']
+        # ✅ 使用 .get() 方法安全访问，避免 KeyError
+        day_pillar = bazi_pillars.get('day', {})
+        self.day_stem = day_pillar.get('stem', '')
+        self.day_branch = day_pillar.get('branch', '')
         self.rizhu = f"{self.day_stem}{self.day_branch}"
 
     def analyze_rizhu_gender(self):

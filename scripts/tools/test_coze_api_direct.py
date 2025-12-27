@@ -122,6 +122,18 @@ try:
         print(f"❌ 请求失败: {response.text}")
         sys.exit(1)
     
+    # ⚠️ 检查 Content-Type
+    content_type = response.headers.get('Content-Type', '')
+    if 'application/json' in content_type:
+        print("⚠️ 响应是 JSON 格式，不是 SSE 流！")
+        print("📥 响应内容:")
+        try:
+            result = response.json()
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        except:
+            print(response.text[:1000])
+        sys.exit(0)
+    
     print("📥 开始接收SSE流...")
     print("-" * 60)
     
