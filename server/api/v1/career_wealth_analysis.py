@@ -778,6 +778,10 @@ async def career_wealth_analysis_stream(request: CareerWealthRequest):
             request.solar_date,
             request.solar_time,
             request.gender,
+            request.calendar_type,
+            request.location,
+            request.latitude,
+            request.longitude,
             request.bot_id
         ),
         media_type="text/event-stream"
@@ -788,9 +792,25 @@ async def career_wealth_stream_generator(
     solar_date: str,
     solar_time: str,
     gender: str,
+    calendar_type: Optional[str] = "solar",
+    location: Optional[str] = None,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
     bot_id: Optional[str] = None
 ):
-    """流式生成事业财富分析的生成器"""
+    """
+    流式生成事业财富分析的生成器
+    
+    Args:
+        solar_date: 阳历日期或农历日期
+        solar_time: 出生时间
+        gender: 性别
+        calendar_type: 历法类型（solar/lunar），默认solar
+        location: 出生地点（用于时区转换，优先级1）
+        latitude: 纬度（用于时区转换，优先级2）
+        longitude: 经度（用于时区转换和真太阳时计算，优先级2）
+        bot_id: Coze Bot ID（可选）
+    """
     try:
         # 1. 确定使用的 bot_id（优先级：参数 > CAREER_WEALTH_BOT_ID > COZE_BOT_ID）
         if not bot_id:
@@ -807,46 +827,51 @@ async def career_wealth_stream_generator(
         
         logger.info(f"事业财富分析请求: solar_date={solar_date}, solar_time={solar_time}, gender={gender}, bot_id={bot_id}")
         
-        # 2. 处理农历输入和时区转换
+        # 2. 处理农历输入和时区转换（支持7个标准参数）
         final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
             solar_date,
             solar_time,
-            "solar",
-            None, None, None
+            calendar_type or "solar",
+            location,
+            latitude,
+            longitude
         )
         
-        # 3. 使用统一接口获取所有数据（包括特殊流年）
+        # 3. 并行获取基础数据
         loop = asyncio.get_event_loop()
         executor = None
         
         try:
-            # 使用 BaziDataOrchestrator 获取所有数据
-            orchestrator_data = await BaziDataOrchestrator.fetch_data(
-                final_solar_date, final_solar_time, gender,
-                modules={
-                    'bazi': True, 'wangshuai': True, 'detail': True,
-                    'dayun': {'mode': 'count', 'count': 13},  # 获取所有大运
-                    'special_liunians': {'dayun_config': {'mode': 'count', 'count': 13}, 'count': 200}  # 获取所有大运的特殊流年
-                }
+            # 并行获取基础数据
+            bazi_task = loop.run_in_executor(
+                executor,
+                lambda: BaziService.calculate_bazi_full(
+                    final_solar_date,
+                    final_solar_time,
+                    gender
+                )
+            )
+            wangshuai_task = loop.run_in_executor(
+                executor,
+                lambda: WangShuaiService.calculate_wangshuai(
+                    final_solar_date,
+                    final_solar_time,
+                    gender
+                )
             )
             
-            bazi_data = orchestrator_data['bazi']
-            wangshuai_result = orchestrator_data['wangshuai']
-            detail_result = orchestrator_data['detail']
+            bazi_result, wangshuai_result = await asyncio.gather(bazi_task, wangshuai_task)
             
-            # 获取大运序列（统一接口返回的是列表）
-            dayun_sequence = orchestrator_data.get('dayun', [])
-            
-            # 提取特殊流年（统一接口返回的是字典格式，包含 'list', 'by_dayun', 'formatted'）
-            special_liunians_data = orchestrator_data.get('special_liunians', {})
-            if isinstance(special_liunians_data, dict):
-                special_liunians = special_liunians_data.get('list', [])
-            elif isinstance(special_liunians_data, list):
-                special_liunians = special_liunians_data
+            # 提取八字数据
+            if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
+                bazi_data = bazi_result['bazi']
             else:
-                special_liunians = []
+                bazi_data = bazi_result
             
+            # 验证数据类型
             bazi_data = validate_bazi_data(bazi_data)
+            if not bazi_data:
+                raise ValueError("八字计算失败，返回数据为空")
             
             # 处理旺衰数据
             if not wangshuai_result.get('success'):
@@ -854,6 +879,74 @@ async def career_wealth_stream_generator(
                 wangshuai_data = {}
             else:
                 wangshuai_data = wangshuai_result.get('data', {})
+            
+            # ✅ 使用统一数据服务获取大运流年、特殊流年数据（确保数据一致性）
+            from server.services.bazi_data_service import BaziDataService
+            
+            # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
+            fortune_data = await BaziDataService.get_fortune_data(
+                solar_date=final_solar_date,
+                solar_time=final_solar_time,
+                gender=gender,
+                calendar_type=calendar_type or "solar",
+                location=location,
+                latitude=latitude,
+                longitude=longitude,
+                include_dayun=True,
+                include_liunian=True,
+                include_special_liunian=True,
+                dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,  # 统一的大运模式
+                target_years=BaziDataService.DEFAULT_TARGET_YEARS,  # 统一的年份范围
+                current_time=None
+            )
+            
+            # 从统一数据服务获取大运序列和特殊流年
+            dayun_sequence = []
+            special_liunians = []
+            
+            # 转换为字典格式（兼容现有代码）
+            for dayun in fortune_data.dayun_sequence:
+                dayun_sequence.append({
+                    'step': dayun.step,
+                    'stem': dayun.stem,
+                    'branch': dayun.branch,
+                    'year_start': dayun.year_start,
+                    'year_end': dayun.year_end,
+                    'age_range': dayun.age_range,
+                    'age_display': dayun.age_display,
+                    'nayin': dayun.nayin,
+                    'main_star': dayun.main_star,
+                    'hidden_stems': dayun.hidden_stems or [],
+                    'hidden_stars': dayun.hidden_stars or [],
+                    'star_fortune': dayun.star_fortune,
+                    'self_sitting': dayun.self_sitting,
+                    'kongwang': dayun.kongwang,
+                    'deities': dayun.deities or [],
+                    'details': dayun.details or {}
+                })
+            
+            # 转换为字典格式（兼容现有代码）
+            for special_liunian in fortune_data.special_liunians:
+                special_liunians.append({
+                    'year': special_liunian.year,
+                    'stem': special_liunian.stem,
+                    'branch': special_liunian.branch,
+                    'ganzhi': special_liunian.ganzhi,
+                    'age': special_liunian.age,
+                    'age_display': special_liunian.age_display,
+                    'nayin': special_liunian.nayin,
+                    'main_star': special_liunian.main_star,
+                    'hidden_stems': special_liunian.hidden_stems or [],
+                    'hidden_stars': special_liunian.hidden_stars or [],
+                    'star_fortune': special_liunian.star_fortune,
+                    'self_sitting': special_liunian.self_sitting,
+                    'kongwang': special_liunian.kongwang,
+                    'deities': special_liunian.deities or [],
+                    'relations': special_liunian.relations or [],
+                    'dayun_step': special_liunian.dayun_step,
+                    'dayun_ganzhi': special_liunian.dayun_ganzhi,
+                    'details': special_liunian.details or {}
+                })
                 
         except Exception as e:
             import traceback

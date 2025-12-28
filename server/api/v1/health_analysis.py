@@ -31,6 +31,7 @@ from server.services.coze_stream_service import CozeStreamService
 from server.services.bazi_data_orchestrator import BaziDataOrchestrator
 from server.api.v1.general_review_analysis import organize_special_liunians_by_dayun
 from server.services.special_liunian_service import SpecialLiunianService
+from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
 
 # 配置日志
@@ -40,11 +41,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-class HealthAnalysisRequest(BaseModel):
-    """身体健康分析请求模型"""
-    solar_date: str = Field(..., description="阳历日期，格式：YYYY-MM-DD", example="1990-05-15")
-    solar_time: str = Field(..., description="出生时间，格式：HH:MM", example="14:30")
-    gender: str = Field(..., description="性别：male(男) 或 female(女)", example="male")
+class HealthAnalysisRequest(BaziBaseRequest):
+    """身体健康分析请求模型（继承 BaziBaseRequest，包含7个标准参数）"""
     bot_id: Optional[str] = Field(None, description="Coze Bot ID（可选，默认使用环境变量配置）")
 
 
@@ -64,6 +62,10 @@ async def health_analysis_stream(request: HealthAnalysisRequest):
             request.solar_date,
             request.solar_time,
             request.gender,
+            request.calendar_type,
+            request.location,
+            request.latitude,
+            request.longitude,
             request.bot_id
         ),
         media_type="text/event-stream"
@@ -182,9 +184,25 @@ async def health_analysis_stream_generator(
     solar_date: str,
     solar_time: str,
     gender: str,
+    calendar_type: Optional[str] = "solar",
+    location: Optional[str] = None,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
     bot_id: Optional[str] = None
 ):
-    """流式生成健康分析"""
+    """
+    流式生成健康分析
+    
+    Args:
+        solar_date: 阳历日期或农历日期
+        solar_time: 出生时间
+        gender: 性别
+        calendar_type: 历法类型（solar/lunar），默认solar
+        location: 出生地点（用于时区转换，优先级1）
+        latitude: 纬度（用于时区转换，优先级2）
+        longitude: 经度（用于时区转换和真太阳时计算，优先级2）
+        bot_id: Coze Bot ID（可选）
+    """
     try:
         # 1. Bot ID 配置检查
         used_bot_id = bot_id
@@ -204,45 +222,128 @@ async def health_analysis_stream_generator(
         
         logger.info(f"使用 Bot ID: {used_bot_id}")
         
-        # 2. 处理输入（农历转换等）
+        # 2. 处理输入（农历转换等，支持7个标准参数）
         final_solar_date, final_solar_time, _ = BaziInputProcessor.process_input(
-            solar_date, solar_time, "solar", None, None, None
+            solar_date, solar_time, calendar_type or "solar", location, latitude, longitude
         )
         
-        # 3. 使用统一接口获取数据（阶段2：数据获取与并行优化）
+        # 3. 并行获取基础数据
+        loop = asyncio.get_event_loop()
+        executor = None
+        
         try:
-            modules = {
-                'bazi': True,
-                'wangshuai': True,
-                'detail': True,
-                'dayun': {
-                    'mode': 'count',
-                    'count': 13  # 获取所有大运
-                },
-                'special_liunians': {
-                    'dayun_config': {
-                        'mode': 'count',
-                        'count': 13  # 与dayun一致
-                    },
-                    'count': 200  # 获取足够多的特殊流年
-                }
-            }
+            # 并行获取基础数据
+            bazi_task = loop.run_in_executor(
+                executor,
+                lambda: BaziService.calculate_bazi_full(
+                    final_solar_date,
+                    final_solar_time,
+                    gender
+                )
+            )
+            wangshuai_task = loop.run_in_executor(
+                executor,
+                lambda: WangShuaiService.calculate_wangshuai(
+                    final_solar_date,
+                    final_solar_time,
+                    gender
+                )
+            )
             
-            logger.info(f"[Health Analysis Stream] 开始调用统一接口获取数据")
-            unified_data = await BaziDataOrchestrator.fetch_data(
+            bazi_result, wangshuai_result = await asyncio.gather(bazi_task, wangshuai_task)
+            
+            # 提取八字数据
+            if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
+                bazi_data = bazi_result['bazi']
+            else:
+                bazi_data = bazi_result
+            
+            # 验证数据类型
+            bazi_data = validate_bazi_data(bazi_data)
+            if not bazi_data:
+                raise ValueError("八字计算失败，返回数据为空")
+            
+            # 处理旺衰数据
+            if not wangshuai_result.get('success'):
+                logger.warning(f"旺衰分析失败: {wangshuai_result.get('error')}")
+                wangshuai_data = {}
+            else:
+                wangshuai_data = wangshuai_result.get('data', {})
+            
+            # ✅ 使用统一数据服务获取大运流年、特殊流年数据（确保数据一致性）
+            from server.services.bazi_data_service import BaziDataService
+            
+            # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
+            fortune_data = await BaziDataService.get_fortune_data(
                 solar_date=final_solar_date,
                 solar_time=final_solar_time,
                 gender=gender,
-                modules=modules,
-                use_cache=True,
-                parallel=True
+                calendar_type=calendar_type or "solar",
+                location=location,
+                latitude=latitude,
+                longitude=longitude,
+                include_dayun=True,
+                include_liunian=True,
+                include_special_liunian=True,
+                dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,  # 统一的大运模式
+                target_years=BaziDataService.DEFAULT_TARGET_YEARS,  # 统一的年份范围
+                current_time=None
             )
-            logger.info(f"[Health Analysis Stream] ✅ 统一接口数据获取完成")
+            
+            # 从统一数据服务获取大运序列和特殊流年
+            dayun_sequence = []
+            special_liunians = []
+            
+            # 转换为字典格式（兼容现有代码）
+            for dayun in fortune_data.dayun_sequence:
+                dayun_sequence.append({
+                    'step': dayun.step,
+                    'stem': dayun.stem,
+                    'branch': dayun.branch,
+                    'year_start': dayun.year_start,
+                    'year_end': dayun.year_end,
+                    'age_range': dayun.age_range,
+                    'age_display': dayun.age_display,
+                    'nayin': dayun.nayin,
+                    'main_star': dayun.main_star,
+                    'hidden_stems': dayun.hidden_stems or [],
+                    'hidden_stars': dayun.hidden_stars or [],
+                    'star_fortune': dayun.star_fortune,
+                    'self_sitting': dayun.self_sitting,
+                    'kongwang': dayun.kongwang,
+                    'deities': dayun.deities or [],
+                    'details': dayun.details or {}
+                })
+            
+            # 转换为字典格式（兼容现有代码）
+            for special_liunian in fortune_data.special_liunians:
+                special_liunians.append({
+                    'year': special_liunian.year,
+                    'stem': special_liunian.stem,
+                    'branch': special_liunian.branch,
+                    'ganzhi': special_liunian.ganzhi,
+                    'age': special_liunian.age,
+                    'age_display': special_liunian.age_display,
+                    'nayin': special_liunian.nayin,
+                    'main_star': special_liunian.main_star,
+                    'hidden_stems': special_liunian.hidden_stems or [],
+                    'hidden_stars': special_liunian.hidden_stars or [],
+                    'star_fortune': special_liunian.star_fortune,
+                    'self_sitting': special_liunian.self_sitting,
+                    'kongwang': special_liunian.kongwang,
+                    'deities': special_liunian.deities or [],
+                    'relations': special_liunian.relations or [],
+                    'dayun_step': special_liunian.dayun_step,
+                    'dayun_ganzhi': special_liunian.dayun_ganzhi,
+                    'details': special_liunian.details or {}
+                })
+            
+            logger.info(f"[Health Analysis Stream] ✅ 统一数据服务数据获取完成")
             
         except Exception as e:
             import traceback
             error_msg = traceback.format_exc()
-            logger.error(f"[Health Analysis Stream] ❌ 统一接口调用失败: {e}\n{error_msg}")
+            logger.error(f"[Health Analysis Stream] ❌ 数据获取失败: {e}\n{error_msg}")
             error_response = {
                 'type': 'error',
                 'content': f"数据获取失败: {str(e)}。请稍后重试。"
@@ -250,35 +351,7 @@ async def health_analysis_stream_generator(
             yield f"data: {json.dumps(error_response, ensure_ascii=False)}\n\n"
             return
         
-        # 4. 从统一接口返回的数据中提取所需字段
-        bazi_module_data = unified_data.get('bazi', {})
-        if isinstance(bazi_module_data, dict) and 'bazi' in bazi_module_data:
-            bazi_data = bazi_module_data.get('bazi', {})
-        else:
-            bazi_data = bazi_module_data
-        bazi_data = validate_bazi_data(bazi_data)
-        
-        wangshuai_module_data = unified_data.get('wangshuai', {})
-        if isinstance(wangshuai_module_data, dict) and 'data' in wangshuai_module_data:
-            wangshuai_result = wangshuai_module_data.get('data', {})
-        else:
-            wangshuai_result = wangshuai_module_data
-        
-        detail_data = unified_data.get('detail', {})
-        if detail_data:
-            details = detail_data.get('details', detail_data)
-            dayun_sequence = details.get('dayun_sequence', [])
-        else:
-            dayun_sequence = unified_data.get('dayun', [])
-        
-        # 提取特殊流年（统一接口返回的是字典格式，包含 'list', 'by_dayun', 'formatted'）
-        special_liunians_data = unified_data.get('special_liunians', {})
-        if isinstance(special_liunians_data, dict):
-            special_liunians = special_liunians_data.get('list', [])
-        elif isinstance(special_liunians_data, list):
-            special_liunians = special_liunians_data
-        else:
-            special_liunians = []
+        # 4. 提取和验证数据
         
         logger.info(f"[Health Analysis Stream] 获取到特殊流年数量: {len(special_liunians)}")
         

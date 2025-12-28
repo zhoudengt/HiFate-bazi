@@ -299,15 +299,23 @@ async def marriage_analysis_stream_generator(
     solar_date: str,
     solar_time: str,
     gender: str,
+    calendar_type: Optional[str] = "solar",
+    location: Optional[str] = None,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
     bot_id: Optional[str] = None
 ):
     """
     流式生成感情婚姻分析
     
     Args:
-        solar_date: 阳历日期
+        solar_date: 阳历日期或农历日期
         solar_time: 出生时间
         gender: 性别
+        calendar_type: 历法类型（solar/lunar），默认solar
+        location: 出生地点（用于时区转换，优先级1）
+        latitude: 纬度（用于时区转换，优先级2）
+        longitude: 经度（用于时区转换和真太阳时计算，优先级2）
         bot_id: Coze Bot ID（可选，优先级：参数 > MARRIAGE_ANALYSIS_BOT_ID 环境变量）
     """
     try:
@@ -325,22 +333,22 @@ async def marriage_analysis_stream_generator(
                     yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
                     return
         
-        # 1. 处理农历输入和时区转换
+        # 1. 处理农历输入和时区转换（支持7个标准参数）
         final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
             solar_date,
             solar_time,
-            "solar",  # 默认使用阳历
-            None,  # location
-            None,  # latitude
-            None   # longitude
+            calendar_type or "solar",
+            location,
+            latitude,
+            longitude
         )
         
-        # 2. 并行获取基础数据（恢复原来的方式）
+        # 2. 并行获取基础数据
         loop = asyncio.get_event_loop()
         executor = None
         
         try:
-            # 并行获取基础数据（恢复原来的方式，不改变其他部分）
+            # 并行获取基础数据
             bazi_task = loop.run_in_executor(
                 executor,
                 lambda: BaziService.calculate_bazi_full(
@@ -357,16 +365,8 @@ async def marriage_analysis_stream_generator(
                     gender
                 )
             )
-            detail_task = loop.run_in_executor(
-                executor,
-                lambda: BaziDetailService.calculate_detail_full(
-                    final_solar_date,
-                    final_solar_time,
-                    gender
-                )
-            )
             
-            bazi_result, wangshuai_result, detail_result = await asyncio.gather(bazi_task, wangshuai_task, detail_task)
+            bazi_result, wangshuai_result = await asyncio.gather(bazi_task, wangshuai_task)
             
             # 提取八字数据（BaziService.calculate_bazi_full 返回的结构是 {bazi: {...}, rizhu: {...}, matched_rules: [...]}）
             if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
@@ -386,27 +386,73 @@ async def marriage_analysis_stream_generator(
             else:
                 wangshuai_data = wangshuai_result.get('data', {})
             
-            # 从 detail_result 获取大运序列（恢复原来的方式）
-            dayun_sequence = detail_result.get('dayun_sequence', [])
+            # ✅ 使用统一数据服务获取大运流年、特殊流年数据（确保数据一致性）
+            from server.services.bazi_data_service import BaziDataService
             
-            # ⚠️ 只修改大运流年部分：获取特殊流年
+            # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
+            fortune_data = await BaziDataService.get_fortune_data(
+                solar_date=final_solar_date,
+                solar_time=final_solar_time,
+                gender=gender,
+                calendar_type=calendar_type or "solar",
+                location=location,
+                latitude=latitude,
+                longitude=longitude,
+                include_dayun=True,
+                include_liunian=True,
+                include_special_liunian=True,
+                dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,  # 统一的大运模式
+                target_years=BaziDataService.DEFAULT_TARGET_YEARS,  # 统一的年份范围
+                current_time=None
+            )
+            
+            # 从统一数据服务获取大运序列和特殊流年
+            dayun_sequence = []
             special_liunians = []
-            try:
-                # 使用 BaziDataOrchestrator 只获取特殊流年数据
-                orchestrator_liunian_data = await BaziDataOrchestrator.fetch_data(
-                    final_solar_date, final_solar_time, gender,
-                    modules={
-                        'special_liunians': {'dayun_config': {'mode': 'count', 'count': 13}, 'count': 200}
-                    }
-                )
-                special_liunians_data = orchestrator_liunian_data.get('special_liunians', {})
-                if isinstance(special_liunians_data, dict):
-                    special_liunians = special_liunians_data.get('list', [])
-                elif isinstance(special_liunians_data, list):
-                    special_liunians = special_liunians_data
-            except Exception as e:
-                logger.warning(f"获取特殊流年失败（不影响业务）: {e}")
-                special_liunians = []
+            
+            # 转换为字典格式（兼容现有代码）
+            for dayun in fortune_data.dayun_sequence:
+                dayun_sequence.append({
+                    'step': dayun.step,
+                    'stem': dayun.stem,
+                    'branch': dayun.branch,
+                    'year_start': dayun.year_start,
+                    'year_end': dayun.year_end,
+                    'age_range': dayun.age_range,
+                    'age_display': dayun.age_display,
+                    'nayin': dayun.nayin,
+                    'main_star': dayun.main_star,
+                    'hidden_stems': dayun.hidden_stems or [],
+                    'hidden_stars': dayun.hidden_stars or [],
+                    'star_fortune': dayun.star_fortune,
+                    'self_sitting': dayun.self_sitting,
+                    'kongwang': dayun.kongwang,
+                    'deities': dayun.deities or [],
+                    'details': dayun.details or {}
+                })
+            
+            # 转换为字典格式（兼容现有代码）
+            for special_liunian in fortune_data.special_liunians:
+                special_liunians.append({
+                    'year': special_liunian.year,
+                    'stem': special_liunian.stem,
+                    'branch': special_liunian.branch,
+                    'ganzhi': special_liunian.ganzhi,
+                    'age': special_liunian.age,
+                    'age_display': special_liunian.age_display,
+                    'nayin': special_liunian.nayin,
+                    'main_star': special_liunian.main_star,
+                    'hidden_stems': special_liunian.hidden_stems or [],
+                    'hidden_stars': special_liunian.hidden_stars or [],
+                    'star_fortune': special_liunian.star_fortune,
+                    'self_sitting': special_liunian.self_sitting,
+                    'kongwang': special_liunian.kongwang,
+                    'deities': special_liunian.deities or [],
+                    'relations': special_liunian.relations or [],
+                    'dayun_step': special_liunian.dayun_step,
+                    'dayun_ganzhi': special_liunian.dayun_ganzhi,
+                    'details': special_liunian.details or {}
+                })
             
         except Exception as e:
             import traceback
@@ -1008,6 +1054,10 @@ async def marriage_analysis_stream(request: MarriageAnalysisRequest):
                 request.solar_date,
                 request.solar_time,
                 request.gender,
+                request.calendar_type,
+                request.location,
+                request.latitude,
+                request.longitude,
                 request.bot_id
             ),
             media_type="text/event-stream",

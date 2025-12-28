@@ -5,9 +5,30 @@ package frontend.gateway;
 // 通用前端网关请求
 message FrontendJsonRequest {
   // 要调用的 REST 相对路径，例如 /bazi/fortune/display
+  // 支持的端点包括：
+  // - /bazi/interface (基本信息)
+  // - /bazi/pan/display (基本排盘)
+  // - /bazi/fortune/display (专业排盘-大运流年流月)
+  // - /daily-fortune-calendar/query (八字命理-每日运势)
+  // - /bazi/wuxing-proportion (八字命理-五行占比)
+  // - /bazi/rizhu-liujiazi (八字命理-日元-六十甲子)
+  // - /bazi/xishen-jishen (八字命理-喜神忌神)
+  // - /bazi/marriage-analysis/stream (婚姻分析，流式接口)
+  // - /career-wealth/stream (事业财富分析，流式接口)
+  // - /children-study/stream (子女学业分析，流式接口)
+  // - /health/stream (健康分析，流式接口)
+  // - /general-review/stream (总评分析，流式接口)
   string endpoint = 1;
 
   // 请求体（JSON 字符串形式）
+  // 所有八字相关接口的请求体必须包含以下7个标准参数：
+  // - solar_date: 阳历日期或农历日期（格式：YYYY-MM-DD）
+  // - solar_time: 出生时间（格式：HH:MM）
+  // - gender: 性别（male/female）
+  // - calendar_type: 历法类型（solar/lunar，默认solar）
+  // - location: 出生地点（用于时区转换，优先级1）
+  // - latitude: 纬度（用于时区转换，优先级2）
+  // - longitude: 经度（用于时区转换和真太阳时计算，优先级2）
   string payload_json = 2;
 
   // 访问令牌（可选，供鉴权使用）

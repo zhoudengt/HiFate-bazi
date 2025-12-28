@@ -36,6 +36,7 @@ from src.analyzers.fortune_relation_analyzer import FortuneRelationAnalyzer
 from src.analyzers.wuxing_balance_analyzer import WuxingBalanceAnalyzer
 from server.services.bazi_data_orchestrator import BaziDataOrchestrator
 from server.services.industry_service import IndustryService
+from server.api.v1.models.bazi_base_models import BaziBaseRequest
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -44,11 +45,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-class GeneralReviewRequest(BaseModel):
-    """总评分析请求模型"""
-    solar_date: str = Field(..., description="阳历日期，格式：YYYY-MM-DD", example="1990-05-15")
-    solar_time: str = Field(..., description="出生时间，格式：HH:MM", example="14:30")
-    gender: str = Field(..., description="性别：male(男) 或 female(女)", example="male")
+class GeneralReviewRequest(BaziBaseRequest):
+    """总评分析请求模型（继承 BaziBaseRequest，包含7个标准参数）"""
     bot_id: Optional[str] = Field(None, description="Coze Bot ID（可选，默认使用环境变量配置）")
 
 
@@ -68,6 +66,10 @@ async def general_review_analysis_stream(request: GeneralReviewRequest):
             request.solar_date,
             request.solar_time,
             request.gender,
+            request.calendar_type,
+            request.location,
+            request.latitude,
+            request.longitude,
             request.bot_id
         ),
         media_type="text/event-stream"
@@ -290,9 +292,25 @@ async def general_review_analysis_stream_generator(
     solar_date: str,
     solar_time: str,
     gender: str,
+    calendar_type: Optional[str] = "solar",
+    location: Optional[str] = None,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
     bot_id: Optional[str] = None
 ):
-    """流式生成总评分析的生成器"""
+    """
+    流式生成总评分析的生成器
+    
+    Args:
+        solar_date: 阳历日期或农历日期
+        solar_time: 出生时间
+        gender: 性别
+        calendar_type: 历法类型（solar/lunar），默认solar
+        location: 出生地点（用于时区转换，优先级1）
+        latitude: 纬度（用于时区转换，优先级2）
+        longitude: 经度（用于时区转换和真太阳时计算，优先级2）
+        bot_id: Coze Bot ID（可选）
+    """
     try:
         # 1. 确定使用的 bot_id（优先级：参数 > GENERAL_REVIEW_BOT_ID > COZE_BOT_ID）
         used_bot_id = bot_id
@@ -310,9 +328,9 @@ async def general_review_analysis_stream_generator(
         
         logger.info(f"总评分析请求: solar_date={solar_date}, solar_time={solar_time}, gender={gender}, bot_id={used_bot_id}")
         
-        # 2. 处理输入（农历转换等）
+        # 2. 处理输入（农历转换等，支持7个标准参数）
         final_solar_date, final_solar_time, _ = BaziInputProcessor.process_input(
-            solar_date, solar_time, "solar", None, None, None
+            solar_date, solar_time, calendar_type or "solar", location, latitude, longitude
         )
         
         # 3. 使用统一接口获取数据（阶段2：数据获取与并行优化）
@@ -399,29 +417,96 @@ async def general_review_analysis_stream_generator(
         # 验证八字数据
         bazi_data = validate_bazi_data(bazi_data)
         
-        # 提取大运序列和流年序列
-        # 优先从 detail 模块中提取（与原有逻辑一致）
-        if detail_data:
-            details = detail_data.get('details', detail_data)
-            dayun_sequence = details.get('dayun_sequence', [])
-            liunian_sequence = details.get('liunian_sequence', [])
-        else:
-            # 降级方案：从 dayun 和 liunian 模块中提取
-            dayun_sequence = unified_data.get('dayun', [])
-            liunian_sequence = unified_data.get('liunian', [])
+        # ✅ 使用统一数据服务获取大运流年、特殊流年数据（确保数据一致性）
+        from server.services.bazi_data_service import BaziDataService
         
-        logger.info(f"[General Review Stream] 获取到 dayun_sequence 数量: {len(dayun_sequence)}, liunian_sequence 数量: {len(liunian_sequence)}")
+        # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
+        fortune_data = await BaziDataService.get_fortune_data(
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
+            gender=gender,
+            calendar_type=calendar_type or "solar",
+            location=location,
+            latitude=latitude,
+            longitude=longitude,
+            include_dayun=True,
+            include_liunian=True,
+            include_special_liunian=True,
+            dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,  # 统一的大运模式
+            target_years=BaziDataService.DEFAULT_TARGET_YEARS,  # 统一的年份范围
+            current_time=None
+        )
         
-        # 提取特殊流年（统一接口返回的是字典格式，包含 'list', 'by_dayun', 'formatted'）
-        special_liunians_data = unified_data.get('special_liunians', {})
-        if isinstance(special_liunians_data, dict):
-            special_liunians = special_liunians_data.get('list', [])
-        elif isinstance(special_liunians_data, list):
-            special_liunians = special_liunians_data
-        else:
-            special_liunians = []
+        # 从统一数据服务获取大运序列和特殊流年
+        dayun_sequence = []
+        liunian_sequence = []
+        special_liunians = []
         
-        logger.info(f"[General Review Stream] 获取到特殊流年数量: {len(special_liunians)}")
+        # 转换为字典格式（兼容现有代码）
+        for dayun in fortune_data.dayun_sequence:
+            dayun_sequence.append({
+                'step': dayun.step,
+                'stem': dayun.stem,
+                'branch': dayun.branch,
+                'year_start': dayun.year_start,
+                'year_end': dayun.year_end,
+                'age_range': dayun.age_range,
+                'age_display': dayun.age_display,
+                'nayin': dayun.nayin,
+                'main_star': dayun.main_star,
+                'hidden_stems': dayun.hidden_stems or [],
+                'hidden_stars': dayun.hidden_stars or [],
+                'star_fortune': dayun.star_fortune,
+                'self_sitting': dayun.self_sitting,
+                'kongwang': dayun.kongwang,
+                'deities': dayun.deities or [],
+                'details': dayun.details or {}
+            })
+        
+        # 转换为字典格式（兼容现有代码）
+        for liunian in fortune_data.liunian_sequence:
+            liunian_sequence.append({
+                'year': liunian.year,
+                'stem': liunian.stem,
+                'branch': liunian.branch,
+                'ganzhi': liunian.ganzhi,
+                'age': liunian.age,
+                'age_display': liunian.age_display,
+                'nayin': liunian.nayin,
+                'main_star': liunian.main_star,
+                'hidden_stems': liunian.hidden_stems or [],
+                'hidden_stars': liunian.hidden_stars or [],
+                'star_fortune': liunian.star_fortune,
+                'self_sitting': liunian.self_sitting,
+                'kongwang': liunian.kongwang,
+                'deities': liunian.deities or [],
+                'details': liunian.details or {}
+            })
+        
+        # 转换为字典格式（兼容现有代码）
+        for special_liunian in fortune_data.special_liunians:
+            special_liunians.append({
+                'year': special_liunian.year,
+                'stem': special_liunian.stem,
+                'branch': special_liunian.branch,
+                'ganzhi': special_liunian.ganzhi,
+                'age': special_liunian.age,
+                'age_display': special_liunian.age_display,
+                'nayin': special_liunian.nayin,
+                'main_star': special_liunian.main_star,
+                'hidden_stems': special_liunian.hidden_stems or [],
+                'hidden_stars': special_liunian.hidden_stars or [],
+                'star_fortune': special_liunian.star_fortune,
+                'self_sitting': special_liunian.self_sitting,
+                'kongwang': special_liunian.kongwang,
+                'deities': special_liunian.deities or [],
+                'relations': special_liunian.relations or [],
+                'dayun_step': special_liunian.dayun_step,
+                'dayun_ganzhi': special_liunian.dayun_ganzhi,
+                'details': special_liunian.details or {}
+            })
+        
+        logger.info(f"[General Review Stream] ✅ 统一数据服务获取完成 - dayun_sequence 数量: {len(dayun_sequence)}, liunian_sequence 数量: {len(liunian_sequence)}, 特殊流年数量: {len(special_liunians)}")
         
         # 提取规则匹配结果（统一接口返回的是列表格式）
         rizhu_rules = []

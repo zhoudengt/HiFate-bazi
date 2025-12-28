@@ -22,20 +22,14 @@ sys.path.insert(0, project_root)
 from server.services.daily_fortune_calendar_service import DailyFortuneCalendarService
 from server.services.coze_stream_service import CozeStreamService
 from server.utils.bazi_input_processor import BaziInputProcessor
+from server.api.v1.models.bazi_base_models import BaziBaseRequest
 
 router = APIRouter()
 
 
-class DailyFortuneCalendarRequest(BaseModel):
-    """每日运势日历请求模型"""
+class DailyFortuneCalendarRequest(BaziBaseRequest):
+    """每日运势日历请求模型（继承 BaziBaseRequest，包含7个标准参数）"""
     date: Optional[str] = Field(None, description="日期（可选，默认为今天），格式：YYYY-MM-DD", example="2025-01-15")
-    solar_date: Optional[str] = Field(None, description="用户生辰阳历日期（可选，用于十神提示），格式：YYYY-MM-DD 或农历日期（当calendar_type=lunar时）", example="1990-01-15")
-    solar_time: Optional[str] = Field(None, description="用户生辰时间（可选），格式：HH:MM", example="12:00")
-    gender: Optional[str] = Field(None, description="用户性别（可选），male/female", example="male")
-    calendar_type: Optional[str] = Field("solar", description="历法类型：solar(阳历) 或 lunar(农历)，默认solar", example="solar")
-    location: Optional[str] = Field(None, description="出生地点（可选，用于时区转换）", example="北京")
-    latitude: Optional[float] = Field(None, description="纬度（可选，用于时区转换）", example=39.90)
-    longitude: Optional[float] = Field(None, description="经度（可选，用于时区转换和真太阳时计算）", example=116.40)
     
     @validator('date')
     def validate_date(cls, v):
@@ -45,44 +39,6 @@ class DailyFortuneCalendarRequest(BaseModel):
             datetime.strptime(v, '%Y-%m-%d')
         except ValueError:
             raise ValueError('日期格式错误，应为 YYYY-MM-DD')
-        return v
-    
-    @validator('solar_date')
-    def validate_solar_date(cls, v, values):
-        """验证用户生辰日期格式（支持农历）"""
-        if v is None:
-            return v
-        
-        # 如果是农历类型，允许任何格式（包括中文）
-        calendar_type = values.get('calendar_type', 'solar')
-        if calendar_type == 'lunar':
-            return v
-        
-        # 阳历日期尝试验证格式，但不强制（允许农历字符串格式）
-        try:
-            datetime.strptime(v, '%Y-%m-%d')
-        except ValueError:
-            # 可能是农历格式，允许通过，在 BaziInputProcessor 中处理
-            pass
-        
-        return v
-    
-    @validator('solar_time')
-    def validate_solar_time(cls, v):
-        if v is None:
-            return v
-        try:
-            datetime.strptime(v, '%H:%M')
-        except ValueError:
-            raise ValueError('用户生辰时间格式错误，应为 HH:MM')
-        return v
-    
-    @validator('gender')
-    def validate_gender(cls, v):
-        if v is None:
-            return v
-        if v not in ['male', 'female']:
-            raise ValueError('性别必须为 male 或 female')
         return v
 
 

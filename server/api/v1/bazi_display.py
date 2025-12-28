@@ -334,20 +334,22 @@ async def get_fortune_display(request: FortuneDisplayRequest):
         if request.current_time:
             current_time = datetime.strptime(request.current_time, "%Y-%m-%d %H:%M")
         
-        loop = asyncio.get_event_loop()
-        # ✅ 修复：传递年份范围参数，而不是索引
-        result = await loop.run_in_executor(
-            executor,
-            lambda: BaziDisplayService.get_fortune_display(
-                final_solar_date,
-                final_solar_time,
-                request.gender,
-                current_time,
-                dayun_index=request.dayun_index,  # 兼容旧接口
-                dayun_year_start=request.dayun_year_start,
-                dayun_year_end=request.dayun_year_end,
-                target_year=request.target_year
-            )
+        # ✅ 使用统一数据服务（内部适配，接口层完全不动）
+        from server.services.bazi_data_service import BaziDataService
+        
+        result = await BaziDataService.get_fortune_display(
+            solar_date=request.solar_date,
+            solar_time=request.solar_time,
+            gender=request.gender,
+            calendar_type=request.calendar_type or "solar",
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude,
+            current_time=current_time,
+            dayun_index=request.dayun_index,  # 兼容旧接口
+            dayun_year_start=request.dayun_year_start,
+            dayun_year_end=request.dayun_year_end,
+            target_year=request.target_year
         )
         
         if result.get('success'):
