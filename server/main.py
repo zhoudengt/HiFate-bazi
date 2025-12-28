@@ -634,6 +634,19 @@ def _register_all_routers_to_manager():
     except ImportError as e:
         logger.warning(f"⚠ 安全监控路由未注册（可选功能）: {e}")
     
+    # Proto 文件服务路由（可选）
+    try:
+        from server.api.v1.proto_service import router as proto_service_router
+        router_manager.register_router(
+            "proto_service",
+            lambda: proto_service_router,
+            prefix="/api/v1",
+            tags=["Proto 文件服务"]
+        )
+        logger.info("✓ Proto 文件服务路由已注册")
+    except ImportError as e:
+        logger.warning(f"⚠ Proto 文件服务路由未注册（可选功能）: {e}")
+    
     # LLM 生成路由（条件可用）
     router_manager.register_router(
         "llm_generate",

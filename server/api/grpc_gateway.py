@@ -1265,6 +1265,25 @@ try:
 except ImportError as e:
     logger.warning(f"⚠ 安全监控端点未注册（可选功能）: {e}")
 
+# 注册 Proto 文件服务端点（可选）
+try:
+    from server.api.v1.proto_service import (
+        list_proto_files
+    )
+    
+    @_register("/proto/list")
+    async def _handle_proto_list(payload: Dict[str, Any]):
+        """获取可用的 proto 文件列表"""
+        return await list_proto_files()
+    
+    # 注意：/proto/{filename} 是路径参数端点，提供静态文件内容
+    # 不适合通过 gRPC-Web 访问，建议直接使用 REST API: GET /api/v1/proto/{filename}
+    # 已在 server/main.py 中注册为 REST 路由，无需在 gRPC 网关中注册
+    
+    logger.info("✓ Proto 文件服务端点已注册（/proto/list）")
+except ImportError as e:
+    logger.warning(f"⚠ Proto 文件服务端点未注册（可选功能）: {e}")
+
 # 在模块加载时调用（用于热更新后恢复）
 try:
     print(f"🔧 模块加载时检查端点注册状态...", flush=True)
