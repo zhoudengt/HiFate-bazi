@@ -70,6 +70,25 @@ class BaziDataService:
         Returns:
             List[DayunModel]: 大运序列
         """
+        # ✅ 优化：使用缓存（减少重复计算）
+        try:
+            from server.utils.cache_key_generator import CacheKeyGenerator
+            from server.utils.cache_multi_level import get_multi_cache
+            
+            cache_key = CacheKeyGenerator.generate_dayun_key(
+                solar_date, solar_time, gender,
+                calendar_type, location, latitude, longitude,
+                mode, count
+            )
+            
+            cache = get_multi_cache()
+            cached_result = cache.get(cache_key)
+            if cached_result:
+                logger.debug(f"[BaziDataService] 大运序列缓存命中")
+                return cached_result
+        except Exception as e:
+            logger.debug(f"[BaziDataService] 缓存查询失败（继续计算）: {e}")
+        
         # 1. 处理农历输入和时区转换
         final_solar_date, final_solar_time, _ = BaziInputProcessor.process_input(
             solar_date, solar_time, calendar_type, location, latitude, longitude
@@ -131,6 +150,26 @@ class BaziDataService:
             )
             dayun_models.append(dayun_model)
         
+        # ✅ 优化：写入缓存
+        try:
+            from server.utils.cache_key_generator import CacheKeyGenerator
+            from server.utils.cache_multi_level import get_multi_cache
+            
+            cache_key = CacheKeyGenerator.generate_dayun_key(
+                solar_date, solar_time, gender,
+                calendar_type, location, latitude, longitude,
+                mode, count
+            )
+            
+            cache = get_multi_cache()
+            # 设置缓存TTL（24小时）
+            cache.l2.ttl = 86400
+            cache.set(cache_key, dayun_models)
+            # 恢复默认TTL
+            cache.l2.ttl = 3600
+        except Exception as e:
+            logger.debug(f"[BaziDataService] 缓存写入失败（不影响业务）: {e}")
+        
         return dayun_models
     
     @staticmethod
@@ -144,7 +183,8 @@ class BaziDataService:
         longitude: Optional[float] = None,
         dayun_mode: str = "current",
         target_years: Optional[List[int]] = None,
-        current_time: Optional[datetime] = None
+        current_time: Optional[datetime] = None,
+        detail_result: Optional[Dict[str, Any]] = None  # ✅ 优化：允许传入已计算的 detail_result，避免重复计算
     ) -> List[LiunianModel]:
         """
         获取流年序列（支持7个标准参数）
@@ -246,6 +286,24 @@ class BaziDataService:
                 details=liunian
             )
             liunian_models.append(liunian_model)
+        
+        # ✅ 优化：写入缓存
+        try:
+            from server.utils.cache_key_generator import CacheKeyGenerator
+            from server.utils.cache_multi_level import get_multi_cache
+            
+            cache_key = CacheKeyGenerator.generate_liunian_key(
+                solar_date, solar_time, gender,
+                calendar_type, location, latitude, longitude,
+                target_years
+            )
+            
+            cache = get_multi_cache()
+            cache.l2.ttl = 86400
+            cache.set(cache_key, liunian_models)
+            cache.l2.ttl = 3600
+        except Exception as e:
+            logger.debug(f"[BaziDataService] 流年序列缓存写入失败（不影响业务）: {e}")
         
         return liunian_models
     
@@ -353,6 +411,25 @@ class BaziDataService:
                 dayun_ganzhi=liunian.get('dayun_ganzhi')
             )
             special_liunian_models.append(special_liunian_model)
+        
+        # ✅ 优化：写入缓存
+        try:
+            from server.utils.cache_key_generator import CacheKeyGenerator
+            from server.utils.cache_multi_level import get_multi_cache
+            
+            dayun_steps = [d.step for d in dayuns] if dayuns else None
+            cache_key = CacheKeyGenerator.generate_special_liunian_key(
+                solar_date, solar_time, gender,
+                calendar_type, location, latitude, longitude,
+                dayun_steps, dayun_count
+            )
+            
+            cache = get_multi_cache()
+            cache.l2.ttl = 86400
+            cache.set(cache_key, special_liunian_models)
+            cache.l2.ttl = 3600
+        except Exception as e:
+            logger.debug(f"[BaziDataService] 特殊流年缓存写入失败（不影响业务）: {e}")
         
         return special_liunian_models
     

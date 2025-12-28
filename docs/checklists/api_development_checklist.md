@@ -23,16 +23,19 @@
 
 - [ ] Pydantic 模型定义完成
   - [ ] 文件位置：`server/api/v1/xxx.py`
-  - [ ] 请求模型继承 `BaseModel`
+  - [ ] **请求模型继承 `BaziBaseRequest`（包含7个标准参数）** ⚠️ **必须！**
   - [ ] 所有字段使用 `Field` 提供描述和示例
   - [ ] 关键字段使用 `@validator` 验证
   - [ ] 响应模型包含 `success` 字段
+  - [ ] **7个标准参数已包含**：`solar_date`, `solar_time`, `gender`, `calendar_type`, `location`, `latitude`, `longitude`
 
 - [ ] API 函数实现完成
   - [ ] 使用 `@router.post` 或 `@router.get` 装饰器
   - [ ] 函数参数类型正确
+  - [ ] **接口内部传递7个标准参数到 `BaziInputProcessor.process_input`** ⚠️ **必须！**
   - [ ] 错误处理完善（try-except）
   - [ ] 日志记录完善
+  - [ ] **缓存键包含7个标准参数（使用 `CacheKeyGenerator`）** ⚠️ **必须！**
 
 - [ ] 服务层开发完成（如需要）
   - [ ] 文件位置：`server/services/xxx_service.py`

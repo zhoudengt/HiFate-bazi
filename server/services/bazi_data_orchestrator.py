@@ -160,6 +160,25 @@ class BaziDataOrchestrator:
         if current_time is None:
             current_time = datetime.now()
         
+        # ✅ 优化：使用缓存（如果启用）
+        if use_cache:
+            try:
+                from server.utils.cache_key_generator import CacheKeyGenerator
+                from server.utils.cache_multi_level import get_multi_cache
+                
+                cache_key = CacheKeyGenerator.generate_orchestrator_key(
+                    solar_date, solar_time, gender, modules,
+                    calendar_type, location, latitude, longitude
+                )
+                
+                cache = get_multi_cache()
+                cached_result = cache.get(cache_key)
+                if cached_result:
+                    logger.info(f"[BaziDataOrchestrator] 缓存命中: {cache_key[:50]}...")
+                    return cached_result
+            except Exception as e:
+                logger.warning(f"[BaziDataOrchestrator] 缓存查询失败（降级到数据库）: {e}")
+        
         # 处理输入（农历转换和时区转换）
         final_solar_date, final_solar_time, _ = BaziInputProcessor.process_input(
             solar_date, solar_time, calendar_type or "solar", location, latitude, longitude
@@ -702,6 +721,28 @@ class BaziDataOrchestrator:
         # ✅ 处理 detail 模块：如果启用了 detail 模块，返回完整的 detail_data
         if modules.get('detail') and detail_data:
             result['detail'] = detail_data
+        
+        # ✅ 优化：写入缓存（如果启用）
+        if use_cache:
+            try:
+                from server.utils.cache_key_generator import CacheKeyGenerator
+                from server.utils.cache_multi_level import get_multi_cache
+                
+                cache_key = CacheKeyGenerator.generate_orchestrator_key(
+                    solar_date, solar_time, gender, modules,
+                    calendar_type, location, latitude, longitude
+                )
+                
+                cache = get_multi_cache()
+                # 设置缓存TTL（24小时）
+                cache.l2.ttl = 86400
+                cache.set(cache_key, result)
+                # 恢复默认TTL
+                cache.l2.ttl = 3600
+                
+                logger.info(f"[BaziDataOrchestrator] 缓存写入成功: {cache_key[:50]}...")
+            except Exception as e:
+                logger.warning(f"[BaziDataOrchestrator] 缓存写入失败（不影响业务）: {e}")
         
         return result
 

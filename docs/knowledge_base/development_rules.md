@@ -24,6 +24,106 @@
 - 规则匹配必须使用 `RuleService`
 - 禁止使用 `FormulaRuleService`（已废弃）
 
+## 前端接口标准参数规范 【必须遵守】
+
+### 🔴 核心原则
+
+> **所有与前端交互的接口必须包含7个标准参数，确保数据一致性和时区转换准确性。**
+
+### 📋 7个标准参数
+
+| 参数 | 类型 | 必填 | 说明 | 示例 |
+|------|------|------|------|------|
+| `solar_date` | `str` | ✅ 是 | 阳历日期或农历日期 | `"1990-01-15"` |
+| `solar_time` | `str` | ✅ 是 | 出生时间 | `"12:00"` |
+| `gender` | `str` | ✅ 是 | 性别（male/female） | `"male"` |
+| `calendar_type` | `str` | ⚠️ 可选 | 历法类型（solar/lunar），默认solar | `"solar"` |
+| `location` | `str` | ⚠️ 可选 | 出生地点（用于时区转换，优先级1） | `"北京"` |
+| `latitude` | `float` | ⚠️ 可选 | 纬度（用于时区转换，优先级2） | `39.90` |
+| `longitude` | `float` | ⚠️ 可选 | 经度（用于时区转换和真太阳时计算，优先级2） | `116.40` |
+
+### ✅ 实现要求
+
+**1. 请求模型必须继承 `BaziBaseRequest`**：
+```python
+from server.api.v1.models.bazi_base_models import BaziBaseRequest
+
+class YourRequest(BaziBaseRequest):
+    """您的请求模型（自动包含7个标准参数）"""
+    # 其他特定参数...
+```
+
+**2. 接口内部必须传递7个标准参数**：
+```python
+final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+    request.solar_date,
+    request.solar_time,
+    request.calendar_type or "solar",
+    request.location,
+    request.latitude,
+    request.longitude
+)
+```
+
+**3. 缓存键必须包含7个标准参数**：
+```python
+from server.utils.cache_key_generator import CacheKeyGenerator
+
+cache_key = CacheKeyGenerator.generate_bazi_data_key(
+    solar_date, solar_time, gender,
+    calendar_type, location, latitude, longitude,
+    suffix="your_suffix"
+)
+```
+
+### 📋 受保护的7个前端接口
+
+以下接口的**入参、出参、类型、前端调用路径与方式**必须保持不变：
+
+1. `/bazi/interface` - 基本信息
+2. `/bazi/pan/display` - 基本排盘
+3. `/bazi/fortune/display` - 专业排盘-大运流年流月
+4. `/daily-fortune-calendar/query` - 八字命理-每日运势
+5. `/bazi/wuxing-proportion` - 八字命理-五行占比
+6. `/bazi/rizhu-liujiazi` - 八字命理-日元-六十甲子
+7. `/bazi/xishen-jishen` - 八字命理-喜神忌神
+
+**重要**：这7个接口的内部实现可以优化，但外部接口签名必须保持不变。
+
+### 🔄 数据一致性保障
+
+**5个分析接口必须使用统一数据服务**：
+- `server/api/v1/marriage_analysis.py` - 婚姻分析
+- `server/api/v1/career_wealth_analysis.py` - 事业财富分析
+- `server/api/v1/children_study_analysis.py` - 子女学业分析
+- `server/api/v1/health_analysis.py` - 健康分析
+- `server/api/v1/general_review_analysis.py` - 总评分析
+
+**要求**：
+- ✅ 必须使用 `BaziDataService` 获取大运流年、特殊流年数据
+- ✅ 必须使用统一的大运模式（`current_with_neighbors`）
+- ✅ 必须使用统一的年份范围（默认未来3年）
+- ✅ 确保5个接口的大运流年、特殊流年数据完全一致
+
+**实现方式**：
+```python
+from server.services.bazi_data_service import BaziDataService
+
+# 获取大运序列（统一模式）
+dayuns = await BaziDataService.get_dayun_sequence(
+    solar_date, solar_time, gender,
+    calendar_type, location, latitude, longitude,
+    mode="current_with_neighbors"
+)
+
+# 获取特殊流年（统一模式）
+special_liunians = await BaziDataService.get_special_liunians(
+    solar_date, solar_time, gender,
+    calendar_type, location, latitude, longitude,
+    dayun_mode="current_with_neighbors"
+)
+```
+
 ## 新功能开发强制规范
 
 ### 开发前必读
@@ -54,6 +154,18 @@
 - [ ] 是否遵循 JSON 序列化规范（`ensure_ascii=False`）
 - [ ] 是否使用动态路径（禁止硬编码本地路径）
 - [ ] 文件操作是否有异常处理（不影响业务）
+
+#### 标准参数检查（前端接口）【必须遵守】
+- [ ] 请求模型是否继承 `BaziBaseRequest`（包含7个标准参数）
+- [ ] 接口内部是否传递7个标准参数到 `BaziInputProcessor.process_input`
+- [ ] 缓存键是否包含7个标准参数（使用 `CacheKeyGenerator`）
+- [ ] 是否验证了时区转换功能（如果提供了 location/latitude/longitude）
+
+#### 数据一致性检查（分析接口）【必须遵守】
+- [ ] 是否使用 `BaziDataService` 获取大运流年、特殊流年数据
+- [ ] 是否使用统一的大运模式（`current_with_neighbors`）
+- [ ] 是否使用统一的年份范围（默认未来3年）
+- [ ] 是否验证了5个分析接口的数据一致性
 
 #### 热更新检查（必须！）
 - [ ] **开发完成后是否自动触发热更新（必须！）**

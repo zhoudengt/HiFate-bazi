@@ -98,6 +98,13 @@ graph TB
     N1_MySQL -.->|MySQL 主从复制<br/>GTID 模式| N2_MySQL
     N1_Redis -.->|Redis 主从复制| N2_Redis
     
+    %% 数据一致性保障
+    N1_Web -.->|统一数据服务<br/>BaziDataService| N1_DataService[统一数据服务层<br/>BaziDataService<br/>BaziDataOrchestrator]
+    N2_Web -.->|统一数据服务<br/>BaziDataService| N2_DataService[统一数据服务层<br/>BaziDataService<br/>BaziDataOrchestrator]
+    
+    N1_DataService -->|7个标准参数<br/>solar_date, solar_time, gender<br/>calendar_type, location<br/>latitude, longitude| N1_DataCache[(统一缓存层<br/>CacheKeyGenerator<br/>包含7个标准参数)]
+    N2_DataService -->|7个标准参数<br/>solar_date, solar_time, gender<br/>calendar_type, location<br/>latitude, longitude| N2_DataCache[(统一缓存层<br/>CacheKeyGenerator<br/>包含7个标准参数)]
+    
     %% 样式
     classDef nginxStyle fill:#FFF2CC,stroke:#D6B656,stroke-width:2px
     classDef webStyle fill:#D5E8D4,stroke:#82B366,stroke-width:2px
@@ -149,6 +156,30 @@ graph TB
 - **Redis 主从**：自动同步
 - **内网通信**：使用内网 IP (172.18.121.222/223)
 - **故障转移**：自动检测并切换节点
+
+### 数据一致性保障架构
+
+**统一数据服务层**：
+- **BaziDataService**：统一管理大运流年、特殊流年数据的获取
+- **BaziDataOrchestrator**：统一编排所有数据模块的获取逻辑
+- **CacheKeyGenerator**：统一生成缓存键（包含7个标准参数）
+
+**7个标准参数**：
+所有前端接口必须包含以下7个标准参数，确保数据一致性和时区转换准确性：
+- `solar_date` - 阳历日期或农历日期
+- `solar_time` - 出生时间
+- `gender` - 性别（male/female）
+- `calendar_type` - 历法类型（solar/lunar）
+- `location` - 出生地点（用于时区转换，优先级1）
+- `latitude` - 纬度（用于时区转换，优先级2）
+- `longitude` - 经度（用于时区转换和真太阳时计算，优先级2）
+
+**数据一致性保障**：
+- ✅ 5个分析接口统一使用 `BaziDataService` 获取大运流年、特殊流年数据
+- ✅ 统一的大运模式（`current_with_neighbors`）
+- ✅ 统一的年份范围（默认未来3年）
+- ✅ 缓存键包含7个标准参数，确保缓存一致性
+- ✅ 支持数据共享，避免重复计算（`detail_result` 参数传递）
 
 ### 访问地址
 
