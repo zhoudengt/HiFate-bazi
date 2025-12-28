@@ -132,19 +132,27 @@ class BaziDataOrchestrator:
         modules: Dict[str, Any],
         use_cache: bool = True,
         parallel: bool = True,
-        current_time: Optional[datetime] = None
+        current_time: Optional[datetime] = None,
+        calendar_type: Optional[str] = "solar",
+        location: Optional[str] = None,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None
     ) -> Dict[str, Any]:
         """
-        根据模块配置获取数据
+        根据模块配置获取数据（支持7个标准参数）
         
         Args:
-            solar_date: 阳历日期
+            solar_date: 阳历日期或农历日期
             solar_time: 出生时间
             gender: 性别
             modules: 模块配置字典
             use_cache: 是否使用缓存
             parallel: 是否并行获取
             current_time: 当前时间（可选）
+            calendar_type: 历法类型（solar/lunar），默认solar
+            location: 出生地点（可选，用于时区转换）
+            latitude: 纬度（可选，用于时区转换）
+            longitude: 经度（可选，用于时区转换和真太阳时计算）
         
         Returns:
             dict: 包含所有请求模块的数据
@@ -152,9 +160,9 @@ class BaziDataOrchestrator:
         if current_time is None:
             current_time = datetime.now()
         
-        # 处理输入（农历转换等）
+        # 处理输入（农历转换和时区转换）
         final_solar_date, final_solar_time, _ = BaziInputProcessor.process_input(
-            solar_date, solar_time, "solar", None, None, None
+            solar_date, solar_time, calendar_type or "solar", location, latitude, longitude
         )
         
         result = {}
@@ -176,14 +184,15 @@ class BaziDataOrchestrator:
             )
             # ✅ 修复：get_xishen_jishen 是异步函数，返回 XishenJishenResponse (Pydantic模型)
             # 需要转换为字典，但这里先获取响应对象，在结果处理时转换
+            # ✅ 扩展：支持7个标准参数
             xishen_jishen_task = get_xishen_jishen(XishenJishenRequest(
                 solar_date=final_solar_date,
                 solar_time=final_solar_time,
                 gender=gender,
-                calendar_type="solar",
-                location=None,
-                latitude=None,
-                longitude=None
+                calendar_type=calendar_type or "solar",
+                location=location,
+                latitude=latitude,
+                longitude=longitude
             ))
             tasks.extend([
                 ('bazi', bazi_task),
@@ -235,15 +244,28 @@ class BaziDataOrchestrator:
         
         # 5. 辅助模块（需要基础八字数据）
         if modules.get('shengong_minggong'):
+            # ✅ 扩展：支持7个标准参数
             interface_task = loop.run_in_executor(
                 executor, BaziInterfaceService.generate_interface_full,
-                final_solar_date, final_solar_time, gender
+                final_solar_date, final_solar_time, gender,
+                "",  # name
+                location or "未知地",  # location
+                latitude or 39.00,  # latitude
+                longitude or 120.00  # longitude
             )
             tasks.append(('interface', interface_task))
         
         if modules.get('fortune_display'):
-            # 已经在 detail 中获取，这里不需要单独获取
-            pass
+            # ✅ 扩展：使用 BaziDataService.get_fortune_display（支持7个标准参数）
+            # 注意：fortune_display 通常从 detail 中获取，但如果需要单独获取，使用 BaziDataService
+            from server.services.bazi_data_service import BaziDataService
+            fortune_display_task = BaziDataService.get_fortune_display(
+                final_solar_date, final_solar_time, gender,
+                calendar_type or "solar",
+                location, latitude, longitude,
+                current_time
+            )
+            tasks.append(('fortune_display', fortune_display_task))
         
         # 6. 运势模块
         if modules.get('daily_fortune'):

@@ -106,14 +106,18 @@ async def get_bazi_data(request: BaziDataRequest):
                     message="数据获取成功（来自缓存）"
                 )
         
-        # 2. 获取数据
+        # 2. 获取数据（支持7个标准参数）
         data = await BaziDataOrchestrator.fetch_data(
             request.solar_date,
             request.solar_time,
             request.gender,
             request.modules,
             use_cache=request.use_cache,
-            parallel=request.parallel
+            parallel=request.parallel,
+            calendar_type=request.calendar_type,
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude
         )
         
         # 3. 数据一致性验证

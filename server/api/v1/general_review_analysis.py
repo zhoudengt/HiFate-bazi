@@ -131,7 +131,11 @@ async def general_review_analysis_debug(request: GeneralReviewRequest):
                 gender=request.gender,
                 modules=modules,
                 use_cache=True,
-                parallel=True
+                parallel=True,
+                calendar_type=request.calendar_type,
+                location=request.location,
+                latitude=request.latitude,
+                longitude=request.longitude
             )
             logger.info(f"[General Review Debug] ✅ 统一接口数据获取完成")
             

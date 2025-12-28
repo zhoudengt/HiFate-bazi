@@ -136,7 +136,11 @@ async def health_analysis_v2_stream_generator(
                 gender=gender,
                 modules=modules,
                 use_cache=True,
-                parallel=True
+                parallel=True,
+                calendar_type=request.calendar_type if hasattr(request, 'calendar_type') else "solar",
+                location=request.location if hasattr(request, 'location') else None,
+                latitude=request.latitude if hasattr(request, 'latitude') else None,
+                longitude=request.longitude if hasattr(request, 'longitude') else None
             )
             logger.info(f"[Health Analysis V2 Stream] ✅ 统一接口数据获取完成")
             

@@ -112,7 +112,11 @@ async def children_study_analysis_debug(request: ChildrenStudyRequest):
             gender=request.gender,
             modules=modules,
             use_cache=True,
-            parallel=True
+            parallel=True,
+            calendar_type=request.calendar_type,
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude
         )
         
         # 从统一接口结果中提取数据
