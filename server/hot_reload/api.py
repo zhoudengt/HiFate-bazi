@@ -83,8 +83,23 @@ async def reload_routers():
     """
     try:
         from server.main import router_manager
+        import sys
         
         old_count = len(router_manager.get_registered_routers())
+        
+        # ⭐ 重要：如果 server.main 模块已加载，重新执行 _register_all_routers_to_manager
+        # 确保新添加的路由信息被注册到 RouterManager
+        if 'server.main' in sys.modules:
+            main_module = sys.modules['server.main']
+            if hasattr(main_module, '_register_all_routers_to_manager'):
+                try:
+                    main_module._register_all_routers_to_manager()
+                    logger.info("✅ 路由信息已重新注册到管理器")
+                except Exception as e:
+                    logger.warning(f"⚠️  重新注册路由信息到管理器失败: {e}")
+        
+        # 清除注册状态，强制重新注册所有路由到 FastAPI 应用
+        router_manager.clear_registered_state()
         
         # 强制重新注册所有路由
         results = router_manager.register_all_routers(force=True)
