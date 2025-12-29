@@ -18,13 +18,13 @@ enforce-gtid-consistency = ON
 character-set-server = utf8mb4
 collation-server = utf8mb4_unicode_ci
 
-# 连接数
-max_connections = 500
-max_user_connections = 400
+# 连接数（降低以节省内存）
+max_connections = 100
+max_user_connections = 80
 
-# InnoDB 优化（2C8G 机器）
-innodb_buffer_pool_size = 2G
-innodb_log_file_size = 256M
+# InnoDB 优化（内存限制1GB，优化为800MB）
+innodb_buffer_pool_size = 800M
+innodb_log_file_size = 128M
 innodb_flush_log_at_trx_commit = 1
 innodb_flush_method = O_DIRECT
 

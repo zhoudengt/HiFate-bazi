@@ -25,6 +25,12 @@ services:
     restart: always
     networks:
       - hifate-network
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+        reservations:
+          memory: 64M
     healthcheck:
       test: ["CMD", "nginx", "-t"]
       interval: 30s
@@ -111,6 +117,12 @@ services:
     restart: always
     networks:
       - hifate-network
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+        reservations:
+          memory: 100M
     depends_on:
       mysql:
         condition: service_healthy
@@ -140,6 +152,12 @@ services:
     restart: always
     networks:
       - hifate-network
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+        reservations:
+          memory: 100M
     depends_on:
       mysql:
         condition: service_healthy
@@ -169,6 +187,12 @@ services:
     restart: always
     networks:
       - hifate-network
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+        reservations:
+          memory: 100M
     depends_on:
       mysql:
         condition: service_healthy
@@ -198,6 +222,12 @@ services:
     restart: always
     networks:
       - hifate-network
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+        reservations:
+          memory: 100M
     depends_on:
       mysql:
         condition: service_healthy
@@ -227,6 +257,12 @@ services:
     restart: always
     networks:
       - hifate-network
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+        reservations:
+          memory: 100M
     depends_on:
       mysql:
         condition: service_healthy
@@ -256,6 +292,12 @@ services:
     restart: always
     networks:
       - hifate-network
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+        reservations:
+          memory: 100M
     depends_on:
       mysql:
         condition: service_healthy
@@ -285,6 +327,12 @@ services:
     restart: always
     networks:
       - hifate-network
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+        reservations:
+          memory: 100M
     depends_on:
       mysql:
         condition: service_healthy
@@ -317,6 +365,12 @@ services:
     restart: always
     networks:
       - hifate-network
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+        reservations:
+          memory: 100M
     depends_on:
       mysql:
         condition: service_healthy
@@ -352,6 +406,12 @@ services:
     restart: always
     networks:
       - hifate-network
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+        reservations:
+          memory: 100M
     depends_on:
       redis:
         condition: service_healthy
@@ -390,6 +450,12 @@ services:
     restart: always
     networks:
       - hifate-network
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+        reservations:
+          memory: 100M
     depends_on:
       mysql:
         condition: service_healthy
@@ -420,6 +486,12 @@ services:
     restart: always
     networks:
       - hifate-network
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+        reservations:
+          memory: 100M
     depends_on:
       mysql:
         condition: service_healthy
