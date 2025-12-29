@@ -75,15 +75,17 @@ services:
       retries: 5
 
   # ============================================
-  # auth-service - 必须连接 Redis 主库（Node1）
+  # auth-service - 已停用（2025-12-29）
+  # 原因：主配置文件中已注释掉 auth-service，此处覆盖配置也已停用
+  # 恢复方式：在主配置文件 docker-compose.prod.yml 中取消注释 auth-service 后，此配置会自动生效
   # ============================================
-  auth-service:
-    environment:
-      # ⚠️ 重要：Node2 的 auth-service 必须连接 Node1 的 Redis 主库（可写）
-      # 不能连接本地 Redis 从库（只读，无法写入 Token）
-      # 使用 Node1 的内网 IP 连接 Redis 主库
-      REDIS_HOST: ${NODE1_IP:-172.18.121.222}  # 直接使用 Node1 的 Redis 主库
-      MYSQL_HOST: mysql  # 使用 Docker 服务名连接 MySQL
+  # auth-service:
+  #   environment:
+  #     # ⚠️ 重要：Node2 的 auth-service 必须连接 Node1 的 Redis 主库（可写）
+  #     # 不能连接本地 Redis 从库（只读，无法写入 Token）
+  #     # 使用 Node1 的内网 IP 连接 Redis 主库
+  #     REDIS_HOST: ${NODE1_IP:-172.18.121.222}  # 直接使用 Node1 的 Redis 主库
+  #     MYSQL_HOST: mysql  # 使用 Docker 服务名连接 MySQL
 
   # ============================================
   # Nginx - 负载均衡到本机和远程节点

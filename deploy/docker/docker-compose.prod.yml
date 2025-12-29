@@ -377,50 +377,55 @@ services:
       redis:
         condition: service_healthy
 
-  auth-service:
-    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
-    container_name: hifate-auth-service
-    ports:
-      - "9011:9011"
-    environment:
-      APP_ENV: production
-      # ⚠️ 重要：auth-service 必须连接 Redis 主库（可写），不能连接从库（只读）
-      # Node1: 使用本地 redis (主库)
-      # Node2: 使用 Node1 的 redis 主库（通过内网IP或服务名）
-      REDIS_HOST: ${REDIS_MASTER_HOST:-redis}
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      REDIS_DB: ${REDIS_DB:-0}
-      AUTH_SERVICE_PORT: 9011
-      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID:-hifate_client}
-      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET:-hifate_secret_change_me}
-      OAUTH_AUTHORIZATION_CODE_EXPIRE_MINUTES: ${OAUTH_AUTHORIZATION_CODE_EXPIRE_MINUTES:-10}
-      OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES: ${OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
-      OAUTH_REFRESH_TOKEN_EXPIRE_DAYS: ${OAUTH_REFRESH_TOKEN_EXPIRE_DAYS:-30}
-      TZ: Asia/Shanghai
-    volumes:
-      - /opt/HiFate-bazi/proto:/app/proto:ro  # 挂载 proto 目录，支持热更新
-      - /opt/HiFate-bazi/services:/app/services:ro  # 挂载 services 目录，支持热更新
-      - /opt/HiFate-bazi/src:/app/src:ro  # 挂载 src 目录，支持热更新
-    command: python services/auth_service/main.py --port 9011
-    restart: always
-    networks:
-      - hifate-network
-    deploy:
-      resources:
-        limits:
-          memory: 240M
-        reservations:
-          memory: 150M
-    depends_on:
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import grpc; import sys; sys.path.insert(0, '/app/proto/generated'); import auth_pb2, auth_pb2_grpc; channel = grpc.insecure_channel('localhost:9011'); stub = auth_pb2_grpc.AuthServiceStub(channel); response = stub.HealthCheck(auth_pb2.HealthCheckRequest(), timeout=5.0); exit(0 if response.status == 'ok' else 1)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+  # ============================================
+  # auth-service - 已停用（2025-12-29）
+  # 原因：暂时停用以节省资源，等待本地修改后重新启用
+  # 恢复方式：取消注释下方配置并重新部署
+  # ============================================
+  # auth-service:
+  #   image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
+  #   container_name: hifate-auth-service
+  #   ports:
+  #     - "9011:9011"
+  #   environment:
+  #     APP_ENV: production
+  #     # ⚠️ 重要：auth-service 必须连接 Redis 主库（可写），不能连接从库（只读）
+  #     # Node1: 使用本地 redis (主库)
+  #     # Node2: 使用 Node1 的 redis 主库（通过内网IP或服务名）
+  #     REDIS_HOST: ${REDIS_MASTER_HOST:-redis}
+  #     REDIS_PORT: 6379
+  #     REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+  #     REDIS_DB: ${REDIS_DB:-0}
+  #     AUTH_SERVICE_PORT: 9011
+  #     OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID:-hifate_client}
+  #     OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET:-hifate_secret_change_me}
+  #     OAUTH_AUTHORIZATION_CODE_EXPIRE_MINUTES: ${OAUTH_AUTHORIZATION_CODE_EXPIRE_MINUTES:-10}
+  #     OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES: ${OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+  #     OAUTH_REFRESH_TOKEN_EXPIRE_DAYS: ${OAUTH_REFRESH_TOKEN_EXPIRE_DAYS:-30}
+  #     TZ: Asia/Shanghai
+  #   volumes:
+  #     - /opt/HiFate-bazi/proto:/app/proto:ro  # 挂载 proto 目录，支持热更新
+  #     - /opt/HiFate-bazi/services:/app/services:ro  # 挂载 services 目录，支持热更新
+  #     - /opt/HiFate-bazi/src:/app/src:ro  # 挂载 src 目录，支持热更新
+  #   command: python services/auth_service/main.py --port 9011
+  #   restart: always
+  #   networks:
+  #     - hifate-network
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 240M
+  #       reservations:
+  #         memory: 150M
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD", "python", "-c", "import grpc; import sys; sys.path.insert(0, '/app/proto/generated'); import auth_pb2, auth_pb2_grpc; channel = grpc.insecure_channel('localhost:9011'); stub = auth_pb2_grpc.AuthServiceStub(channel); response = stub.HealthCheck(auth_pb2.HealthCheckRequest(), timeout=5.0); exit(0 if response.status == 'ok' else 1)"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 30s
 
   prompt-optimizer:
     image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
@@ -460,41 +465,46 @@ services:
       mysql:
         condition: service_healthy
 
-  desk-fengshui:
-    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
-    container_name: hifate-desk-fengshui
-    ports:
-      - "9010:9010"
-    environment:
-      APP_ENV: production
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      SERVICE_PORT: 9010
-      TZ: Asia/Shanghai
-    volumes:
-      - web_logs:/app/logs  # 挂载日志目录，解决日志文件创建问题
-      - /opt/HiFate-bazi/proto:/app/proto:ro
-      - /opt/HiFate-bazi/services:/app/services:ro
-      - /opt/HiFate-bazi/src:/app/src:ro
-    command: python services/desk_fengshui/grpc_server.py --port 9010
-    restart: always
-    networks:
-      - hifate-network
-    deploy:
-      resources:
-        limits:
-          memory: 240M
-        reservations:
-          memory: 150M
-    depends_on:
-      mysql:
-        condition: service_healthy
+  # ============================================
+  # desk-fengshui - 已停用（2025-12-29）
+  # 原因：暂时停用以节省资源，等待本地修改后重新启用
+  # 恢复方式：取消注释下方配置并重新部署
+  # ============================================
+  # desk-fengshui:
+  #   image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
+  #   container_name: hifate-desk-fengshui
+  #   ports:
+  #     - "9010:9010"
+  #   environment:
+  #     APP_ENV: production
+  #     MYSQL_HOST: mysql
+  #     MYSQL_PORT: 3306
+  #     MYSQL_USER: ${MYSQL_USER:-root}
+  #     MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+  #     MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+  #     REDIS_HOST: redis
+  #     REDIS_PORT: 6379
+  #     REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+  #     SERVICE_PORT: 9010
+  #     TZ: Asia/Shanghai
+  #   volumes:
+  #     - web_logs:/app/logs  # 挂载日志目录，解决日志文件创建问题
+  #     - /opt/HiFate-bazi/proto:/app/proto:ro
+  #     - /opt/HiFate-bazi/services:/app/services:ro
+  #     - /opt/HiFate-bazi/src:/app/src:ro
+  #   command: python services/desk_fengshui/grpc_server.py --port 9010
+  #   restart: always
+  #   networks:
+  #     - hifate-network
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 240M
+  #       reservations:
+  #         memory: 150M
+  #   depends_on:
+  #     mysql:
+  #       condition: service_healthy
 
 volumes:
   nginx_logs:
