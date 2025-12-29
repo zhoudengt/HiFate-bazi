@@ -28,9 +28,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 100M
+          memory: 80M
         reservations:
-          memory: 64M
+          memory: 50M
     healthcheck:
       test: ["CMD", "nginx", "-t"]
       interval: 30s
@@ -120,9 +120,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 150M
+          memory: 240M
         reservations:
-          memory: 100M
+          memory: 150M
     depends_on:
       mysql:
         condition: service_healthy
@@ -155,9 +155,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 150M
+          memory: 240M
         reservations:
-          memory: 100M
+          memory: 150M
     depends_on:
       mysql:
         condition: service_healthy
@@ -190,9 +190,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 150M
+          memory: 240M
         reservations:
-          memory: 100M
+          memory: 150M
     depends_on:
       mysql:
         condition: service_healthy
@@ -225,9 +225,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 150M
+          memory: 240M
         reservations:
-          memory: 100M
+          memory: 150M
     depends_on:
       mysql:
         condition: service_healthy
@@ -260,9 +260,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 150M
+          memory: 240M
         reservations:
-          memory: 100M
+          memory: 150M
     depends_on:
       mysql:
         condition: service_healthy
@@ -295,9 +295,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 150M
+          memory: 240M
         reservations:
-          memory: 100M
+          memory: 150M
     depends_on:
       mysql:
         condition: service_healthy
@@ -330,9 +330,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 150M
+          memory: 240M
         reservations:
-          memory: 100M
+          memory: 150M
     depends_on:
       mysql:
         condition: service_healthy
@@ -368,9 +368,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 150M
+          memory: 240M
         reservations:
-          memory: 100M
+          memory: 150M
     depends_on:
       mysql:
         condition: service_healthy
@@ -409,9 +409,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 150M
+          memory: 240M
         reservations:
-          memory: 100M
+          memory: 150M
     depends_on:
       redis:
         condition: service_healthy
@@ -453,9 +453,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 150M
+          memory: 240M
         reservations:
-          memory: 100M
+          memory: 150M
     depends_on:
       mysql:
         condition: service_healthy
@@ -489,9 +489,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 150M
+          memory: 240M
         reservations:
-          memory: 100M
+          memory: 150M
     depends_on:
       mysql:
         condition: service_healthy
