@@ -663,6 +663,46 @@ class BaziDisplayService:
             "is_current": False  # 由调用方设置
         }
     
+    # Redis缓存TTL（30天，大运流年流月数据不随时间变化）
+    CACHE_TTL = 2592000  # 30天
+    
+    @staticmethod
+    def _generate_fortune_cache_key(solar_date: str, solar_time: str, gender: str,
+                                     current_time: Optional[datetime] = None,
+                                     dayun_index: Optional[int] = None,
+                                     dayun_year_start: Optional[int] = None,
+                                     dayun_year_end: Optional[int] = None,
+                                     target_year: Optional[int] = None) -> str:
+        """
+        生成大运流年流月缓存键
+        
+        Args:
+            solar_date: 阳历日期
+            solar_time: 出生时间
+            gender: 性别
+            current_time: 当前时间（可选）
+            dayun_index: 大运索引（可选）
+            dayun_year_start: 大运起始年份（可选）
+            dayun_year_end: 大运结束年份（可选）
+            target_year: 目标年份（可选）
+            
+        Returns:
+            str: 缓存键
+        """
+        # 生成键（格式：fortune_display:{solar_date}:{solar_time}:{gender}:{current_time}:{dayun_index}:{dayun_year_start}:{dayun_year_end}:{target_year}）
+        key_parts = [
+            'fortune_display',
+            solar_date,
+            solar_time,
+            gender,
+            current_time.strftime('%Y-%m-%d %H:%M') if current_time else '',
+            str(dayun_index) if dayun_index is not None else '',
+            str(dayun_year_start) if dayun_year_start is not None else '',
+            str(dayun_year_end) if dayun_year_end is not None else '',
+            str(target_year) if target_year is not None else ''
+        ]
+        return ':'.join(key_parts)
+    
     @staticmethod
     def get_fortune_display(solar_date: str, solar_time: str, gender: str,
                             current_time: Optional[datetime] = None,
@@ -671,9 +711,11 @@ class BaziDisplayService:
                             dayun_year_end: Optional[int] = None,
                             target_year: Optional[int] = None) -> Dict[str, Any]:
         """
-        获取大运流年流月数据（统一接口，性能优化）
+        获取大运流年流月数据（统一接口，性能优化，带Redis缓存）
         
-        性能优化：只计算指定大运范围内的流年（约10年），而不是所有流年
+        性能优化：
+        1. 只计算指定大运范围内的流年（约10年），而不是所有流年
+        2. 使用多级缓存（L1内存 + L2 Redis，30天TTL）
         
         Args:
             solar_date: 阳历日期
@@ -688,6 +730,34 @@ class BaziDisplayService:
         Returns:
             dict: 包含大运、流年、流月的前端友好数据
         """
+        # 1. 生成缓存键
+        cache_key = BaziDisplayService._generate_fortune_cache_key(
+            solar_date, solar_time, gender, current_time, dayun_index,
+            dayun_year_start, dayun_year_end, target_year
+        )
+        
+        # 2. 先查缓存（L1内存 + L2 Redis）
+        try:
+            from server.utils.cache_multi_level import get_multi_cache
+            cache = get_multi_cache()
+            # 设置 L2 Redis TTL 为 30 天
+            cache.l2.ttl = BaziDisplayService.CACHE_TTL
+            cached_result = cache.get(cache_key)
+            if cached_result:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"✅ [缓存命中] BaziDisplayService.get_fortune_display: {cache_key[:80]}...")
+                return cached_result
+        except Exception as e:
+            # Redis不可用，降级到直接计算
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"⚠️  Redis缓存不可用，降级到直接计算: {e}")
+        
+        # 3. 缓存未命中，执行计算
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"⏱️ [缓存未命中] BaziDisplayService.get_fortune_display: {cache_key[:80]}...")
         # ✅ 优化：根据年份范围查找大运索引（如果提供了年份范围）
         # 优化：如果已经提供了 dayun_year_start 和 dayun_year_end，先调用一次获取大运列表（利用缓存）
         # 然后从结果中提取大运索引，避免第二次调用时重复计算
@@ -864,7 +934,7 @@ class BaziDisplayService:
                 "deities": pillar_details.get('deities', [])
             }
         
-        return {
+        result = {
             "success": True,
             "pillars": formatted_pillars,  # ✅ 添加四柱信息
             "dayun": {
@@ -894,4 +964,17 @@ class BaziDisplayService:
                 "dayun_sequence": dayun_sequence  # ✅ 添加大运序列，供前端使用
             }
         }
+        
+        # 4. 写入缓存（仅成功时）
+        if result.get('success'):
+            try:
+                cache = get_multi_cache()
+                cache.l2.ttl = BaziDisplayService.CACHE_TTL
+                cache.set(cache_key, result)
+                logger.info(f"✅ [缓存写入] BaziDisplayService.get_fortune_display: {cache_key[:80]}...")
+            except Exception as e:
+                # 缓存写入失败不影响业务
+                logger.warning(f"⚠️  缓存写入失败（不影响业务）: {e}")
+        
+        return result
 

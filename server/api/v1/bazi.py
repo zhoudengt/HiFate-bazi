@@ -11,6 +11,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, validator
 from typing import Optional, Tuple
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
 # 添加项目根目录到路径
@@ -420,7 +421,10 @@ async def calculate_bazi_detail(request: BaziDetailRequest, http_request: Reques
 
 class ShengongMinggongRequest(BaziBaseRequest):
     """身宫命宫请求模型"""
-    pass
+    current_time: Optional[str] = Field(None, description="当前时间（可选），格式：YYYY-MM-DD HH:MM", example="2024-01-01 12:00")
+    dayun_year_start: Optional[int] = Field(None, description="大运起始年份（可选），指定要显示的大运的起始年份", example=2020)
+    dayun_year_end: Optional[int] = Field(None, description="大运结束年份（可选），指定要显示的大运的结束年份", example=2030)
+    target_year: Optional[int] = Field(None, description="目标年份（可选），用于计算该年份的流月", example=2024)
 
 
 @router.post("/bazi/shengong-minggong", response_model=BaziResponse, summary="获取身宫命宫详细信息")
@@ -449,6 +453,12 @@ async def get_shengong_minggong(request: ShengongMinggongRequest, http_request: 
             request.longitude
         )
         
+        # 处理 current_time 参数
+        current_time = None
+        if request.current_time:
+            from datetime import datetime
+            current_time = datetime.strptime(request.current_time, "%Y-%m-%d %H:%M")
+        
         # 在线程池中执行CPU密集型计算
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
@@ -456,7 +466,11 @@ async def get_shengong_minggong(request: ShengongMinggongRequest, http_request: 
             _calculate_shengong_minggong_details,
             final_solar_date,
             final_solar_time,
-            request.gender
+            request.gender,
+            current_time,
+            request.dayun_year_start,
+            request.dayun_year_end,
+            request.target_year
         )
         
         # 添加转换信息到结果
@@ -477,7 +491,15 @@ async def get_shengong_minggong(request: ShengongMinggongRequest, http_request: 
         raise HTTPException(status_code=500, detail=f"计算失败: {str(e)}")
 
 
-def _calculate_shengong_minggong_details(solar_date: str, solar_time: str, gender: str) -> dict:
+def _calculate_shengong_minggong_details(
+    solar_date: str, 
+    solar_time: str, 
+    gender: str,
+    current_time: Optional[datetime] = None,
+    dayun_year_start: Optional[int] = None,
+    dayun_year_end: Optional[int] = None,
+    target_year: Optional[int] = None
+) -> dict:
     """
     计算身宫、命宫和胎元的详细信息
     
@@ -485,6 +507,10 @@ def _calculate_shengong_minggong_details(solar_date: str, solar_time: str, gende
         solar_date: 阳历日期
         solar_time: 出生时间
         gender: 性别
+        current_time: 当前时间（可选），用于确定当前大运
+        dayun_year_start: 大运起始年份（可选），指定要显示的大运的起始年份
+        dayun_year_end: 大运结束年份（可选），指定要显示的大运的结束年份
+        target_year: 目标年份（可选），用于计算该年份的流月
         
     Returns:
         dict: 包含身宫、命宫、胎元和四柱详细信息的字典
@@ -494,29 +520,50 @@ def _calculate_shengong_minggong_details(solar_date: str, solar_time: str, gende
     
     logger = logging.getLogger(__name__)
     
-    # 1. 获取身宫和命宫的干支（增强错误处理）
-    try:
-        interface_data = BaziInterfaceService.generate_interface_full(
-            solar_date, solar_time, gender, "", "未知地", 39.00, 120.00
-        )
-        # 确保 interface_data 是字典类型
-        interface_data = ensure_dict(interface_data, default={})
-    except Exception as e:
-        logger.error(f"调用 generate_interface_full 失败: {str(e)}", exc_info=True)
-        raise ValueError(f"无法生成界面信息: {str(e)}")
+    # ✅ 优化：并行获取身宫命宫和八字基础信息（无依赖关系）
+    import concurrent.futures
+    import threading
     
-    # 2. 计算八字基础信息（用于获取日干等）
+    def get_interface_data():
+        """获取身宫和命宫的干支"""
+        try:
+            interface_data = BaziInterfaceService.generate_interface_full(
+                solar_date, solar_time, gender, "", "未知地", 39.00, 120.00
+            )
+            return ensure_dict(interface_data, default={})
+        except Exception as e:
+            logger.error(f"调用 generate_interface_full 失败: {str(e)}", exc_info=True)
+            raise ValueError(f"无法生成界面信息: {str(e)}")
+    
+    def get_bazi_data():
+        """计算八字基础信息"""
+        try:
+            bazi_result = BaziService.calculate_bazi_full(solar_date, solar_time, gender)
+            bazi_data = ensure_dict(bazi_result.get('bazi', {}), default={})
+            bazi_pillars = ensure_dict(bazi_data.get('bazi_pillars', {}), default={})
+            day_stem = bazi_pillars.get('day', {}).get('stem', '')
+            
+            if not day_stem:
+                raise ValueError("无法获取日干信息")
+            return bazi_data, bazi_pillars, day_stem
+        except Exception as e:
+            logger.error(f"计算八字基础信息失败: {str(e)}", exc_info=True)
+            raise ValueError(f"无法计算八字基础信息: {str(e)}")
+    
+    # 并行执行（使用线程池）
     try:
-        bazi_result = BaziService.calculate_bazi_full(solar_date, solar_time, gender)
-        bazi_data = ensure_dict(bazi_result.get('bazi', {}), default={})
-        bazi_pillars = ensure_dict(bazi_data.get('bazi_pillars', {}), default={})
-        day_stem = bazi_pillars.get('day', {}).get('stem', '')
-        
-        if not day_stem:
-            raise ValueError("无法获取日干信息")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            interface_future = executor.submit(get_interface_data)
+            bazi_future = executor.submit(get_bazi_data)
+            
+            # 等待两个任务完成
+            interface_data = interface_future.result()
+            bazi_data, bazi_pillars, day_stem = bazi_future.result()
+            
+            logger.info("✅ 并行获取身宫命宫和八字基础信息完成")
     except Exception as e:
-        logger.error(f"计算八字基础信息失败: {str(e)}", exc_info=True)
-        raise ValueError(f"无法计算八字基础信息: {str(e)}")
+        logger.error(f"并行执行失败: {str(e)}", exc_info=True)
+        raise
     
     # 3. 获取身宫、命宫和胎元的干支（从格式化后的数据结构中获取）
     palaces = ensure_dict(interface_data.get('palaces', {}), default={})
@@ -787,7 +834,7 @@ def _calculate_shengong_minggong_details(solar_date: str, solar_time: str, gende
             "deities": pillar_data.get('deities', [])
         }
     
-    # 12. 获取大运流年流月数据（使用系统当前时间）
+    # 12. 获取大运流年流月数据（支持参数传递）
     dayun_data = {}
     liunian_data = {}
     liuyue_data = {}
@@ -796,21 +843,21 @@ def _calculate_shengong_minggong_details(solar_date: str, solar_time: str, gende
         from server.services.bazi_display_service import BaziDisplayService
         from datetime import datetime
         
-        # 使用系统当前时间
-        current_time = datetime.now()
+        # 使用传入的 current_time，如果没有则使用系统当前时间
+        if current_time is None:
+            current_time = datetime.now()
         
         # 调用 BaziDisplayService.get_fortune_display 获取大运流年流月数据
-        # 不传递 dayun_index，让系统自动确定当前大运
-        # 不传递 target_year，使用当前年份
+        # 支持参数传递：dayun_year_start, dayun_year_end, target_year
         fortune_result = BaziDisplayService.get_fortune_display(
             solar_date,
             solar_time,
             gender,
             current_time=current_time,
             dayun_index=None,
-            dayun_year_start=None,
-            dayun_year_end=None,
-            target_year=None
+            dayun_year_start=dayun_year_start,
+            dayun_year_end=dayun_year_end,
+            target_year=target_year
         )
         
         if fortune_result.get('success'):
