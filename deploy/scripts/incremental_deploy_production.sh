@@ -724,14 +724,14 @@ echo "🔄 在 Node1 上触发热更新..."
 HEALTH_URL="http://$NODE1_PUBLIC_IP:8001"
 SYNC_URL="$HEALTH_URL/api/v1/hot-reload/sync"
 
-# 先检查服务是否可用
-if ! curl -f -s "$HEALTH_URL/health" > /dev/null 2>&1; then
+# 先检查服务是否可用（添加超时）
+if ! curl -f -s --max-time 10 "$HEALTH_URL/health" > /dev/null 2>&1; then
     echo -e "${RED}❌ Node1 服务不可用，无法触发热更新${NC}"
     exit 1
 fi
 
-# 触发热更新同步
-SYNC_RESPONSE=$(curl -s -X POST "$SYNC_URL" 2>&1)
+# 触发热更新同步（添加超时）
+SYNC_RESPONSE=$(curl -s --max-time 10 -X POST "$SYNC_URL" 2>&1)
 if echo "$SYNC_RESPONSE" | grep -q "success\|ok\|同步" || [ $? -eq 0 ]; then
     echo -e "${GREEN}✅ 热更新触发成功${NC}"
 else
@@ -739,9 +739,31 @@ else
     echo -e "${YELLOW}⚠️  继续部署，请手动检查热更新状态${NC}"
 fi
 
-# 等待热更新完成
-echo "⏳ 等待热更新完成（30秒）..."
-sleep 30
+# 等待热更新完成（实际检查状态，而不是固定等待）
+echo "⏳ 等待热更新完成..."
+MAX_WAIT=60  # 最大等待60秒
+WAIT_INTERVAL=5  # 每5秒检查一次
+WAIT_COUNT=0
+
+while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+    sleep $WAIT_INTERVAL
+    WAIT_COUNT=$((WAIT_COUNT + WAIT_INTERVAL))
+    
+    # 检查热更新状态（添加超时）
+    HOT_RELOAD_STATUS=$(curl -s --max-time 5 "http://$NODE1_PUBLIC_IP:8001/api/v1/hot-reload/status" 2>/dev/null || echo "{}")
+    
+    # 如果热更新完成，退出循环
+    if echo "$HOT_RELOAD_STATUS" | grep -q '"status":"ok"\|"success":true\|"enabled":true' || [ "$HOT_RELOAD_STATUS" = "{}" ]; then
+        echo -e "${GREEN}✅ 热更新已完成（等待了 ${WAIT_COUNT} 秒）${NC}"
+        break
+    fi
+    
+    echo "⏳ 热更新进行中，已等待 ${WAIT_COUNT} 秒..."
+done
+
+if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+    echo -e "${YELLOW}⚠️  等待超时（${MAX_WAIT}秒），但继续部署${NC}"
+fi
 
 echo ""
 
@@ -776,7 +798,7 @@ check_health() {
     
     echo "🏥 检查 $node_name 健康状态..."
     while [ $retry_count -lt $max_retries ]; do
-        if curl -f -s "http://$node_ip:8001/health" > /dev/null 2>&1; then
+        if curl -f -s --max-time 5 "http://$node_ip:8001/health" > /dev/null 2>&1; then
             health_ok=true
             break
         fi
@@ -797,22 +819,22 @@ check_health() {
 # 检查 Node1
 if ! check_health $NODE1_PUBLIC_IP "Node1"; then
     echo -e "${RED}❌ Node1 健康检查失败，自动回滚...${NC}"
-    curl -s -X POST "http://$NODE1_PUBLIC_IP:8001/api/v1/hot-reload/rollback" || true
+    curl -s --max-time 10 -X POST "http://$NODE1_PUBLIC_IP:8001/api/v1/hot-reload/rollback" || true
     exit 1
 fi
 
 # 检查 Node2
 if ! check_health $NODE2_PUBLIC_IP "Node2"; then
     echo -e "${RED}❌ Node2 健康检查失败，自动回滚...${NC}"
-    curl -s -X POST "http://$NODE2_PUBLIC_IP:8001/api/v1/hot-reload/rollback" || true
+    curl -s --max-time 10 -X POST "http://$NODE2_PUBLIC_IP:8001/api/v1/hot-reload/rollback" || true
     exit 1
 fi
 
 # 6.2 热更新状态检查
 echo ""
 echo "🔍 检查热更新状态..."
-NODE1_STATUS=$(curl -s "http://$NODE1_PUBLIC_IP:8001/api/v1/hot-reload/status" 2>/dev/null || echo "{}")
-NODE2_STATUS=$(curl -s "http://$NODE2_PUBLIC_IP:8001/api/v1/hot-reload/status" 2>/dev/null || echo "{}")
+NODE1_STATUS=$(curl -s --max-time 5 "http://$NODE1_PUBLIC_IP:8001/api/v1/hot-reload/status" 2>/dev/null || echo "{}")
+NODE2_STATUS=$(curl -s --max-time 5 "http://$NODE2_PUBLIC_IP:8001/api/v1/hot-reload/status" 2>/dev/null || echo "{}")
 
 if echo "$NODE1_STATUS" | grep -q "error\|失败" && [ -n "$NODE1_STATUS" ]; then
     echo -e "${YELLOW}⚠️  Node1 热更新状态异常${NC}"
@@ -829,7 +851,7 @@ fi
 # 6.3 功能验证（可选，快速检查关键 API）
 echo ""
 echo "🔍 验证关键功能..."
-TEST_RESPONSE=$(curl -s -X POST "http://$NODE1_PUBLIC_IP:8001/api/v1/bazi/calculate" \
+TEST_RESPONSE=$(curl -s --max-time 10 -X POST "http://$NODE1_PUBLIC_IP:8001/api/v1/bazi/calculate" \
     -H "Content-Type: application/json" \
     -d '{"solar_date":"1990-01-15","solar_time":"12:00","gender":"male"}' 2>/dev/null || echo "{}")
 
