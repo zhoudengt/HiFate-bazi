@@ -270,19 +270,25 @@ async def generate_bazi_interface(request: BaziInterfaceRequest, http_request: R
                 data=cached_result
             )
         
-        # 在线程池中执行CPU密集型计算
+        # 在线程池中执行CPU密集型计算（添加超时保护，最多30秒）
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            executor,
-            BaziInterfaceService.generate_interface_full,
-            final_solar_date,
-            final_solar_time,
-            request.gender,
-            request.name or "",
-            request.location or "未知地",
-            request.latitude or 39.00,
-            request.longitude or 120.00
-        )
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    executor,
+                    BaziInterfaceService.generate_interface_full,
+                    final_solar_date,
+                    final_solar_time,
+                    request.gender,
+                    request.name or "",
+                    request.location or "未知地",
+                    request.latitude or 39.00,
+                    request.longitude or 120.00
+                ),
+                timeout=30.0  # 30秒超时
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=500, detail="计算超时（超过30秒），请稍后重试")
         
         # 添加转换信息到结果
         if conversion_info.get('converted') or conversion_info.get('timezone_info'):
