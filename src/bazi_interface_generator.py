@@ -29,23 +29,9 @@ class BaziInterfaceGenerator:
         self.printer = BaziInterfacePrinter()
 
     def _fetch_bazi_core(self, birth_date: str, birth_time: str, gender: str):
-        """尝试通过 bazi-core-service 获取排盘结果"""
-        service_url = os.getenv("BAZI_CORE_SERVICE_URL", "").strip()
-        if not service_url:
-            return None
-
-        strict = os.getenv("BAZI_CORE_SERVICE_STRICT", "0") == "1"
-        try:
-            # 使用 gRPC 客户端
-            from src.clients.bazi_core_client_grpc import BaziCoreClient
-            client = BaziCoreClient(base_url=service_url)
-            
-            return client.calculate_bazi(birth_date, birth_time, gender)
-        except Exception as exc:
-            if strict:
-                raise
-            print(f"⚠ 调用 bazi-core-service 失败，使用本地算法: {exc}")
-            return None
+        """尝试通过 bazi-core-service 获取排盘结果（已禁用，直接使用本地算法）"""
+        # 直接返回 None，使用本地算法（避免 gRPC 调用阻塞）
+        return None
 
     def generate_interface_info(self, name, gender, birth_date_str, birth_time_str,
                                 latitude=39.00, longitude=120.00, location="未知地"):
