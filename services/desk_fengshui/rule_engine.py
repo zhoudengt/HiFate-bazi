@@ -572,20 +572,10 @@ class DeskFengshuiEngine:
         try:
             import pymysql
             
-            # 优先使用连接池（性能优化）
-            try:
-                from server.config.mysql_config import get_mysql_connection, return_mysql_connection
-                conn = get_mysql_connection()
-                use_pool = True
-            except ImportError:
-                # 回退到直接连接
-                db_config = self.db_config.copy()
-                if 'charset' not in db_config:
-                    db_config['charset'] = 'utf8mb4'
-                if 'use_unicode' not in db_config:
-                    db_config['use_unicode'] = True
-                conn = pymysql.connect(**db_config)
-                use_pool = False
+            # 使用连接池（必须）
+            from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+            conn = get_mysql_connection()
+            use_pool = True
             
             # 设置连接字符集（双重保险）
             conn.set_charset('utf8mb4')
@@ -712,14 +702,8 @@ class DeskFengshuiEngine:
             
             cursor.close()
             
-            # 使用连接池时返回连接，否则关闭
-            if use_pool:
-                try:
-                    return_mysql_connection(conn)
-                except:
-                    conn.close()
-            else:
-                conn.close()
+            # 返回连接到连接池
+            return_mysql_connection(conn)
             
             # 保存到缓存
             self._save_rules_to_cache(rules, ttl=3600)  # 缓存1小时

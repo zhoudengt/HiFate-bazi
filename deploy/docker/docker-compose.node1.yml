@@ -58,9 +58,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 300M
+          memory: 200M
         reservations:
-          memory: 180M
+          memory: 120M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

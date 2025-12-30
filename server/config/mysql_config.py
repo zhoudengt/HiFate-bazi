@@ -28,9 +28,9 @@ mysql_config = {
 
 # MySQL 连接池配置
 MYSQL_POOL_CONFIG = {
-    'mincached': 10,        # 最小连接数
-    'maxcached': 50,        # 最大缓存连接数
-    'maxconnections': 200,  # 最大连接数（从100增加到200）
+    'mincached': 5,         # 最小连接数（从10减少到5）
+    'maxcached': 30,        # 最大缓存连接数（从50减少到30）
+    'maxconnections': 50,   # 最大连接数（从200减少到50）
     'connection_timeout': 30,  # 获取连接的超时时间（秒）
     'recycle_time': 300,     # 连接回收时间（秒），超过此时间未使用的连接将被关闭（从3600秒减少到300秒，5分钟）
 }

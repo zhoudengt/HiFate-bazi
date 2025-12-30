@@ -18,20 +18,24 @@ enforce-gtid-consistency = ON
 character-set-server = utf8mb4
 collation-server = utf8mb4_unicode_ci
 
-# 连接数（降低以节省内存）
-max_connections = 100
-max_user_connections = 80
+# 连接数（降低以节省内存，优化为50连接）
+max_connections = 50
+max_user_connections = 40
 
-# InnoDB 优化（内存限制1GB，优化为800MB）
-innodb_buffer_pool_size = 800M
-innodb_log_file_size = 128M
+# InnoDB 优化（内存限制1GB，优化为512MB）
+innodb_buffer_pool_size = 512M
+innodb_log_file_size = 64M
 innodb_flush_log_at_trx_commit = 1
 innodb_flush_method = O_DIRECT
+innodb_log_buffer_size = 8M
+innodb_thread_concurrency = 4
+innodb_read_io_threads = 2
+innodb_write_io_threads = 2
 
-# 慢查询
-slow_query_log = ON
-slow_query_log_file = /var/lib/mysql/slow.log
-long_query_time = 2
+# 慢查询（关闭以节省内存）
+slow_query_log = OFF
+# slow_query_log_file = /var/lib/mysql/slow.log
+# long_query_time = 2
 
 # 其他
 skip-name-resolve
