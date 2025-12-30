@@ -88,8 +88,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    mem_limit: 3g
-    memswap_limit: 3g
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+        reservations:
+          memory: 1G
 
   # ============================================
   # 微服务
