@@ -267,7 +267,41 @@ function renderLiunianTimeline(liunianData) {
     html += '<th>关系</th>';
     validList.forEach(item => {
         const relations = item.relations || [];
-        const relationsText = relations.length > 0 ? relations.join('、') : '-';
+        let relationsText = '-';
+        
+        if (Array.isArray(relations) && relations.length > 0) {
+            // 过滤并提取有效的关系
+            const validRelations = relations
+                .filter(rel => {
+                    // 过滤掉 null、undefined、空字符串
+                    if (!rel) return false;
+                    // 如果是对象，必须有 type 或 description
+                    if (typeof rel === 'object') {
+                        return rel.type || rel.description;
+                    }
+                    // 如果是字符串，必须非空
+                    if (typeof rel === 'string') {
+                        return rel.trim().length > 0;
+                    }
+                    return false;
+                })
+                .map(rel => {
+                    // 提取关系文本
+                    if (typeof rel === 'string') {
+                        return rel.trim();
+                    } else if (rel && typeof rel === 'object') {
+                        // 优先使用 type，其次使用 description
+                        return (rel.type || rel.description || '').trim();
+                    }
+                    return '';
+                })
+                .filter(text => text.length > 0); // 再次过滤空字符串
+            
+            if (validRelations.length > 0) {
+                relationsText = validRelations.join('、');
+            }
+        }
+        
         html += `<td class="timeline-relations">${relationsText}</td>`;
     });
     html += '</tr>';

@@ -407,8 +407,40 @@ function renderLiunian() {
                         ${item.age !== undefined ? `${item.age}岁` : item.age_display || ''}
                         ${item.is_current ? '<span class="current-badge">当前</span>' : ''}
                     </div>
-                    ${item.relations && item.relations.length > 0 ? 
-                        `<div class="liunian-relations">${item.relations.join('、')}</div>` : ''}
+                    ${(() => {
+                        const relations = item.relations || [];
+                        if (!Array.isArray(relations) || relations.length === 0) {
+                            return '';
+                        }
+                        
+                        // 过滤并提取有效的关系
+                        const validRelations = relations
+                            .filter(rel => {
+                                if (!rel) return false;
+                                if (typeof rel === 'object') {
+                                    return rel.type || rel.description;
+                                }
+                                if (typeof rel === 'string') {
+                                    return rel.trim().length > 0;
+                                }
+                                return false;
+                            })
+                            .map(rel => {
+                                if (typeof rel === 'string') {
+                                    return rel.trim();
+                                } else if (rel && typeof rel === 'object') {
+                                    return (rel.type || rel.description || '').trim();
+                                }
+                                return '';
+                            })
+                            .filter(text => text.length > 0);
+                        
+                        if (validRelations.length === 0) {
+                            return '';
+                        }
+                        
+                        return `<div class="liunian-relations">${validRelations.join('、')}</div>`;
+                    })()}
                 </div>
             `;
         });

@@ -102,7 +102,7 @@ if (form) {
 }
 
 // 加载身宫命宫数据
-async function loadShengongMinggongData() {
+async function loadShengongMinggongData(dayunYearStart = null, dayunYearEnd = null, targetYear = null) {
     const resultDiv = document.getElementById('result');
     if (!resultDiv) {
         console.error('找不到 result 元素');
@@ -119,6 +119,15 @@ async function loadShengongMinggongData() {
             solar_time: currentData.solar_time,
             gender: currentData.gender
         };
+        
+        // ✅ 添加可选参数
+        if (dayunYearStart !== null && dayunYearEnd !== null) {
+            requestData.dayun_year_start = dayunYearStart;
+            requestData.dayun_year_end = dayunYearEnd;
+        }
+        if (targetYear !== null) {
+            requestData.target_year = targetYear;
+        }
         
         // 调用API获取身宫命宫数据
         const response = await api.post('/bazi/shengong-minggong', requestData);
@@ -480,10 +489,10 @@ function renderDayunSection() {
     
     // 使用时间轴渲染函数（如果可用）
     if (typeof renderDayunTimeline === 'function') {
-        // 构建大运数据（只包含当前大运）
+        // ✅ 修复：使用完整的大运列表，而不是只包含当前大运
         const dayunData = {
             current: currentData.dayun.current,
-            list: currentData.dayun.current ? [currentData.dayun.current] : []
+            list: currentData.dayun.list || []  // ✅ 使用完整列表
         };
         renderDayunTimeline(dayunData);
         dayunCard.style.display = 'block';
@@ -605,3 +614,149 @@ function renderLiuyueSection() {
         liuyueCard.style.display = 'block';
     }
 }
+
+// 选择大运
+async function selectDayun(dayunIndex) {
+    console.log('selectDayun 被调用，索引:', dayunIndex);
+    
+    // ✅ 修复：确保 currentData 和 dayun 数据存在
+    if (!currentData || !currentData.dayun || !currentData.dayun.list) {
+        console.error('currentData 或 dayun 数据不存在');
+        return;
+    }
+    
+    // 找到对应的大运
+    const selectedDayun = currentData.dayun.list.find(item => item.index === dayunIndex);
+    if (!selectedDayun) {
+        console.error('找不到对应的大运，索引:', dayunIndex);
+        return;
+    }
+    
+    // ✅ 清除之前的流年选中状态
+    currentData.selectedLiunian = null;
+    
+    currentData.selectedDayun = selectedDayun;
+    console.log('=== selectDayun 调试 ===');
+    console.log('选中的大运完整数据:', selectedDayun);
+    console.log('大运干支:', selectedDayun.stem?.char, selectedDayun.branch?.char);
+    console.log('====================');
+    
+    // ✅ 修复：确保 window.currentData 同步更新
+    if (window.currentData) {
+        window.currentData.selectedDayun = selectedDayun;
+        window.currentData.selectedLiunian = null;
+    }
+    
+    // 重新渲染大运（更新active状态）
+    renderDayunSection();
+    
+    // ✅ 检查是否是小运
+    const isXiaoyun = selectedDayun.stem?.char === '小运' || selectedDayun.stem === '小运';
+    
+    // 获取大运的起始年份（用于默认加载流月）
+    const startYear = selectedDayun.year_range?.start;
+    
+    try {
+        // ✅ 修复：传递大运的年份范围，而不是索引（避免中间多列时出错）
+        const yearStart = selectedDayun.year_range?.start;
+        const yearEnd = selectedDayun.year_range?.end;
+        console.log('请求大运范围内的流年数据，年份范围:', yearStart, '-', yearEnd);
+        
+        // ✅ 调用 /bazi/shengong-minggong 接口（使用年份范围而不是索引）
+        await loadShengongMinggongData(yearStart, yearEnd, null);
+        
+        // ✅ 自动选择流年首年（year_start），并加载其流月
+        if (currentData.liunian && currentData.liunian.list && currentData.liunian.list.length > 0) {
+            // ✅ 如果是小运，选择 year_start（出生年份）对应的流年
+            // ✅ 如果不是小运，选择起始年或第一个
+            const targetYear = isXiaoyun ? yearStart : (startYear || currentData.liunian.list[0].year);
+            console.log('自动选择流年，年份:', targetYear, isXiaoyun ? '(小运)' : '');
+            await selectLiunian(targetYear);
+        } else {
+            console.warn('该大运范围内没有流年数据');
+        }
+    } catch (error) {
+        console.error('加载大运数据失败:', error);
+    }
+}
+
+// 选择大运（通过索引，供 fortune-timeline.js 调用）
+function selectDayunByIndex(dayunIndex) {
+    console.log('selectDayunByIndex 被调用，索引:', dayunIndex);
+    if (typeof selectDayun === 'function') {
+        selectDayun(dayunIndex);
+    } else {
+        console.error('selectDayun 函数不存在');
+    }
+}
+
+// 暴露到全局（确保可以被 fortune-timeline.js 调用）
+window.selectDayun = selectDayun;
+window.selectDayunByIndex = selectDayunByIndex;
+console.log('shengong-minggong.js selectDayun 已暴露到全局:', typeof window.selectDayun);
+
+// 选择流年
+async function selectLiunian(year) {
+    console.log('selectLiunian 被调用，年份:', year);
+    
+    // ✅ 修复：确保 currentData 和 liunian 数据存在
+    if (!currentData || !currentData.liunian || !currentData.liunian.list) {
+        console.error('currentData 或 liunian 数据不存在');
+        return;
+    }
+    
+    // 找到对应的流年
+    const selectedLiunian = currentData.liunian.list.find(item => item.year === year);
+    if (!selectedLiunian) {
+        console.error('找不到对应的流年，年份:', year);
+        return;
+    }
+    
+    currentData.selectedLiunian = selectedLiunian;
+    console.log('选中的流年:', selectedLiunian);
+    
+    // ✅ 修复：确保 window.currentData 同步更新
+    if (window.currentData) {
+        window.currentData.selectedLiunian = selectedLiunian;
+    }
+    
+    // 重新渲染流年（更新active状态）
+    renderLiunianSection();
+    
+    // 重新加载数据，只获取该年份的流月
+    try {
+        // 获取当前大运的年份范围
+        const yearStart = currentData.selectedDayun?.year_range?.start;
+        const yearEnd = currentData.selectedDayun?.year_range?.end;
+        
+        console.log('请求流月数据，target_year:', year, '大运年份范围:', yearStart, '-', yearEnd);
+        
+        // ✅ 调用 /bazi/shengong-minggong 接口（传递 target_year）
+        await loadShengongMinggongData(yearStart, yearEnd, year);
+        
+        // ✅ 确保流月数据正确更新
+        if (currentData.liuyue) {
+            renderLiuyueSection();
+        }
+        
+        // ✅ 更新细盘表格（细盘不变化，但需要重新渲染）
+        renderXipanTable(currentData);
+    } catch (error) {
+        console.error('加载流月数据失败:', error);
+    }
+}
+
+// 选择流年（通过年份，供 fortune-timeline.js 调用）
+function selectLiunianByYear(year) {
+    console.log('selectLiunianByYear 被调用，年份:', year);
+    if (typeof selectLiunian === 'function') {
+        selectLiunian(year);
+    } else {
+        console.error('selectLiunian 函数不存在');
+    }
+}
+
+// 暴露到全局（确保可以被 fortune-timeline.js 调用）
+window.selectLiunian = selectLiunian;
+window.selectLiunianByYear = selectLiunianByYear;
+console.log('shengong-minggong.js selectLiunian 已暴露到全局:', typeof window.selectLiunian);
