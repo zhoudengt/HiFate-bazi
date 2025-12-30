@@ -421,47 +421,6 @@ services:
       mysql:
         condition: service_healthy
 
-  # ============================================
-  # desk-fengshui - 已停用（2025-12-29）
-  # 原因：暂时停用以节省资源，等待本地修改后重新启用
-  # 恢复方式：取消注释下方配置并重新部署
-  # ============================================
-  # desk-fengshui:
-  #   image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
-  #   container_name: hifate-desk-fengshui
-  #   ports:
-  #     - "9010:9010"
-  #   environment:
-  #     APP_ENV: production
-  #     MYSQL_HOST: mysql
-  #     MYSQL_PORT: 3306
-  #     MYSQL_USER: ${MYSQL_USER:-root}
-  #     MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-  #     MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
-  #     REDIS_HOST: redis
-  #     REDIS_PORT: 6379
-  #     REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-  #     SERVICE_PORT: 9010
-  #     TZ: Asia/Shanghai
-  #   volumes:
-  #     - web_logs:/app/logs  # 挂载日志目录，解决日志文件创建问题
-  #     - /opt/HiFate-bazi/proto:/app/proto:ro
-  #     - /opt/HiFate-bazi/services:/app/services:ro
-  #     - /opt/HiFate-bazi/src:/app/src:ro
-  #   command: python services/desk_fengshui/grpc_server.py --port 9010
-  #   restart: always
-  #   networks:
-  #     - hifate-network
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         memory: 240M
-  #       reservations:
-  #         memory: 150M
-  #   depends_on:
-  #     mysql:
-  #       condition: service_healthy
-
 volumes:
   nginx_logs:
   web_logs:
