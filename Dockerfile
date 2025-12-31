@@ -59,8 +59,10 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 COPY requirements.txt .
 
 # 安装核心依赖（分步执行，确保每步成功）
+# 优先使用国内源，失败时自动回退到官方源
 RUN echo "=== 安装核心依赖 ===" && \
-    pip install --no-cache-dir -r requirements.txt && \
+    (pip install --no-cache-dir -r requirements.txt || \
+     pip install --no-cache-dir -i https://pypi.org/simple -r requirements.txt) && \
     echo "✅ requirements.txt 安装完成"
 
 # 验证核心包安装成功
