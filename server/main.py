@@ -423,6 +423,28 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠ 缓存同步订阅器启动失败（单机模式）: {e}")
     
+    # 启动MySQL连接清理任务（定期清理空闲连接）
+    try:
+        import asyncio
+        from server.config.mysql_config import cleanup_idle_mysql_connections
+        
+        async def connection_cleanup_task():
+            """定期清理空闲MySQL连接（每60秒清理一次）"""
+            while True:
+                await asyncio.sleep(60)  # 每60秒清理一次
+                try:
+                    cleaned = cleanup_idle_mysql_connections(max_idle_time=300)
+                    if cleaned > 0:
+                        logger.info(f"✓ 清理了 {cleaned} 个空闲MySQL连接")
+                except Exception as e:
+                    logger.error(f"⚠ 清理MySQL连接失败: {e}")
+        
+        # 启动后台任务
+        cleanup_task = asyncio.create_task(connection_cleanup_task())
+        logger.info("✓ MySQL连接清理任务已启动（每60秒清理一次）")
+    except Exception as e:
+        logger.warning(f"⚠ MySQL连接清理任务启动失败: {e}")
+    
     yield
     # 关闭时执行
     # 停止缓存同步订阅器
@@ -1075,6 +1097,16 @@ async def health_check():
             health_data["cache"].update(bazi_cache.stats())
         except Exception as e:
             health_data["cache"]["status"] = f"error: {str(e)}"
+        
+        # 检查MySQL连接池状态
+        try:
+            from server.config.mysql_config import get_connection_pool_stats
+            health_data["mysql_pool"] = get_connection_pool_stats()
+        except Exception as e:
+            health_data["mysql_pool"] = {
+                "status": "error",
+                "error": str(e)
+            }
         
         # 如果资源使用过高，返回警告状态
         if cpu_percent > 90 or memory.percent > 90:

@@ -27,9 +27,10 @@ read-only = ON
 character-set-server = utf8mb4
 collation-server = utf8mb4_unicode_ci
 
-# 连接数（降低以节省内存，优化为50连接）
-max_connections = 50
-max_user_connections = 40
+# 连接数（根据15个用户 + 11个服务调整）
+# 计算：15用户×3并发=45，11服务×2初始=22，总计67，配置80留缓冲
+max_connections = 100        # 从50增加到100
+max_user_connections = 80   # 从40增加到80（15用户×3并发 + 11服务×2初始 = 67，留13个缓冲）
 
 # InnoDB 优化（内存限制3GB，优化为1.5GB buffer pool）
 innodb_buffer_pool_size = 1536M

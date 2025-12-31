@@ -27,12 +27,17 @@ mysql_config = {
 }
 
 # MySQL 连接池配置
+# 优化说明：
+# - mincached=2：减少服务启动时连接数（11服务×2=22 < 40，避免超过max_user_connections）
+# - maxcached=20：减少最大缓存连接数，节省资源
+# - maxconnections=30：每个服务最多30个连接（根据15个用户需求调整）
+# - recycle_time=300：连接回收时间5分钟，确保空闲连接及时回收
 MYSQL_POOL_CONFIG = {
-    'mincached': 5,         # 最小连接数（从10减少到5）
-    'maxcached': 30,        # 最大缓存连接数（从50减少到30）
-    'maxconnections': 50,   # 最大连接数（从200减少到50）
+    'mincached': 2,         # 最小连接数（从5减少到2，减少启动时连接数）
+    'maxcached': 20,        # 最大缓存连接数（从30减少到20）
+    'maxconnections': 30,   # 最大连接数（从50减少到30，每个服务最多30个连接）
     'connection_timeout': 30,  # 获取连接的超时时间（秒）
-    'recycle_time': 300,     # 连接回收时间（秒），超过此时间未使用的连接将被关闭（从3600秒减少到300秒，5分钟）
+    'recycle_time': 300,     # 连接回收时间（秒），超过此时间未使用的连接将被关闭（5分钟）
 }
 
 # 全局连接池实例
@@ -105,9 +110,15 @@ class MySQLConnectionPool:
             return None
     
     def _is_connection_valid(self, conn: pymysql.Connection) -> bool:
-        """检查连接是否有效"""
+        """检查连接是否有效（优化：连接断开时立即返回False）"""
         try:
+            # 先检查连接是否已关闭
+            if not conn.open:
+                return False
+            
+            # ping检查连接是否可用
             conn.ping(reconnect=False)
+            
             # 检查连接是否过期（超过回收时间）
             conn_id = id(conn)
             if conn_id in self._connection_times:
@@ -116,6 +127,7 @@ class MySQLConnectionPool:
                     return False
             return True
         except Exception:
+            # 连接断开或异常，立即返回False，触发连接回收
             return False
     
     def connection(self, timeout: Optional[float] = None) -> pymysql.Connection:
@@ -383,6 +395,35 @@ def cleanup_idle_mysql_connections(max_idle_time: int = 300):
     except Exception as e:
         print(f"⚠️  清理MySQL连接失败: {e}")
         return 0
+
+
+def get_connection_pool_stats() -> Dict[str, Any]:
+    """
+    获取连接池统计信息
+    
+    Returns:
+        dict: 连接池统计信息，包括当前连接数、池大小等
+    """
+    global _mysql_pool
+    
+    if _mysql_pool is None:
+        return {"status": "not_initialized"}
+    
+    try:
+        with _mysql_pool._lock:
+            return {
+                "status": "active",
+                "current_connections": _mysql_pool._current_connections,
+                "pool_size": _mysql_pool._pool.qsize(),
+                "max_connections": _mysql_pool.maxconnections,
+                "min_cached": _mysql_pool.mincached,
+                "max_cached": _mysql_pool.maxcached,
+            }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
+        }
 
 
 def test_mysql_connection() -> bool:
