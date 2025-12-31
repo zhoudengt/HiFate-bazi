@@ -23,9 +23,9 @@ numpy>=1.26.0,<2  # mediapipe 要求 numpy<2
 PyYAML==6.0.2
 python-dotenv==1.1.1
 
-# gRPC（与本地环境一致，mediapipe 兼容 grpcio 1.60.0-1.70.0）
-grpcio==1.70.0
-grpcio-tools==1.70.0
+# gRPC（降级版本以兼容 mediapipe 和 protobuf 4.x）
+grpcio==1.60.0
+grpcio-tools==1.60.0
 protobuf>=4.25.3,<5  # mediapipe 要求 protobuf<5
 
 # 八字计算
