@@ -30,9 +30,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          cpus: '2.0'
+          memory: 3G
         reservations:
-          memory: 600M
+          memory: 1.5G
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_PASSWORD}"]
       interval: 10s
@@ -58,9 +59,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 200M
+          cpus: '0.5'
+          memory: 512M
         reservations:
-          memory: 120M
+          memory: 256M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
