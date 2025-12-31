@@ -64,9 +64,11 @@ class HealthChecker:
     使用示例：
         checker = HealthChecker()
         
-        # 注册服务检查
-        checker.register("bazi-core", "localhost", 9001)
-        checker.register("bazi-fortune", "localhost", 9002)
+        # 注册服务检查（使用环境变量或默认值，支持Docker容器环境）
+        import os
+        service_host = os.getenv("SERVICE_HOST", "localhost")
+        checker.register("bazi-core", service_host, 9001)
+        checker.register("bazi-fortune", service_host, 9002)
         
         # 启动定期检查
         checker.start()

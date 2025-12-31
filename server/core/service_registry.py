@@ -163,10 +163,11 @@ class ServiceRegistry:
             
         logger.info("初始化服务注册中心...")
         
-        # 从环境变量加载服务配置
+        # 从环境变量加载服务配置（支持Docker容器环境）
         for service_name, config in SERVICE_CONFIGS.items():
             env_key = config["env_key"]
-            default_host = os.getenv("SERVICE_HOST", "127.0.0.1")
+            # 在Docker环境中，使用服务名或环境变量，避免硬编码localhost
+            default_host = os.getenv("SERVICE_HOST", os.getenv("HOSTNAME", "localhost"))
             default_url = f"{default_host}:{config['port']}"
             
             service_url = os.getenv(env_key, default_url)
