@@ -612,12 +612,37 @@ class BaziDataService:
             jiaoyun = details.get('jiaoyun', {})
         
         # 7. 构建完整数据模型
+        # 将模型对象转换为字典，避免 Pydantic 验证错误
+        def _model_to_dict(model_obj):
+            """将 Pydantic 模型对象转换为字典（兼容 v1 和 v2）"""
+            if model_obj is None:
+                return None
+            if isinstance(model_obj, (DayunModel, LiunianModel, SpecialLiunianModel)):
+                # 尝试使用 model_dump() (Pydantic v2)
+                if hasattr(model_obj, 'model_dump'):
+                    return model_obj.model_dump()
+                # 回退到 dict() (Pydantic v1)
+                elif hasattr(model_obj, 'dict'):
+                    return model_obj.dict()
+                # 如果都没有，直接返回对象（让 Pydantic 处理）
+                return model_obj
+            return model_obj
+        
+        # 转换序列
+        dayun_sequence_dict = [_model_to_dict(dayun) for dayun in dayun_sequence]
+        liunian_sequence_dict = [_model_to_dict(liunian) for liunian in liunian_sequence]
+        special_liunians_dict = [_model_to_dict(special) for special in special_liunians]
+        
+        # 转换单个对象
+        current_dayun_dict = _model_to_dict(current_dayun)
+        current_liunian_dict = _model_to_dict(current_liunian)
+        
         fortune_data = BaziDetailModel(
-            dayun_sequence=dayun_sequence,
-            liunian_sequence=liunian_sequence,
-            special_liunians=special_liunians,
-            current_dayun=current_dayun,
-            current_liunian=current_liunian,
+            dayun_sequence=dayun_sequence_dict,
+            liunian_sequence=liunian_sequence_dict,
+            special_liunians=special_liunians_dict,
+            current_dayun=current_dayun_dict,
+            current_liunian=current_liunian_dict,
             qiyun=qiyun,
             jiaoyun=jiaoyun,
             details=detail_result.get('details', {}) if detail_result else {}
