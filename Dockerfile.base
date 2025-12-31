@@ -73,7 +73,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 # 验证关键依赖安装（包括微服务依赖）
 RUN python -c "\
 import fastapi, uvicorn, pymysql, redis, grpc; \
-import numpy, cv2, mediapipe, sklearn; \
+import numpy, cv2, mediapipe, sklearn, pytz; \
 try: \
     from ultralytics import YOLO; \
     print('✅ YOLOv8 可用'); \

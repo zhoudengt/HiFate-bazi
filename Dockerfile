@@ -71,6 +71,7 @@ RUN echo "=== 验证核心包 ===" && \
     python -c "import grpc; print('✅ grpc:', grpc.__version__)" && \
     python -c "import redis; print('✅ redis:', redis.__version__)" && \
     python -c "import pymysql; print('✅ pymysql:', pymysql.__version__)" && \
+    python -c "import pytz; print('✅ pytz:', pytz.__version__)" && \
     echo "✅ 核心包验证完成"
 
 # 安装 PyTorch CPU 版本（可选，用于 YOLO）
