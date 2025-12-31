@@ -47,9 +47,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# 配置 pip 使用国内源（加速下载）
+# 配置 pip 使用国内源（加速下载，失败时使用官方源）
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
-    pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
+    pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn || \
+    (pip config unset global.index-url && pip config unset global.trusted-host && echo "⚠️ 使用官方PyPI源")
 
 # 升级 pip、setuptools、wheel
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
