@@ -42,6 +42,7 @@ class Sidebar {
                         <a href="children-study-analysis.html" class="nav-submenu-item" data-page="children-study-analysis">八字命理-子女学习</a>
                         <a href="health-analysis.html" class="nav-submenu-item" data-page="health-analysis">八字命理-身体健康</a>
                         <a href="general-review-analysis.html" class="nav-submenu-item" data-page="general-review-analysis">八字命理-总评</a>
+                        <a href="ai-qa.html" class="nav-submenu-item" data-page="ai-qa">AI问答</a>
                     </div>
                     <a href="basic-info.html" class="nav-item" data-page="basic-info">
                         <span class="nav-item-icon">📋</span>
@@ -95,7 +96,8 @@ class Sidebar {
         currentPage === 'career-wealth-analysis' ||
         currentPage === 'children-study-analysis' ||
         currentPage === 'health-analysis' ||
-        currentPage === 'general-review-analysis') {
+        currentPage === 'general-review-analysis' ||
+        currentPage === 'ai-qa') {
         const submenus = document.querySelectorAll('.nav-submenu');
             submenus.forEach(submenu => {
                 if (submenu) {
@@ -125,6 +127,7 @@ class Sidebar {
     if (filename.includes('children-study-analysis')) return 'children-study-analysis';
     if (filename.includes('health-analysis')) return 'health-analysis';
     if (filename.includes('general-review-analysis')) return 'general-review-analysis';
+    if (filename.includes('ai-qa')) return 'ai-qa';
     return 'index';
     }
 }

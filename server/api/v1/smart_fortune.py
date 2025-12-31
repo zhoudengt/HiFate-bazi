@@ -2,13 +2,14 @@
 """
 智能运势分析API - 基于Intent Service
 """
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from typing import Optional
+from typing import Optional, Dict, Any, List
 import sys
 import os
 import json
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,16 @@ KEYWORD_TO_RULE_TYPE = {
     "性格": "character",
     "脾气": "character",
     "命": "general",
+}
+
+# Category到规则类型的映射（场景2直接使用，不需要意图识别）
+CATEGORY_TO_RULE_TYPE = {
+    "事业财富": "wealth",  # 根据实际数据库规则类型调整
+    "婚姻": "marriage",
+    "健康": "health",
+    "子女": "children",
+    "流年运势": "general",
+    "年运报告": "general"
 }
 
 def _extract_rule_types_from_question(question: str) -> list:
@@ -720,17 +731,15 @@ async def test_intent(
 
 
 @router.get("/smart-analyze-stream")
-async def smart_analyze_stream(
-    question: str = Query(..., description="用户问题"),
-    year: int = Query(..., description="出生年份"),
-    month: int = Query(..., description="出生月份"),
-    day: int = Query(..., description="出生日期"),
-    hour: int = Query(12, description="出生时辰（0-23）"),
-    gender: str = Query(..., description="性别（male/female）"),
-    user_id: Optional[str] = Query(None, description="用户ID")
-):
+async def smart_analyze_stream(request: Request):
     """
     智能运势分析（流式输出版）
+    
+    支持两种场景：
+    1. 场景1（点击选择项）：category有值，question为空或为选择项名称
+       - 返回：简短答复（100字内，流式）+ 预设问题列表（10-15个）
+    2. 场景2（点击预设问题/输入问题）：category有值，question有值
+       - 返回：详细流式回答 + 3个相关问题列表
     
     用户体验优化：
     - 立即返回基础分析
@@ -744,248 +753,72 @@ async def smart_analyze_stream(
         monitor = PerformanceMonitor()
         
         try:
-            # ==================== 阶段1：意图识别 ====================
-            yield _sse_message("status", {"stage": "intent", "message": "正在识别意图..."})
+            # 从Request对象手动获取查询参数（绕过FastAPI参数验证问题）
+            query_params = request.query_params
+            question = query_params.get("question")
+            year_str = query_params.get("year")
+            year = int(year_str) if year_str else None
+            month_str = query_params.get("month")
+            month = int(month_str) if month_str else None
+            day_str = query_params.get("day")
+            day = int(day_str) if day_str else None
+            hour_str = query_params.get("hour", "12")
+            hour = int(hour_str) if hour_str else 12
+            gender = query_params.get("gender")
+            user_id = query_params.get("user_id")
+            category = query_params.get("category")
             
-            with monitor.stage("intent_recognition", "意图识别", question=question):
-                intent_client = IntentServiceClient()
-                intent_result = intent_client.classify(
-                    question=question,
-                    user_id=user_id or "anonymous"
-                )
+            # ==================== 场景判断 ====================
+            # 场景1：点击选择项（category有值，question为空或为选择项名称）
+            # 场景2：点击预设问题/输入问题（category有值，question有值）
+            is_scenario_1 = category and (not question or question == category)
+            is_scenario_2 = category and question and question != category
             
-            # 防御性检查：确保intent_result不为None
-            if intent_result is None:
-                intent_result = {
-                    "intents": ["general"],
-                    "confidence": 0.5,
-                    "keywords": [],
-                    "is_ambiguous": True,
-                    "time_intent": None,
-                    "is_fortune_related": True
-                }
-                
-                monitor.add_metric("intent_recognition", "intents_count", len(intent_result.get("intents", [])))
-                monitor.add_metric("intent_recognition", "confidence", intent_result.get("confidence", 0))
-                monitor.add_metric("intent_recognition", "method", intent_result.get("method", "unknown"))
-                
-                # ==================== 记录用户问题（用于模型微调）====================
-                try:
-                    from server.services.intent_question_logger import get_question_logger
-                    question_logger = get_question_logger()
-                    solar_date = f"{year:04d}-{month:02d}-{day:02d}"
-                    solar_time = f"{hour:02d}:00"
-                    question_logger.log_question(
-                        question=question,
-                        intent_result=intent_result,
-                        user_id=user_id,
-                        session_id=None,  # 可以后续添加session管理
-                        solar_date=solar_date,
-                        solar_time=solar_time,
-                        gender=gender
-                    )
-                except Exception as e:
-                    logger.warning(f"[smart_fortune_stream] 记录用户问题失败: {e}", exc_info=True)
-                    # 不影响主流程，仅记录警告
-            
-            # 如果问题不相关（LLM已判断）
-            if not intent_result.get("is_fortune_related", True) or "non_fortune" in intent_result.get("intents", []):
-                monitor.log_summary()
-                yield _sse_message("error", {
-                    "message": intent_result.get("reject_message", "您的问题似乎与命理运势无关，我只能回答关于八字、运势等相关问题。"),
-                    "performance": monitor.get_summary()
-                })
+            if not user_id:
+                yield _sse_message("error", {"message": "user_id参数必填"})
                 yield _sse_message("end", {})
                 return
             
-            # 获取时间意图（LLM已识别）
-            time_intent = intent_result.get("time_intent", {})
-            target_years = time_intent.get("target_years", [])
-            
-            # ==================== 阶段2：八字计算 ====================
-            yield _sse_message("status", {"stage": "bazi", "message": "正在计算八字..."})
-            
-            solar_date = f"{year:04d}-{month:02d}-{day:02d}"
-            solar_time = f"{hour:02d}:00"
-            
-            with monitor.stage("bazi_calculation", "八字计算", solar_date=solar_date, solar_time=solar_time, gender=gender):
-                calculator = BaziCalculator(solar_date, solar_time, gender)
-                bazi_result = calculator.calculate()
+            # 场景1：需要生辰信息
+            if is_scenario_1:
+                if not year or not month or not day or not gender:
+                    yield _sse_message("error", {"message": "场景1需要提供完整的生辰信息（year, month, day, gender）"})
+                    yield _sse_message("end", {})
+                    return
                 
-                if not bazi_result or "error" in bazi_result:
-                    raise HTTPException(status_code=400, detail="八字计算失败")
+                # 执行场景1逻辑
+                async for event in _scenario_1_generator(
+                    year, month, day, hour, gender, category, user_id, monitor
+                ):
+                    yield event
+                return
             
-            # ==================== 阶段3：规则匹配 ====================
-            yield _sse_message("status", {"stage": "rules", "message": "正在匹配规则..."})
+            # 场景2：从会话缓存获取生辰信息
+            if is_scenario_2:
+                # 执行场景2逻辑
+                async for event in _scenario_2_generator(
+                    question, category, user_id, year, month, day, hour, gender, monitor
+                ):
+                    yield event
+                return
             
-            rule_types = intent_result.get("rule_types", ["ALL"])
-            confidence = intent_result.get("confidence", 0)
-            
-            # 关键词fallback
-            if confidence < 0.6 and "ALL" in rule_types:
-                with monitor.stage("intent_fallback", "意图识别回退（关键词匹配）"):
-                    fallback_types = _extract_rule_types_from_question(question)
-                    if fallback_types != ["ALL"]:
-                        rule_types = fallback_types
-            
-            with monitor.stage("rule_matching", "规则匹配", rule_types=rule_types):
-                matched_rules = []
-                for rule_type in rule_types:
-                    if rule_type != "ALL":
-                        rules = bazi_service._match_rules(bazi_result, [rule_type])
-                        matched_rules.extend(rules)
+            # 默认场景：使用原有逻辑（兼容性）
+            if not category:
+                # 原有逻辑：需要生辰信息和问题
+                if not year or not month or not day or not gender or not question:
+                    yield _sse_message("error", {"message": "需要提供完整的生辰信息和问题"})
+                    yield _sse_message("end", {})
+                    return
                 
-                if not matched_rules or "ALL" in rule_types:
-                    rules = bazi_service._match_rules(bazi_result)
-                    matched_rules = rules
-                
-                monitor.add_metric("rule_matching", "matched_rules_count", len(matched_rules))
-                monitor.add_metric("rule_matching", "rule_types_count", len(rule_types))
+                # 执行原有逻辑
+                async for event in _original_scenario_generator(
+                    question, year, month, day, hour, gender, user_id, monitor
+                ):
+                    yield event
+                return
             
-            # ==================== 阶段4：流年大运分析 ====================
-            fortune_context = None
-            if target_years:
-                yield _sse_message("status", {"stage": "fortune", "message": "正在分析流年大运..."})
-                
-                with monitor.stage("fortune_context", "流年大运分析", target_years=target_years, rule_types=rule_types):
-                    try:
-                        from server.services.fortune_context_service import FortuneContextService
-                        
-                        fortune_context = FortuneContextService.get_fortune_context(
-                            solar_date=solar_date,
-                            solar_time=solar_time,
-                            gender=gender,
-                            intent_types=rule_types,
-                            target_years=target_years
-                        )
-                        
-                        if fortune_context:
-                            liunian_list = fortune_context.get('time_analysis', {}).get('liunian_list', [])
-                            monitor.add_metric("fortune_context", "liunian_count", len(liunian_list))
-                    except Exception as e:
-                        logger.error(f"流年大运分析失败: {e}", exc_info=True)
-                        monitor.end_stage("fortune_context", success=False, error=str(e))
-            
-            # ==================== 阶段5：发送基础分析结果 ====================
-            yield _sse_message("basic_analysis", {
-                "intent": intent_result,
-                "bazi_info": {
-                    "四柱": _format_pillars(bazi_result.get("bazi_pillars", {})),
-                    "十神": bazi_result.get("ten_gods_stats", {}),
-                    "五行": bazi_result.get("element_counts", {})
-                },
-                "matched_rules_count": len(matched_rules),
-                "fortune_context": fortune_context
-            })
-            
-            # ==================== 阶段6：流式输出LLM深度解读 ====================
-            yield _sse_message("status", {"stage": "llm", "message": "正在生成深度解读..."})
-            
-            main_intent = rule_types[0] if rule_types and rule_types[0] != "ALL" else "general"
-            logger.info(f"[smart_fortune_stream] 🌊 开始流式输出LLM深度解读，意图: {main_intent}, 问题: {question[:50]}...")
-            
-            with monitor.stage("llm_analysis", "LLM深度解读（流式）", intent=main_intent):
-                try:
-                    llm_client = get_fortune_llm_client()
-                    
-                    logger.info(f"[smart_fortune_stream] 📞 调用 analyze_fortune(stream=True)")
-                    # ✅ 优化：移除生产环境不需要的debug日志
-                    # logger.debug(f"[smart_fortune_stream] 参数: intent={main_intent}, question={question[:100]}, fortune_context={'有' if fortune_context else '无'}, matched_rules={len(matched_rules) if matched_rules else 0}")
-                    
-                    # ⭐ 调用LLM并检查返回值类型
-                    llm_result = llm_client.analyze_fortune(
-                        intent=main_intent,
-                        question=question,
-                        bazi_data=bazi_result,
-                        fortune_context=fortune_context,
-                        matched_rules=matched_rules,
-                        stream=True
-                    )
-                    
-                    # ⭐ 关键检查：确保返回的是生成器，不是字典
-                    if isinstance(llm_result, dict):
-                        logger.error(f"[smart_fortune_stream] ❌ analyze_fortune 返回了字典而不是生成器！")
-                        logger.error(f"[smart_fortune_stream] 返回值: {json.dumps(llm_result, ensure_ascii=False)[:500]}")
-                        monitor.end_stage("llm_analysis", success=False, error="返回类型错误：期望生成器，实际返回字典")
-                        yield _sse_message("llm_error", {"message": "AI服务配置错误：流式输出模式返回了非流式数据"})
-                    elif not hasattr(llm_result, '__iter__') or isinstance(llm_result, str):
-                        logger.error(f"[smart_fortune_stream] ❌ analyze_fortune 返回的不是生成器！类型: {type(llm_result)}, 值: {str(llm_result)[:200]}")
-                        monitor.end_stage("llm_analysis", success=False, error=f"返回类型错误：{type(llm_result)}")
-                        yield _sse_message("llm_error", {"message": "AI服务配置错误：流式输出模式返回了非流式数据"})
-                    else:
-                        logger.info(f"[smart_fortune_stream] ✅ analyze_fortune 返回生成器，类型: {type(llm_result)}")
-                    
-                    chunk_received = False
-                    chunk_count = 0
-                    total_content_length = 0
-                    
-                    logger.info(f"[smart_fortune_stream] 🔄 开始迭代生成器...")
-                    
-                    for chunk in llm_result:
-                        # ✅ 优化：移除生产环境不需要的debug日志
-                        # logger.debug(f"[smart_fortune_stream] 📨 收到chunk: type={type(chunk)}, is_dict={isinstance(chunk, dict)}, keys={list(chunk.keys()) if isinstance(chunk, dict) else 'N/A'}")
-                        
-                        chunk_received = True
-                        chunk_count += 1
-                        chunk_type = chunk.get('type') if isinstance(chunk, dict) else None
-                        
-                        # ✅ 优化：移除生产环境不需要的debug日志
-                        # logger.debug(f"[smart_fortune_stream] 📦 chunk #{chunk_count}: type={chunk_type}, full_chunk={json.dumps(chunk, ensure_ascii=False)[:200] if isinstance(chunk, dict) else str(chunk)[:200]}")
-                        
-                        if chunk_type == 'start':
-                            logger.info(f"[smart_fortune_stream] ✅ LLM流式输出开始")
-                            yield _sse_message("llm_start", {})
-                        elif chunk_type == 'chunk':
-                            content = chunk.get('content', '')
-                            if content:
-                                total_content_length += len(content)
-                                # ✅ 优化：移除生产环境不需要的debug日志
-                                # logger.debug(f"[smart_fortune_stream] 📝 发送chunk #{chunk_count}: {len(content)}字符, 内容预览: {content[:50]}...")
-                                yield _sse_message("llm_chunk", {"content": content})
-                            else:
-                                logger.warning(f"[smart_fortune_stream] ⚠️ chunk #{chunk_count} 类型为chunk但content为空")
-                        elif chunk_type == 'end':
-                            logger.info(f"[smart_fortune_stream] ✅ LLM流式输出完成: 共{chunk_count}个chunk, 总长度{total_content_length}字符")
-                            monitor.add_metric("llm_analysis", "chunk_count", chunk_count)
-                            monitor.add_metric("llm_analysis", "total_length", total_content_length)
-                            yield _sse_message("llm_end", {})
-                            break
-                        elif chunk_type == 'error':
-                            error_msg = chunk.get('error', '未知错误')
-                            logger.error(f"[smart_fortune_stream] ❌ LLM流式输出错误: {error_msg}")
-                            monitor.end_stage("llm_analysis", success=False, error=error_msg)
-                            yield _sse_message("llm_error", {"message": error_msg})
-                            break
-                        else:
-                            logger.warning(f"[smart_fortune_stream] ⚠️ 未知chunk类型: {chunk_type}, chunk内容: {json.dumps(chunk, ensure_ascii=False)[:200] if isinstance(chunk, dict) else str(chunk)[:200]}")
-                    
-                    if not chunk_received:
-                        logger.warning(f"[smart_fortune_stream] ⚠️ 未收到任何chunk，可能流式输出失败")
-                        monitor.end_stage("llm_analysis", success=False, error="无响应")
-                        yield _sse_message("llm_error", {"message": "AI深度解读服务无响应，请检查Bot配置和网络连接"})
-                    else:
-                        logger.info(f"[smart_fortune_stream] ✅ LLM流式输出成功完成，共处理{chunk_count}个chunk")
-                        monitor.end_stage("llm_analysis", success=True)
-                
-                except ValueError as e:
-                    error_msg = str(e)
-                    logger.error(f"[smart_fortune_stream] ❌ ValueError: {error_msg}", exc_info=True)
-                    monitor.end_stage("llm_analysis", success=False, error=error_msg)
-                    yield _sse_message("llm_error", {"message": f"AI服务配置错误: {error_msg}"})
-                except Exception as e:
-                    error_msg = str(e)
-                    logger.error(f"[smart_fortune_stream] ❌ 流式输出异常: {error_msg}", exc_info=True)
-                    monitor.end_stage("llm_analysis", success=False, error=error_msg)
-                    yield _sse_message("llm_error", {"message": f"AI深度解读失败: {error_msg}"})
-            
-            # 发送性能摘要
-            performance_summary = monitor.get_summary()
-            yield _sse_message("performance", performance_summary)
-            
-            # 输出性能摘要到日志
-            monitor.log_summary()
-            
-            # 结束
+            # 未知场景
+            yield _sse_message("error", {"message": "无法识别场景，请检查参数"})
             yield _sse_message("end", {})
         
         except Exception as e:
@@ -1005,6 +838,743 @@ async def smart_analyze_stream(
             "X-Accel-Buffering": "no"  # 禁用nginx缓冲
         }
     )
+
+
+async def _scenario_1_generator(
+    year: int, month: int, day: int, hour: int, gender: str,
+    category: str, user_id: str, monitor: PerformanceMonitor
+):
+    """场景1：点击选择项 → 生成简短答复 + 预设问题列表"""
+    from server.services.bazi_session_service import BaziSessionService
+    from server.services.bazi_service import BaziService
+    from server.services.bazi_detail_service import BaziDetailService
+    from server.services.fortune_llm_client import get_fortune_llm_client
+    
+    try:
+        solar_date = f"{year:04d}-{month:02d}-{day:02d}"
+        solar_time = f"{hour:02d}:00"
+        
+        # ==================== 计算完整八字数据 ====================
+        yield _sse_message("status", {"stage": "bazi", "message": "正在计算八字..."})
+        
+        with monitor.stage("bazi_calculation", "八字计算", solar_date=solar_date, solar_time=solar_time, gender=gender):
+            # 计算基础八字
+            bazi_result = BaziService.calculate_bazi_full(solar_date, solar_time, gender)
+            
+            # 计算详细八字（包含大运流年）
+            detail_result = BaziDetailService.calculate_detail_full(solar_date, solar_time, gender)
+            
+            # 匹配所有规则（所有类型）
+            matched_rules = BaziService._match_rules(bazi_result)
+            
+            # 计算旺衰数据
+            from server.services.wangshuai_service import WangShuaiService
+            wangshuai_result = WangShuaiService.calculate_wangshuai(solar_date, solar_time, gender)
+            
+            # 计算流年大运分析（如果需要）
+            fortune_context = None
+            try:
+                from server.services.fortune_context_service import FortuneContextService
+                from datetime import datetime
+                # 计算未来5年的流年大运（或根据需求调整）
+                current_year = datetime.now().year
+                target_years = list(range(current_year, current_year + 6))
+                fortune_context = FortuneContextService.get_fortune_context(
+                    solar_date=solar_date,
+                    solar_time=solar_time,
+                    gender=gender,
+                    intent_types=["ALL"],  # 所有类型
+                    target_years=target_years
+                )
+            except Exception as e:
+                logger.warning(f"流年大运分析失败（不影响主流程）: {e}")
+            
+            # 构建完整八字数据（包含所有信息）
+            complete_bazi_data = {
+                "bazi_result": bazi_result,
+                "detail_result": detail_result,
+                "matched_rules": matched_rules,
+                "wangshuai_result": wangshuai_result,  # 新增：旺衰数据
+                "fortune_context": fortune_context,  # 新增：流年大运数据
+                "solar_date": solar_date,
+                "solar_time": solar_time,
+                "gender": gender
+            }
+            
+            # 保存到会话缓存
+            BaziSessionService.save_bazi_session(user_id, complete_bazi_data)
+            logger.info(f"✅ 场景1：完整八字数据已保存到会话缓存（包含所有信息）: user_id={user_id}")
+        
+        # ==================== 生成简短答复（100字内，流式）====================
+        yield _sse_message("brief_response_start", {})
+        
+        with monitor.stage("brief_response", "生成简短答复", category=category):
+            llm_client = get_fortune_llm_client()
+            
+            # 调用LLM生成简短答复
+            brief_response_generator = llm_client.generate_brief_response(
+                bazi_data=complete_bazi_data,
+                category=category
+            )
+            
+            full_brief_response = ""
+            for chunk in brief_response_generator:
+                if chunk.get('type') == 'chunk':
+                    content = chunk.get('content', '')
+                    if content:
+                        full_brief_response += content
+                        yield _sse_message("brief_response_chunk", {"content": content})
+                elif chunk.get('type') == 'end':
+                    break
+                elif chunk.get('type') == 'error':
+                    error_msg = chunk.get('error', '未知错误')
+                    yield _sse_message("brief_response_error", {"message": error_msg})
+                    return
+            
+            # 确保不超过100字
+            if len(full_brief_response) > 100:
+                full_brief_response = full_brief_response[:100]
+            
+            yield _sse_message("brief_response_end", {"content": full_brief_response})
+        
+        # ==================== 生成预设问题列表 ====================
+        yield _sse_message("status", {"stage": "preset_questions", "message": "正在生成预设问题..."})
+        
+        with monitor.stage("preset_questions", "生成预设问题列表", category=category):
+            preset_questions_generator = llm_client.generate_preset_questions(
+                bazi_data=complete_bazi_data,
+                category=category
+            )
+            
+            preset_questions = []
+            for chunk in preset_questions_generator:
+                if chunk.get('type') == 'complete':
+                    questions_data = chunk.get('questions', [])
+                    if isinstance(questions_data, list):
+                        preset_questions = questions_data
+                    break
+                elif chunk.get('type') == 'error':
+                    error_msg = chunk.get('error', '未知错误')
+                    logger.warning(f"生成预设问题失败: {error_msg}")
+                    # 使用默认问题列表
+                    preset_questions = _get_default_preset_questions(category)
+                    break
+            
+            yield _sse_message("preset_questions", {"questions": preset_questions})
+        
+        # 发送性能摘要
+        performance_summary = monitor.get_summary()
+        yield _sse_message("performance", performance_summary)
+        monitor.log_summary()
+        
+        # 结束
+        yield _sse_message("end", {})
+        
+    except Exception as e:
+        logger.error(f"[scenario_1] 错误: {e}", exc_info=True)
+        yield _sse_message("error", {"message": str(e)})
+        yield _sse_message("end", {})
+
+
+async def _generate_questions_async(
+    partial_response: str,
+    user_intent: Dict[str, Any],
+    bazi_data: Dict[str, Any],
+    category: str
+) -> List[str]:
+    """异步生成相关问题（后台任务）"""
+    from server.services.fortune_llm_client import get_fortune_llm_client
+    
+    loop = asyncio.get_event_loop()
+    llm_client = get_fortune_llm_client()
+    
+    # 在线程池中执行（因为LLM调用是同步的）
+    def _generate():
+        generator = llm_client.generate_related_questions(
+            bazi_response=partial_response,
+            user_intent=user_intent,
+            bazi_data=bazi_data,
+            category=category
+        )
+        for chunk in generator:
+            if chunk.get('type') == 'complete':
+                return chunk.get('questions', [])[:2]
+            elif chunk.get('type') == 'error':
+                logger.warning(f"并行生成相关问题失败: {chunk.get('error', '未知错误')}")
+                return []
+        return []
+    
+    try:
+        return await loop.run_in_executor(None, _generate)
+    except Exception as e:
+        logger.error(f"并行生成相关问题异常: {e}", exc_info=True)
+        return []
+
+
+async def _scenario_2_generator(
+    question: str, category: str, user_id: str,
+    year: Optional[int], month: Optional[int], day: Optional[int],
+    hour: int, gender: Optional[str], monitor: PerformanceMonitor
+):
+    """场景2：点击预设问题/输入问题 → 生成详细流式回答 + 2个相关问题"""
+    from server.services.bazi_session_service import BaziSessionService
+    from server.services.fortune_llm_client import get_fortune_llm_client
+    
+    try:
+        # ==================== 从会话缓存获取完整八字数据 ====================
+        complete_bazi_data = BaziSessionService.get_bazi_session(user_id)
+        
+        if not complete_bazi_data:
+            # 如果会话不存在，返回错误（场景2必须从session获取数据）
+            yield _sse_message("error", {"message": "会话不存在，请先点击选择项"})
+            yield _sse_message("end", {})
+            return
+        
+        # 从session获取所有数据
+        bazi_result = complete_bazi_data.get("bazi_result", {})
+        detail_result = complete_bazi_data.get("detail_result", {})
+        matched_rules = complete_bazi_data.get("matched_rules", [])
+        wangshuai_result = complete_bazi_data.get("wangshuai_result", {})
+        fortune_context = complete_bazi_data.get("fortune_context")
+        
+        # ==================== 场景2：直接使用category，不需要意图识别 ====================
+        # 根据category直接确定规则类型
+        rule_type = CATEGORY_TO_RULE_TYPE.get(category, "general")
+        
+        # 构建简化的intent_result（仅用于LLM调用）
+        intent_result = {
+            "intents": [rule_type],
+            "rule_types": [rule_type],
+            "confidence": 1.0,  # 直接使用category，置信度为1.0
+            "is_fortune_related": True,
+            "time_intent": {}  # 如果需要时间意图，可以从问题中简单提取
+        }
+        
+        # ==================== 直接使用session中的规则，不再重新匹配 ====================
+        # 根据category过滤规则（如果需要）
+        if rule_type != "general":
+            matched_rules = [rule for rule in matched_rules if rule.get("rule_type") == rule_type]
+        
+        # 如果过滤后没有规则，使用所有规则
+        if not matched_rules:
+            matched_rules = complete_bazi_data.get("matched_rules", [])
+        
+        # ==================== 直接使用session中的流年大运数据，不再重新计算 ====================
+        # fortune_context 已经从session获取，不需要重新计算
+        
+        # ==================== 发送基础分析结果 ====================
+        yield _sse_message("basic_analysis", {
+            "intent": intent_result,
+            "bazi_info": {
+                "四柱": _format_pillars(bazi_result.get("bazi_pillars", {})),
+                "十神": bazi_result.get("ten_gods_stats", {}),
+                "五行": bazi_result.get("element_counts", {})
+            },
+            "matched_rules_count": len(matched_rules),
+            "fortune_context": fortune_context
+        })
+        
+        # ==================== 流式输出LLM深度解读 ====================
+        yield _sse_message("status", {"stage": "llm", "message": "正在生成深度解读..."})
+        
+        main_intent = rule_type  # 直接使用rule_type，不再需要从rule_types获取
+        
+        with monitor.stage("llm_analysis", "LLM深度解读（流式）", intent=main_intent):
+            llm_client = get_fortune_llm_client()
+            
+            # 调用LLM生成详细回答（传递category作为上下文，使用精简模式）
+            llm_result = llm_client.analyze_fortune(
+                intent=main_intent,
+                question=question,
+                bazi_data=bazi_result,
+                fortune_context=fortune_context,
+                matched_rules=matched_rules,
+                stream=True,
+                category=category,  # 传递category作为上下文
+                minimal_mode=True  # 场景2使用精简模式，减少数据传递
+            )
+            
+            full_response = ""
+            chunk_received = False
+            questions_task = None  # 后台任务
+            cached_questions = []  # 缓存的问题
+            
+            for chunk in llm_result:
+                chunk_received = True
+                chunk_type = chunk.get('type') if isinstance(chunk, dict) else None
+                
+                if chunk_type == 'start':
+                    yield _sse_message("llm_start", {})
+                elif chunk_type == 'chunk':
+                    content = chunk.get('content', '')
+                    if content:
+                        full_response += content
+                        yield _sse_message("llm_chunk", {"content": content})
+                        
+                        # 当累积内容达到100-200字时，开始并行生成问题
+                        if not questions_task and len(full_response) >= 150:
+                            questions_task = asyncio.create_task(
+                                _generate_questions_async(
+                                    full_response[:200],  # 只传递前200字
+                                    intent_result,
+                                    complete_bazi_data,
+                                    category
+                                )
+                            )
+                            logger.info("✅ 开始并行生成相关问题（答案已输出150字）")
+                elif chunk_type == 'end':
+                    yield _sse_message("llm_end", {})
+                    break
+                elif chunk_type == 'error':
+                    error_msg = chunk.get('error', '未知错误')
+                    yield _sse_message("llm_error", {"message": error_msg})
+                    break
+            
+            if not chunk_received:
+                yield _sse_message("llm_error", {"message": "AI深度解读服务无响应"})
+        
+        # ==================== 生成相关问题（并行生成或等待完成） ====================
+        # 如果答案内容足够，处理相关问题生成
+        if not full_response or len(full_response.strip()) < 50:
+            logger.warning("详细回答内容为空或太短，跳过相关问题生成")
+            yield _sse_message("related_questions", {"questions": []})
+        else:
+            # 如果已经启动了并行任务，等待完成
+            if questions_task:
+                if not questions_task.done():
+                    logger.info("⏳ 答案已完成，等待问题生成完成...")
+                    yield _sse_message("status", {"stage": "related_questions", "message": "正在生成相关问题..."})
+                    try:
+                        cached_questions = await questions_task
+                    except Exception as e:
+                        logger.error(f"并行生成相关问题失败: {e}", exc_info=True)
+                        cached_questions = []
+                else:
+                    # 问题已经生成完成
+                    try:
+                        cached_questions = questions_task.result()
+                    except Exception as e:
+                        logger.error(f"获取并行生成的问题失败: {e}", exc_info=True)
+                        cached_questions = []
+                
+                # 如果并行生成失败，使用降级方案
+                if not cached_questions:
+                    logger.warning("并行生成问题失败，使用降级方案")
+                    with monitor.stage("related_questions", "生成相关问题（降级）"):
+                        related_questions_generator = llm_client.generate_related_questions(
+                            bazi_response=full_response,
+                            user_intent=intent_result,
+                            bazi_data=complete_bazi_data,
+                            category=category
+                        )
+                        
+                        for chunk in related_questions_generator:
+                            if chunk.get('type') == 'complete':
+                                questions_data = chunk.get('questions', [])
+                                if isinstance(questions_data, list):
+                                    cached_questions = questions_data[:2]
+                                break
+                            elif chunk.get('type') == 'error':
+                                error_msg = chunk.get('error', '未知错误')
+                                logger.warning(f"生成相关问题失败: {error_msg}")
+                                cached_questions = _get_default_related_questions(category)[:2]
+                                break
+            else:
+                # 如果没有启动并行任务（答案太短），串行生成
+                logger.info(f"详细回答已完成（{len(full_response)}字），开始生成相关问题")
+                yield _sse_message("status", {"stage": "related_questions", "message": "正在生成相关问题..."})
+                
+                with monitor.stage("related_questions", "生成相关问题"):
+                    related_questions_generator = llm_client.generate_related_questions(
+                        bazi_response=full_response,
+                        user_intent=intent_result,
+                        bazi_data=complete_bazi_data,
+                        category=category
+                    )
+                    
+                    for chunk in related_questions_generator:
+                        if chunk.get('type') == 'complete':
+                            questions_data = chunk.get('questions', [])
+                            if isinstance(questions_data, list):
+                                cached_questions = questions_data[:2]
+                            break
+                        elif chunk.get('type') == 'error':
+                            error_msg = chunk.get('error', '未知错误')
+                            logger.warning(f"生成相关问题失败: {error_msg}")
+                            cached_questions = _get_default_related_questions(category)[:2]
+                            break
+            
+            # 发送缓存的问题
+            yield _sse_message("related_questions", {"questions": cached_questions})
+        
+        # 发送性能摘要
+        performance_summary = monitor.get_summary()
+        yield _sse_message("performance", performance_summary)
+        monitor.log_summary()
+        
+        # 结束
+        yield _sse_message("end", {})
+        
+    except Exception as e:
+        logger.error(f"[scenario_2] 错误: {e}", exc_info=True)
+        yield _sse_message("error", {"message": str(e)})
+        yield _sse_message("end", {})
+
+
+async def _original_scenario_generator(
+    question: str, year: int, month: int, day: int, hour: int,
+    gender: str, user_id: Optional[str], monitor: PerformanceMonitor
+):
+    """原有场景：兼容原有逻辑（保留原有完整流程）"""
+    try:
+        # ==================== 阶段1：意图识别 ====================
+        yield _sse_message("status", {"stage": "intent", "message": "正在识别意图..."})
+        
+        with monitor.stage("intent_recognition", "意图识别", question=question):
+            intent_client = IntentServiceClient()
+            intent_result = intent_client.classify(
+                question=question,
+                user_id=user_id or "anonymous"
+            )
+        
+        # 防御性检查：确保intent_result不为None
+        if intent_result is None:
+            intent_result = {
+                "intents": ["general"],
+                "confidence": 0.5,
+                "keywords": [],
+                "is_ambiguous": True,
+                "time_intent": None,
+                "is_fortune_related": True
+            }
+            
+            monitor.add_metric("intent_recognition", "intents_count", len(intent_result.get("intents", [])))
+            monitor.add_metric("intent_recognition", "confidence", intent_result.get("confidence", 0))
+            monitor.add_metric("intent_recognition", "method", intent_result.get("method", "unknown"))
+            
+            # ==================== 记录用户问题（用于模型微调）====================
+            try:
+                from server.services.intent_question_logger import get_question_logger
+                question_logger = get_question_logger()
+                solar_date = f"{year:04d}-{month:02d}-{day:02d}"
+                solar_time = f"{hour:02d}:00"
+                question_logger.log_question(
+                    question=question,
+                    intent_result=intent_result,
+                    user_id=user_id,
+                    session_id=None,  # 可以后续添加session管理
+                    solar_date=solar_date,
+                    solar_time=solar_time,
+                    gender=gender
+                )
+            except Exception as e:
+                logger.warning(f"[smart_fortune_stream] 记录用户问题失败: {e}", exc_info=True)
+                # 不影响主流程，仅记录警告
+        
+        # 如果问题不相关（LLM已判断）
+        if not intent_result.get("is_fortune_related", True) or "non_fortune" in intent_result.get("intents", []):
+            monitor.log_summary()
+            yield _sse_message("error", {
+                "message": intent_result.get("reject_message", "您的问题似乎与命理运势无关，我只能回答关于八字、运势等相关问题。"),
+                "performance": monitor.get_summary()
+            })
+            yield _sse_message("end", {})
+            return
+        
+        # 获取时间意图（LLM已识别）
+        time_intent = intent_result.get("time_intent", {})
+        target_years = time_intent.get("target_years", [])
+        
+        # ==================== 阶段2：八字计算 ====================
+        yield _sse_message("status", {"stage": "bazi", "message": "正在计算八字..."})
+        
+        solar_date = f"{year:04d}-{month:02d}-{day:02d}"
+        solar_time = f"{hour:02d}:00"
+        
+        with monitor.stage("bazi_calculation", "八字计算", solar_date=solar_date, solar_time=solar_time, gender=gender):
+            calculator = BaziCalculator(solar_date, solar_time, gender)
+            bazi_result = calculator.calculate()
+            
+            if not bazi_result or "error" in bazi_result:
+                raise HTTPException(status_code=400, detail="八字计算失败")
+        
+        # ==================== 阶段3：规则匹配 ====================
+        yield _sse_message("status", {"stage": "rules", "message": "正在匹配规则..."})
+        
+        rule_types = intent_result.get("rule_types", ["ALL"])
+        confidence = intent_result.get("confidence", 0)
+        
+        # 关键词fallback
+        if confidence < 0.6 and "ALL" in rule_types:
+            with monitor.stage("intent_fallback", "意图识别回退（关键词匹配）"):
+                fallback_types = _extract_rule_types_from_question(question)
+                if fallback_types != ["ALL"]:
+                    rule_types = fallback_types
+        
+        with monitor.stage("rule_matching", "规则匹配", rule_types=rule_types):
+            matched_rules = []
+            for rule_type in rule_types:
+                if rule_type != "ALL":
+                    rules = BaziService._match_rules(bazi_result, [rule_type])
+                    matched_rules.extend(rules)
+            
+            if not matched_rules or "ALL" in rule_types:
+                rules = BaziService._match_rules(bazi_result)
+                matched_rules = rules
+            
+            monitor.add_metric("rule_matching", "matched_rules_count", len(matched_rules))
+            monitor.add_metric("rule_matching", "rule_types_count", len(rule_types))
+        
+        # ==================== 阶段4：流年大运分析 ====================
+        fortune_context = None
+        if target_years:
+            yield _sse_message("status", {"stage": "fortune", "message": "正在分析流年大运..."})
+            
+            with monitor.stage("fortune_context", "流年大运分析", target_years=target_years, rule_types=rule_types):
+                try:
+                    from server.services.fortune_context_service import FortuneContextService
+                    
+                    fortune_context = FortuneContextService.get_fortune_context(
+                        solar_date=solar_date,
+                        solar_time=solar_time,
+                        gender=gender,
+                        intent_types=rule_types,
+                        target_years=target_years
+                    )
+                    
+                    if fortune_context:
+                        liunian_list = fortune_context.get('time_analysis', {}).get('liunian_list', [])
+                        monitor.add_metric("fortune_context", "liunian_count", len(liunian_list))
+                except Exception as e:
+                    logger.error(f"流年大运分析失败: {e}", exc_info=True)
+                    monitor.end_stage("fortune_context", success=False, error=str(e))
+        
+        # ==================== 阶段5：发送基础分析结果 ====================
+        yield _sse_message("basic_analysis", {
+            "intent": intent_result,
+            "bazi_info": {
+                "四柱": _format_pillars(bazi_result.get("bazi_pillars", {})),
+                "十神": bazi_result.get("ten_gods_stats", {}),
+                "五行": bazi_result.get("element_counts", {})
+            },
+            "matched_rules_count": len(matched_rules),
+            "fortune_context": fortune_context
+        })
+        
+        # ==================== 阶段6：流式输出LLM深度解读 ====================
+        yield _sse_message("status", {"stage": "llm", "message": "正在生成深度解读..."})
+        
+        main_intent = rule_types[0] if rule_types and rule_types[0] != "ALL" else "general"
+        logger.info(f"[smart_fortune_stream] 🌊 开始流式输出LLM深度解读，意图: {main_intent}, 问题: {question[:50]}...")
+        
+        with monitor.stage("llm_analysis", "LLM深度解读（流式）", intent=main_intent):
+            try:
+                llm_client = get_fortune_llm_client()
+                
+                logger.info(f"[smart_fortune_stream] 📞 调用 analyze_fortune(stream=True)")
+                
+                # ⭐ 调用LLM并检查返回值类型
+                llm_result = llm_client.analyze_fortune(
+                    intent=main_intent,
+                    question=question,
+                    bazi_data=bazi_result,
+                    fortune_context=fortune_context,
+                    matched_rules=matched_rules,
+                    stream=True
+                )
+                
+                # ⭐ 关键检查：确保返回的是生成器，不是字典
+                if isinstance(llm_result, dict):
+                    logger.error(f"[smart_fortune_stream] ❌ analyze_fortune 返回了字典而不是生成器！")
+                    logger.error(f"[smart_fortune_stream] 返回值: {json.dumps(llm_result, ensure_ascii=False)[:500]}")
+                    monitor.end_stage("llm_analysis", success=False, error="返回类型错误：期望生成器，实际返回字典")
+                    yield _sse_message("llm_error", {"message": "AI服务配置错误：流式输出模式返回了非流式数据"})
+                elif not hasattr(llm_result, '__iter__') or isinstance(llm_result, str):
+                    logger.error(f"[smart_fortune_stream] ❌ analyze_fortune 返回的不是生成器！类型: {type(llm_result)}, 值: {str(llm_result)[:200]}")
+                    monitor.end_stage("llm_analysis", success=False, error=f"返回类型错误：{type(llm_result)}")
+                    yield _sse_message("llm_error", {"message": "AI服务配置错误：流式输出模式返回了非流式数据"})
+                else:
+                    logger.info(f"[smart_fortune_stream] ✅ analyze_fortune 返回生成器，类型: {type(llm_result)}")
+                
+                chunk_received = False
+                chunk_count = 0
+                total_content_length = 0
+                
+                logger.info(f"[smart_fortune_stream] 🔄 开始迭代生成器...")
+                
+                for chunk in llm_result:
+                    chunk_received = True
+                    chunk_count += 1
+                    chunk_type = chunk.get('type') if isinstance(chunk, dict) else None
+                    
+                    if chunk_type == 'start':
+                        logger.info(f"[smart_fortune_stream] ✅ LLM流式输出开始")
+                        yield _sse_message("llm_start", {})
+                    elif chunk_type == 'chunk':
+                        content = chunk.get('content', '')
+                        if content:
+                            total_content_length += len(content)
+                            yield _sse_message("llm_chunk", {"content": content})
+                        else:
+                            logger.warning(f"[smart_fortune_stream] ⚠️ chunk #{chunk_count} 类型为chunk但content为空")
+                    elif chunk_type == 'end':
+                        logger.info(f"[smart_fortune_stream] ✅ LLM流式输出完成: 共{chunk_count}个chunk, 总长度{total_content_length}字符")
+                        monitor.add_metric("llm_analysis", "chunk_count", chunk_count)
+                        monitor.add_metric("llm_analysis", "total_length", total_content_length)
+                        yield _sse_message("llm_end", {})
+                        break
+                    elif chunk_type == 'error':
+                        error_msg = chunk.get('error', '未知错误')
+                        logger.error(f"[smart_fortune_stream] ❌ LLM流式输出错误: {error_msg}")
+                        monitor.end_stage("llm_analysis", success=False, error=error_msg)
+                        yield _sse_message("llm_error", {"message": error_msg})
+                        break
+                    else:
+                        logger.warning(f"[smart_fortune_stream] ⚠️ 未知chunk类型: {chunk_type}, chunk内容: {json.dumps(chunk, ensure_ascii=False)[:200] if isinstance(chunk, dict) else str(chunk)[:200]}")
+                
+                if not chunk_received:
+                    logger.warning(f"[smart_fortune_stream] ⚠️ 未收到任何chunk，可能流式输出失败")
+                    monitor.end_stage("llm_analysis", success=False, error="无响应")
+                    yield _sse_message("llm_error", {"message": "AI深度解读服务无响应，请检查Bot配置和网络连接"})
+                else:
+                    logger.info(f"[smart_fortune_stream] ✅ LLM流式输出成功完成，共处理{chunk_count}个chunk")
+                    monitor.end_stage("llm_analysis", success=True)
+            
+            except ValueError as e:
+                error_msg = str(e)
+                logger.error(f"[smart_fortune_stream] ❌ ValueError: {error_msg}", exc_info=True)
+                monitor.end_stage("llm_analysis", success=False, error=error_msg)
+                yield _sse_message("llm_error", {"message": f"AI服务配置错误: {error_msg}"})
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"[smart_fortune_stream] ❌ 流式输出异常: {error_msg}", exc_info=True)
+                monitor.end_stage("llm_analysis", success=False, error=error_msg)
+                yield _sse_message("llm_error", {"message": f"AI深度解读失败: {error_msg}"})
+        
+        # 发送性能摘要
+        performance_summary = monitor.get_summary()
+        yield _sse_message("performance", performance_summary)
+        
+        # 输出性能摘要到日志
+        monitor.log_summary()
+        
+        # 结束
+        yield _sse_message("end", {})
+    
+    except Exception as e:
+        if monitor.current_stage:
+            monitor.end_stage(monitor.current_stage, success=False, error=str(e))
+        monitor.log_summary()
+        logger.error(f"[original_scenario] 错误: {e}", exc_info=True)
+        yield _sse_message("error", {"message": str(e), "performance": monitor.get_summary()})
+        yield _sse_message("end", {})
+
+
+def _get_default_preset_questions(category: str) -> list:
+    """获取默认预设问题列表（当LLM生成失败时使用）"""
+    default_questions = {
+        "事业财富": [
+            "想了解整体事业发展趋势？",
+            "想了解事业的关键转折点？",
+            "哪一年会有好的事业机会？",
+            "什么时候适合换工作？",
+            "我适合做什么类型的工作？",
+            "我适合在哪个方向/城市发展？",
+            "我在当前工作会有升职机会吗？",
+            "我适合在出生地还是外地发展？",
+            "我的财富格局有多大？",
+            "我这辈子能赚多少钱？",
+            "我适合投机性工作还是稳定工作？",
+            "哪几年适合我创业？",
+            "我的财富来自正财还是偏财？",
+            "我适合买彩票吗？"
+        ],
+        "婚姻": [
+            "我的婚姻运势如何？",
+            "什么时候会遇到正缘？",
+            "我的配偶性格特点？",
+            "我的婚姻是否稳定？",
+            "什么时候适合结婚？",
+            "我的桃花运如何？",
+            "我的感情运势如何？"
+        ],
+        "健康": [
+            "我的健康状况如何？",
+            "需要注意哪些疾病？",
+            "我的体质特点？",
+            "什么时候需要特别注意健康？",
+            "我的养生建议？"
+        ],
+        "子女": [
+            "我的子女运势如何？",
+            "什么时候会有子女？",
+            "我的子女数量？",
+            "我的子女性格特点？",
+            "我的子女运势如何？"
+        ],
+        "流年运势": [
+            "我今年的运势如何？",
+            "我明年的运势如何？",
+            "我后三年的运势如何？",
+            "我2025年的运势如何？",
+            "我2025-2028年的运势如何？"
+        ],
+        "年运报告": [
+            "我的整体运势如何？",
+            "我的事业运势如何？",
+            "我的财运如何？",
+            "我的健康运势如何？",
+            "我的感情运势如何？"
+        ]
+    }
+    
+    return default_questions.get(category, [
+        "我的整体运势如何？",
+        "我的事业运势如何？",
+        "我的财运如何？"
+    ])
+
+
+def _get_default_related_questions(category: str) -> list:
+    """获取默认相关问题列表（当LLM生成失败时使用）"""
+    default_questions = {
+        "事业财富": [
+            "我的事业关键转折点是什么时候？",
+            "我适合在哪个方向发展？",
+            "我的财富格局有多大？"
+        ],
+        "婚姻": [
+            "我什么时候会遇到正缘？",
+            "我的配偶性格特点？",
+            "我的婚姻是否稳定？"
+        ],
+        "健康": [
+            "我需要注意哪些疾病？",
+            "我的体质特点？",
+            "什么时候需要特别注意健康？"
+        ],
+        "子女": [
+            "我什么时候会有子女？",
+            "我的子女数量？",
+            "我的子女性格特点？"
+        ],
+        "流年运势": [
+            "我今年的运势如何？",
+            "我明年的运势如何？",
+            "我后三年的运势如何？"
+        ],
+        "年运报告": [
+            "我的整体运势如何？",
+            "我的事业运势如何？",
+            "我的财运如何？"
+        ]
+    }
+    
+    return default_questions.get(category, [
+        "我的整体运势如何？",
+        "我的事业运势如何？",
+        "我的财运如何？"
+    ])
 
 
 def _sse_message(event_type: str, data: dict) -> str:

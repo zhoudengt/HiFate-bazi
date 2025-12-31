@@ -207,7 +207,9 @@ class FortuneLLMClient:
         fortune_context: Dict[str, Any],
         matched_rules: List[Dict[str, Any]] = None,
         stream: bool = False,
-        use_cache: bool = True
+        use_cache: bool = True,
+        category: Optional[str] = None,
+        minimal_mode: bool = False
     ) -> Dict[str, Any]:
         """
         调用命理分析Bot，生成深度解读（支持缓存）
@@ -241,7 +243,9 @@ class FortuneLLMClient:
                 question=question,
                 bazi_data=bazi_data,
                 fortune_context=fortune_context,
-                matched_rules=matched_rules
+                matched_rules=matched_rules,
+                category=category,
+                minimal_mode=minimal_mode
             )
             
             logger.info(f"📊 准备调用命理分析Bot，意图: {intent}，问题: {question}，流式: {stream}，缓存: {use_cache}")
@@ -320,7 +324,9 @@ class FortuneLLMClient:
         question: str,
         bazi_data: Dict[str, Any],
         fortune_context: Dict[str, Any],
-        matched_rules: List[Dict[str, Any]] = None
+        matched_rules: List[Dict[str, Any]] = None,
+        category: Optional[str] = None,
+        minimal_mode: bool = False
     ) -> Dict[str, Any]:
         """
         构建发送给Bot的输入数据
@@ -336,7 +342,31 @@ class FortuneLLMClient:
         - xi_ji: 喜忌神
         - wangshuai: 旺衰
         - matched_rules: 匹配到的规则（按意图分类）
+        
+        Args:
+            minimal_mode: 精简模式，只传递必要数据（场景2使用）
         """
+        # 精简模式：只传递必要数据
+        if minimal_mode:
+            input_data = {
+                'intent': intent,
+                'question': question,
+                'category': category,
+                'bazi': {
+                    'pillars': bazi_data.get('bazi_pillars', {}),
+                    'day_stem': bazi_data.get('day_stem', ''),
+                },
+                'language_style': '通俗易懂，避免专业术语，面向普通用户。用日常语言解释命理概念，如"正官"可以说成"稳定的工作机会"，"七杀"可以说成"挑战和压力"。',
+                'note': '八字详细信息已在第一次调用时提供，本次只基于用户问题和类别生成答案。请快速响应，在10秒内生成内容。'
+            }
+            
+            # 精简日志
+            import json
+            data_size = len(json.dumps(input_data, ensure_ascii=False))
+            logger.info(f"[精简模式] 发送给LLM的数据: intent={intent}, category={category}, size={data_size}字符")
+            return input_data
+        
+        # 完整模式：传递所有数据（场景1使用）
         # ⚠️ 防御性检查：fortune_context可能为None
         if not fortune_context:
             fortune_context = {}
@@ -462,6 +492,10 @@ class FortuneLLMClient:
             # ⭐ 新增：按意图分类的规则内容
             'matched_rules': rules_data.get('rules_by_intent', {}),
             'rules_count': rules_data.get('rules_count', {}),
+            # ⭐ 新增：category字段（场景2中使用）
+            **({'category': category} if category else {}),
+            # ⭐ 新增：语言风格要求（避免专业术语，面向普通用户）
+            'language_style': '通俗易懂，避免专业术语，面向普通用户。用日常语言解释命理概念，如"正官"可以说成"稳定的工作机会"，"七杀"可以说成"挑战和压力"。',
             # 删除以下冗余字段（LLM可通过其他信息推断）：
             # - data_completeness（元数据）
             # - tiaohou（调候信息）
@@ -658,8 +692,11 @@ class FortuneLLMClient:
             'Accept': 'text/event-stream'  # 指定接收SSE格式
         }
         
-        # 将input_data转为JSON字符串
-        input_json = json.dumps(input_data, ensure_ascii=False)
+        # 如果input_data包含prompt字段，直接使用prompt；否则将input_data转为JSON字符串
+        if 'prompt' in input_data:
+            content = input_data['prompt']
+        else:
+            content = json.dumps(input_data, ensure_ascii=False)
         
         payload = {
             'bot_id': self.bot_id,
@@ -668,7 +705,7 @@ class FortuneLLMClient:
             'additional_messages': [
                 {
                     'role': 'user',
-                    'content': input_json,
+                    'content': content,
                     'content_type': 'text'
                 }
             ]
@@ -1009,8 +1046,11 @@ class FortuneLLMClient:
             'Content-Type': 'application/json'
         }
         
-        # 将input_data转为JSON字符串
-        input_json = json.dumps(input_data, ensure_ascii=False)
+        # 如果input_data包含prompt字段，直接使用prompt；否则将input_data转为JSON字符串
+        if 'prompt' in input_data:
+            content = input_data['prompt']
+        else:
+            content = json.dumps(input_data, ensure_ascii=False)
         
         payload = {
             'bot_id': self.bot_id,
@@ -1019,7 +1059,7 @@ class FortuneLLMClient:
             'additional_messages': [
                 {
                     'role': 'user',
-                    'content': input_json,
+                    'content': content,
                     'content_type': 'text'
                 }
             ]
@@ -1132,6 +1172,345 @@ class FortuneLLMClient:
                 'analysis': None,
                 'error': str(e)
             }
+
+
+    def generate_brief_response(
+        self,
+        bazi_data: Dict[str, Any],
+        category: str
+    ):
+        """
+        生成简短答复（100字内，流式输出）
+        
+        Args:
+            bazi_data: 完整八字数据（包含bazi_result、detail_result等）
+            category: 选择项（事业财富、婚姻、健康等）
+            
+        Returns:
+            生成器，yield格式：{'type': 'start'/'chunk'/'end'/'error', 'content': str, 'error': str}
+        """
+        try:
+            # 构建简短答复的Prompt
+            prompt = self._build_brief_response_prompt(bazi_data, category)
+            
+            # 构建输入数据
+            input_data = {
+                'prompt': prompt,
+                'category': category,
+                'task_type': 'brief_response'
+            }
+            
+            logger.info(f"📊 生成简短答复，category: {category}")
+            return self._call_coze_api_stream(input_data)
+            
+        except Exception as e:
+            logger.error(f"❌ generate_brief_response 异常: {e}", exc_info=True)
+            def error_generator():
+                yield {'type': 'error', 'content': '', 'error': str(e)}
+            return error_generator()
+    
+    def generate_preset_questions(
+        self,
+        bazi_data: Dict[str, Any],
+        category: str
+    ):
+        """
+        生成预设问题列表（10-15个）
+        
+        Args:
+            bazi_data: 完整八字数据
+            category: 选择项
+            
+        Returns:
+            生成器，yield格式：{'type': 'complete'/'error', 'questions': list, 'error': str}
+        """
+        try:
+            # 构建预设问题的Prompt
+            prompt = self._build_preset_questions_prompt(bazi_data, category)
+            
+            # 调用非流式API
+            input_data = {
+                'prompt': prompt,
+                'category': category,
+                'task_type': 'preset_questions'
+            }
+            
+            logger.info(f"📊 生成预设问题列表，category: {category}")
+            response = self._call_coze_api(input_data)
+            
+            if response.get('success'):
+                analysis = response.get('analysis', '')
+                # 解析JSON格式的问题列表
+                questions = self._parse_questions_from_response(analysis)
+                
+                def complete_generator():
+                    yield {'type': 'complete', 'questions': questions, 'error': None}
+                return complete_generator()
+            else:
+                error_msg = response.get('error', '未知错误')
+                def error_generator():
+                    yield {'type': 'error', 'questions': [], 'error': error_msg}
+                return error_generator()
+            
+        except Exception as e:
+            logger.error(f"❌ generate_preset_questions 异常: {e}", exc_info=True)
+            def error_generator():
+                yield {'type': 'error', 'questions': [], 'error': str(e)}
+            return error_generator()
+    
+    def generate_related_questions(
+        self,
+        bazi_response: str,
+        user_intent: Dict[str, Any],
+        bazi_data: Dict[str, Any],
+        category: str
+    ):
+        """
+        生成3个相关问题（基于流式回答内容和用户意图）
+        
+        Args:
+            bazi_response: 流式回答的完整内容
+            user_intent: 用户意图识别结果
+            bazi_data: 完整八字数据
+            category: 选择项
+            
+        Returns:
+            生成器，yield格式：{'type': 'complete'/'error', 'questions': list, 'error': str}
+        """
+        try:
+            # 构建相关问题的Prompt
+            prompt = self._build_related_questions_prompt(
+                bazi_response, user_intent, bazi_data, category
+            )
+            
+            # 调用非流式API（优化：减少数据量以提升速度）
+            input_data = {
+                'prompt': prompt,
+                'category': category,
+                'response': bazi_response[:300],  # 优化：从500字减少到300字，提升响应速度
+                'task_type': 'related_questions'
+            }
+            
+            logger.info(f"📊 生成相关问题，category: {category}")
+            response = self._call_coze_api(input_data)
+            
+            if response.get('success'):
+                analysis = response.get('analysis', '')
+                # 解析JSON格式的问题列表（只取前2个）
+                questions = self._parse_questions_from_response(analysis)[:2]
+                
+                def complete_generator():
+                    yield {'type': 'complete', 'questions': questions, 'error': None}
+                return complete_generator()
+            else:
+                error_msg = response.get('error', '未知错误')
+                def error_generator():
+                    yield {'type': 'error', 'questions': [], 'error': error_msg}
+                return error_generator()
+            
+        except Exception as e:
+            logger.error(f"❌ generate_related_questions 异常: {e}", exc_info=True)
+            def error_generator():
+                yield {'type': 'error', 'questions': [], 'error': str(e)}
+            return error_generator()
+    
+    def _build_brief_response_prompt(
+        self,
+        bazi_data: Dict[str, Any],
+        category: str
+    ) -> str:
+        """构建简短答复的Prompt"""
+        bazi_result = bazi_data.get("bazi_result", {})
+        category_names = {
+            "事业财富": "事业和财富",
+            "婚姻": "婚姻感情",
+            "健康": "健康运势",
+            "子女": "子女运势",
+            "流年运势": "流年运势",
+            "年运报告": "年运报告"
+        }
+        category_cn = category_names.get(category, category)
+        
+        prompt = f"""请基于用户的八字信息，生成关于"{category_cn}"的简短答复（100字以内）。
+
+【用户八字信息】
+四柱八字：
+{self._format_bazi_for_prompt(bazi_result)}
+
+【要求】
+1. 内容要简洁明了，控制在100字以内
+2. 聚焦于{category_cn}方面
+3. 语言通俗易懂
+4. 直接给出核心结论，不需要详细分析
+
+请直接回答，不要添加其他说明："""
+        
+        return prompt
+    
+    def _build_preset_questions_prompt(
+        self,
+        bazi_data: Dict[str, Any],
+        category: str
+    ) -> str:
+        """构建预设问题的Prompt"""
+        bazi_result = bazi_data.get("bazi_result", {})
+        category_names = {
+            "事业财富": "事业和财富",
+            "婚姻": "婚姻感情",
+            "健康": "健康运势",
+            "子女": "子女运势",
+            "流年运势": "流年运势",
+            "年运报告": "年运报告"
+        }
+        category_cn = category_names.get(category, category)
+        
+        prompt = f"""请基于用户的八字信息，生成10-15个关于"{category_cn}"的预设问题。
+
+【用户八字信息】
+四柱八字：
+{self._format_bazi_for_prompt(bazi_result)}
+
+【要求】
+1. 生成10-15个相关问题
+2. 问题要具体、实用
+3. 覆盖{category_cn}的各个方面
+4. 问题要通俗易懂，符合用户关心的点
+5. 必须以JSON数组格式返回，例如：["问题1", "问题2", "问题3"]
+
+请直接返回JSON数组，不要添加其他说明："""
+        
+        return prompt
+    
+    def _build_related_questions_prompt(
+        self,
+        bazi_response: str,
+        user_intent: Dict[str, Any],
+        bazi_data: Dict[str, Any],
+        category: str
+    ) -> str:
+        """构建相关问题的Prompt"""
+        category_names = {
+            "事业财富": "事业和财富",
+            "婚姻": "婚姻感情",
+            "健康": "健康运势",
+            "子女": "子女运势",
+            "流年运势": "流年运势",
+            "年运报告": "年运报告"
+        }
+        category_cn = category_names.get(category, category)
+        
+        # 优化：简化user_intent数据，只传递关键字段，减少token消耗
+        simplified_intent = {
+            'intents': user_intent.get('intents', []),
+            'confidence': user_intent.get('confidence', 0)
+        }
+        
+        prompt = f"""请基于以下内容，快速生成2个相关问题：
+
+【已回答内容】
+{bazi_response[:300]}
+
+【用户意图】
+{json.dumps(simplified_intent, ensure_ascii=False)}
+
+【要求】
+1. 只生成2个相关问题
+2. 问题要基于已回答的内容，能够深入展开
+3. 问题要具体、实用
+4. **问题必须用通俗易懂的语言，不能包含任何专业术语**
+5. **禁止使用以下专业术语**：乙巳年、巳申六合、财星、七杀、正官、食神、比肩、劫财、偏财、正财、印星、伤官等
+6. **用日常语言表达**：如"今年"而不是"乙巳年"，"缘分机会"而不是"巳申六合"，"工作压力"而不是"七杀"
+7. 必须以JSON数组格式返回，例如：["问题1", "问题2"]
+8. 快速生成，不要过度思考
+
+请直接返回JSON数组，不要添加其他说明："""
+        
+        return prompt
+    
+    def _format_bazi_for_prompt(self, bazi_result: Dict[str, Any]) -> str:
+        """格式化八字信息用于Prompt"""
+        # 尝试多种可能的键名（BaziService.calculate_bazi_full返回{"bazi": {...}, ...}）
+        pillars = None
+        
+        # 1. 直接查找bazi_pillars
+        if "bazi_pillars" in bazi_result:
+            pillars = bazi_result.get("bazi_pillars")
+        # 2. 查找bazi.bazi_pillars（BaziService.calculate_bazi_full的返回格式）
+        elif "bazi" in bazi_result:
+            bazi_data = bazi_result.get("bazi", {})
+            if isinstance(bazi_data, dict):
+                pillars = bazi_data.get("bazi_pillars")
+        # 3. 如果bazi_result本身就是pillars结构（直接包含year/month/day/hour键）
+        elif any(key in bazi_result for key in ["year", "month", "day", "hour"]):
+            pillars = bazi_result
+        
+        if not pillars:
+            pillars = {}
+        
+        pillar_names = {"year": "年柱", "month": "月柱", "day": "日柱", "hour": "时柱"}
+        
+        # 调试日志
+        logger.debug(f"📊 _format_bazi_for_prompt: bazi_result keys: {list(bazi_result.keys())}")
+        if "bazi" in bazi_result:
+            bazi_data = bazi_result.get("bazi", {})
+            logger.debug(f"📊 _format_bazi_for_prompt: bazi keys: {list(bazi_data.keys()) if isinstance(bazi_data, dict) else 'N/A'}")
+        logger.debug(f"📊 _format_bazi_for_prompt: pillars type: {type(pillars)}, keys: {list(pillars.keys()) if isinstance(pillars, dict) else 'N/A'}")
+        
+        formatted = []
+        for eng_name, cn_name in pillar_names.items():
+            if eng_name in pillars:
+                pillar = pillars[eng_name]
+                # 处理pillar可能是字典或字符串的情况
+                if isinstance(pillar, dict):
+                    stem = pillar.get("stem", "")
+                    branch = pillar.get("branch", "")
+                elif isinstance(pillar, str):
+                    # 如果是字符串格式（如"甲子"），尝试解析
+                    if len(pillar) >= 2:
+                        stem = pillar[0]
+                        branch = pillar[1]
+                    else:
+                        stem = ""
+                        branch = ""
+                else:
+                    stem = ""
+                    branch = ""
+                
+                if stem and branch:
+                    formatted.append(f"{cn_name}：{stem}{branch}")
+                else:
+                    logger.warning(f"⚠️  {cn_name}的stem或branch为空: stem={stem}, branch={branch}, pillar={pillar}")
+            else:
+                logger.warning(f"⚠️  pillars中缺少{eng_name}字段")
+        
+        result = "\n".join(formatted) if formatted else "八字信息不完整"
+        logger.debug(f"📊 格式化后的八字信息: {result}")
+        return result
+    
+    def _parse_questions_from_response(self, response_text: str) -> list:
+        """从LLM响应中解析问题列表"""
+        try:
+            # 尝试直接解析JSON
+            questions = json.loads(response_text)
+            if isinstance(questions, list):
+                return questions
+            
+            # 尝试从文本中提取JSON数组
+            import re
+            json_match = re.search(r'\[.*?\]', response_text, re.DOTALL)
+            if json_match:
+                questions = json.loads(json_match.group())
+                if isinstance(questions, list):
+                    return questions
+            
+            # 如果都失败，尝试按行分割
+            lines = response_text.strip().split('\n')
+            questions = [line.strip() for line in lines if line.strip() and not line.strip().startswith('#')]
+            return questions[:15]  # 最多返回15个
+            
+        except Exception as e:
+            logger.warning(f"解析问题列表失败: {e}, 原始响应: {response_text[:200]}")
+            return []
 
 
 # 全局单例
