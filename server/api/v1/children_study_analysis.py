@@ -265,6 +265,9 @@ async def children_study_analysis_stream_generator(
         loop = asyncio.get_event_loop()
         executor = None
         
+        # ⚠️ 初始化 detail_result，确保在所有代码路径中都有定义
+        detail_result = None
+        
         try:
             # 并行获取基础数据
             bazi_task = loop.run_in_executor(
@@ -283,8 +286,16 @@ async def children_study_analysis_stream_generator(
                     gender
                 )
             )
+            detail_task = loop.run_in_executor(
+                executor,
+                lambda: BaziDetailService.calculate_detail_full(
+                    final_solar_date,
+                    final_solar_time,
+                    gender
+                )
+            )
             
-            bazi_result, wangshuai_result = await asyncio.gather(bazi_task, wangshuai_task)
+            bazi_result, wangshuai_result, detail_result = await asyncio.gather(bazi_task, wangshuai_task, detail_task)
             
             # 提取八字数据
             if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
@@ -386,6 +397,18 @@ async def children_study_analysis_stream_generator(
             return
         
         # 4. 提取和验证数据
+        
+        # ⚠️ 防御性检查：确保 detail_result 不为 None
+        # detail_result 包含 ten_gods 和 deities 数据，这些数据由 BaziDetailService.calculate_detail_full() 提供
+        # 与 BaziDataService.get_fortune_data() 不同，detail_result 提供的是十神和神煞信息
+        if detail_result is None:
+            logger.error("[Children Study Stream] ❌ detail_result 为 None，无法继续分析")
+            error_response = {
+                'type': 'error',
+                'content': "详细数据获取失败，无法继续分析。请稍后重试。"
+            }
+            yield f"data: {json.dumps(error_response, ensure_ascii=False)}\n\n"
+            return
         
         # 获取五行统计
         element_counts = bazi_data.get('element_counts', {})
