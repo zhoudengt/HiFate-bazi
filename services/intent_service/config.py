@@ -22,11 +22,12 @@ REDIS_DB = 3  # 使用DB3专门存储意图识别缓存
 REDIS_CACHE_TTL = int(os.getenv("PROMPT_CACHE_TTL", "3600"))
 
 # MySQL 配置（用于存储Prompt版本历史）
+# ⚠️ 安全规范：密码必须通过环境变量配置，不允许硬编码
 MYSQL_CONFIG = {
-    'host': os.getenv("MYSQL_HOST", "127.0.0.1"),
-    'port': int(os.getenv("MYSQL_PORT", 13306)),
+    'host': os.getenv("MYSQL_HOST", "localhost"),
+    'port': int(os.getenv("MYSQL_PORT", 3306)),
     'user': os.getenv("MYSQL_USER", "root"),
-    'password': os.getenv("MYSQL_PASSWORD", "root123"),
+    'password': os.getenv("MYSQL_PASSWORD", os.getenv("MYSQL_ROOT_PASSWORD", "")),
     'database': os.getenv("MYSQL_DATABASE", "bazi_system"),
     'charset': 'utf8mb4',
     'use_unicode': True

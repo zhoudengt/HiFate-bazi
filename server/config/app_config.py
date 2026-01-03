@@ -23,13 +23,29 @@ class DatabaseConfig:
     @classmethod
     def from_env(cls) -> 'DatabaseConfig':
         """从环境变量创建配置"""
-        # ⚠️ 重要：所有环境统一连接生产Node1 Docker MySQL，确保数据一致性
-        # 生产Node1 Docker MySQL: 8.210.52.217:3306 (公网) / 172.18.121.222:3306 (内网)
+        # ⚠️ 重要：根据环境自动选择默认配置
+        # 本地开发：localhost:3306，密码: 123456
+        # 生产环境：8.210.52.217:3306 (公网) / 172.18.121.222:3306 (内网)，密码: Yuanqizhan@163
+        # 判断环境（本地开发 or 生产）
+        env_value = os.getenv("ENV", os.getenv("APP_ENV", "local")).lower()
+        is_local_dev = env_value in ["local", "development"]
+        
+        # 根据环境设置默认值
+        # ⚠️ 安全规范：密码必须通过环境变量配置，不允许硬编码
+        if is_local_dev:
+            # 本地开发：使用本地MySQL
+            default_host = 'localhost'
+            default_password = os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', ''))
+        else:
+            # 生产环境：使用生产MySQL
+            default_host = '8.210.52.217'  # 生产Node1公网IP
+            default_password = os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', ''))
+        
         return cls(
-            host=os.getenv('MYSQL_HOST', '8.210.52.217'),  # 默认连接生产Node1公网IP
+            host=os.getenv('MYSQL_HOST', default_host),
             port=int(os.getenv('MYSQL_PORT', '3306')),
             user=os.getenv('MYSQL_USER', 'root'),
-            password=os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', 'Yuanqizhan@163')),  # 默认使用生产密码
+            password=os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', default_password)),
             database=os.getenv('MYSQL_DATABASE', 'hifate_bazi'),
             charset='utf8mb4'
         )
