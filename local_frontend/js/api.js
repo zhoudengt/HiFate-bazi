@@ -352,26 +352,134 @@ class ApiClient {
     constructor(baseURL) {
         // baseURL 保留，便于兼容legacy配置（例如其它fetch引用）
         this.baseURL = baseURL;
+        // 性能优化：请求缓存（使用sessionStorage）
+        this.cache = new Map();
+        this.pendingRequests = new Map(); // 请求去重：相同请求只发送一次
+        this.cacheExpiry = 5 * 60 * 1000; // 缓存5分钟
     }
 
-    async request(endpoint, data = {}) {
-        return this._invokeGrpc(endpoint, data);
+    /**
+     * 生成缓存键
+     */
+    _getCacheKey(endpoint, data) {
+        return `${endpoint}:${JSON.stringify(data)}`;
     }
 
-    async post(endpoint, data = {}) {
-        return this._invokeGrpc(endpoint, data);
+    /**
+     * 从缓存获取数据
+     */
+    _getFromCache(cacheKey) {
+        try {
+            const cached = sessionStorage.getItem(`api_cache_${cacheKey}`);
+            if (cached) {
+                const { data, timestamp } = JSON.parse(cached);
+                const age = Date.now() - timestamp;
+                if (age < this.cacheExpiry) {
+                    return data;
+                }
+                // 缓存过期，删除
+                sessionStorage.removeItem(`api_cache_${cacheKey}`);
+            }
+        } catch (e) {
+            // 缓存读取失败，忽略
+        }
+        return null;
+    }
+
+    /**
+     * 保存到缓存
+     */
+    _saveToCache(cacheKey, data) {
+        try {
+            const cacheData = {
+                data: data,
+                timestamp: Date.now()
+            };
+            sessionStorage.setItem(`api_cache_${cacheKey}`, JSON.stringify(cacheData));
+        } catch (e) {
+            // 缓存写入失败（可能空间不足），忽略
+        }
+    }
+
+    async request(endpoint, data = {}, options = {}) {
+        return this._invokeGrpc(endpoint, data, options);
+    }
+
+    async post(endpoint, data = {}, options = {}) {
+        return this._invokeGrpc(endpoint, data, options);
     }
 
     async get() {
         throw new Error('APIClient.get 尚未迁移至 gRPC，请实现专用客户端或使用 POST 请求');
     }
 
-    async _invokeGrpc(endpoint, data = {}) {
-        const result = await grpcGatewayClient.call(endpoint, data);
-        if (result === null || result === undefined) {
-            throw new Error('gRPC 网关返回空响应');
+    /**
+     * 清除缓存（可选：用于强制刷新）
+     */
+    clearCache(endpoint = null) {
+        if (endpoint) {
+            // 清除特定endpoint的缓存
+            const keys = Object.keys(sessionStorage);
+            keys.forEach(key => {
+                if (key.startsWith(`api_cache_${endpoint}:`)) {
+                    sessionStorage.removeItem(key);
+                }
+            });
+        } else {
+            // 清除所有API缓存
+            const keys = Object.keys(sessionStorage);
+            keys.forEach(key => {
+                if (key.startsWith('api_cache_')) {
+                    sessionStorage.removeItem(key);
+                }
+            });
         }
-        return result;
+    }
+
+    async _invokeGrpc(endpoint, data = {}, options = {}) {
+        const { useCache = true, skipDeduplication = false } = options;
+        const cacheKey = this._getCacheKey(endpoint, data);
+
+        // 性能优化：请求去重（相同请求只发送一次）
+        if (!skipDeduplication && this.pendingRequests.has(cacheKey)) {
+            // 如果已有相同请求在进行中，等待该请求完成
+            return this.pendingRequests.get(cacheKey);
+        }
+
+        // 性能优化：从缓存获取
+        if (useCache) {
+            const cached = this._getFromCache(cacheKey);
+            if (cached !== null) {
+                return cached;
+            }
+        }
+
+        // 创建请求Promise
+        const requestPromise = (async () => {
+            try {
+                const result = await grpcGatewayClient.call(endpoint, data);
+                if (result === null || result === undefined) {
+                    throw new Error('gRPC 网关返回空响应');
+                }
+
+                // 性能优化：保存到缓存（只缓存成功的响应）
+                if (useCache && result.success !== false) {
+                    this._saveToCache(cacheKey, result);
+                }
+
+                return result;
+            } finally {
+                // 请求完成后，从pendingRequests中移除
+                this.pendingRequests.delete(cacheKey);
+            }
+        })();
+
+        // 记录正在进行的请求
+        if (!skipDeduplication) {
+            this.pendingRequests.set(cacheKey, requestPromise);
+        }
+
+        return requestPromise;
     }
 }
 

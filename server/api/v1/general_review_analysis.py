@@ -37,6 +37,11 @@ from src.analyzers.wuxing_balance_analyzer import WuxingBalanceAnalyzer
 from server.services.bazi_data_orchestrator import BaziDataOrchestrator
 from server.services.industry_service import IndustryService
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
+from server.utils.dayun_liunian_helper import (
+    calculate_user_age,
+    get_current_dayun,
+    build_enhanced_dayun_structure
+)
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -48,6 +53,142 @@ router = APIRouter()
 class GeneralReviewRequest(BaziBaseRequest):
     """总评分析请求模型（继承 BaziBaseRequest，包含7个标准参数）"""
     bot_id: Optional[str] = Field(None, description="Coze Bot ID（可选，默认使用环境变量配置）")
+
+
+@router.post("/general-review/test", summary="测试接口：返回格式化后的数据（用于 Coze Bot）")
+async def general_review_analysis_test(request: GeneralReviewRequest):
+    """
+    测试接口：返回格式化后的数据（用于 Coze Bot 的 {{input}} 占位符）
+    
+    ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
+    提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
+    
+    Args:
+        request: 总评分析请求参数
+        
+    Returns:
+        dict: 包含格式化后的数据
+    """
+    try:
+        # 处理输入（农历转换等）
+        final_solar_date, final_solar_time, _ = BaziInputProcessor.process_input(
+            request.solar_date, request.solar_time, request.calendar_type or "solar", 
+            request.location, request.latitude, request.longitude
+        )
+        
+        # 使用统一接口获取数据
+        modules = {
+            'bazi': True,
+            'wangshuai': True,
+            'detail': True,
+            'personality': True,
+            'rizhu': True,
+            'health': True,
+            'dayun': {
+                'mode': 'count',
+                'count': 13  # 获取所有大运
+            },
+            'special_liunians': {
+                'dayun_config': {
+                    'mode': 'count',
+                    'count': 13  # 获取所有大运
+                },
+                'count': 200  # 获取足够多的特殊流年
+            }
+        }
+        
+        unified_data = await BaziDataOrchestrator.fetch_data(
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
+            gender=request.gender,
+            modules=modules,
+            use_cache=True,
+            parallel=True,
+            calendar_type=request.calendar_type,
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude
+        )
+        
+        # 从统一接口结果中提取数据
+        bazi_data = unified_data.get('bazi', {})
+        wangshuai_result = unified_data.get('wangshuai', {})
+        detail_result = unified_data.get('detail', {})
+        personality_result = unified_data.get('personality', {})
+        rizhu_result = unified_data.get('rizhu', {})
+        health_result = unified_data.get('health', {})
+        special_liunians = unified_data.get('special_liunians', {}).get('list', [])
+        
+        # 提取和验证数据
+        if isinstance(bazi_data, dict) and 'bazi' in bazi_data:
+            bazi_data = bazi_data['bazi']
+        bazi_data = validate_bazi_data(bazi_data)
+        
+        # 获取大运序列（从detail_result）
+        dayun_sequence = detail_result.get('dayun_sequence', [])
+        
+        # 获取喜忌数据
+        xishen_jishen_result = None
+        try:
+            xishen_request = XishenJishenRequest(
+                solar_date=final_solar_date,
+                solar_time=final_solar_time,
+                gender=request.gender,
+                calendar_type=request.calendar_type,
+                location=request.location,
+                latitude=request.latitude,
+                longitude=request.longitude
+            )
+            xishen_jishen_result = await get_xishen_jishen(xishen_request)
+        except Exception as e:
+            logger.warning(f"获取喜忌数据失败（不影响业务）: {e}")
+        
+        # 构建input_data
+        input_data = build_general_review_input_data(
+            bazi_data,
+            wangshuai_result,
+            detail_result,
+            dayun_sequence,
+            request.gender,
+            final_solar_date,
+            final_solar_time,
+            personality_result,
+            rizhu_result,
+            health_result,
+            None,  # liunian_sequence
+            special_liunians,
+            xishen_jishen_result
+        )
+        
+        # 格式化数据
+        formatted_data = format_input_data_for_coze(input_data)
+        
+        return {
+            "success": True,
+            "formatted_data": formatted_data,
+            "formatted_data_length": len(formatted_data),
+            "data_summary": {
+                "bazi_pillars": input_data.get('mingpan_hexin_geju', {}).get('bazi_pillars', {}),
+                "dayun_count": len(input_data.get('guanjian_dayun', {}).get('key_dayuns', [])),
+                "current_dayun_liunians_count": len(input_data.get('guanjian_dayun', {}).get('current_dayun', {}).get('liunians', []) if input_data.get('guanjian_dayun', {}).get('current_dayun') else []),
+                "key_dayuns_count": len(input_data.get('guanjian_dayun', {}).get('key_dayuns', [])),
+                "xishen": input_data.get('zhongsheng_tidian', {}).get('xishen', {}),
+                "jishen": input_data.get('zhongsheng_tidian', {}).get('jishen', {})
+            },
+            "usage": {
+                "description": "此接口返回的数据可以直接用于 Coze Bot 的 {{input}} 占位符",
+                "coze_bot_setup": "1. 登录 Coze 平台\n2. 找到'八字命理总评分析' Bot\n3. 进入 Bot 设置 → System Prompt\n4. 复制 docs/需求/Coze_Bot_System_Prompt_总评分析.md 中的提示词\n5. 粘贴到 System Prompt 中\n6. 保存设置",
+                "test_command": f'curl -X POST "http://localhost:8001/api/v1/general-review/test" -H "Content-Type: application/json" -d \'{{"solar_date": "{request.solar_date}", "solar_time": "{request.solar_time}", "gender": "{request.gender}", "calendar_type": "{request.calendar_type or "solar"}"}}\''
+            }
+        }
+    except Exception as e:
+        import traceback
+        logger.error(f"测试接口异常: {e}\n{traceback.format_exc()}")
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
 
 
 @router.post("/general-review/stream", summary="流式生成总评分析")
@@ -276,10 +417,23 @@ async def general_review_analysis_debug(request: GeneralReviewRequest):
                 "error": f"数据完整性验证失败: {validation_error}"
             }
         
-        # 简化返回，只返回 success 和 input_data
+        # ⚠️ 方案2：格式化数据为 Coze Bot 输入格式
+        formatted_data = format_input_data_for_coze(input_data)
+        
+        # 返回 success、input_data 和 formatted_data
         return {
             "success": True,
-            "input_data": input_data
+            "input_data": input_data,
+            "formatted_data": formatted_data,
+            "formatted_data_length": len(formatted_data),
+            "summary": {
+                "bazi_pillars": input_data.get('mingpan_hexin_geju', {}).get('bazi_pillars', {}),
+                "dayun_count": len(input_data.get('guanjian_dayun', {}).get('key_dayuns', [])),
+                "current_dayun_liunians_count": len(input_data.get('guanjian_dayun', {}).get('current_dayun', {}).get('liunians', []) if input_data.get('guanjian_dayun', {}).get('current_dayun') else []),
+                "key_dayuns_count": len(input_data.get('guanjian_dayun', {}).get('key_dayuns', [])),
+                "xishen": input_data.get('zhongsheng_tidian', {}).get('xishen', {}),
+                "jishen": input_data.get('zhongsheng_tidian', {}).get('jishen', {})
+            }
         }
     except Exception as e:
         import traceback
@@ -315,6 +469,20 @@ async def general_review_analysis_stream_generator(
         longitude: 经度（用于时区转换和真太阳时计算，优先级2）
         bot_id: Coze Bot ID（可选）
     """
+    # 记录开始时间和前端输入
+    api_start_time = time.time()
+    frontend_input = {
+        'solar_date': solar_date,
+        'solar_time': solar_time,
+        'gender': gender,
+        'calendar_type': calendar_type,
+        'location': location,
+        'latitude': latitude,
+        'longitude': longitude
+    }
+    llm_first_token_time = None
+    llm_output_chunks = []
+    
     try:
         # 1. 确定使用的 bot_id（优先级：参数 > GENERAL_REVIEW_BOT_ID > COZE_BOT_ID）
         used_bot_id = bot_id
@@ -577,10 +745,10 @@ async def general_review_analysis_stream_generator(
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 8. 构建自然语言Prompt（阶段4：Prompt构建）
-        prompt = build_general_review_prompt(input_data)
-        logger.info(f"Prompt长度: {len(prompt)} 字符")
-        logger.debug(f"Prompt前500字符: {prompt[:500]}")
+        # 8. ⚠️ 方案2：格式化数据为 Coze Bot 输入格式
+        formatted_data = format_input_data_for_coze(input_data)
+        logger.info(f"[General Review Stream] 格式化数据长度: {len(formatted_data)} 字符")
+        logger.debug(f"[General Review Stream] 格式化数据前500字符: {formatted_data[:500]}")
         
         # 9. 调用Coze API（阶段5：Coze API调用）
         print(f"🔍 [步骤5-Coze调用] 开始调用 Coze API，Bot ID: {used_bot_id}")
@@ -588,20 +756,33 @@ async def general_review_analysis_stream_generator(
         coze_service = CozeStreamService(bot_id=used_bot_id)
         
         # 10. 流式处理（阶段6：流式处理）
+        llm_start_time = time.time()
         chunk_count = 0
         total_content_length = 0
-        async for chunk in coze_service.stream_custom_analysis(prompt, bot_id=used_bot_id):
+        has_content = False
+        
+        async for chunk in coze_service.stream_custom_analysis(formatted_data, bot_id=used_bot_id):
             chunk_type = chunk.get('type', 'unknown')
+            
+            # 记录第一个token时间
+            if llm_first_token_time is None and chunk_type == 'progress':
+                llm_first_token_time = time.time()
+            
             if chunk_type == 'progress':
                 chunk_count += 1
                 content = chunk.get('content', '')
+                llm_output_chunks.append(content)  # 收集输出内容
                 total_content_length += len(content)
+                has_content = True
                 if chunk_count == 1:
                     print(f"✅ [步骤5-Coze调用] 收到第一个响应块，类型: {chunk_type}")
                     logger.info(f"[步骤5-Coze调用] 收到第一个响应块，类型: {chunk_type}")
             elif chunk_type == 'complete':
+                complete_content = chunk.get('content', '')
+                llm_output_chunks.append(complete_content)  # 收集完整内容
                 print(f"✅ [步骤5-Coze调用] 收到完成响应，总块数: {chunk_count}, 总内容长度: {total_content_length}")
                 logger.info(f"[步骤5-Coze调用] 收到完成响应，总块数: {chunk_count}, 总内容长度: {total_content_length}")
+                has_content = True
             elif chunk_type == 'error':
                 print(f"❌ [步骤5-Coze调用] 收到错误响应: {chunk.get('content', '')}")
                 logger.error(f"[步骤5-Coze调用] 收到错误响应: {chunk.get('content', '')}")
@@ -609,6 +790,30 @@ async def general_review_analysis_stream_generator(
             yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
             if chunk_type in ['complete', 'error']:
                 break
+        
+        # 记录交互数据（异步，不阻塞）
+        api_end_time = time.time()
+        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+        llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
+        llm_output = ''.join(llm_output_chunks)
+        
+        logger_instance = get_user_interaction_logger()
+        logger_instance.log_function_usage_async(
+            function_type='general',
+            function_name='八字命理-总评分析',
+            frontend_api='/api/v1/bazi/general-review/stream',
+            frontend_input=frontend_input,
+            input_data=input_data if 'input_data' in locals() else {},
+            llm_output=llm_output,
+            llm_api='coze_api',
+            api_response_time_ms=api_response_time_ms,
+            llm_first_token_time_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+            llm_total_time_ms=llm_total_time_ms,
+            round_number=1,
+            bot_id=used_bot_id,
+            status='success' if has_content else 'failed',
+            streaming=True
+        )
                 
     except ValueError as e:
         # 配置错误
@@ -618,6 +823,27 @@ async def general_review_analysis_stream_generator(
             'content': f"Coze API 配置缺失: {str(e)}"
         }
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+        
+        # 记录错误
+        api_end_time = time.time()
+        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+        logger_instance = get_user_interaction_logger()
+        logger_instance.log_function_usage_async(
+            function_type='general',
+            function_name='八字命理-总评分析',
+            frontend_api='/api/v1/bazi/general-review/stream',
+            frontend_input=frontend_input,
+            input_data={},
+            llm_output='',
+            llm_api='coze_api',
+            api_response_time_ms=api_response_time_ms,
+            llm_first_token_time_ms=None,
+            llm_total_time_ms=None,
+            round_number=1,
+            status='failed',
+            error_message=str(e),
+            streaming=True
+        )
     except Exception as e:
         # 其他错误（阶段7：错误处理）
         import traceback
@@ -627,6 +853,27 @@ async def general_review_analysis_stream_generator(
             'content': f"分析处理失败: {str(e)}"
         }
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+        
+        # 记录错误
+        api_end_time = time.time()
+        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+        logger_instance = get_user_interaction_logger()
+        logger_instance.log_function_usage_async(
+            function_type='general',
+            function_name='八字命理-总评分析',
+            frontend_api='/api/v1/bazi/general-review/stream',
+            frontend_input=frontend_input,
+            input_data={},
+            llm_output='',
+            llm_api='coze_api',
+            api_response_time_ms=api_response_time_ms,
+            llm_first_token_time_ms=None,
+            llm_total_time_ms=None,
+            round_number=1,
+            status='failed',
+            error_message=str(e),
+            streaming=True
+        )
 
 
 def classify_special_liunians(special_liunians: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
@@ -844,53 +1091,147 @@ def build_general_review_input_data(
     # 分析大运对事业财运的影响
     dayun_effect = analyze_dayun_effect(dayun_sequence, shiye_xing, caifu_xing, ten_gods_data)
     
-    # 提取当前大运
-    current_dayun = None
-    if dayun_sequence:
-        # 找到当前大运（通常是最接近或包含当前年龄的大运）
-        from datetime import datetime
-        birth_date = bazi_data.get('basic_info', {}).get('solar_date', '')
-        if birth_date:
-            try:
-                birth = datetime.strptime(birth_date, '%Y-%m-%d')
-                today = datetime.now()
-                age = today.year - birth.year - (1 if (today.month, today.day) < (birth.month, birth.day) else 0)
-                
-                for dayun in dayun_sequence:
-                    age_range = dayun.get('age_display', '')
-                    if age_range:
-                        # 解析年龄范围，如 "10-20岁"
-                        try:
-                            parts = age_range.replace('岁', '').split('-')
-                            if len(parts) == 2:
-                                start_age = int(parts[0])
-                                end_age = int(parts[1])
-                                if start_age <= age <= end_age:
-                                    current_dayun = dayun
-                                    break
-                        except:
-                            pass
-                
-                if not current_dayun and dayun_sequence:
-                    # 如果没有找到，使用第一个大运
-                    current_dayun = dayun_sequence[1] if len(dayun_sequence) > 1 else dayun_sequence[0]
-            except:
-                pass
+    # ⚠️ 数据提取辅助函数：从 wangshuai_result 中提取旺衰数据
+    def extract_wangshuai_data(wangshuai_result: Dict[str, Any]) -> Dict[str, Any]:
+        """从 wangshuai_result 中提取旺衰数据"""
+        if isinstance(wangshuai_result, dict):
+            if wangshuai_result.get('success') and 'data' in wangshuai_result:
+                return wangshuai_result.get('data', {})
+            if 'wangshuai' in wangshuai_result or 'xi_shen' in wangshuai_result:
+                return wangshuai_result
+        return {}
     
-    # 获取关键大运（第2-4步）
-    key_dayun_list = []
-    for idx in [1, 2, 3]:
-        if idx < len(dayun_sequence):
-            dayun = dayun_sequence[idx]
-            key_dayun_list.append({
-                'step': dayun.get('step', idx),
-                'stem': dayun.get('stem', ''),
-                'branch': dayun.get('branch', ''),
-                'main_star': dayun.get('main_star', ''),
-                'year_start': dayun.get('year_start', 0),
-                'year_end': dayun.get('year_end', 0),
-                'age_display': dayun.get('age_display', '')
-            })
+    # ⚠️ 数据提取辅助函数：从 detail_result 或 bazi_data 中提取十神数据
+    def extract_ten_gods_data(detail_result: Dict[str, Any], bazi_data: Dict[str, Any]) -> Dict[str, Any]:
+        """从 detail_result 或 bazi_data 中提取十神数据"""
+        # 1. 先尝试从 detail_result 的顶层获取
+        ten_gods = detail_result.get('ten_gods', {})
+        if ten_gods and isinstance(ten_gods, dict) and len(ten_gods) > 0:
+            return ten_gods
+        
+        # 2. 尝试从 detail_result 的 details 字段中提取
+        details = detail_result.get('details', {})
+        if details and isinstance(details, dict):
+            ten_gods_from_details = {}
+            for pillar_name in ['year', 'month', 'day', 'hour']:
+                pillar_detail = details.get(pillar_name, {})
+                if isinstance(pillar_detail, dict):
+                    ten_gods_from_details[pillar_name] = {
+                        'main_star': pillar_detail.get('main_star', ''),
+                        'hidden_stars': pillar_detail.get('hidden_stars', [])
+                    }
+            if any(ten_gods_from_details.values()):
+                return ten_gods_from_details
+        
+        # 3. 尝试从 bazi_data 的 details 字段中提取
+        bazi_details = bazi_data.get('details', {})
+        if bazi_details and isinstance(bazi_details, dict):
+            ten_gods_from_bazi = {}
+            for pillar_name in ['year', 'month', 'day', 'hour']:
+                pillar_detail = bazi_details.get(pillar_name, {})
+                if isinstance(pillar_detail, dict):
+                    ten_gods_from_bazi[pillar_name] = {
+                        'main_star': pillar_detail.get('main_star', ''),
+                        'hidden_stars': pillar_detail.get('hidden_stars', [])
+                    }
+            if any(ten_gods_from_bazi.values()):
+                return ten_gods_from_bazi
+        
+        return {}
+    
+    # ⚠️ 修复：从 wangshuai_result 中正确提取旺衰数据
+    wangshuai_data = extract_wangshuai_data(wangshuai_result)
+    wangshuai_str = wangshuai_data.get('wangshuai', '') if isinstance(wangshuai_data, dict) else str(wangshuai_data) if wangshuai_data else ''
+    wangshuai_detail_str = wangshuai_data.get('wangshuai_detail', wangshuai_data.get('detail', '')) if isinstance(wangshuai_data, dict) else ''
+    
+    # ⚠️ 修复：从 detail_result 或 bazi_data 中提取十神数据
+    ten_gods_extracted = extract_ten_gods_data(detail_result, bazi_data)
+    # 如果提取的十神数据为空，使用原有的 ten_gods_full
+    if not ten_gods_extracted:
+        ten_gods_extracted = ten_gods_full
+    
+    # ⚠️ 优化：使用工具函数计算年龄和当前大运（与排盘系统一致）
+    birth_date = bazi_data.get('basic_info', {}).get('solar_date', '') or solar_date
+    current_age = 0
+    birth_year = None
+    if birth_date:
+        current_age = calculate_user_age(birth_date)
+        try:
+            birth_year = int(birth_date.split('-')[0])
+        except:
+            pass
+    
+    # 获取当前大运（与排盘系统一致）
+    current_dayun_info = get_current_dayun(dayun_sequence, current_age)
+    
+    # ⚠️ 优化：使用工具函数构建增强的大运流年结构（包含优先级、描述、备注等）
+    if special_liunians is None:
+        special_liunians = []
+    
+    enhanced_dayun_structure = build_enhanced_dayun_structure(
+        dayun_sequence=dayun_sequence,
+        special_liunians=special_liunians,
+        current_age=current_age,
+        current_dayun=current_dayun_info,
+        birth_year=birth_year
+    )
+    
+    # ⚠️ 优化：添加后处理函数（清理流月流日字段，限制流年数量）
+    def clean_liunian_data(liunian: Dict[str, Any]) -> Dict[str, Any]:
+        """清理流年数据：移除流月流日字段"""
+        cleaned = liunian.copy()
+        fields_to_remove = ['liuyue_sequence', 'liuri_sequence', 'liushi_sequence']
+        for field in fields_to_remove:
+            cleaned.pop(field, None)
+        return cleaned
+    
+    def limit_liunians_by_priority(liunians: List[Dict[str, Any]], max_count: int = 3) -> List[Dict[str, Any]]:
+        """限制流年数量：只保留优先级最高的N个（已按优先级排序）"""
+        if not liunians:
+            return []
+        return liunians[:max_count]
+    
+    # 提取当前大运数据（优先级1）
+    current_dayun_enhanced = enhanced_dayun_structure.get('current_dayun')
+    current_dayun_data = None
+    if current_dayun_enhanced:
+        raw_liunians = current_dayun_enhanced.get('liunians', [])
+        cleaned_liunians = [clean_liunian_data(liunian) for liunian in raw_liunians]
+        limited_liunians = limit_liunians_by_priority(cleaned_liunians, max_count=3)
+        
+        current_dayun_data = {
+            'step': str(current_dayun_enhanced.get('step', '')),
+            'stem': current_dayun_enhanced.get('gan', current_dayun_enhanced.get('stem', '')),
+            'branch': current_dayun_enhanced.get('zhi', current_dayun_enhanced.get('branch', '')),
+            'age_display': current_dayun_enhanced.get('age_display', current_dayun_enhanced.get('age_range', '')),
+            'main_star': current_dayun_enhanced.get('main_star', ''),
+            'priority': current_dayun_enhanced.get('priority', 1),
+            'life_stage': current_dayun_enhanced.get('life_stage', ''),
+            'description': current_dayun_enhanced.get('description', ''),
+            'note': current_dayun_enhanced.get('note', ''),
+            'liunians': limited_liunians
+        }
+    
+    # 提取关键大运数据（优先级2-10）
+    key_dayuns_enhanced = enhanced_dayun_structure.get('key_dayuns', [])
+    key_dayuns_data = []
+    for key_dayun in key_dayuns_enhanced:
+        raw_liunians = key_dayun.get('liunians', [])
+        cleaned_liunians = [clean_liunian_data(liunian) for liunian in raw_liunians]
+        limited_liunians = limit_liunians_by_priority(cleaned_liunians, max_count=3)
+        
+        key_dayuns_data.append({
+            'step': str(key_dayun.get('step', '')),
+            'stem': key_dayun.get('gan', key_dayun.get('stem', '')),
+            'branch': key_dayun.get('zhi', key_dayun.get('branch', '')),
+            'age_display': key_dayun.get('age_display', key_dayun.get('age_range', '')),
+            'main_star': key_dayun.get('main_star', ''),
+            'priority': key_dayun.get('priority', 999),
+            'life_stage': key_dayun.get('life_stage', ''),
+            'description': key_dayun.get('description', ''),
+            'note': key_dayun.get('note', ''),
+            'liunians': limited_liunians
+        })
     
     # 分析大运流年冲合刑害
     chonghe_xinghai = analyze_chonghe_xinghai(bazi_pillars, dayun_sequence, detail_result)
@@ -938,9 +1279,9 @@ def build_general_review_input_data(
         'mingpan_hexin_geju': {
             'day_master': day_pillar,
             'bazi_pillars': bazi_pillars,
-            'ten_gods': ten_gods_full,
-            'wangshuai': wangshuai_result.get('wangshuai', ''),
-            'wangshuai_detail': wangshuai_result.get('wangshuai_detail', ''),
+            'ten_gods': ten_gods_extracted,  # ⚠️ 使用提取的十神数据
+            'wangshuai': wangshuai_str,  # ⚠️ 使用提取的旺衰数据
+            'wangshuai_detail': wangshuai_detail_str,  # ⚠️ 使用提取的旺衰详细数据
             'yue_ling': yue_ling,
             'geju_type': geju_type,
             'wuxing_liutong': wuxing_liutong
@@ -977,10 +1318,9 @@ def build_general_review_input_data(
         
         # 6. 关键大运与人生节点
         'guanjian_dayun': {
-            'current_dayun': current_dayun,
-            'dayun_list': key_dayun_list,
-            'dayun_sequence': dayun_sequence,  # ⚠️ 完整的大运序列
-            'dayun_liunians': organize_special_liunians_by_dayun(special_liunians, dayun_sequence),  # 按大运分组
+            'current_dayun': current_dayun_data,  # ⚠️ 使用增强的当前大运数据
+            'key_dayuns': key_dayuns_data,  # ⚠️ 使用增强的关键大运数据（优先级2-10）
+            'dayun_sequence': dayun_sequence,  # ⚠️ 完整的大运序列（保留用于兼容）
             'chonghe_xinghai': chonghe_xinghai
         },
         
@@ -1488,7 +1828,7 @@ def validate_general_review_input_data(data: dict) -> Tuple[bool, str]:
             # 健康要点部分允许部分为空
         },
         'guanjian_dayun': {
-            'dayun_list': '大运列表'
+            'key_dayuns': '关键大运列表'  # ⚠️ 已改为 key_dayuns（优先级2-10）
         },
         'zhongsheng_tidian': {
             'xishen': '喜神数据',
@@ -1524,404 +1864,85 @@ def validate_general_review_input_data(data: dict) -> Tuple[bool, str]:
     return True, ""
 
 
-def build_general_review_prompt(data: dict) -> str:
+def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
     """
-    构建自然语言格式的提示词（阶段4：Prompt构建）
-    将JSON数据转换为自然语言格式，确保 Coze Bot 能正确理解
+    将结构化数据格式化为 JSON 字符串（用于 Coze Bot System Prompt 的 {{input}} 占位符）
+    
+    ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
+    提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
+    
+    Args:
+        input_data: 结构化输入数据
+        
+    Returns:
+        str: JSON 格式的字符串，可以直接替换 {{input}} 占位符
     """
-    prompt_lines = []
-    # ⚠️ 注意：代码中只提供数据，不包含任何提示词或指令
-    # 提示词必须在 Coze Bot 中配置
+    import json
     
-    # 1. 命盘核心格局
-    prompt_lines.append("【命盘核心格局】")
-    mingpan = data.get('mingpan_hexin_geju', {})
+    # 获取原始数据
+    mingpan = input_data.get('mingpan_hexin_geju', {})
+    xingge = input_data.get('xingge_tezhi', {})
+    shiye_caiyun = input_data.get('shiye_caiyun', {})
+    jiating = input_data.get('jiating_liuqin', {})
+    jiankang = input_data.get('jiankang_yaodian', {})
+    guanjian = input_data.get('guanjian_dayun', {})
+    zhongsheng = input_data.get('zhongsheng_tidian', {})
     
-    # 日主信息
-    day_master = mingpan.get('day_master', {})
-    if day_master:
-        stem = day_master.get('stem', '')
-        branch = day_master.get('branch', '')
-        element = day_master.get('element', '')
-        yin_yang = day_master.get('yin_yang', '')
-        prompt_lines.append(f"日主：{stem}{branch}（{yin_yang}{element}）")
+    # ⚠️ 方案2：优化数据结构，使用引用避免重复
+    optimized_data = {
+        # 1. 命盘核心格局（基础数据，只提取一次）
+        'mingpan_hexin_geju': mingpan,
+        
+        # 2. 性格特质（引用数据，不重复存储）
+        'xingge_tezhi': {
+            'day_master_personality': xingge.get('day_master_personality', []),
+            'rizhu_algorithm': xingge.get('rizhu_algorithm', ''),
+            'ten_gods_effect': xingge.get('ten_gods_effect', '')
+        },
+        
+        # 3. 事业财运轨迹（引用数据，不重复存储）
+        'shiye_caiyun': {
+            'shiye_xing': shiye_caiyun.get('shiye_xing', {}),
+            'caifu_xing': shiye_caiyun.get('caifu_xing', {}),
+            'dayun_effect': shiye_caiyun.get('dayun_effect', {})
+        },
+        
+        # 4. 家庭六亲关系（引用数据，不重复存储）
+        'jiating_liuqin': {
+            'year_pillar': jiating.get('year_pillar', {}),
+            'month_pillar': jiating.get('month_pillar', {}),
+            'day_pillar': jiating.get('day_pillar', {}),
+            'hour_pillar': jiating.get('hour_pillar', {})
+        },
+        
+        # 5. 健康要点（引用数据，不重复存储）
+        'jiankang_yaodian': {
+            'wuxing_balance': jiankang.get('wuxing_balance', {}),
+            'zangfu_duiying': jiankang.get('zangfu_duiying', {}),
+            'jiankang_ruodian': jiankang.get('jiankang_ruodian', {})
+        },
+        
+        # 6. 关键大运与人生节点（引用数据，不重复存储）
+        'guanjian_dayun': {
+            'current_dayun': guanjian.get('current_dayun'),
+            'key_dayuns': guanjian.get('key_dayuns', []),
+            'dayun_sequence': guanjian.get('dayun_sequence', []),  # 保留用于兼容
+            'chonghe_xinghai': guanjian.get('chonghe_xinghai', {})
+        },
+        
+        # 7. 终生提点与建议（引用数据，不重复存储）
+        'zhongsheng_tidian': {
+            'xishen': zhongsheng.get('xishen', {}),
+            'jishen': zhongsheng.get('jishen', {}),
+            'xishen_wuxing': zhongsheng.get('xishen_wuxing', []),
+            'jishen_wuxing': zhongsheng.get('jishen_wuxing', []),
+            'fangwei_xuanze': zhongsheng.get('fangwei_xuanze', {}),
+            'hangye_xuanze': zhongsheng.get('hangye_xuanze', {}),
+            'xiushen_jianyi': zhongsheng.get('xiushen_jianyi', {}),
+            'fengshui_tiaojie': zhongsheng.get('fengshui_tiaojie', {})
+        }
+    }
     
-    # 四柱排盘
-    bazi_pillars = mingpan.get('bazi_pillars', {})
-    if bazi_pillars:
-        prompt_lines.append("四柱排盘：")
-        for pillar_name, pillar_key in [('年柱', 'year'), ('月柱', 'month'), ('日柱', 'day'), ('时柱', 'hour')]:
-            pillar = bazi_pillars.get(pillar_key, {})
-            stem = pillar.get('stem', '')
-            branch = pillar.get('branch', '')
-            if stem and branch:
-                prompt_lines.append(f"  {pillar_name}：{stem}{branch}")
-    
-    # 十神配置
-    ten_gods = mingpan.get('ten_gods', {})
-    if ten_gods:
-        prompt_lines.append("十神配置：")
-        for pillar_name, pillar_key in [('年柱', 'year'), ('月柱', 'month'), ('日柱', 'day'), ('时柱', 'hour')]:
-            pillar_ten_gods = ten_gods.get(pillar_key, {})
-            if pillar_ten_gods:
-                main_star = pillar_ten_gods.get('main_star', '')
-                hidden_stars = pillar_ten_gods.get('hidden_stars', [])
-                hidden_str = '、'.join(hidden_stars) if hidden_stars else '无'
-                prompt_lines.append(f"  {pillar_name}：主星{main_star}，副星{hidden_str}")
-    
-    # 旺衰
-    wangshuai = mingpan.get('wangshuai', '')
-    if wangshuai:
-        prompt_lines.append(f"身旺身弱：{wangshuai}")
-    
-    # 月令
-    yue_ling = mingpan.get('yue_ling', '')
-    if yue_ling:
-        prompt_lines.append(f"月令：{yue_ling}")
-    
-    # 格局类型
-    geju_type = mingpan.get('geju_type', '')
-    if geju_type:
-        prompt_lines.append(f"格局类型：{geju_type}")
-    
-    # 五行流通情况
-    wuxing_liutong = mingpan.get('wuxing_liutong', {})
-    if wuxing_liutong and wuxing_liutong.get('summary'):
-        prompt_lines.append(f"五行流通：{wuxing_liutong['summary']}")
-    
-    prompt_lines.append("")
-    
-    # 2. 性格特质
-    prompt_lines.append("【性格特质】")
-    xingge = data.get('xingge_tezhi', {})
-    
-    # 日主性格
-    personality = xingge.get('day_master_personality', [])
-    if personality:
-        prompt_lines.append("日主性格：")
-        for desc in personality[:3]:  # 最多显示3条
-            prompt_lines.append(f"  - {desc}")
-    
-    # 日柱算法
-    rizhu_algorithm = xingge.get('rizhu_algorithm', '')
-    if rizhu_algorithm:
-        prompt_lines.append(f"日柱解析：{rizhu_algorithm[:200]}...")  # 截取前200字符
-    
-    # 十神对性格的影响
-    ten_gods_effect = xingge.get('ten_gods_effect', {})
-    if ten_gods_effect and ten_gods_effect.get('summary'):
-        prompt_lines.append(f"十神影响：{ten_gods_effect['summary']}")
-    
-    prompt_lines.append("")
-    
-    # 日柱规则参考（NEW）
-    rizhu_rules = data.get('rizhu_rules', {})
-    matched_rules = rizhu_rules.get('matched_rules', [])
-    if matched_rules:
-        prompt_lines.append("【日柱规则参考】")
-        prompt_lines.append(f"匹配到 {len(matched_rules)} 条日柱规则：")
-        for i, rule in enumerate(matched_rules[:20], 1):  # 最多显示20条
-            rule_name = rule.get('rule_name', rule.get('name', f'规则{i}'))
-            rule_content = rule.get('content', {})
-            if isinstance(rule_content, dict):
-                text = rule_content.get('text', '')
-                if text:
-                    prompt_lines.append(f"  {i}. {rule_name}：{text}")
-            elif isinstance(rule_content, str):
-                prompt_lines.append(f"  {i}. {rule_name}：{rule_content}")
-        prompt_lines.append("")
-    
-    # 3. 事业财运轨迹
-    prompt_lines.append("【事业财运轨迹】")
-    shiye_caiyun = data.get('shiye_caiyun', {})
-    
-    # 事业星
-    shiye_xing = shiye_caiyun.get('shiye_xing', {})
-    if shiye_xing and shiye_xing.get('primary'):
-        prompt_lines.append(f"事业星：{shiye_xing['primary']}")
-    
-    # 财富星
-    caifu_xing = shiye_caiyun.get('caifu_xing', {})
-    if caifu_xing and caifu_xing.get('primary'):
-        prompt_lines.append(f"财富星：{caifu_xing['primary']}")
-    
-    # 大运阶段数据
-    dayun_effect = shiye_caiyun.get('dayun_effect', {})
-    all_dayuns = dayun_effect.get('all_dayuns', [])
-    if all_dayuns:
-        prompt_lines.append("大运阶段：")
-        for dayun in all_dayuns:
-            step = dayun.get('step', '')
-            age_display = dayun.get('age_display', '')
-            ganzhi = dayun.get('ganzhi', '')
-            main_star = dayun.get('main_star', '')
-            if step and age_display and ganzhi:
-                prompt_lines.append(f"  第{step}步大运：{ganzhi}（{age_display}），主星：{main_star}")
-    
-    # 大运对事业财运的影响摘要
-    if dayun_effect and dayun_effect.get('summary'):
-        prompt_lines.append(f"大运影响摘要：{dayun_effect['summary']}")
-    
-    prompt_lines.append("")
-    
-    # 4. 家庭六亲关系
-    prompt_lines.append("【家庭六亲关系】")
-    jiating = data.get('jiating_liuqin', {})
-    
-    year_pillar = jiating.get('year_pillar', {})
-    month_pillar = jiating.get('month_pillar', {})
-    day_pillar = jiating.get('day_pillar', {})
-    hour_pillar = jiating.get('hour_pillar', {})
-    
-    if year_pillar:
-        stem = year_pillar.get('stem', '')
-        branch = year_pillar.get('branch', '')
-        if stem and branch:
-            prompt_lines.append(f"年柱（父母）：{stem}{branch}")
-    if month_pillar:
-        stem = month_pillar.get('stem', '')
-        branch = month_pillar.get('branch', '')
-        if stem and branch:
-            prompt_lines.append(f"月柱（兄弟）：{stem}{branch}")
-    if day_pillar:
-        stem = day_pillar.get('stem', '')
-        branch = day_pillar.get('branch', '')
-        if stem and branch:
-            prompt_lines.append(f"日柱（配偶）：{stem}{branch}")
-    if hour_pillar:
-        stem = hour_pillar.get('stem', '')
-        branch = hour_pillar.get('branch', '')
-        if stem and branch:
-            prompt_lines.append(f"时柱（子女）：{stem}{branch}")
-    
-    prompt_lines.append("")
-    
-    # 5. 健康要点
-    prompt_lines.append("【健康要点】")
-    jiankang = data.get('jiankang_yaodian', {})
-    
-    # 五行平衡
-    wuxing_balance = jiankang.get('wuxing_balance', {})
-    if wuxing_balance and isinstance(wuxing_balance, dict):
-        summary = wuxing_balance.get('summary', '')
-        if summary:
-            prompt_lines.append(f"五行平衡：{summary}")
-    
-    # 脏腑对应
-    zangfu_duiying = jiankang.get('zangfu_duiying', {})
-    if zangfu_duiying and isinstance(zangfu_duiying, dict):
-        organs = zangfu_duiying.get('organ_strength', {})
-        if organs:
-            strong_organs = [k for k, v in organs.items() if v > 2]
-            weak_organs = [k for k, v in organs.items() if v < 1]
-            if strong_organs:
-                prompt_lines.append(f"强旺脏腑：{'、'.join(strong_organs)}")
-            if weak_organs:
-                prompt_lines.append(f"薄弱脏腑：{'、'.join(weak_organs)}")
-    
-    prompt_lines.append("")
-    
-    # 6. 关键大运与人生节点
-    prompt_lines.append("【关键大运与人生节点】")
-    guanjian = data.get('guanjian_dayun', {})
-    
-    # 当前大运
-    current_dayun = guanjian.get('current_dayun', {})
-    if current_dayun:
-        stem = current_dayun.get('stem', '')
-        branch = current_dayun.get('branch', '')
-        age_display = current_dayun.get('age_display', '')
-        if stem and branch:
-            prompt_lines.append(f"当前大运：{stem}{branch}（{age_display}）")
-    
-    # 大运序列数据
-    dayun_sequence = guanjian.get('dayun_sequence', [])
-    if dayun_sequence:
-        prompt_lines.append("大运序列：")
-        max_display = min(7, len(dayun_sequence))
-        for idx in range(max_display):
-            dayun = dayun_sequence[idx]
-            step = dayun.get('step', idx + 1)
-            stem = dayun.get('stem', '')
-            branch = dayun.get('branch', '')
-            main_star = dayun.get('main_star', '')
-            age_display = dayun.get('age_display', '')
-            if stem and branch:
-                prompt_lines.append(f"  第{step}步大运：{stem}{branch}（{age_display}），主星：{main_star}")
-    
-    # 关键大运列表
-    dayun_list = guanjian.get('dayun_list', [])
-    if dayun_list:
-        prompt_lines.append("关键大运：")
-        for dayun in dayun_list:
-            step = dayun.get('step', '')
-            stem = dayun.get('stem', '')
-            branch = dayun.get('branch', '')
-            main_star = dayun.get('main_star', '')
-            age_display = dayun.get('age_display', '')
-            if stem and branch:
-                prompt_lines.append(f"  第{step}步大运：{stem}{branch}（{age_display}），主星：{main_star}")
-    
-    # 冲合刑害
-    chonghe_xinghai = guanjian.get('chonghe_xinghai', {})
-    if chonghe_xinghai and chonghe_xinghai.get('summary'):
-        prompt_lines.append(f"冲合刑害：{chonghe_xinghai['summary']}")
-    
-    # 特殊流年数据（按关系类型分类）
-    # ⚠️ 修复：从 dayun_liunians 中提取并合并所有大运的特殊流年
-    from server.services.special_liunian_service import SpecialLiunianService
-    guanjian_dayun = data.get('guanjian_dayun', {})
-    dayun_sequence_for_format = guanjian_dayun.get('dayun_sequence', guanjian_dayun.get('dayun_list', []))
-    
-    # 从 dayun_liunians 中提取并合并所有大运的特殊流年
-    dayun_liunians = guanjian.get('dayun_liunians', {})
-    tiankedi_chong = []
-    tianhedi_he = []
-    suiyun_binglin = []
-    other_liunian = []
-    
-    # 遍历所有大运分组，合并特殊流年
-    for dayun_step, dayun_data in dayun_liunians.items():
-        if isinstance(dayun_data, dict):
-            tiankedi_chong.extend(dayun_data.get('tiankedi_chong', []))
-            tianhedi_he.extend(dayun_data.get('tianhedi_he', []))
-            suiyun_binglin.extend(dayun_data.get('suiyun_binglin', []))
-            other_liunian.extend(dayun_data.get('other', []))
-    
-    logger.info(f"[Prompt构建] 特殊流年统计: 天克地冲={len(tiankedi_chong)}, 天合地合={len(tianhedi_he)}, 岁运并临={len(suiyun_binglin)}, 其他={len(other_liunian)}")
-    
-    # 天克地冲（最高优先级）
-    if tiankedi_chong:
-        prompt_lines.append(f"特殊流年 - 天克地冲（共{len(tiankedi_chong)}个）：")
-        formatted = SpecialLiunianService.format_special_liunians_for_prompt(tiankedi_chong, dayun_sequence_for_format)
-        if formatted:
-            prompt_lines.append(formatted)
-        else:
-            # 如果格式化失败，至少列出年份和干支
-            for liunian in tiankedi_chong[:10]:  # 最多显示10个
-                year = liunian.get('year', '')
-                ganzhi = liunian.get('ganzhi', '')
-                if year and ganzhi:
-                    prompt_lines.append(f"  - {year}年{ganzhi}")
-    
-    # 天合地合（高优先级）
-    if tianhedi_he:
-        prompt_lines.append(f"特殊流年 - 天合地合（共{len(tianhedi_he)}个）：")
-        formatted = SpecialLiunianService.format_special_liunians_for_prompt(tianhedi_he, dayun_sequence_for_format)
-        if formatted:
-            prompt_lines.append(formatted)
-        else:
-            # 如果格式化失败，至少列出年份和干支
-            for liunian in tianhedi_he[:10]:  # 最多显示10个
-                year = liunian.get('year', '')
-                ganzhi = liunian.get('ganzhi', '')
-                if year and ganzhi:
-                    prompt_lines.append(f"  - {year}年{ganzhi}")
-    
-    # 岁运并临（高优先级）
-    if suiyun_binglin:
-        prompt_lines.append(f"特殊流年 - 岁运并临（共{len(suiyun_binglin)}个）：")
-        formatted = SpecialLiunianService.format_special_liunians_for_prompt(suiyun_binglin, dayun_sequence_for_format)
-        if formatted:
-            prompt_lines.append(formatted)
-        else:
-            # 如果格式化失败，至少列出年份和干支
-            for liunian in suiyun_binglin[:10]:  # 最多显示10个
-                year = liunian.get('year', '')
-                ganzhi = liunian.get('ganzhi', '')
-                if year and ganzhi:
-                    prompt_lines.append(f"  - {year}年{ganzhi}")
-    
-    # 其他关系
-    if other_liunian:
-        prompt_lines.append(f"其他特殊流年（共{len(other_liunian)}个）：")
-        # 其他流年也格式化显示
-        formatted = SpecialLiunianService.format_special_liunians_for_prompt(other_liunian[:20], dayun_sequence_for_format)  # 最多显示20个
-        if formatted:
-            prompt_lines.append(formatted)
-        else:
-            # 如果格式化失败，至少列出年份和干支
-            for liunian in other_liunian[:10]:  # 最多显示10个
-                year = liunian.get('year', '')
-                ganzhi = liunian.get('ganzhi', '')
-                if year and ganzhi:
-                    prompt_lines.append(f"  - {year}年{ganzhi}")
-    
-    prompt_lines.append("")
-    
-    # 7. 终生提点与建议
-    prompt_lines.append("【终生提点与建议】")
-    zhongsheng = data.get('zhongsheng_tidian', {})
-    
-    # 喜神（独立）
-    xishen = zhongsheng.get('xishen', {})
-    xishen_shishen = []
-    xishen_wuxing = []
-    xishen_tiaohou = {}
-    
-    if xishen:
-        xishen_shishen = xishen.get('shishen', [])
-        xishen_wuxing = xishen.get('wuxing', [])
-        xishen_tiaohou = xishen.get('tiaohou', {})
-    
-    # ⚠️ 修复：即使数据为空也明确标注，确保 Coze Bot 能看到完整信息
-    if xishen_shishen:
-        prompt_lines.append(f"喜用神（十神）：{'、'.join(xishen_shishen)}")
-    else:
-        prompt_lines.append("喜用神（十神）：无")
-    
-    if xishen_wuxing:
-        prompt_lines.append(f"喜神五行：{'、'.join(xishen_wuxing)}")
-    else:
-        prompt_lines.append("喜神五行：无")
-    
-    if xishen_tiaohou and xishen_tiaohou.get('description'):
-        prompt_lines.append(f"调候建议：{xishen_tiaohou.get('description', '')}")
-    
-    # 忌神（独立）
-    jishen = zhongsheng.get('jishen', {})
-    jishen_shishen = []
-    jishen_wuxing = []
-    
-    if jishen:
-        jishen_shishen = jishen.get('shishen', [])
-        jishen_wuxing = jishen.get('wuxing', [])
-    
-    # ⚠️ 修复：即使数据为空也明确标注，确保 Coze Bot 能看到完整信息
-    if jishen_shishen:
-        prompt_lines.append(f"忌神（十神）：{'、'.join(jishen_shishen)}")
-    else:
-        prompt_lines.append("忌神（十神）：无")
-    
-    if jishen_wuxing:
-        prompt_lines.append(f"忌神五行：{'、'.join(jishen_wuxing)}")
-    else:
-        prompt_lines.append("忌神五行：无")
-    
-    # ⚠️ 添加日志，便于调试
-    logger.info(f"[Prompt构建] 喜忌数据: 喜神十神={len(xishen_shishen)}, 喜神五行={len(xishen_wuxing)}, 忌神十神={len(jishen_shishen)}, 忌神五行={len(jishen_wuxing)}")
-    
-    # 方位选择
-    fangwei = zhongsheng.get('fangwei_xuanze', {})
-    if fangwei:
-        best = fangwei.get('best_directions', [])
-        avoid = fangwei.get('avoid_directions', [])
-        if best:
-            prompt_lines.append(f"最佳方位：{'、'.join(best)}")
-        if avoid:
-            prompt_lines.append(f"避开方位：{'、'.join(avoid)}")
-    
-    # 行业选择
-    hangye = zhongsheng.get('hangye_xuanze', {})
-    if hangye:
-        best = hangye.get('best_industries', [])
-        avoid = hangye.get('avoid_industries', [])
-        if best:
-            prompt_lines.append(f"适合行业：{'、'.join(best[:5])}")
-        if avoid:
-            prompt_lines.append(f"谨慎行业：{'、'.join(avoid[:3])}")
-    
-    prompt_lines.append("")
-    
-    return '\n'.join(prompt_lines)
+    # 格式化为 JSON 字符串（美化格式，便于 Bot 理解）
+    return json.dumps(optimized_data, ensure_ascii=False, indent=2)
 

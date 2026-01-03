@@ -774,13 +774,12 @@ async def smart_analyze_stream(request: Request):
             is_scenario_1 = category and (not question or question == category)
             is_scenario_2 = category and question and question != category
             
-            if not user_id:
-                yield _sse_message("error", {"message": "user_id参数必填"})
-                yield _sse_message("end", {})
-                return
-            
             # 场景1：需要生辰信息
             if is_scenario_1:
+                if not user_id:
+                    yield _sse_message("error", {"message": "场景1需要提供user_id参数"})
+                    yield _sse_message("end", {})
+                    return
                 if not year or not month or not day or not gender:
                     yield _sse_message("error", {"message": "场景1需要提供完整的生辰信息（year, month, day, gender）"})
                     yield _sse_message("end", {})
@@ -795,6 +794,10 @@ async def smart_analyze_stream(request: Request):
             
             # 场景2：从会话缓存获取生辰信息
             if is_scenario_2:
+                if not user_id:
+                    yield _sse_message("error", {"message": "场景2需要提供user_id参数"})
+                    yield _sse_message("end", {})
+                    return
                 # 执行场景2逻辑
                 async for event in _scenario_2_generator(
                     question, category, user_id, year, month, day, hour, gender, monitor
@@ -812,7 +815,7 @@ async def smart_analyze_stream(request: Request):
                 
                 # 执行原有逻辑
                 async for event in _original_scenario_generator(
-                    question, year, month, day, hour, gender, user_id, monitor
+                    question, year, month, day, hour, gender, user_id or None, monitor  # 允许 user_id 为空
                 ):
                     yield event
                 return

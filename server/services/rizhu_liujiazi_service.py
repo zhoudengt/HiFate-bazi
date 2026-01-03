@@ -21,7 +21,7 @@ class RizhuLiujiaziService:
     @staticmethod
     def get_rizhu_analysis(rizhu: str) -> Optional[Dict[str, Any]]:
         """
-        根据日柱查询解析内容
+        根据日柱查询解析内容（优化版：减少查询次数，添加表存在性检查）
         
         Args:
             rizhu: 日柱（如：乙丑）
@@ -47,8 +47,18 @@ class RizhuLiujiaziService:
                 pass
             
             with conn.cursor() as cursor:
-                # 使用多种方式尝试查询，确保兼容性
-                # 方式1: BINARY精确匹配，enabled = 1（兼容布尔值）
+                # ✅ 优化：先检查表是否存在，如果不存在快速返回
+                try:
+                    cursor.execute("SHOW TABLES LIKE 'rizhu_liujiazi'")
+                    if not cursor.fetchone():
+                        print(f"⚠️  表 rizhu_liujiazi 不存在", flush=True)
+                        return None
+                except Exception as e:
+                    print(f"⚠️  检查表存在性失败: {e}", flush=True)
+                    # 继续尝试查询，可能表存在但检查失败
+                
+                # ✅ 优化：使用单一查询，先尝试最可能成功的方式
+                # 方式1: BINARY精确匹配，enabled = 1（最常用）
                 cursor.execute("""
                     SELECT id, rizhu, analysis, enabled
                     FROM rizhu_liujiazi
@@ -58,32 +68,12 @@ class RizhuLiujiaziService:
                 
                 result = cursor.fetchone()
                 
-                # 方式2: 如果失败，尝试普通匹配，enabled = 1
-                if not result:
-                    cursor.execute("""
-                        SELECT id, rizhu, analysis, enabled
-                        FROM rizhu_liujiazi
-                        WHERE rizhu = %s AND enabled = 1
-                        LIMIT 1
-                    """, (rizhu,))
-                    result = cursor.fetchone()
-                
-                # 方式3: 如果还是失败，尝试不检查enabled（容错）
+                # 方式2: 如果失败，尝试不检查enabled（容错，但只尝试一次）
                 if not result:
                     cursor.execute("""
                         SELECT id, rizhu, analysis, enabled
                         FROM rizhu_liujiazi
                         WHERE BINARY rizhu = %s
-                        LIMIT 1
-                    """, (rizhu,))
-                    result = cursor.fetchone()
-                
-                # 方式4: 最后尝试普通匹配，不检查enabled
-                if not result:
-                    cursor.execute("""
-                        SELECT id, rizhu, analysis, enabled
-                        FROM rizhu_liujiazi
-                        WHERE rizhu = %s
                         LIMIT 1
                     """, (rizhu,))
                     result = cursor.fetchone()

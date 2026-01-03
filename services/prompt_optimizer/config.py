@@ -9,19 +9,23 @@ SERVICE_PORT = int(os.getenv("SERVICE_PORT", 9009))
 SERVICE_HOST = os.getenv("SERVICE_HOST", "0.0.0.0")
 
 # MongoDB 配置（存储反馈和报告）
-MONGO_HOST = "127.0.0.1"
-MONGO_PORT = 27017
-MONGO_DB = "bazi_feedback"
+# ⚠️ 重要：所有环境统一连接生产Node1 Docker MongoDB，确保数据一致性
+# 生产Node1 Docker MongoDB: 8.210.52.217:27017 (公网) / 172.18.121.222:27017 (内网)
+MONGO_HOST = os.getenv("MONGO_HOST", "8.210.52.217")  # 默认连接生产Node1公网IP
+MONGO_PORT = int(os.getenv("MONGO_PORT", "27017"))
+MONGO_DB = os.getenv("MONGO_DB", "bazi_feedback")
 MONGO_USER = os.getenv("MONGO_USER", "")
 MONGO_PASSWORD = os.getenv("MONGO_PASSWORD", "")
 
 # MySQL 配置（Prompt版本管理）
+# ⚠️ 重要：所有环境统一连接生产Node1 Docker MySQL，确保数据一致性
+# 生产Node1 Docker MySQL: 8.210.52.217:3306 (公网) / 172.18.121.222:3306 (内网)
 MYSQL_CONFIG = {
-    'host': os.getenv("MYSQL_HOST", "127.0.0.1"),
-    'port': int(os.getenv("MYSQL_PORT", 13306)),
+    'host': os.getenv("MYSQL_HOST", "8.210.52.217"),  # 默认连接生产Node1公网IP
+    'port': int(os.getenv("MYSQL_PORT", "3306")),  # 默认使用标准端口
     'user': os.getenv("MYSQL_USER", "root"),
-    'password': os.getenv("MYSQL_PASSWORD", "root123"),
-    'database': os.getenv("MYSQL_DATABASE", "bazi_system"),
+    'password': os.getenv("MYSQL_PASSWORD", "Yuanqizhan@163"),  # 默认使用生产密码
+    'database': os.getenv("MYSQL_DATABASE", "hifate_bazi"),  # 默认使用生产数据库
     'charset': 'utf8mb4',
     'use_unicode': True
 }

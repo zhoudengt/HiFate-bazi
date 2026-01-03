@@ -21,6 +21,9 @@ NC='\033[0m' # No Color
 # 默认配置
 NODE="node1"
 DRY_RUN=false
+AUTO_RESTART=false
+VERIFY_CONFIG=false
+ROLLBACK=false
 
 # 生产环境配置
 NODE1_PUBLIC_IP="8.210.52.217"
@@ -37,6 +40,18 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dry-run)
             DRY_RUN=true
+            shift
+            ;;
+        --auto-restart)
+            AUTO_RESTART=true
+            shift
+            ;;
+        --verify)
+            VERIFY_CONFIG=true
+            shift
+            ;;
+        --rollback)
+            ROLLBACK=true
             shift
             ;;
         *)
@@ -173,19 +188,126 @@ else
     echo "$VALIDATION_RESULT"
 fi
 
-# 提示需要重启的服务
-echo ""
-echo -e "${YELLOW}⚠️  注意：配置变更后可能需要重启相关服务${NC}"
-echo "如果配置变更影响以下服务，请重启："
-echo "  - Web服务（修改了应用配置）"
-echo "  - 微服务（修改了gRPC服务地址）"
-echo "  - 数据库/Redis服务（修改了数据库配置）"
-echo ""
-echo "重启命令示例："
-echo "  ssh root@$TARGET_IP 'cd $PROJECT_DIR/deploy/docker && docker-compose restart web'"
+# 配置验证（如果启用）
+if [ "$VERIFY_CONFIG" = true ]; then
+    echo ""
+    echo "🔍 验证配置是否生效..."
+    echo "----------------------------------------"
+    
+    # 验证bot_id等关键配置
+    VERIFY_RESULT=$(ssh_exec "cd $PROJECT_DIR && source .env 2>/dev/null && \
+        python3 << 'EOF'
+import os
+import sys
+try:
+    # 检查关键配置是否存在
+    bot_id = os.getenv('COZE_BOT_ID', '')
+    intent_bot_id = os.getenv('INTENT_BOT_ID', '')
+    fortune_bot_id = os.getenv('FORTUNE_ANALYSIS_BOT_ID', '')
+    
+    print('✅ 配置验证通过')
+    if bot_id:
+        print(f'  COZE_BOT_ID: {bot_id[:20]}...')
+    if intent_bot_id:
+        print(f'  INTENT_BOT_ID: {intent_bot_id[:20]}...')
+    if fortune_bot_id:
+        print(f'  FORTUNE_ANALYSIS_BOT_ID: {fortune_bot_id[:20]}...')
+except Exception as e:
+    print(f'❌ 配置验证失败: {e}')
+    sys.exit(1)
+EOF" 2>&1)
+    
+    if echo "$VERIFY_RESULT" | grep -q "❌"; then
+        echo -e "${RED}$VERIFY_RESULT${NC}"
+        echo -e "${RED}❌ 配置验证失败${NC}"
+        echo ""
+        echo "正在恢复备份..."
+        ssh_exec "cd $PROJECT_DIR && mv $BACKUP_FILE .env 2>/dev/null || true"
+        exit 1
+    else
+        echo "$VERIFY_RESULT"
+    fi
+fi
+
+# 自动重启服务（如果启用）
+if [ "$AUTO_RESTART" = true ]; then
+    echo ""
+    echo "🔄 自动重启相关服务..."
+    echo "----------------------------------------"
+    
+    # 检测配置变更类型，决定需要重启哪些服务
+    RESTART_SERVICES=""
+    
+    # 检查是否修改了bot_id等应用配置
+    if grep -q "BOT_ID\|COZE_ACCESS_TOKEN" "$LOCAL_ENV"; then
+        RESTART_SERVICES="web"
+    fi
+    
+    # 检查是否修改了数据库配置
+    if grep -q "MYSQL_\|REDIS_" "$LOCAL_ENV"; then
+        if [ -n "$RESTART_SERVICES" ]; then
+            RESTART_SERVICES="$RESTART_SERVICES mysql redis"
+        else
+            RESTART_SERVICES="mysql redis"
+        fi
+    fi
+    
+    if [ -n "$RESTART_SERVICES" ]; then
+        echo "需要重启的服务: $RESTART_SERVICES"
+        for service in $RESTART_SERVICES; do
+            echo "  重启 $service..."
+            ssh_exec "cd $PROJECT_DIR/deploy/docker && docker-compose restart $service 2>&1" || {
+                echo -e "${YELLOW}⚠️  重启 $service 失败，继续执行...${NC}"
+            }
+        done
+        echo -e "${GREEN}✅ 服务重启完成${NC}"
+    else
+        echo "无需重启服务"
+    fi
+else
+    # 提示需要重启的服务
+    echo ""
+    echo -e "${YELLOW}⚠️  注意：配置变更后可能需要重启相关服务${NC}"
+    echo "如果配置变更影响以下服务，请重启："
+    echo "  - Web服务（修改了应用配置，如bot_id）"
+    echo "  - 微服务（修改了gRPC服务地址）"
+    echo "  - 数据库/Redis服务（修改了数据库配置）"
+    echo ""
+    echo "重启命令示例："
+    echo "  bash scripts/config/sync_production_config.sh --node $NODE --auto-restart"
+fi
+
+# 配置回滚功能
+if [ "$ROLLBACK" = true ]; then
+    echo ""
+    echo "🔄 回滚配置..."
+    echo "----------------------------------------"
+    
+    # 查找最新的备份文件
+    LATEST_BACKUP=$(ssh_exec "cd $PROJECT_DIR && ls -t .env.backup.* 2>/dev/null | head -1")
+    
+    if [ -z "$LATEST_BACKUP" ]; then
+        echo -e "${RED}❌ 未找到备份文件，无法回滚${NC}"
+        exit 1
+    fi
+    
+    echo "回滚到: $LATEST_BACKUP"
+    ssh_exec "cd $PROJECT_DIR && cp $LATEST_BACKUP .env" || {
+        echo -e "${RED}❌ 回滚失败${NC}"
+        exit 1
+    }
+    
+    echo -e "${GREEN}✅ 配置回滚成功${NC}"
+    exit 0
+fi
 
 echo ""
 echo -e "${GREEN}✅ 配置同步完成${NC}"
 echo "========================================"
+echo ""
+echo -e "${YELLOW}💡 提示：${NC}"
+echo "  - 如需验证配置是否生效，使用: --verify"
+echo "  - 如需自动重启服务，使用: --auto-restart"
+echo "  - 如需回滚配置，使用: --rollback"
 echo ""
 

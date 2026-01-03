@@ -68,9 +68,13 @@ class Sidebar {
     }
 
     bindEvents() {
-        // 根据当前页面高亮导航项
+        // 性能优化：缓存DOM查询结果
+        const sidebar = document.getElementById('sidebar');
+        if (!sidebar) return;
+        
+        // 根据当前页面高亮导航项（缓存查询结果）
         const currentPage = this.getCurrentPage();
-        const navItems = document.querySelectorAll('.nav-item, .nav-submenu-item');
+        const navItems = sidebar.querySelectorAll('.nav-item, .nav-submenu-item');
         navItems.forEach(item => {
             if (item.dataset.page === currentPage) {
                 item.classList.add('active');
@@ -82,23 +86,18 @@ class Sidebar {
             }
         });
         
+        // 性能优化：使用Set查找，替代长条件判断
+        const submenuPages = new Set([
+            'daily-fortune-calendar', 'fortune', 'year-report', 'dayun-liunian',
+            'shengong-minggong', 'pan', 'rizhu-liujiazi', 'wuxing-proportion',
+            'xishen-jishen', 'marriage-analysis', 'career-wealth-analysis',
+            'children-study-analysis', 'health-analysis', 'general-review-analysis', 'ai-qa'
+        ]);
+        
         // 确保子菜单默认显示（如果当前页面是子菜单项，展开父菜单）
-        if (currentPage === 'daily-fortune-calendar' || 
-            currentPage === 'fortune' || 
-            currentPage === 'year-report' || 
-            currentPage === 'dayun-liunian' || 
-            currentPage === 'shengong-minggong' ||
-            currentPage === 'pan' ||
-            currentPage === 'rizhu-liujiazi' ||
-            currentPage === 'wuxing-proportion' ||
-            currentPage === 'xishen-jishen' ||
-        currentPage === 'marriage-analysis' ||
-        currentPage === 'career-wealth-analysis' ||
-        currentPage === 'children-study-analysis' ||
-        currentPage === 'health-analysis' ||
-        currentPage === 'general-review-analysis' ||
-        currentPage === 'ai-qa') {
-        const submenus = document.querySelectorAll('.nav-submenu');
+        if (submenuPages.has(currentPage)) {
+            // 性能优化：只在需要时查询submenu
+            const submenus = sidebar.querySelectorAll('.nav-submenu');
             submenus.forEach(submenu => {
                 if (submenu) {
                     submenu.style.display = 'block';

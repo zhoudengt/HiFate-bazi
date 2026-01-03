@@ -19,6 +19,8 @@ sys.path.insert(0, project_root)
 
 from server.services.bazi_service import BaziService
 from src.ai.bazi_ai_analyzer import BaziAIAnalyzer
+from server.services.user_interaction_logger import get_user_interaction_logger
+import time
 
 # 尝试导入 Redis（可选）
 try:
@@ -253,6 +255,19 @@ class ChatService:
         
         prompt = "\n".join(prompt_lines)
         
+        # 记录开始时间和前端输入
+        api_start_time = time.time()
+        frontend_input = {
+            'conversation_id': conversation_id,
+            'user_message': user_message,
+            'bot_id': bot_id
+        }
+        input_data = {
+            'prompt': prompt,
+            'bazi_data': bazi_data,
+            'chat_history': chat_history
+        }
+        
         # 调用 LLM
         try:
             init_kwargs = {}
@@ -263,8 +278,12 @@ class ChatService:
             if api_base:
                 init_kwargs['api_base'] = api_base
             
+            llm_start_time = time.time()
             ai_analyzer = BaziAIAnalyzer(**init_kwargs)
             result = ai_analyzer._call_coze_api(prompt, bazi_data)
+            
+            # 记录第一个token时间（非流式，使用总时间的一半作为估算）
+            llm_first_token_time = llm_start_time + (time.time() - llm_start_time) / 2 if result.get('success') else None
             
             if result.get('success'):
                 ai_reply = result.get('analysis', '')
@@ -280,6 +299,33 @@ class ChatService:
                 # 保存更新后的对话上下文
                 self._save_conversation(conversation_id, conversation, ttl=7200)
                 
+                # 计算轮次（从对话历史中获取）
+                round_number = len([m for m in conversation["messages"] if m["role"] == "user"])
+                
+                # 记录交互数据（异步，不阻塞）
+                api_end_time = time.time()
+                api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+                llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
+                
+                logger_instance = get_user_interaction_logger()
+                logger_instance.log_function_usage_async(
+                    function_type='chat',
+                    function_name='AI问答',
+                    frontend_api='/api/v1/bazi/chat/send',
+                    frontend_input=frontend_input,
+                    input_data=input_data,
+                    llm_output=ai_reply,
+                    llm_api='coze_api',
+                    api_response_time_ms=api_response_time_ms,
+                    llm_first_token_time_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+                    llm_total_time_ms=llm_total_time_ms,
+                    round_number=round_number,
+                    session_id=conversation_id,
+                    bot_id=bot_id,
+                    status='success',
+                    streaming=False
+                )
+                
                 return {
                     "success": True,
                     "reply": ai_reply,
@@ -287,16 +333,70 @@ class ChatService:
                     "message_count": len(conversation["messages"])
                 }
             else:
+                error_msg = result.get('error', 'LLM 调用失败')
+                
+                # 记录错误
+                api_end_time = time.time()
+                api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+                round_number = len([m for m in conversation["messages"] if m["role"] == "user"])
+                
+                logger_instance = get_user_interaction_logger()
+                logger_instance.log_function_usage_async(
+                    function_type='chat',
+                    function_name='AI问答',
+                    frontend_api='/api/v1/bazi/chat/send',
+                    frontend_input=frontend_input,
+                    input_data=input_data,
+                    llm_output='',
+                    llm_api='coze_api',
+                    api_response_time_ms=api_response_time_ms,
+                    llm_first_token_time_ms=None,
+                    llm_total_time_ms=None,
+                    round_number=round_number,
+                    session_id=conversation_id,
+                    bot_id=bot_id,
+                    status='failed',
+                    error_message=error_msg,
+                    streaming=False
+                )
+                
                 return {
                     "success": False,
-                    "error": result.get('error', 'LLM 调用失败'),
+                    "error": error_msg,
                     "reply": None
                 }
         except Exception as e:
             import traceback
+            error_str = f"对话异常: {str(e)}\n{traceback.format_exc()}"
+            
+            # 记录错误
+            api_end_time = time.time()
+            api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+            round_number = len([m for m in conversation["messages"] if m["role"] == "user"]) if conversation else 1
+            
+            logger_instance = get_user_interaction_logger()
+            logger_instance.log_function_usage_async(
+                function_type='chat',
+                function_name='AI问答',
+                frontend_api='/api/v1/bazi/chat/send',
+                frontend_input=frontend_input,
+                input_data=input_data if 'input_data' in locals() else {},
+                llm_output='',
+                llm_api='coze_api',
+                api_response_time_ms=api_response_time_ms,
+                llm_first_token_time_ms=None,
+                llm_total_time_ms=None,
+                round_number=round_number,
+                session_id=conversation_id,
+                bot_id=bot_id,
+                status='failed',
+                error_message=str(e),
+                streaming=False
+            )
+            
             return {
                 "success": False,
-                "error": f"对话异常: {str(e)}\n{traceback.format_exc()}",
+                "error": error_str,
                 "reply": None
             }
     

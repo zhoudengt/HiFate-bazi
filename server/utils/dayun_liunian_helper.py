@@ -1,0 +1,524 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+大运流年工具函数 - 公共功能
+用于优化 input_data 的流年大运结构
+"""
+
+import sys
+import os
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+
+# 添加项目根目录到路径
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, project_root)
+
+
+def calculate_user_age(solar_date: str, current_time: Optional[datetime] = None) -> int:
+    """
+    计算用户年龄（虚岁，与排盘系统保持一致）
+    
+    Args:
+        solar_date: 阳历日期，格式：YYYY-MM-DD
+        current_time: 当前时间（可选，默认使用系统当前时间）
+        
+    Returns:
+        int: 用户年龄（虚岁）
+    """
+    if current_time is None:
+        current_time = datetime.now()
+    
+    birth_year = int(solar_date.split('-')[0])
+    current_year = current_time.year
+    
+    # 虚岁计算：当前年份 - 出生年份 + 1
+    current_age = current_year - birth_year + 1
+    
+    return current_age
+
+
+def get_current_dayun(
+    dayun_sequence: List[Dict[str, Any]], 
+    current_age: int
+) -> Optional[Dict[str, Any]]:
+    """
+    确定用户当前大运（与排盘系统保持一致）
+    
+    Args:
+        dayun_sequence: 大运序列
+        current_age: 当前年龄（虚岁）
+        
+    Returns:
+        Optional[Dict[str, Any]]: 当前大运，如果未找到返回None
+    """
+    # 遍历大运序列，找到包含当前年龄的大运
+    for dayun in dayun_sequence:
+        # 跳过"小运"
+        if dayun.get('stem', '') == '小运' or dayun.get('gan', '') == '小运':
+            continue
+        
+        age_range = dayun.get('age_range', {})
+        if age_range:
+            age_start = age_range.get('start', 0)
+            age_end = age_range.get('end', 0)
+            if age_start <= current_age <= age_end:
+                return dayun
+        else:
+            # 如果没有age_range，尝试从age_display解析
+            age_display = dayun.get('age_display', '')
+            if age_display:
+                try:
+                    # 处理 "31-40岁" 格式
+                    if '-' in age_display:
+                        parts = age_display.replace('岁', '').split('-')
+                        if len(parts) == 2:
+                            age_start = int(parts[0])
+                            age_end = int(parts[1])
+                            if age_start <= current_age <= age_end:
+                                return dayun
+                    # 处理 "31岁" 格式（大运只显示起始年龄）
+                    elif age_display.endswith('岁'):
+                        age_start = int(age_display.replace('岁', ''))
+                        age_end = age_start + 9  # 大运通常10年
+                        if age_start <= current_age <= age_end:
+                            return dayun
+                except:
+                    pass
+    
+    # 如果没找到，返回第一个非"小运"的大运
+    for dayun in dayun_sequence:
+        if dayun.get('stem', '') != '小运' and dayun.get('gan', '') != '小运':
+            return dayun
+    
+    return None
+
+
+def select_dayuns_with_priority(
+    dayun_sequence: List[Dict[str, Any]],
+    current_dayun: Dict[str, Any],
+    count: int = 10
+) -> List[Dict[str, Any]]:
+    """
+    选择10个大运，按优先级排序（当前大运优先级最高，距离越近优先级越高）
+    
+    优先级规则：
+    - 优先级1：当前大运
+    - 优先级2：下一个大运
+    - 优先级3：前一个大运
+    - 优先级4：再下一个大运
+    - 优先级5：再前一个大运
+    - ...以此类推
+    
+    Args:
+        dayun_sequence: 完整的大运序列
+        current_dayun: 当前大运
+        count: 要选择的大运数量（默认10个）
+        
+    Returns:
+        List[Dict[str, Any]]: 按优先级排序的大运列表，每个大运包含priority字段
+    """
+    if not current_dayun:
+        # 如果没有当前大运，返回前count个大运
+        result = []
+        for idx, dayun in enumerate(dayun_sequence[:count]):
+            if dayun.get('stem', '') != '小运' and dayun.get('gan', '') != '小运':
+                dayun_copy = dayun.copy()
+                dayun_copy['priority'] = idx + 1
+                result.append(dayun_copy)
+        return result
+    
+    # 找到当前大运在序列中的位置
+    current_step = current_dayun.get('step')
+    current_index = None
+    
+    # 先尝试通过step查找
+    if current_step is not None:
+        for idx, dayun in enumerate(dayun_sequence):
+            if dayun.get('step') == current_step:
+                current_index = idx
+                break
+    
+    # 如果没找到，通过对象比较查找
+    if current_index is None:
+        for idx, dayun in enumerate(dayun_sequence):
+            if dayun == current_dayun:
+                current_index = idx
+                break
+    
+    if current_index is None:
+        # 如果还是没找到，返回前count个大运
+        result = []
+        for idx, dayun in enumerate(dayun_sequence[:count]):
+            if dayun.get('stem', '') != '小运' and dayun.get('gan', '') != '小运':
+                dayun_copy = dayun.copy()
+                dayun_copy['priority'] = idx + 1
+                result.append(dayun_copy)
+        return result
+    
+    # 按优先级选择大运
+    result = []
+    priority = 1
+    selected_indices = set()
+    
+    # 优先级1：当前大运
+    current_dayun_copy = current_dayun.copy()
+    current_dayun_copy['priority'] = priority
+    result.append(current_dayun_copy)
+    selected_indices.add(current_index)
+    priority += 1
+    
+    # 按距离当前大运的远近选择（下一个、前一个、再下一个、再前一个...）
+    forward_index = current_index + 1
+    backward_index = current_index - 1
+    
+    while len(result) < count and (forward_index < len(dayun_sequence) or backward_index >= 0):
+        # 先选择下一个大运
+        if forward_index < len(dayun_sequence) and forward_index not in selected_indices:
+            dayun = dayun_sequence[forward_index]
+            if dayun.get('stem', '') != '小运' and dayun.get('gan', '') != '小运':
+                dayun_copy = dayun.copy()
+                dayun_copy['priority'] = priority
+                result.append(dayun_copy)
+                selected_indices.add(forward_index)
+                priority += 1
+                if len(result) >= count:
+                    break
+            forward_index += 1
+        
+        # 再选择前一个大运
+        if backward_index >= 0 and backward_index not in selected_indices:
+            dayun = dayun_sequence[backward_index]
+            if dayun.get('stem', '') != '小运' and dayun.get('gan', '') != '小运':
+                dayun_copy = dayun.copy()
+                dayun_copy['priority'] = priority
+                result.append(dayun_copy)
+                selected_indices.add(backward_index)
+                priority += 1
+                if len(result) >= count:
+                    break
+            backward_index -= 1
+        
+        # 如果两个方向都没有更多大运，退出循环
+        if forward_index >= len(dayun_sequence) and backward_index < 0:
+            break
+    
+    return result
+
+
+def add_life_stage_label(age: int) -> str:
+    """
+    添加人生阶段标签
+    
+    标准定义：
+    - 童年：0-12岁
+    - 青年：13-30岁
+    - 中年：31-60岁
+    - 老年：61岁及以上
+    
+    Args:
+        age: 年龄
+        
+    Returns:
+        str: 人生阶段标签
+    """
+    if age <= 12:
+        return '童年'
+    elif age <= 30:
+        return '青年'
+    elif age <= 60:
+        return '中年'
+    else:
+        return '老年'
+
+
+def add_dayun_metadata(dayun: Dict[str, Any], priority: int) -> Dict[str, Any]:
+    """
+    添加大运描述和备注信息
+    
+    Args:
+        dayun: 大运数据
+        priority: 优先级（1最高）
+        
+    Returns:
+        Dict[str, Any]: 添加了描述和备注的大运数据
+    """
+    dayun_copy = dayun.copy()
+    
+    # 添加人生阶段标签
+    age_range = dayun.get('age_range', {})
+    if age_range:
+        age_mid = (age_range.get('start', 0) + age_range.get('end', 0)) // 2
+        dayun_copy['life_stage'] = add_life_stage_label(age_mid)
+    else:
+        # 如果没有age_range，尝试从age_display解析
+        age_display = dayun.get('age_display', '')
+        if age_display:
+            try:
+                # 处理 "31-40岁" 格式
+                if '-' in age_display:
+                    parts = age_display.replace('岁', '').split('-')
+                    if len(parts) == 2:
+                        age_mid = (int(parts[0]) + int(parts[1])) // 2
+                        dayun_copy['life_stage'] = add_life_stage_label(age_mid)
+                # 处理 "31岁" 格式（大运只显示起始年龄）
+                elif age_display.endswith('岁'):
+                    age_start = int(age_display.replace('岁', ''))
+                    age_mid = age_start + 4  # 大运中间年龄
+                    dayun_copy['life_stage'] = add_life_stage_label(age_mid)
+                else:
+                    dayun_copy['life_stage'] = ''
+            except:
+                dayun_copy['life_stage'] = ''
+        else:
+            dayun_copy['life_stage'] = ''
+    
+    # 添加描述信息
+    if priority == 1:
+        dayun_copy['description'] = '当前大运，重点关注'
+        dayun_copy['note'] = '用户当前处于此大运，需要重点分析'
+    elif priority <= 3:
+        dayun_copy['description'] = '近期大运，需要关注'
+        if priority == 2:
+            dayun_copy['note'] = '用户即将进入此大运，需要关注'
+        else:
+            dayun_copy['note'] = '用户刚离开此大运，需要关注'
+    elif priority <= 6:
+        dayun_copy['description'] = '重要大运，值得参考'
+        dayun_copy['note'] = '参考大运，可简要提及'
+    else:
+        dayun_copy['description'] = '参考大运'
+        dayun_copy['note'] = '参考大运，可简要提及'
+    
+    return dayun_copy
+
+
+def add_liunian_metadata(
+    liunian: Dict[str, Any], 
+    dayun_priority: int,
+    liunian_type: str,
+    birth_year: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    添加流年描述和备注信息
+    
+    Args:
+        liunian: 流年数据
+        dayun_priority: 所属大运的优先级
+        liunian_type: 流年类型（tiankedi_chong/tianhedi_he/suiyun_binglin/other）
+        birth_year: 出生年份（可选，用于计算年龄）
+        
+    Returns:
+        Dict[str, Any]: 添加了描述和备注的流年数据
+    """
+    liunian_copy = liunian.copy()
+    
+    # 添加人生阶段标签
+    age = liunian.get('age')
+    if age is None and birth_year is not None:
+        # 从年份计算年龄（虚岁）
+        liunian_year = liunian.get('year')
+        if liunian_year:
+            age = liunian_year - birth_year + 1  # 虚岁计算
+            liunian_copy['age'] = age
+    
+    if age is not None:
+        liunian_copy['life_stage'] = add_life_stage_label(age)
+    else:
+        liunian_copy['life_stage'] = ''
+    
+    # 流年类型显示
+    type_display_map = {
+        'tiankedi_chong': '天克地冲',
+        'tianhedi_he': '天合地合',
+        'suiyun_binglin': '岁运并临',
+        'other': '其他特殊流年'
+    }
+    liunian_copy['type'] = liunian_type
+    liunian_copy['type_display'] = type_display_map.get(liunian_type, '特殊流年')
+    
+    # 流年类型优先级（用于计算最终优先级）
+    type_priority_map = {
+        'tiankedi_chong': 1,
+        'tianhedi_he': 2,
+        'suiyun_binglin': 3,
+        'other': 4
+    }
+    type_priority = type_priority_map.get(liunian_type, 4)
+    
+    # 最终优先级 = 大运优先级 * 100 + 流年类型优先级（确保大运优先级占主导）
+    final_priority = dayun_priority * 100 + type_priority
+    liunian_copy['priority'] = final_priority
+    
+    # 添加描述信息
+    if liunian_type == 'tiankedi_chong':
+        liunian_copy['description'] = '天克地冲流年，需重点关注'
+        liunian_copy['note'] = '此流年与日柱天克地冲，对运势有重要影响'
+    elif liunian_type == 'tianhedi_he':
+        liunian_copy['description'] = '天合地合流年，需要关注'
+        liunian_copy['note'] = '此流年与大运天合地合，对运势有积极影响'
+    elif liunian_type == 'suiyun_binglin':
+        liunian_copy['description'] = '岁运并临流年，值得注意'
+        liunian_copy['note'] = '此流年与大运岁运并临，对运势有重要影响'
+    else:
+        liunian_copy['description'] = '特殊流年，可参考'
+        liunian_copy['note'] = '此流年有特殊关系，可参考分析'
+    
+    return liunian_copy
+
+
+def organize_liunians_by_dayun_with_priority(
+    special_liunians: List[Dict[str, Any]],
+    selected_dayuns: List[Dict[str, Any]],
+    birth_year: Optional[int] = None
+) -> Dict[int, List[Dict[str, Any]]]:
+    """
+    组织流年，确保归属正确，并按优先级排序
+    
+    Args:
+        special_liunians: 特殊流年列表
+        selected_dayuns: 已选择的大运列表（包含priority字段）
+        birth_year: 出生年份（可选，用于计算流年年龄）
+        
+    Returns:
+        Dict[int, List[Dict[str, Any]]]: {
+            dayun_step: [流年列表（按优先级排序）]
+        }
+    """
+    # 创建大运step到优先级的映射
+    dayun_priority_map = {}
+    for dayun in selected_dayuns:
+        step = dayun.get('step')
+        priority = dayun.get('priority', 999)
+        if step is not None:
+            dayun_priority_map[step] = priority
+    
+    # 按关系类型分类流年（复用现有逻辑）
+    from server.api.v1.general_review_analysis import classify_special_liunians
+    classified = classify_special_liunians(special_liunians)
+    
+    # 按大运分组，并添加元数据
+    result = {}
+    
+    # 处理天克地冲
+    for liunian in classified['tiankedi_chong']:
+        step = liunian.get('dayun_step')
+        if step is not None and step in dayun_priority_map:
+            dayun_priority = dayun_priority_map[step]
+            liunian_with_metadata = add_liunian_metadata(liunian, dayun_priority, 'tiankedi_chong', birth_year)
+            if step not in result:
+                result[step] = []
+            result[step].append(liunian_with_metadata)
+    
+    # 处理天合地合
+    for liunian in classified['tianhedi_he']:
+        step = liunian.get('dayun_step')
+        if step is not None and step in dayun_priority_map:
+            dayun_priority = dayun_priority_map[step]
+            liunian_with_metadata = add_liunian_metadata(liunian, dayun_priority, 'tianhedi_he', birth_year)
+            if step not in result:
+                result[step] = []
+            result[step].append(liunian_with_metadata)
+    
+    # 处理岁运并临
+    for liunian in classified['suiyun_binglin']:
+        step = liunian.get('dayun_step')
+        if step is not None and step in dayun_priority_map:
+            dayun_priority = dayun_priority_map[step]
+            liunian_with_metadata = add_liunian_metadata(liunian, dayun_priority, 'suiyun_binglin', birth_year)
+            if step not in result:
+                result[step] = []
+            result[step].append(liunian_with_metadata)
+    
+    # 处理其他
+    for liunian in classified['other']:
+        step = liunian.get('dayun_step')
+        if step is not None and step in dayun_priority_map:
+            dayun_priority = dayun_priority_map[step]
+            liunian_with_metadata = add_liunian_metadata(liunian, dayun_priority, 'other', birth_year)
+            if step not in result:
+                result[step] = []
+            result[step].append(liunian_with_metadata)
+    
+    # 对每个大运下的流年按优先级排序
+    for step in result:
+        result[step].sort(key=lambda x: x.get('priority', 999999))
+    
+    return result
+
+
+def build_enhanced_dayun_structure(
+    dayun_sequence: List[Dict[str, Any]],
+    special_liunians: List[Dict[str, Any]],
+    current_age: int,
+    current_dayun: Optional[Dict[str, Any]] = None,
+    birth_year: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    构建增强的大运流年结构（包含优先级、描述、备注等）
+    
+    Args:
+        dayun_sequence: 完整的大运序列
+        special_liunians: 特殊流年列表
+        current_age: 当前年龄
+        current_dayun: 当前大运（可选，如果为None则自动查找）
+        birth_year: 出生年份（可选，用于计算流年年龄）
+        
+    Returns:
+        Dict[str, Any]: {
+            'current_dayun': {...},  # 当前大运（优先级1）
+            'key_dayuns': [...],      # 关键大运列表（优先级2-10，按优先级排序）
+            'priority_description': {...}  # 优先级说明
+        }
+    """
+    # 1. 如果没有提供当前大运，自动查找
+    if current_dayun is None:
+        current_dayun = get_current_dayun(dayun_sequence, current_age)
+    
+    # 2. 选择10个大运（按优先级）
+    selected_dayuns = select_dayuns_with_priority(dayun_sequence, current_dayun, count=10)
+    
+    # 3. 为每个大运添加元数据
+    enhanced_dayuns = []
+    for dayun in selected_dayuns:
+        priority = dayun.get('priority', 999)
+        enhanced_dayun = add_dayun_metadata(dayun, priority)
+        enhanced_dayuns.append(enhanced_dayun)
+    
+    # 4. 组织流年（确保归属正确）
+    liunians_by_dayun = organize_liunians_by_dayun_with_priority(
+        special_liunians, 
+        enhanced_dayuns,
+        birth_year=birth_year
+    )
+    
+    # 5. 分离当前大运和关键大运
+    current_dayun_enhanced = None
+    key_dayuns_enhanced = []
+    
+    for dayun in enhanced_dayuns:
+        priority = dayun.get('priority', 999)
+        step = dayun.get('step')
+        
+        # 获取该大运下的流年
+        liunians = liunians_by_dayun.get(step, [])
+        dayun['liunians'] = liunians
+        
+        if priority == 1:
+            current_dayun_enhanced = dayun
+        else:
+            key_dayuns_enhanced.append(dayun)
+    
+    # 6. 构建结果
+    result = {
+        'current_dayun': current_dayun_enhanced,
+        'key_dayuns': key_dayuns_enhanced,
+        'priority_description': {
+            'rule': '优先级1（当前大运）重点说，多说；优先级2-3次之；优先级4-6简要提及；优先级7-10提一下即可',
+            'current_dayun_priority': 1,
+            'total_dayuns': len(enhanced_dayuns)
+        }
+    }
+    
+    return result
+

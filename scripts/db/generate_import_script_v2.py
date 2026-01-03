@@ -53,7 +53,7 @@ def generate_import_script(local_host=None, local_port=3306,
         "--triggers",
         "--complete-insert",
         "--skip-extended-insert",
-        "--add-drop-database",
+        # "--add-drop-database",  # 移除 DROP DATABASE，避免元数据锁
         "--databases",
         local_database
     ]

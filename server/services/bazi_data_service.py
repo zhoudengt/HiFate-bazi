@@ -446,7 +446,9 @@ class BaziDataService:
         dayun_index: Optional[int] = None,
         dayun_year_start: Optional[int] = None,
         dayun_year_end: Optional[int] = None,
-        target_year: Optional[int] = None
+        target_year: Optional[int] = None,
+        quick_mode: bool = True,
+        async_warmup: bool = True
     ) -> Dict[str, Any]:
         """
         获取大运流年流月数据（用于7个前端接口）
@@ -483,7 +485,9 @@ class BaziDataService:
             dayun_index=dayun_index,
             dayun_year_start=dayun_year_start,
             dayun_year_end=dayun_year_end,
-            target_year=target_year
+            target_year=target_year,
+            quick_mode=quick_mode,
+            async_warmup=async_warmup
         )
         
         return result

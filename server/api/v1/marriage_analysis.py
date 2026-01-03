@@ -8,7 +8,7 @@
 import logging
 import os
 import sys
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from fastapi.responses import StreamingResponse
@@ -26,197 +26,329 @@ from server.services.rule_service import RuleService
 from server.utils.data_validator import validate_bazi_data
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
+from server.services.user_interaction_logger import get_user_interaction_logger
+import time
 from server.services.bazi_data_orchestrator import BaziDataOrchestrator
 from server.api.v1.general_review_analysis import organize_special_liunians_by_dayun
+from server.utils.dayun_liunian_helper import (
+    calculate_user_age,
+    get_current_dayun,
+    build_enhanced_dayun_structure
+)
+from server.config.input_format_loader import get_format_loader
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-def build_natural_language_prompt(data: dict) -> str:
+def build_marriage_input_data(
+    bazi_data: Dict[str, Any],
+    wangshuai_result: Dict[str, Any],
+    detail_result: Dict[str, Any],
+    dayun_sequence: List[Dict[str, Any]],
+    special_liunians: List[Dict[str, Any]],
+    gender: str
+) -> Dict[str, Any]:
     """
-    将 JSON 数据转换为自然语言格式的提示词
-    参考 wuxing_proportion_service.py 的 build_llm_prompt 实现
+    构建感情婚姻分析的输入数据
     
     Args:
-        data: 婚姻分析所需的完整数据
+        bazi_data: 八字基础数据
+        wangshuai_result: 旺衰分析结果
+        detail_result: 详细计算结果
+        dayun_sequence: 大运序列
+        special_liunians: 特殊流年列表
+        gender: 性别（male/female）
         
     Returns:
-        str: 自然语言格式的提示词
+        dict: 感情婚姻分析的input_data
     """
-    prompt_lines = []
-    prompt_lines.append("请基于以下八字信息进行感情婚姻分析，分别从命盘总论、配偶特征、感情走势、神煞点睛和建议方向五个方面进行详细分析：")
-    prompt_lines.append("")
+    # ⚠️ 数据提取辅助函数：从 wangshuai_result 中提取旺衰数据
+    def extract_wangshuai_data(wangshuai_result: Dict[str, Any]) -> Dict[str, Any]:
+        """从 wangshuai_result 中提取旺衰数据"""
+        if isinstance(wangshuai_result, dict):
+            if wangshuai_result.get('success') and 'data' in wangshuai_result:
+                return wangshuai_result.get('data', {})
+            if 'wangshuai' in wangshuai_result or 'xi_shen' in wangshuai_result:
+                return wangshuai_result
+        return {}
     
-    # 1. 命盘总论
-    prompt_lines.append("【命盘总论】")
-    mingpan = data.get('mingpan_zonglun', {})
-    
-    # 八字排盘
-    bazi_pillars = mingpan.get('bazi_pillars', {})
-    if bazi_pillars:
-        prompt_lines.append("四柱排盘：")
-        for pillar_name, pillar_key in [('年柱', 'year'), ('月柱', 'month'), ('日柱', 'day'), ('时柱', 'hour')]:
-            pillar = bazi_pillars.get(pillar_key, {})
-            stem = pillar.get('stem', '')
-            branch = pillar.get('branch', '')
-            if stem and branch:
-                prompt_lines.append(f"  {pillar_name}：{stem}{branch}")
-    
-    # 十神
-    ten_gods = mingpan.get('ten_gods', {})
-    if ten_gods:
-        prompt_lines.append("十神配置：")
-        for pillar_name, pillar_key in [('年柱', 'year'), ('月柱', 'month'), ('日柱', 'day'), ('时柱', 'hour')]:
-            pillar_ten_gods = ten_gods.get(pillar_key, {})
-            if pillar_ten_gods:
-                main_star = pillar_ten_gods.get('main_star', '')
-                hidden_stars = pillar_ten_gods.get('hidden_stars', [])
-                hidden_str = '、'.join(hidden_stars) if hidden_stars else '无'
-                prompt_lines.append(f"  {pillar_name}：主星{main_star}，副星{hidden_str}")
-    
-    # 旺衰
-    wangshuai = mingpan.get('wangshuai', '')
-    if wangshuai:
-        prompt_lines.append(f"身旺身弱：{wangshuai}")
-    
-    # 日柱
-    day_pillar = mingpan.get('day_pillar', {})
-    if day_pillar:
-        stem = day_pillar.get('stem', '')
-        branch = day_pillar.get('branch', '')
-        prompt_lines.append(f"日主：{stem}{branch}")
-    
-    prompt_lines.append("")
-    
-    # 2. 配偶特征
-    prompt_lines.append("【配偶特征】")
-    peiou = data.get('peiou_tezheng', {})
-    
-    # 神煞
-    deities = peiou.get('deities', {})
-    if deities:
-        prompt_lines.append("神煞分布：")
-        for pillar_key, pillar_deities in deities.items():
-            pillar_names_map = {'year': '年柱', 'month': '月柱', 'day': '日柱', 'hour': '时柱'}
-            pillar_name = pillar_names_map.get(pillar_key, pillar_key)
-            if pillar_deities:
-                deities_str = '、'.join(pillar_deities) if isinstance(pillar_deities, list) else str(pillar_deities)
-                prompt_lines.append(f"  {pillar_name}：{deities_str}")
-    
-    # 婚姻判词
-    marriage_judgments = peiou.get('marriage_judgments', [])
-    if marriage_judgments:
-        prompt_lines.append("婚姻判词：")
-        for j in marriage_judgments:
-            name = j.get('name', '')
-            text = j.get('text', '')
-            if text:
-                prompt_lines.append(f"  - {name}：{text}")
-    
-    # 桃花判词
-    peach_blossom_judgments = peiou.get('peach_blossom_judgments', [])
-    if peach_blossom_judgments:
-        prompt_lines.append("桃花判词：")
-        for j in peach_blossom_judgments:
-            name = j.get('name', '')
-            text = j.get('text', '')
-            if text:
-                prompt_lines.append(f"  - {name}：{text}")
-    
-    # 婚配判词
-    matchmaking_judgments = peiou.get('matchmaking_judgments', [])
-    if matchmaking_judgments:
-        prompt_lines.append("婚配判词：")
-        for j in matchmaking_judgments:
-            name = j.get('name', '')
-            text = j.get('text', '')
-            if text:
-                prompt_lines.append(f"  - {name}：{text}")
-    
-    # 正缘判词
-    zhengyuan_judgments = peiou.get('zhengyuan_judgments', [])
-    if zhengyuan_judgments:
-        prompt_lines.append("正缘判词：")
-        for j in zhengyuan_judgments:
-            name = j.get('name', '')
-            text = j.get('text', '')
-            if text:
-                prompt_lines.append(f"  - {name}：{text}")
-    
-    prompt_lines.append("")
-    
-    # 3. 感情走势
-    prompt_lines.append("【感情走势】")
-    ganqing = data.get('ganqing_zoushi', {})
-    
-    dayun_list = ganqing.get('dayun_list', [])
-    if dayun_list:
-        prompt_lines.append("大运分析（第2-4步大运）：")
-        for dayun in dayun_list:
-            step = dayun.get('step', '')
-            stem = dayun.get('stem', '')
-            branch = dayun.get('branch', '')
-            main_star = dayun.get('main_star', '')
-            age_display = dayun.get('age_display', '')
-            prompt_lines.append(f"  第{step}步大运：{stem}{branch}（{age_display}）主星{main_star}")
-            # 输出该大运下的关键流年
-            liunians = dayun.get('liunians', [])
-            if liunians:
-                prompt_lines.append(f"    关键流年：")
-                for liunian in liunians:
-                    year = liunian.get('year', '')
-                    liunian_type = liunian.get('type', '')
-                    prompt_lines.append(f"      - {year}年（{liunian_type}）：[分析该年的感情婚姻风险]")
-            else:
-                prompt_lines.append(f"    关键流年：暂无特殊流年")
-    else:
-        prompt_lines.append("  （大运数据待完善）")
-    
-    prompt_lines.append("")
-    
-    # 4. 神煞点睛
-    prompt_lines.append("【神煞点睛】")
-    shensha = data.get('shensha_dianjing', {})
-    deities_all = shensha.get('deities', {})
-    if deities_all:
-        for pillar_key, pillar_deities in deities_all.items():
-            pillar_names_map = {'year': '年柱', 'month': '月柱', 'day': '日柱', 'hour': '时柱'}
-            pillar_name = pillar_names_map.get(pillar_key, pillar_key)
-            if pillar_deities:
-                deities_str = '、'.join(pillar_deities) if isinstance(pillar_deities, list) else str(pillar_deities)
-                prompt_lines.append(f"  {pillar_name}神煞：{deities_str}")
-    else:
-        prompt_lines.append("  （神煞数据待完善）")
-    
-    prompt_lines.append("")
-    
-    # 5. 建议方向
-    prompt_lines.append("【建议方向】")
-    jianyi = data.get('jianyi_fangxiang', {})
-    
-    # 喜忌
-    xi_ji = jianyi.get('xi_ji', {})
-    if xi_ji:
-        xi_shen = xi_ji.get('xi_shen', [])
-        ji_shen = xi_ji.get('ji_shen', [])
-        xi_shen_elements = xi_ji.get('xi_shen_elements', [])
-        ji_shen_elements = xi_ji.get('ji_shen_elements', [])
+    # ⚠️ 数据提取辅助函数：从 detail_result 或 bazi_data 中提取十神数据
+    def extract_ten_gods_data(detail_result: Dict[str, Any], bazi_data: Dict[str, Any]) -> Dict[str, Any]:
+        """从 detail_result 或 bazi_data 中提取十神数据"""
+        # 1. 先尝试从 detail_result 的顶层获取
+        ten_gods = detail_result.get('ten_gods', {})
+        if ten_gods and isinstance(ten_gods, dict) and len(ten_gods) > 0:
+            return ten_gods
         
-        if xi_shen:
-            prompt_lines.append(f"喜神：{'、'.join(xi_shen)}")
-        if ji_shen:
-            prompt_lines.append(f"忌神：{'、'.join(ji_shen)}")
-        if xi_shen_elements:
-            prompt_lines.append(f"喜用五行：{'、'.join(xi_shen_elements)}")
-        if ji_shen_elements:
-            prompt_lines.append(f"忌用五行：{'、'.join(ji_shen_elements)}")
+        # 2. 尝试从 detail_result 的 details 字段中提取
+        details = detail_result.get('details', {})
+        if details and isinstance(details, dict):
+            ten_gods_from_details = {}
+            for pillar_name in ['year', 'month', 'day', 'hour']:
+                pillar_detail = details.get(pillar_name, {})
+                if isinstance(pillar_detail, dict):
+                    ten_gods_from_details[pillar_name] = {
+                        'main_star': pillar_detail.get('main_star', ''),
+                        'hidden_stars': pillar_detail.get('hidden_stars', [])
+                    }
+            if any(ten_gods_from_details.values()):
+                return ten_gods_from_details
+        
+        # 3. 尝试从 bazi_data 的 details 字段中提取
+        bazi_details = bazi_data.get('details', {})
+        if bazi_details and isinstance(bazi_details, dict):
+            ten_gods_from_bazi = {}
+            for pillar_name in ['year', 'month', 'day', 'hour']:
+                pillar_detail = bazi_details.get(pillar_name, {})
+                if isinstance(pillar_detail, dict):
+                    ten_gods_from_bazi[pillar_name] = {
+                        'main_star': pillar_detail.get('main_star', ''),
+                        'hidden_stars': pillar_detail.get('hidden_stars', [])
+                    }
+            if any(ten_gods_from_bazi.values()):
+                return ten_gods_from_bazi
+        
+        return {}
     
-    prompt_lines.append("")
-    prompt_lines.append("请根据以上信息，结合八字命理学知识，给出详细的感情婚姻分析。")
+    # 提取基础数据
+    bazi_pillars = bazi_data.get('bazi_pillars', {})
     
-    return '\n'.join(prompt_lines)
+    # ⚠️ 修复：从 wangshuai_result 中正确提取旺衰数据
+    wangshuai_data = extract_wangshuai_data(wangshuai_result)
+    
+    # ⚠️ 修复：从 detail_result 或 bazi_data 中提取十神数据
+    ten_gods_data = extract_ten_gods_data(detail_result, bazi_data)
+    
+    # 提取神煞数据
+    deities_data = {}
+    try:
+        details = bazi_data.get('details', {})
+        for pillar_name in ['year', 'month', 'day', 'hour']:
+            pillar_details = details.get(pillar_name, {})
+            deities = pillar_details.get('deities', [])
+            if deities:
+                deities_data[pillar_name] = deities
+    except Exception as e:
+        logger.warning(f"提取神煞数据失败（不影响业务）: {e}")
+    
+    # 提取地支刑冲破害数据
+    branch_relations = {}
+    try:
+        relationships = bazi_data.get('relationships', {})
+        branch_relations = relationships.get('branch_relations', {})
+    except Exception as e:
+        logger.warning(f"提取地支刑冲破害数据失败（不影响业务）: {e}")
+    
+    # 提取日柱数据
+    day_pillar = bazi_pillars.get('day', {})
+    
+    # ⚠️ 修复：从 wangshuai_data 中提取旺衰字符串
+    wangshuai = wangshuai_data.get('wangshuai', '')
+    
+    # ⚠️ 优化：使用工具函数计算年龄和当前大运（与排盘系统一致）
+    birth_date = bazi_data.get('basic_info', {}).get('solar_date', '')
+    current_age = 0
+    birth_year = None
+    if birth_date:
+        current_age = calculate_user_age(birth_date)
+        try:
+            birth_year = int(birth_date.split('-')[0])
+        except:
+            pass
+    
+    # 获取当前大运（与排盘系统一致）
+    current_dayun_info = get_current_dayun(dayun_sequence, current_age)
+    
+    # ⚠️ 优化：使用工具函数构建增强的大运流年结构（包含优先级、描述、备注等）
+    if special_liunians is None:
+        special_liunians = []
+    
+    enhanced_dayun_structure = build_enhanced_dayun_structure(
+        dayun_sequence=dayun_sequence,
+        special_liunians=special_liunians,
+        current_age=current_age,
+        current_dayun=current_dayun_info,
+        birth_year=birth_year
+    )
+    
+    # ⚠️ 优化：添加后处理函数（清理流月流日字段，限制流年数量）
+    def clean_liunian_data(liunian: Dict[str, Any]) -> Dict[str, Any]:
+        """清理流年数据：移除流月流日字段"""
+        cleaned = liunian.copy()
+        fields_to_remove = ['liuyue_sequence', 'liuri_sequence', 'liushi_sequence']
+        for field in fields_to_remove:
+            cleaned.pop(field, None)
+        return cleaned
+    
+    def limit_liunians_by_priority(liunians: List[Dict[str, Any]], max_count: int = 3) -> List[Dict[str, Any]]:
+        """限制流年数量：只保留优先级最高的N个（已按优先级排序）"""
+        if not liunians:
+            return []
+        return liunians[:max_count]
+    
+    # 提取当前大运数据（优先级1）
+    current_dayun_enhanced = enhanced_dayun_structure.get('current_dayun')
+    current_dayun_data = None
+    if current_dayun_enhanced:
+        raw_liunians = current_dayun_enhanced.get('liunians', [])
+        cleaned_liunians = [clean_liunian_data(liunian) for liunian in raw_liunians]
+        limited_liunians = limit_liunians_by_priority(cleaned_liunians, max_count=3)
+        
+        current_dayun_data = {
+            'step': str(current_dayun_enhanced.get('step', '')),
+            'stem': current_dayun_enhanced.get('gan', current_dayun_enhanced.get('stem', '')),
+            'branch': current_dayun_enhanced.get('zhi', current_dayun_enhanced.get('branch', '')),
+            'age_display': current_dayun_enhanced.get('age_display', current_dayun_enhanced.get('age_range', '')),
+            'main_star': current_dayun_enhanced.get('main_star', ''),
+            'priority': current_dayun_enhanced.get('priority', 1),
+            'life_stage': current_dayun_enhanced.get('life_stage', ''),
+            'description': current_dayun_enhanced.get('description', ''),
+            'note': current_dayun_enhanced.get('note', ''),
+            'liunians': limited_liunians
+        }
+    
+    # 提取关键大运数据（优先级2-10）
+    key_dayuns_enhanced = enhanced_dayun_structure.get('key_dayuns', [])
+    key_dayuns_data = []
+    for key_dayun in key_dayuns_enhanced:
+        raw_liunians = key_dayun.get('liunians', [])
+        cleaned_liunians = [clean_liunian_data(liunian) for liunian in raw_liunians]
+        limited_liunians = limit_liunians_by_priority(cleaned_liunians, max_count=3)
+        
+        key_dayuns_data.append({
+            'step': str(key_dayun.get('step', '')),
+            'stem': key_dayun.get('gan', key_dayun.get('stem', '')),
+            'branch': key_dayun.get('zhi', key_dayun.get('branch', '')),
+            'age_display': key_dayun.get('age_display', key_dayun.get('age_range', '')),
+            'main_star': key_dayun.get('main_star', ''),
+            'priority': key_dayun.get('priority', 999),
+            'life_stage': key_dayun.get('life_stage', ''),
+            'description': key_dayun.get('description', ''),
+            'note': key_dayun.get('note', ''),
+            'liunians': limited_liunians
+        })
+    
+    # ⚠️ 修复：从 wangshuai_data 中提取喜忌数据
+    xi_ji_data = {
+        'xi_shen': wangshuai_data.get('xi_shen', ''),
+        'ji_shen': wangshuai_data.get('ji_shen', ''),
+        'xi_ji_elements': wangshuai_data.get('xi_ji_elements', {})
+    }
+    
+    # ⚠️ 如果 xi_ji_elements 为空，尝试从 final_xi_ji 中获取
+    if not xi_ji_data.get('xi_ji_elements'):
+        final_xi_ji = wangshuai_data.get('final_xi_ji', {})
+        if final_xi_ji:
+            xi_ji_data['xi_ji_elements'] = {
+                'xi_shen': final_xi_ji.get('xi_shen_elements', []),
+                'ji_shen': final_xi_ji.get('ji_shen_elements', [])
+            }
+    
+    # 构建input_data
+    input_data = {
+        # 命盘总论数据（包含：八字排盘、十神、旺衰、地支刑冲破害、日柱）
+        'mingpan_zonglun': {
+            'bazi_pillars': bazi_pillars,
+            'ten_gods': ten_gods_data,
+            'wangshuai': wangshuai,
+            'branch_relations': branch_relations,
+            'day_pillar': day_pillar
+        },
+        # 配偶特征数据（包含：十神、神煞、婚姻判词、桃花判词、婚配判词、正缘判词）
+        'peiou_tezheng': {
+            'ten_gods': ten_gods_data,
+            'deities': deities_data,
+            'marriage_judgments': [],  # 将在调用处填充
+            'peach_blossom_judgments': [],  # 将在调用处填充
+            'matchmaking_judgments': [],  # 将在调用处填充
+            'zhengyuan_judgments': []  # 将在调用处填充
+        },
+        # 感情走势数据（包含：大运流年、十神）
+        'ganqing_zoushi': {
+            'current_dayun': current_dayun_data,
+            'key_dayuns': key_dayuns_data,
+            'ten_gods': ten_gods_data
+        },
+        # 神煞点睛数据（包含：神煞）
+        'shensha_dianjing': {
+            'deities': deities_data
+        },
+        # 建议方向数据（包含：十神、喜忌、大运流年）
+        'jianyi_fangxiang': {
+            'ten_gods': ten_gods_data,
+            'xi_ji': xi_ji_data,
+            'current_dayun': current_dayun_data,
+            'key_dayuns': key_dayuns_data
+        }
+    }
+    
+    return input_data
+
+
+def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
+    """
+    将结构化数据格式化为 JSON 字符串（用于 Coze Bot System Prompt 的 {{input}} 占位符）
+    
+    ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
+    提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
+    
+    Args:
+        input_data: 结构化输入数据
+        
+    Returns:
+        str: JSON 格式的字符串，可以直接替换 {{input}} 占位符
+    """
+    import json
+    
+    # 获取原始数据
+    mingpan = input_data.get('mingpan_zonglun', {})
+    peiou = input_data.get('peiou_tezheng', {})
+    ganqing = input_data.get('ganqing_zoushi', {})
+    shensha = input_data.get('shensha_dianjing', {})
+    jianyi = input_data.get('jianyi_fangxiang', {})
+    
+    # ⚠️ 方案2：优化数据结构，使用引用避免重复
+    optimized_data = {
+        # 1. 命盘总论（基础数据，只提取一次）
+        'mingpan_zonglun': mingpan,
+        
+        # 2. 配偶特征（引用十神，不重复存储）
+        'peiou_tezheng': {
+            'ten_gods': mingpan.get('ten_gods', {}),
+            'deities': peiou.get('deities', {}),
+            'marriage_judgments': peiou.get('marriage_judgments', []),
+            'peach_blossom_judgments': peiou.get('peach_blossom_judgments', []),
+            'matchmaking_judgments': peiou.get('matchmaking_judgments', []),
+            'zhengyuan_judgments': peiou.get('zhengyuan_judgments', [])
+        },
+        
+        # 3. 感情走势（引用十神和大运，不重复存储）
+        'ganqing_zoushi': {
+            'current_dayun': ganqing.get('current_dayun'),
+            'key_dayuns': ganqing.get('key_dayuns', []),
+            'ten_gods': mingpan.get('ten_gods', {})
+        },
+        
+        # 4. 神煞点睛（引用神煞，不重复存储）
+        'shensha_dianjing': {
+            'deities': peiou.get('deities', {})
+        },
+        
+        # 5. 建议方向（引用十神、喜忌和大运，不重复存储）
+        'jianyi_fangxiang': {
+            'ten_gods': mingpan.get('ten_gods', {}),
+            'xi_ji': jianyi.get('xi_ji', {}),
+            'current_dayun': ganqing.get('current_dayun'),
+            'key_dayuns': ganqing.get('key_dayuns', [])
+        }
+    }
+    
+    # 格式化为 JSON 字符串（美化格式，便于 Bot 理解）
+    return json.dumps(optimized_data, ensure_ascii=False, indent=2)
+
+# ⚠️ 已移除：build_natural_language_prompt 函数（方案1已废弃，使用方案2：format_input_data_for_coze）
 
 
 def validate_input_data(data: dict) -> tuple[bool, str]:
@@ -255,7 +387,8 @@ def validate_input_data(data: dict) -> tuple[bool, str]:
         'jianyi_fangxiang': {
             'ten_gods': '十神',
             'xi_ji': '喜忌',
-            'dayun_list': '大运流年'
+            'current_dayun': '当前大运',
+            'key_dayuns': '关键大运'
         }
     }
     
@@ -318,6 +451,20 @@ async def marriage_analysis_stream_generator(
         longitude: 经度（用于时区转换和真太阳时计算，优先级2）
         bot_id: Coze Bot ID（可选，优先级：参数 > MARRIAGE_ANALYSIS_BOT_ID 环境变量）
     """
+    # 记录开始时间和前端输入
+    api_start_time = time.time()
+    frontend_input = {
+        'solar_date': solar_date,
+        'solar_time': solar_time,
+        'gender': gender,
+        'calendar_type': calendar_type,
+        'location': location,
+        'latitude': latitude,
+        'longitude': longitude
+    }
+    llm_first_token_time = None
+    llm_output_chunks = []
+    
     try:
         # 确定使用的 bot_id（优先级：参数 > MARRIAGE_ANALYSIS_BOT_ID > COZE_BOT_ID）
         if not bot_id:
@@ -365,8 +512,16 @@ async def marriage_analysis_stream_generator(
                     gender
                 )
             )
+            detail_task = loop.run_in_executor(
+                executor,
+                lambda: BaziDetailService.calculate_detail_full(
+                    final_solar_date,
+                    final_solar_time,
+                    gender
+                )
+            )
             
-            bazi_result, wangshuai_result = await asyncio.gather(bazi_task, wangshuai_task)
+            bazi_result, wangshuai_result, detail_result = await asyncio.gather(bazi_task, wangshuai_task, detail_task)
             
             # 提取八字数据（BaziService.calculate_bazi_full 返回的结构是 {bazi: {...}, rizhu: {...}, matched_rules: [...]}）
             if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
@@ -463,7 +618,7 @@ async def marriage_analysis_stream_generator(
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 3. 获取规则匹配数据（婚姻、桃花等）- 恢复原来的方式
+        # 3. 获取规则匹配数据（婚姻、桃花等）
         marriage_judgments = []
         peach_blossom_judgments = []
         matchmaking_judgments = []
@@ -508,139 +663,82 @@ async def marriage_analysis_stream_generator(
         except Exception as e:
             logger.warning(f"规则匹配失败（不影响业务）: {e}")
         
-        # 4. 提取大运流年数据（从 detail_result 获取，包含完整大运序列）
-        # ⚠️ 只修改大运流年部分：添加特殊流年分组
-        dayun_list = []
+        # 4. ⚠️ 优先使用格式定义构建input_data（从数据库加载格式定义，从Redis获取数据）
         try:
-            # 按大运分组特殊流年（只修改这部分）
-            dayun_liunians = organize_special_liunians_by_dayun(special_liunians, dayun_sequence)
+            # 获取格式定义加载器
+            format_loader = get_format_loader()
             
-            # 跳过第0个"小运"，获取索引1、2、3的大运（第2-4步）
-            for idx in [1, 2, 3]:
-                if idx < len(dayun_sequence):
-                    dayun = dayun_sequence[idx]
-                    dayun_step = dayun.get('step')
-                    if dayun_step is None:
-                        dayun_step = idx
-                    
-                    # ⚠️ 只修改这部分：获取该大运下的特殊流年
-                    dayun_liunian_data = dayun_liunians.get(dayun_step, {}) if dayun_step is not None else {}
-                    all_liunians = []
-                    if dayun_liunian_data.get('tiankedi_chong'): all_liunians.extend(dayun_liunian_data['tiankedi_chong'])
-                    if dayun_liunian_data.get('tianhedi_he'): all_liunians.extend(dayun_liunian_data['tianhedi_he'])
-                    if dayun_liunian_data.get('suiyun_binglin'): all_liunians.extend(dayun_liunian_data['suiyun_binglin'])
-                    if dayun_liunian_data.get('other'): all_liunians.extend(dayun_liunian_data['other'])
-                    
-                    # 提取关键信息（包含流年）
-                    dayun_info = {
-                        'step': dayun.get('step', idx),
-                        'stem': dayun.get('stem', ''),
-                        'branch': dayun.get('branch', ''),
-                        'main_star': dayun.get('main_star', ''),
-                        'year_start': dayun.get('year_start', 0),
-                        'year_end': dayun.get('year_end', 0),
-                        'age_display': dayun.get('age_display', ''),
-                        'liunians': all_liunians  # ⚠️ 只修改这部分：添加流年数据
-                    }
-                    dayun_list.append(dayun_info)
-        except Exception as e:
-            logger.warning(f"提取大运流年数据失败（不影响业务）: {e}")
-        
-        # 6. 提取神煞数据
-        deities_data = {}
-        try:
-            details = bazi_data.get('details', {})
-            for pillar_name in ['year', 'month', 'day', 'hour']:
-                pillar_details = details.get(pillar_name, {})
-                deities = pillar_details.get('deities', [])
-                if deities:
-                    deities_data[pillar_name] = deities
-        except Exception as e:
-            logger.warning(f"提取神煞数据失败（不影响业务）: {e}")
-        
-        # 7. 提取十神数据（确保数据完整）
-        ten_gods_data = bazi_data.get('ten_gods_stats', {})
-        if not ten_gods_data:
-            logger.warning("十神数据为空，可能影响分析结果")
-        
-        # 8. 提取地支刑冲破害数据
-        branch_relations = {}
-        try:
-            relationships = bazi_data.get('relationships', {})
-            branch_relations = relationships.get('branch_relations', {})
-        except Exception as e:
-            logger.warning(f"提取地支刑冲破害数据失败（不影响业务）: {e}")
-        
-        # 9. 提取日柱数据
-        day_pillar = {}
-        try:
-            bazi_pillars = bazi_data.get('bazi_pillars', {})
-            day_pillar = bazi_pillars.get('day', {})
-        except Exception as e:
-            logger.warning(f"提取日柱数据失败（不影响业务）: {e}")
-        
-        # 10. 提取喜忌数据
-        xi_ji_data = {}
-        try:
-            if wangshuai_data:
-                xi_ji_data = {
-                    'xi_shen': wangshuai_data.get('xi_shen', []),
-                    'ji_shen': wangshuai_data.get('ji_shen', []),
-                    'xi_shen_elements': wangshuai_data.get('xi_shen_elements', []),
-                    'ji_shen_elements': wangshuai_data.get('ji_shen_elements', []),
-                    'final_xi_ji': wangshuai_data.get('final_xi_ji', {})
-                }
-        except Exception as e:
-            logger.warning(f"提取喜忌数据失败（不影响业务）: {e}")
-        
-        # 11. 构建完整的输入数据（JSON格式）
-        # 确保包含所有必需的数据：八字排盘、十神、旺衰、地支刑冲破害、日柱、
-        # 大运流年（第2、3、4个大运）、神煞、喜忌、婚姻判词、桃花判词、婚配判词、正缘判词
-        input_data = {
-            # 命盘总论数据（包含：八字排盘、十神、旺衰、地支刑冲破害、日柱）
-            'mingpan_zonglun': {
-                'bazi_pillars': bazi_data.get('bazi_pillars', {}),  # 八字排盘（四柱完整数据）
-                'ten_gods': ten_gods_data,  # 十神数据
-                'wangshuai': wangshuai_data.get('wangshuai', ''),  # 旺衰分析结果
-                'branch_relations': branch_relations,  # 地支刑冲破害关系
-                'day_pillar': day_pillar  # 日柱详细信息
-            },
-            # 配偶特征数据（包含：十神、神煞、婚姻判词、桃花判词、婚配判词、正缘判词）
-            'peiou_tezheng': {
-                'ten_gods': ten_gods_data,  # 十神数据
-                'deities': deities_data,  # 神煞数据
-                'marriage_judgments': marriage_judgments,  # 婚姻判词
-                'peach_blossom_judgments': peach_blossom_judgments,  # 桃花判词
-                'matchmaking_judgments': matchmaking_judgments,  # 婚配判词
-                'zhengyuan_judgments': zhengyuan_judgments  # 正缘判词
-            },
-            # 感情走势数据（包含：大运流年（第2、3、4个大运）、十神）
-            'ganqing_zoushi': {
-                'dayun_list': dayun_list,  # 大运流年（第2、3、4个大运，索引1、2、3）
-                'ten_gods': ten_gods_data  # 十神数据
-            },
-            # 神煞点睛数据（包含：神煞）
-            'shensha_dianjing': {
-                'deities': deities_data  # 神煞数据（四柱神煞）
-            },
-            # 建议方向数据（包含：十神、喜忌、大运流年（第2、3、4个大运））
-            'jianyi_fangxiang': {
-                'ten_gods': ten_gods_data,  # 十神数据
-                'xi_ji': xi_ji_data,  # 喜忌数据（喜神、忌神、喜忌五行）
-                'dayun_list': dayun_list  # 大运流年（第2、3、4个大运）
+            # 构建请求参数
+            request_params = {
+                'solar_date': final_solar_date,
+                'solar_time': final_solar_time,
+                'gender': gender
             }
-        }
+            
+            # 获取Redis客户端
+            redis_client = None
+            try:
+                from server.config.redis_config import get_redis_pool
+                redis_pool = get_redis_pool()
+                if redis_pool:
+                    redis_client = redis_pool.get_connection()
+            except Exception as e:
+                logger.warning(f"⚠️ 获取Redis客户端失败: {e}")
+            
+            # 尝试使用格式定义构建input_data
+            if redis_client:
+                input_data = format_loader.build_input_data(
+                    format_name='marriage_analysis',
+                    request_params=request_params,
+                    redis_client=redis_client
+                )
+                logger.info("✓ 使用格式定义构建input_data: marriage_analysis")
+            else:
+                # Redis不可用，使用原有方法
+                raise ValueError("Redis不可用，使用原有方法")
+        except Exception as e:
+            # 格式定义构建失败，降级到原有方法
+            logger.warning(f"⚠️ 格式定义构建失败，使用原有方法: {e}")
+            input_data = build_marriage_input_data(
+                bazi_data,
+                wangshuai_result,
+                detail_result,
+                dayun_sequence,
+                special_liunians,
+                gender
+            )
+            
+            # ⚠️ 将数据存储到Redis（使用格式定义中指定的key格式）
+            try:
+                from server.config.redis_config import get_redis_pool
+                import json
+                redis_pool = get_redis_pool()
+                if redis_pool:
+                    redis_client = redis_pool.get_connection()
+                    if redis_client:
+                        # 存储各个部分到Redis
+                        base_key = f"marriage:{final_solar_date}:{final_solar_time}:{gender}"
+                        redis_client.setex(f"{base_key}:mingpan", 86400, json.dumps(input_data.get('mingpan_zonglun', {}), ensure_ascii=False))
+                        redis_client.setex(f"{base_key}:peiou", 86400, json.dumps(input_data.get('peiou_tezheng', {}), ensure_ascii=False))
+                        redis_client.setex(f"{base_key}:ganqing", 86400, json.dumps(input_data.get('ganqing_zoushi', {}), ensure_ascii=False))
+                        redis_client.setex(f"{base_key}:shensha", 86400, json.dumps(input_data.get('shensha_dianjing', {}), ensure_ascii=False))
+                        redis_client.setex(f"{base_key}:jianyi", 86400, json.dumps(input_data.get('jianyi_fangxiang', {}), ensure_ascii=False))
+                        logger.info("✓ 数据已存储到Redis")
+            except Exception as e:
+                logger.warning(f"⚠️ 存储数据到Redis失败: {e}")
         
-        # 12. 验证数据完整性（确保所有必需数据都存在）
-        logger.info(f"数据提取完成 - 八字排盘: {bool(bazi_data.get('bazi_pillars'))}, "
-                   f"十神: {bool(ten_gods_data)}, 旺衰: {bool(wangshuai_data.get('wangshuai'))}, "
-                   f"地支刑冲破害: {bool(branch_relations)}, 日柱: {bool(day_pillar)}, "
-                   f"大运流年: {len(dayun_list)}, 神煞: {bool(deities_data)}, "
-                   f"喜忌: {bool(xi_ji_data)}, 婚姻判词: {len(marriage_judgments)}, "
-                   f"桃花判词: {len(peach_blossom_judgments)}, 婚配判词: {len(matchmaking_judgments)}, "
-                   f"正缘判词: {len(zhengyuan_judgments)}")
+        # 5. 填充判词数据（如果使用格式定义，判词数据可能已经在Redis中，这里作为补充）
+        if 'peiou_tezheng' in input_data:
+            if not input_data['peiou_tezheng'].get('marriage_judgments'):
+                input_data['peiou_tezheng']['marriage_judgments'] = marriage_judgments
+            if not input_data['peiou_tezheng'].get('peach_blossom_judgments'):
+                input_data['peiou_tezheng']['peach_blossom_judgments'] = peach_blossom_judgments
+            if not input_data['peiou_tezheng'].get('matchmaking_judgments'):
+                input_data['peiou_tezheng']['matchmaking_judgments'] = matchmaking_judgments
+            if not input_data['peiou_tezheng'].get('zhengyuan_judgments'):
+                input_data['peiou_tezheng']['zhengyuan_judgments'] = zhengyuan_judgments
         
-        # 13. 验证输入数据完整性
+        # 6. 验证输入数据完整性
         is_valid, validation_error = validate_input_data(input_data)
         if not is_valid:
             logger.error(f"数据完整性验证失败: {validation_error}")
@@ -653,26 +751,12 @@ async def marriage_analysis_stream_generator(
         
         logger.info("✓ 数据完整性验证通过")
         
-        # 14. 输出完整的 input_data 日志（便于调试，仅输出关键字段摘要）
-        logger.info(f"准备发送给 Coze Bot 的数据摘要:")
-        logger.info(f"  - 命盘总论: 八字排盘={bool(input_data['mingpan_zonglun'].get('bazi_pillars'))}, "
-                   f"十神={bool(input_data['mingpan_zonglun'].get('ten_gods'))}, "
-                   f"旺衰={bool(input_data['mingpan_zonglun'].get('wangshuai'))}")
-        logger.info(f"  - 配偶特征: 十神={bool(input_data['peiou_tezheng'].get('ten_gods'))}, "
-                   f"神煞={bool(input_data['peiou_tezheng'].get('deities'))}, "
-                   f"婚姻判词={len(input_data['peiou_tezheng'].get('marriage_judgments', []))}")
-        logger.info(f"  - 感情走势: 大运流年={len(input_data['ganqing_zoushi'].get('dayun_list', []))}, "
-                   f"十神={bool(input_data['ganqing_zoushi'].get('ten_gods'))}")
-        logger.info(f"  - 神煞点睛: 神煞={bool(input_data['shensha_dianjing'].get('deities'))}")
-        logger.info(f"  - 建议方向: 十神={bool(input_data['jianyi_fangxiang'].get('ten_gods'))}, "
-                   f"喜忌={bool(input_data['jianyi_fangxiang'].get('xi_ji'))}, "
-                   f"大运流年={len(input_data['jianyi_fangxiang'].get('dayun_list', []))}")
+        # 7. ⚠️ 方案2：格式化数据为 Coze Bot 输入格式
+        formatted_data = format_input_data_for_coze(input_data)
+        logger.info(f"格式化数据长度: {len(formatted_data)} 字符")
+        logger.debug(f"格式化数据前500字符: {formatted_data[:500]}")
         
-        # 15. 将输入数据转换为自然语言格式的 prompt（参考 wuxing_proportion_service.py）
-        prompt = build_natural_language_prompt(input_data)
-        logger.info(f"发送给 Coze Bot 的自然语言 prompt（前500字符）: {prompt[:500]}...")
-        
-        # 16. 创建Coze流式服务
+        # 8. 创建Coze流式服务
         try:
             from server.services.coze_stream_service import CozeStreamService
             
@@ -706,15 +790,15 @@ async def marriage_analysis_stream_generator(
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 17. 流式生成（使用实际 bot_id）
+        # 9. ⚠️ 方案2：流式生成（直接发送格式化后的数据）
         actual_bot_id = bot_id or coze_service.bot_id
-        logger.info(f"开始流式生成，Bot ID: {actual_bot_id}, Prompt 长度: {len(prompt)}")
+        logger.info(f"开始流式生成，Bot ID: {actual_bot_id}, 数据长度: {len(formatted_data)}")
         
         try:
             chunk_count = 0
             has_content = False
             
-            async for result in coze_service.stream_custom_analysis(prompt, actual_bot_id):
+            async for result in coze_service.stream_custom_analysis(formatted_data, bot_id=actual_bot_id):
                 chunk_count += 1
                 
                 # 转换为SSE格式
@@ -769,6 +853,28 @@ async def marriage_analysis_stream_generator(
                 'content': f"流式生成失败: {str(e)}"
             }
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+            
+            # 记录错误
+            api_end_time = time.time()
+            api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+            logger_instance = get_user_interaction_logger()
+            logger_instance.log_function_usage_async(
+                function_type='marriage',
+                function_name='八字命理-感情婚姻',
+                frontend_api='/api/v1/bazi/marriage-analysis/stream',
+                frontend_input=frontend_input,
+                input_data=input_data if 'input_data' in locals() else {},
+                llm_output='',
+                llm_api='coze_api',
+                api_response_time_ms=api_response_time_ms,
+                llm_first_token_time_ms=None,
+                llm_total_time_ms=None,
+                round_number=1,
+                bot_id=actual_bot_id if 'actual_bot_id' in locals() else None,
+                status='failed',
+                error_message=str(e),
+                streaming=True
+            )
     
     except Exception as e:
         import traceback
@@ -778,6 +884,27 @@ async def marriage_analysis_stream_generator(
             'content': f"流式生成失败: {str(e)}"
         }
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+        
+        # 记录错误
+        api_end_time = time.time()
+        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+        logger_instance = get_user_interaction_logger()
+        logger_instance.log_function_usage_async(
+            function_type='marriage',
+            function_name='八字命理-感情婚姻',
+            frontend_api='/api/v1/bazi/marriage-analysis/stream',
+            frontend_input=frontend_input,
+            input_data={},
+            llm_output='',
+            llm_api='coze_api',
+            api_response_time_ms=api_response_time_ms,
+            llm_first_token_time_ms=None,
+            llm_total_time_ms=None,
+            round_number=1,
+            status='failed',
+            error_message=str(e),
+            streaming=True
+        )
 
 
 async def extract_marriage_analysis_data(
@@ -857,15 +984,29 @@ async def extract_marriage_analysis_data(
                 rule_type = rule.get('rule_type', '')
                 content = rule.get('content', {})
                 text = content.get('text', '') if isinstance(content, dict) else str(content)
+                rule_name = rule.get('rule_name', '')
                 
                 if 'marriage' in rule_type.lower() or '婚姻' in text:
-                    marriage_judgments.append(text)
+                    if '婚配' in rule_name or '婚配' in text:
+                        matchmaking_judgments.append({
+                            'name': rule_name,
+                            'text': text
+                        })
+                    elif '正缘' in rule_name or '正缘' in text:
+                        zhengyuan_judgments.append({
+                            'name': rule_name,
+                            'text': text
+                        })
+                    else:
+                        marriage_judgments.append({
+                            'name': rule_name,
+                            'text': text
+                        })
                 if 'peach' in rule_type.lower() or '桃花' in text:
-                    peach_blossom_judgments.append(text)
-                if 'match' in rule_type.lower() or '婚配' in text:
-                    matchmaking_judgments.append(text)
-                if 'zhengyuan' in rule_type.lower() or '正缘' in text:
-                    zhengyuan_judgments.append(text)
+                    peach_blossom_judgments.append({
+                        'name': rule_name,
+                        'text': text
+                    })
         except Exception as e:
             logger.warning(f"规则匹配失败（不影响业务）: {e}")
         
@@ -934,45 +1075,39 @@ async def extract_marriage_analysis_data(
         except Exception as e:
             logger.warning(f"提取喜忌数据失败（不影响业务）: {e}")
         
-        # 10. 构建完整的输入数据
-        input_data = {
-            'mingpan_zonglun': {
-                'bazi_pillars': bazi_data.get('bazi_pillars', {}),
-                'ten_gods': ten_gods_data,
-                'wangshuai': wangshuai_data.get('wangshuai', ''),
-                'branch_relations': branch_relations,
-                'day_pillar': day_pillar
-            },
-            'peiou_tezheng': {
-                'ten_gods': ten_gods_data,
-                'deities': deities_data,
-                'marriage_judgments': marriage_judgments,
-                'peach_blossom_judgments': peach_blossom_judgments,
-                'matchmaking_judgments': matchmaking_judgments,
-                'zhengyuan_judgments': zhengyuan_judgments
-            },
-            'ganqing_zoushi': {
-                'dayun_list': dayun_list,
-                'ten_gods': ten_gods_data
-            },
-            'shensha_dianjing': {
-                'deities': deities_data
-            },
-            'jianyi_fangxiang': {
-                'ten_gods': ten_gods_data,
-                'xi_ji': xi_ji_data,
-                'dayun_list': dayun_list
-            }
-        }
+        # 10. ⚠️ 优化：使用新的 build_marriage_input_data 函数构建 input_data
+        # 需要获取大运序列和特殊流年
+        dayun_sequence = detail_result.get('dayun_sequence', [])
+        special_liunians = []  # extract_marriage_analysis_data 不获取特殊流年，使用空列表
+        
+        input_data = build_marriage_input_data(
+            bazi_data,
+            wangshuai_result,
+            detail_result,
+            dayun_sequence,
+            special_liunians,
+            gender
+        )
+        
+        # 填充判词数据
+        input_data['peiou_tezheng']['marriage_judgments'] = marriage_judgments
+        input_data['peiou_tezheng']['peach_blossom_judgments'] = peach_blossom_judgments
+        input_data['peiou_tezheng']['matchmaking_judgments'] = matchmaking_judgments
+        input_data['peiou_tezheng']['zhengyuan_judgments'] = zhengyuan_judgments
         
         # 11. 验证数据完整性
         is_valid, validation_error = validate_input_data(input_data)
         if not is_valid:
             raise ValueError(f"数据完整性验证失败: {validation_error}")
         
+        # 12. ⚠️ 方案2：格式化数据为 Coze Bot 输入格式
+        formatted_data = format_input_data_for_coze(input_data)
+        
         return {
             'success': True,
             'data': input_data,
+            'formatted_data': formatted_data,  # ⚠️ 新增：格式化后的数据
+            'formatted_data_length': len(formatted_data),  # ⚠️ 新增：数据长度
             'summary': {
                 'bazi_pillars': bool(input_data['mingpan_zonglun'].get('bazi_pillars')),
                 'ten_gods': bool(input_data['mingpan_zonglun'].get('ten_gods')),
@@ -981,7 +1116,8 @@ async def extract_marriage_analysis_data(
                 'day_pillar': bool(input_data['mingpan_zonglun'].get('day_pillar')),
                 'deities': bool(input_data['peiou_tezheng'].get('deities')),
                 'marriage_judgments': len(input_data['peiou_tezheng'].get('marriage_judgments', [])),
-                'dayun_list': len(input_data['ganqing_zoushi'].get('dayun_list', [])),
+                'current_dayun': bool(input_data['ganqing_zoushi'].get('current_dayun')),
+                'key_dayuns': len(input_data['ganqing_zoushi'].get('key_dayuns', [])),
                 'xi_ji': bool(input_data['jianyi_fangxiang'].get('xi_ji'))
             }
         }
@@ -992,6 +1128,175 @@ async def extract_marriage_analysis_data(
             'success': False,
             'error': str(e),
             'traceback': traceback.format_exc()
+        }
+
+
+@router.post("/bazi/marriage-analysis/test", summary="测试接口：返回格式化后的数据（用于 Coze Bot）")
+async def marriage_analysis_test(request: MarriageAnalysisRequest):
+    """
+    测试接口：返回格式化后的数据（用于 Coze Bot 的 {{input}} 占位符）
+    
+    ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
+    提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
+    
+    Args:
+        request: 感情婚姻分析请求参数
+        
+    Returns:
+        dict: 包含格式化后的数据
+    """
+    try:
+        # 处理输入（农历转换等）
+        final_solar_date, final_solar_time, _ = BaziInputProcessor.process_input(
+            request.solar_date, request.solar_time, request.calendar_type or "solar", 
+            request.location, request.latitude, request.longitude
+        )
+        
+        # 使用统一接口获取数据
+        modules = {
+            'bazi': True,
+            'wangshuai': True,
+            'detail': True,
+            'dayun': {
+                'mode': 'count',
+                'count': 13  # 获取所有大运
+            },
+            'special_liunians': {
+                'dayun_config': {
+                    'mode': 'count',
+                    'count': 13  # 获取所有大运
+                },
+                'count': 200  # 获取足够多的特殊流年
+            }
+        }
+        
+        unified_data = await BaziDataOrchestrator.fetch_data(
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
+            gender=request.gender,
+            modules=modules,
+            use_cache=True,
+            parallel=True,
+            calendar_type=request.calendar_type,
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude
+        )
+        
+        # 从统一接口结果中提取数据
+        bazi_result = unified_data.get('bazi', {})
+        wangshuai_result = unified_data.get('wangshuai', {})
+        detail_result = unified_data.get('detail', {})
+        special_liunians = unified_data.get('special_liunians', {}).get('list', [])
+        
+        # 提取和验证数据
+        if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
+            bazi_data = bazi_result['bazi']
+        else:
+            bazi_data = bazi_result
+        bazi_data = validate_bazi_data(bazi_data)
+        
+        # 获取大运序列（从detail_result）
+        dayun_sequence = detail_result.get('dayun_sequence', [])
+        
+        # 匹配规则
+        rule_data = {
+            'basic_info': bazi_data.get('basic_info', {}),
+            'bazi_pillars': bazi_data.get('bazi_pillars', {}),
+            'details': bazi_data.get('details', {}),
+            'ten_gods_stats': bazi_data.get('ten_gods_stats', {}),
+            'elements': bazi_data.get('elements', {}),
+            'element_counts': bazi_data.get('element_counts', {}),
+            'relationships': bazi_data.get('relationships', {})
+        }
+        
+        loop = asyncio.get_event_loop()
+        executor = None
+        
+        matched_rules = await loop.run_in_executor(
+            executor,
+            RuleService.match_rules,
+            rule_data,
+            ['marriage', 'peach_blossom', 'marriage_match', 'zhengyuan'],
+            True
+        )
+        
+        # 构建input_data
+        input_data = build_marriage_input_data(
+            bazi_data,
+            wangshuai_result,
+            detail_result,
+            dayun_sequence,
+            special_liunians,
+            request.gender
+        )
+        
+        # 填充判词数据
+        marriage_judgments = []
+        peach_blossom_judgments = []
+        matchmaking_judgments = []
+        zhengyuan_judgments = []
+        
+        for rule in matched_rules:
+            rule_type = rule.get('rule_type', '')
+            content = rule.get('content', {})
+            text = content.get('text', '') if isinstance(content, dict) else str(content)
+            rule_name = rule.get('rule_name', '')
+            
+            if 'marriage' in rule_type.lower() or '婚姻' in text:
+                if '婚配' in rule_name or '婚配' in text:
+                    matchmaking_judgments.append({
+                        'name': rule_name,
+                        'text': text
+                    })
+                elif '正缘' in rule_name or '正缘' in text:
+                    zhengyuan_judgments.append({
+                        'name': rule_name,
+                        'text': text
+                    })
+                else:
+                    marriage_judgments.append({
+                        'name': rule_name,
+                        'text': text
+                    })
+            if 'peach' in rule_type.lower() or '桃花' in text:
+                peach_blossom_judgments.append({
+                    'name': rule_name,
+                    'text': text
+                })
+        
+        input_data['peiou_tezheng']['marriage_judgments'] = marriage_judgments
+        input_data['peiou_tezheng']['peach_blossom_judgments'] = peach_blossom_judgments
+        input_data['peiou_tezheng']['matchmaking_judgments'] = matchmaking_judgments
+        input_data['peiou_tezheng']['zhengyuan_judgments'] = zhengyuan_judgments
+        
+        # 格式化数据
+        formatted_data = format_input_data_for_coze(input_data)
+        
+        return {
+            "success": True,
+            "formatted_data": formatted_data,
+            "formatted_data_length": len(formatted_data),
+            "data_summary": {
+                "bazi_pillars": input_data.get('mingpan_zonglun', {}).get('bazi_pillars', {}),
+                "dayun_count": len(input_data.get('ganqing_zoushi', {}).get('key_dayuns', [])),
+                "current_dayun_liunians_count": len(input_data.get('ganqing_zoushi', {}).get('current_dayun', {}).get('liunians', [])),
+                "key_dayuns_count": len(input_data.get('ganqing_zoushi', {}).get('key_dayuns', [])),
+                "xi_ji": input_data.get('jianyi_fangxiang', {}).get('xi_ji', {})
+            },
+            "usage": {
+                "description": "此接口返回的数据可以直接用于 Coze Bot 的 {{input}} 占位符",
+                "coze_bot_setup": "1. 登录 Coze 平台\n2. 找到'感情婚姻分析' Bot\n3. 进入 Bot 设置 → System Prompt\n4. 复制 docs/需求/Coze_Bot_System_Prompt_感情婚姻分析.md 中的提示词\n5. 粘贴到 System Prompt 中\n6. 保存设置",
+                "test_command": f'curl -X POST "http://localhost:8001/api/v1/marriage-analysis/test" -H "Content-Type: application/json" -d \'{{"solar_date": "{request.solar_date}", "solar_time": "{request.solar_time}", "gender": "{request.gender}", "calendar_type": "{request.calendar_type or "solar"}"}}\''
+            }
+        }
+    except Exception as e:
+        import traceback
+        logger.error(f"测试接口异常: {e}\n{traceback.format_exc()}")
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
         }
 
 

@@ -74,11 +74,35 @@ async def get_xishen_jishen(request: XishenJishenRequest):
         )
         
         # 1. 获取旺衰分析结果（包含喜神五行和忌神五行）
-        wangshuai_result = WangShuaiService.calculate_wangshuai(
-            final_solar_date,
-            final_solar_time,
-            request.gender
-        )
+        # ✅ 修复：改为异步执行，避免阻塞事件循环
+        import time
+        start_time = time.time()
+        loop = asyncio.get_event_loop()
+        from concurrent.futures import ThreadPoolExecutor
+        executor = ThreadPoolExecutor(max_workers=min(os.cpu_count() or 4 * 2, 100))
+        
+        try:
+            # 使用线程池执行，添加30秒超时保护
+            wangshuai_result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    executor,
+                    WangShuaiService.calculate_wangshuai,
+                    final_solar_date,
+                    final_solar_time,
+                    request.gender
+                ),
+                timeout=30.0
+            )
+            elapsed_time = time.time() - start_time
+            logger.info(f"⏱️ 旺衰计算耗时: {elapsed_time:.2f}秒")
+        except asyncio.TimeoutError:
+            elapsed_time = time.time() - start_time
+            logger.error(f"❌ 旺衰计算超时（>{30.0}秒），耗时: {elapsed_time:.2f}秒")
+            raise HTTPException(status_code=500, detail="旺衰计算超时，请稍后重试")
+        except Exception as e:
+            elapsed_time = time.time() - start_time
+            logger.error(f"❌ 旺衰计算异常（耗时: {elapsed_time:.2f}秒）: {e}", exc_info=True)
+            raise
         
         if not wangshuai_result.get('success'):
             error_msg = wangshuai_result.get('error', '旺衰计算失败')

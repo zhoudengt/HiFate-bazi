@@ -33,6 +33,8 @@ from server.api.v1.general_review_analysis import organize_special_liunians_by_d
 from server.services.special_liunian_service import SpecialLiunianService
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
+from server.services.user_interaction_logger import get_user_interaction_logger
+import time
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -203,6 +205,20 @@ async def health_analysis_stream_generator(
         longitude: 经度（用于时区转换和真太阳时计算，优先级2）
         bot_id: Coze Bot ID（可选）
     """
+    # 记录开始时间和前端输入
+    api_start_time = time.time()
+    frontend_input = {
+        'solar_date': solar_date,
+        'solar_time': solar_time,
+        'gender': gender,
+        'calendar_type': calendar_type,
+        'location': location,
+        'latitude': latitude,
+        'longitude': longitude
+    }
+    llm_first_token_time = None
+    llm_output_chunks = []
+    
     try:
         # 1. Bot ID 配置检查
         used_bot_id = bot_id
@@ -444,10 +460,49 @@ async def health_analysis_stream_generator(
         coze_service = CozeStreamService(bot_id=used_bot_id)
         
         # 12. 流式处理（阶段6：流式处理）
+        llm_start_time = time.time()
+        has_content = False
+        
         async for chunk in coze_service.stream_custom_analysis(prompt, bot_id=used_bot_id):
+            # 记录第一个token时间
+            if llm_first_token_time is None and chunk.get('type') == 'progress':
+                llm_first_token_time = time.time()
+            
+            # 收集输出内容
+            if chunk.get('type') == 'progress':
+                llm_output_chunks.append(chunk.get('content', ''))
+                has_content = True
+            elif chunk.get('type') == 'complete':
+                llm_output_chunks.append(chunk.get('content', ''))
+                has_content = True
+            
             yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
             if chunk.get('type') in ['complete', 'error']:
                 break
+        
+        # 记录交互数据（异步，不阻塞）
+        api_end_time = time.time()
+        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+        llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
+        llm_output = ''.join(llm_output_chunks)
+        
+        logger_instance = get_user_interaction_logger()
+        logger_instance.log_function_usage_async(
+            function_type='health',
+            function_name='八字命理-身体健康分析',
+            frontend_api='/api/v1/bazi/health/stream',
+            frontend_input=frontend_input,
+            input_data=input_data if 'input_data' in locals() else {},
+            llm_output=llm_output,
+            llm_api='coze_api',
+            api_response_time_ms=api_response_time_ms,
+            llm_first_token_time_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+            llm_total_time_ms=llm_total_time_ms,
+            round_number=1,
+            bot_id=used_bot_id,
+            status='success' if has_content else 'failed',
+            streaming=True
+        )
                 
     except ValueError as e:
         # 配置错误
@@ -457,6 +512,27 @@ async def health_analysis_stream_generator(
             'content': f"Coze API 配置缺失: {str(e)}"
         }
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+        
+        # 记录错误
+        api_end_time = time.time()
+        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+        logger_instance = get_user_interaction_logger()
+        logger_instance.log_function_usage_async(
+            function_type='health',
+            function_name='八字命理-身体健康分析',
+            frontend_api='/api/v1/bazi/health/stream',
+            frontend_input=frontend_input,
+            input_data={},
+            llm_output='',
+            llm_api='coze_api',
+            api_response_time_ms=api_response_time_ms,
+            llm_first_token_time_ms=None,
+            llm_total_time_ms=None,
+            round_number=1,
+            status='failed',
+            error_message=str(e),
+            streaming=True
+        )
     except Exception as e:
         # 其他错误
         import traceback
@@ -466,6 +542,27 @@ async def health_analysis_stream_generator(
             'content': f"分析处理失败: {str(e)}"
         }
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+        
+        # 记录错误
+        api_end_time = time.time()
+        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+        logger_instance = get_user_interaction_logger()
+        logger_instance.log_function_usage_async(
+            function_type='health',
+            function_name='八字命理-身体健康分析',
+            frontend_api='/api/v1/bazi/health/stream',
+            frontend_input=frontend_input,
+            input_data={},
+            llm_output='',
+            llm_api='coze_api',
+            api_response_time_ms=api_response_time_ms,
+            llm_first_token_time_ms=None,
+            llm_total_time_ms=None,
+            round_number=1,
+            status='failed',
+            error_message=str(e),
+            streaming=True
+        )
 
 
 def _calculate_ganzhi_elements(stem: str, branch: str) -> Dict[str, int]:

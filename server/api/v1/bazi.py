@@ -325,6 +325,8 @@ async def generate_bazi_interface(request: BaziInterfaceRequest, http_request: R
 class BaziDetailRequest(BaziBaseRequest):
     """八字详细计算请求模型"""
     current_time: Optional[str] = Field(None, description="当前时间，格式：YYYY-MM-DD HH:MM，用于计算大运流年，默认为当前系统时间", example="2024-01-01 12:00")
+    quick_mode: Optional[bool] = Field(True, description="快速模式，只计算当前大运，其他大运异步预热（默认True）")
+    async_warmup: Optional[bool] = Field(True, description="是否触发异步预热（默认True）")
     
     @validator('current_time')
     def validate_current_time(cls, v):
@@ -392,6 +394,7 @@ async def calculate_bazi_detail(request: BaziDetailRequest, http_request: Reques
             )
         
         # 在线程池中执行CPU密集型计算
+        # 默认使用快速模式（只计算当前大运）+ 异步预热
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             executor,
@@ -399,8 +402,31 @@ async def calculate_bazi_detail(request: BaziDetailRequest, http_request: Reques
             final_solar_date,
             final_solar_time,
             request.gender,
-            current_time
+            current_time,
+            None,  # dayun_index
+            None,  # target_year
+            request.quick_mode if request.quick_mode is not None else True,  # quick_mode
+            request.async_warmup if request.async_warmup is not None else True,  # async_warmup
+            True,  # include_wangshuai
+            True,  # include_shengong_minggong
+            True,  # include_rules
+            True,  # include_wuxing_proportion
+            True,  # include_rizhu_liujiazi
+            None   # rule_types
         )
+        
+        # 添加预热状态到响应（如果使用快速模式）
+        warmup_status = "cached"  # 默认是缓存
+        if cached_result is None:
+            if request.quick_mode if request.quick_mode is not None else True:
+                warmup_status = "triggered" if (request.async_warmup if request.async_warmup is not None else True) else "none"
+            else:
+                warmup_status = "completed"
+        
+        if warmup_status != "cached":
+            result['warmup_status'] = warmup_status
+            if warmup_status == "triggered":
+                result['message'] = "数据已返回，后台正在预热其他大运"
         
         # 添加转换信息到结果
         if conversion_info.get('converted') or conversion_info.get('timezone_info'):

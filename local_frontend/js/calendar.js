@@ -292,9 +292,20 @@ function renderCalendar(data) {
     calendarContainer.innerHTML = html;
 }
 
-// 页面加载时自动加载万年历
+// 页面加载时延迟加载万年历（性能优化：避免阻塞页面渲染）
 document.addEventListener('DOMContentLoaded', function() {
     if (document.getElementById('calendarContainer')) {
-        loadCalendar();
+        // 使用 requestIdleCallback 延迟加载（浏览器空闲时执行）
+        // 如果不支持，使用 setTimeout 作为降级方案
+        if (window.requestIdleCallback) {
+            requestIdleCallback(function() {
+                loadCalendar();
+            }, { timeout: 2000 }); // 最多等待2秒
+        } else {
+            // 降级方案：延迟500ms执行，让页面先渲染
+            setTimeout(function() {
+                loadCalendar();
+            }, 500);
+        }
     }
 });

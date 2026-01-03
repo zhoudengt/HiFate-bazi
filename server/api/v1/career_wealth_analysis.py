@@ -27,10 +27,17 @@ from server.services.rule_service import RuleService
 from server.utils.data_validator import validate_bazi_data
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
+from server.services.user_interaction_logger import get_user_interaction_logger
+import time
 from server.services.industry_service import IndustryService
 from server.services.bazi_data_orchestrator import BaziDataOrchestrator
 from server.api.v1.general_review_analysis import classify_special_liunians, organize_special_liunians_by_dayun
 from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
+from server.utils.dayun_liunian_helper import (
+    calculate_user_age,
+    get_current_dayun,
+    build_enhanced_dayun_structure
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,346 +81,426 @@ ELEMENT_DIRECTION = {
 # 五行行业对照已改为从数据库读取（使用 IndustryService）
 
 
-def build_natural_language_prompt(data: dict) -> str:
+def build_career_wealth_input_data(
+    bazi_data: Dict[str, Any],
+    wangshuai_result: Dict[str, Any],
+    detail_result: Dict[str, Any],
+    dayun_sequence: List[Dict[str, Any]],
+    special_liunians: List[Dict[str, Any]],
+    gender: str
+) -> Dict[str, Any]:
     """
-    将 JSON 数据转换为自然语言格式的提示词
+    构建事业财富分析的输入数据
     
     Args:
-        data: 事业财富分析所需的完整数据
+        bazi_data: 八字基础数据
+        wangshuai_result: 旺衰分析结果
+        detail_result: 详细计算结果
+        dayun_sequence: 大运序列
+        special_liunians: 特殊流年列表
+        gender: 性别（male/female）
         
     Returns:
-        str: 自然语言格式的提示词
+        dict: 事业财富分析的input_data
     """
-    prompt_lines = []
-    prompt_lines.append("请基于以下八字信息进行事业财富分析：")
-    prompt_lines.append("")
+    # ⚠️ 数据提取辅助函数：从 wangshuai_result 中提取旺衰数据
+    def extract_wangshuai_data(wangshuai_result: Dict[str, Any]) -> Dict[str, Any]:
+        """从 wangshuai_result 中提取旺衰数据"""
+        if isinstance(wangshuai_result, dict):
+            if wangshuai_result.get('success') and 'data' in wangshuai_result:
+                return wangshuai_result.get('data', {})
+            if 'wangshuai' in wangshuai_result or 'xi_shen' in wangshuai_result:
+                return wangshuai_result
+        return {}
     
-    # 1. 命盘事业财富总论
-    prompt_lines.append("【命盘事业财富总论】")
-    mingpan = data.get('mingpan_shiye_caifu_zonglun', {})
-    
-    # 日主信息
-    day_master = mingpan.get('day_master', {})
-    if day_master:
-        stem = day_master.get('stem', '')
-        branch = day_master.get('branch', '')
-        element = day_master.get('element', '')
-        yin_yang = day_master.get('yin_yang', '')
-        prompt_lines.append(f"日主：{stem}{branch}（{yin_yang}{element}）")
-    
-    # 四柱排盘
-    bazi_pillars = mingpan.get('bazi_pillars', {})
-    if bazi_pillars:
-        prompt_lines.append("四柱排盘：")
-        for pillar_name, pillar_key in [('年柱', 'year'), ('月柱', 'month'), ('日柱', 'day'), ('时柱', 'hour')]:
-            pillar = bazi_pillars.get(pillar_key, {})
-            stem = pillar.get('stem', '')
-            branch = pillar.get('branch', '')
-            if stem and branch:
-                prompt_lines.append(f"  {pillar_name}：{stem}{branch}")
-    
-    # 五行分布
-    wuxing = mingpan.get('wuxing_distribution', {})
-    if wuxing:
-        wuxing_str = '、'.join([f"{k}{v}个" for k, v in wuxing.items() if v > 0])
-        prompt_lines.append(f"五行分布：{wuxing_str}")
-    
-    # 旺衰
-    wangshuai = mingpan.get('wangshuai', '')
-    if wangshuai:
-        prompt_lines.append(f"身旺身弱：{wangshuai}")
-    
-    # 月令
-    yue_ling = mingpan.get('yue_ling', '')
-    if yue_ling:
-        prompt_lines.append(f"月令：{yue_ling}")
-    
-    # 性别
-    gender = mingpan.get('gender', '')
-    gender_cn = '男' if gender == 'male' else '女' if gender == 'female' else ''
-    if gender_cn:
-        prompt_lines.append(f"性别：{gender_cn}")
-    
-    # 格局类型
-    geju = mingpan.get('geju_type', '')
-    if geju:
-        prompt_lines.append(f"格局类型：{geju}")
-    
-    # 十神配置
-    ten_gods = mingpan.get('ten_gods', {})
-    if ten_gods:
-        prompt_lines.append("十神配置：")
-        for pillar_name, pillar_key in [('年柱', 'year'), ('月柱', 'month'), ('日柱', 'day'), ('时柱', 'hour')]:
-            pillar_ten_gods = ten_gods.get(pillar_key, {})
-            if pillar_ten_gods:
-                main_star = pillar_ten_gods.get('main_star', '')
-                hidden_stars = pillar_ten_gods.get('hidden_stars', [])
-                hidden_str = '、'.join(hidden_stars) if hidden_stars else '无'
-                prompt_lines.append(f"  {pillar_name}：主星{main_star}，副星{hidden_str}")
-    
-    prompt_lines.append("")
-    
-    # 2. 事业星与事业宫
-    prompt_lines.append("【事业星与事业宫】")
-    shiye = data.get('shiye_xing_gong', {})
-    
-    # 事业星
-    shiye_xing = shiye.get('shiye_xing', {})
-    if shiye_xing:
-        primary = shiye_xing.get('primary', '')
-        secondary = shiye_xing.get('secondary', '')
-        positions = shiye_xing.get('positions', [])
-        if primary:
-            prompt_lines.append(f"主要事业星：{primary}")
-        if secondary:
-            prompt_lines.append(f"次要事业星：{secondary}")
-        if positions:
-            prompt_lines.append(f"事业星位置：{'、'.join(positions)}")
-    
-    # 月柱分析
-    month_analysis = shiye.get('month_pillar_analysis', {})
-    if month_analysis:
-        stem = month_analysis.get('stem', '')
-        branch = month_analysis.get('branch', '')
-        stem_shishen = month_analysis.get('stem_shishen', '')
-        if stem and branch:
-            prompt_lines.append(f"月柱（事业宫）：{stem}{branch}，月干十神：{stem_shishen}")
-    
-    # 神煞分布
-    deities = shiye.get('deities', {})
-    if deities:
-        prompt_lines.append("神煞分布：")
-        for pillar_key, pillar_deities in deities.items():
-            pillar_names_map = {'year': '年柱', 'month': '月柱', 'day': '日柱', 'hour': '时柱'}
-            pillar_name = pillar_names_map.get(pillar_key, pillar_key)
-            if pillar_deities:
-                deities_str = '、'.join(pillar_deities) if isinstance(pillar_deities, list) else str(pillar_deities)
-                prompt_lines.append(f"  {pillar_name}：{deities_str}")
-    
-    # 事业判词
-    career_judgments = shiye.get('career_judgments', [])
-    if career_judgments:
-        prompt_lines.append("事业判词：")
-        for j in career_judgments[:5]:  # 最多显示5条
-            name = j.get('name', '')
-            text = j.get('text', '')
-            if text:
-                prompt_lines.append(f"  - {name}：{text}")
-    
-    prompt_lines.append("")
-    
-    # 3. 财富星与财富宫
-    prompt_lines.append("【财富星与财富宫】")
-    caifu = data.get('caifu_xing_gong', {})
-    
-    # 财富星
-    caifu_xing = caifu.get('caifu_xing', {})
-    if caifu_xing:
-        primary = caifu_xing.get('primary', '')
-        positions = caifu_xing.get('positions', [])
-        if primary:
-            prompt_lines.append(f"主要财星：{primary}")
-        if positions:
-            prompt_lines.append(f"财星位置：{'、'.join(positions)}")
-    
-    # 食伤生财
-    shishang = caifu.get('shishang_shengcai', {})
-    if shishang.get('has_combination'):
-        prompt_lines.append(f"食伤生财：{shishang.get('combination_type', '')}")
-    
-    # 财库
-    caiku = caifu.get('caiku', {})
-    if caiku.get('has_caiku'):
-        prompt_lines.append(f"财库：{caiku.get('caiku_position', '')}，状态：{caiku.get('caiku_status', '')}")
-    
-    # 财富判词
-    wealth_judgments = caifu.get('wealth_judgments', [])
-    if wealth_judgments:
-        prompt_lines.append("财富判词：")
-        for j in wealth_judgments[:5]:
-            name = j.get('name', '')
-            text = j.get('text', '')
-            if text:
-                prompt_lines.append(f"  - {name}：{text}")
-    
-    prompt_lines.append("")
-    
-    # 4. 事业运势
-    prompt_lines.append("【事业运势】")
-    yunshi = data.get('shiye_yunshi', {})
-    
-    # 当前年龄
-    age = yunshi.get('current_age', 0)
-    if age:
-        prompt_lines.append(f"当前年龄：{age}岁")
-    
-    # 现行运（按照新格式）
-    current_dayun = yunshi.get('current_dayun', {})
-    if current_dayun:
-        step = current_dayun.get('step', '')
-        stem = current_dayun.get('stem', '')
-        branch = current_dayun.get('branch', '')
-        main_star = current_dayun.get('main_star', '')
-        age_display = current_dayun.get('age_display', '')
-        if stem and branch:
-            prompt_lines.append(f"**现行{step}运（{age_display}）：**")
-            prompt_lines.append(f"- 大运：{stem}{branch}，主星：{main_star}")
-            prompt_lines.append(f"- [分析当前大运的五行特征对事业的影响]")
-            key_liunians = current_dayun.get('liunians', [])
-            if key_liunians:
-                prompt_lines.append(f"- [列举关键流年及事业风险]：")
-                for liunian in key_liunians:
-                    year = liunian.get('year', '')
-                    liunian_type = liunian.get('type', '')
-                    prompt_lines.append(f"  - {year}年（{liunian_type}）：[分析该年的事业风险，如XX年XX势过猛，需格外防范XX]")
-            else:
-                prompt_lines.append(f"- [列举关键流年及事业风险]：暂无特殊流年")
-            prompt_lines.append("")
-    
-    # 关键节点大运（按照新格式）
-    key_dayuns = yunshi.get('key_dayuns', [])
-    if key_dayuns:
-        for key_dayun in key_dayuns:
-            step = key_dayun.get('step', '')
-            stem = key_dayun.get('stem', '')
-            branch = key_dayun.get('branch', '')
-            main_star = key_dayun.get('main_star', '')
-            age_display = key_dayun.get('age_display', '')
-            relation_type = key_dayun.get('relation_type', '')
-            if stem and branch:
-                prompt_lines.append(f"**关键节点：{step}运（{age_display}）：**")
-                prompt_lines.append(f"- 大运：{stem}{branch}，主星：{main_star}")
-                prompt_lines.append(f"- [分析该大运的五行特征，是否为调候用神出现]")
-                if relation_type:
-                    prompt_lines.append(f"- [分析该运与原局的生克关系，如{relation_type}等]")
-                prompt_lines.append(f"- 利好：[分析该运对事业的积极影响]")
-                key_liunians = key_dayun.get('liunians', [])
-                if key_liunians:
-                    prompt_lines.append(f"- 挑战：[分析该运的事业风险，如XX年（岁运并临），XX势过猛冲击XX，需重点防范XX]：")
-                    for liunian in key_liunians:
-                        year = liunian.get('year', '')
-                        liunian_type = liunian.get('type', '')
-                        prompt_lines.append(f"  - {year}年（{liunian_type}）：[分析该年的事业风险]")
-                else:
-                    prompt_lines.append(f"- 挑战：[分析该运的事业风险]：暂无特殊流年")
-                prompt_lines.append("")
-    
-    prompt_lines.append("")
-    
-    # 5. 财富运势
-    prompt_lines.append("【财富运势】")
-    caifu_yunshi = data.get('caifu_yunshi', {})
-    
-    # 财富积累阶段
-    stages = caifu_yunshi.get('wealth_stages', {})
-    if stages:
-        early = stages.get('early', {})
-        middle = stages.get('middle', {})
-        late = stages.get('late', {})
-        if early.get('stage_type'):
-            prompt_lines.append(f"早年（{early.get('age_range', '1-30岁')}）：{early.get('stage_type', '')}")
-        if middle.get('stage_type'):
-            prompt_lines.append(f"中年（{middle.get('age_range', '30-50岁')}）：{middle.get('stage_type', '')}")
-        if late.get('stage_type'):
-            prompt_lines.append(f"晚年（{late.get('age_range', '50岁以后')}）：{late.get('stage_type', '')}")
-    
-    # 现行运（按照新格式）
-    current_dayun = caifu_yunshi.get('current_dayun', {})
-    if current_dayun:
-        step = current_dayun.get('step', '')
-        stem = current_dayun.get('stem', '')
-        branch = current_dayun.get('branch', '')
-        main_star = current_dayun.get('main_star', '')
-        age_display = current_dayun.get('age_display', '')
-        if stem and branch:
-            prompt_lines.append(f"**现行{step}运（{age_display}）：**")
-            prompt_lines.append(f"- 大运：{stem}{branch}，主星：{main_star}")
-            prompt_lines.append(f"- [分析当前大运的五行特征对财富的影响]")
-            key_liunians = current_dayun.get('liunians', [])
-            if key_liunians:
-                prompt_lines.append(f"- [列举关键流年及财富风险]：")
-                for liunian in key_liunians:
-                    year = liunian.get('year', '')
-                    liunian_type = liunian.get('type', '')
-                    prompt_lines.append(f"  - {year}年（{liunian_type}）：[分析该年的财富风险，如XX年XX势过猛，需格外防范XX]")
-            else:
-                prompt_lines.append(f"- [列举关键流年及财富风险]：暂无特殊流年")
-            prompt_lines.append("")
-    
-    # 关键节点大运（按照新格式）
-    key_dayuns = caifu_yunshi.get('key_dayuns', [])
-    if key_dayuns:
-        for key_dayun in key_dayuns:
-            step = key_dayun.get('step', '')
-            stem = key_dayun.get('stem', '')
-            branch = key_dayun.get('branch', '')
-            main_star = key_dayun.get('main_star', '')
-            age_display = key_dayun.get('age_display', '')
-            relation_type = key_dayun.get('relation_type', '')
-            if stem and branch:
-                prompt_lines.append(f"**关键节点：{step}运（{age_display}）：**")
-                prompt_lines.append(f"- 大运：{stem}{branch}，主星：{main_star}")
-                prompt_lines.append(f"- [分析该大运的五行特征，是否为调候用神出现]")
-                if relation_type:
-                    prompt_lines.append(f"- [分析该运与原局的生克关系，如{relation_type}等]")
-                prompt_lines.append(f"- 利好：[分析该运对财富的积极影响]")
-                key_liunians = key_dayun.get('liunians', [])
-                if key_liunians:
-                    prompt_lines.append(f"- 挑战：[分析该运的财富风险，如XX年（岁运并临），XX势过猛冲击XX，需重点防范XX]：")
-                    for liunian in key_liunians:
-                        year = liunian.get('year', '')
-                        liunian_type = liunian.get('type', '')
-                        prompt_lines.append(f"  - {year}年（{liunian_type}）：[分析该年的财富风险]")
-                else:
-                    prompt_lines.append(f"- 挑战：[分析该运的财富风险]：暂无特殊流年")
-                prompt_lines.append("")
-    
-    prompt_lines.append("")
-    
-    # 6. 提运建议
-    prompt_lines.append("【提运建议】")
-    jianyi = data.get('tiyun_jianyi', {})
-    
-    # 喜忌
-    xi_ji = jianyi.get('xi_ji', {})
-    if xi_ji:
-        xi_shen = xi_ji.get('xi_shen', [])
-        ji_shen = xi_ji.get('ji_shen', [])
-        xi_shen_elements = xi_ji.get('xi_shen_elements', [])
-        ji_shen_elements = xi_ji.get('ji_shen_elements', [])
+    # ⚠️ 数据提取辅助函数：从 detail_result 或 bazi_data 中提取十神数据
+    def extract_ten_gods_data(detail_result: Dict[str, Any], bazi_data: Dict[str, Any]) -> Dict[str, Any]:
+        """从 detail_result 或 bazi_data 中提取十神数据"""
+        # 1. 先尝试从 detail_result 的顶层获取
+        ten_gods = detail_result.get('ten_gods', {})
+        if ten_gods and isinstance(ten_gods, dict) and len(ten_gods) > 0:
+            return ten_gods
         
-        if xi_shen:
-            prompt_lines.append(f"喜神：{'、'.join(xi_shen)}")
-        if ji_shen:
-            prompt_lines.append(f"忌神：{'、'.join(ji_shen)}")
-        if xi_shen_elements:
-            prompt_lines.append(f"喜用五行：{'、'.join(xi_shen_elements)}")
-        if ji_shen_elements:
-            prompt_lines.append(f"忌用五行：{'、'.join(ji_shen_elements)}")
+        # 2. 尝试从 detail_result 的 details 字段中提取
+        details = detail_result.get('details', {})
+        if details and isinstance(details, dict):
+            ten_gods_from_details = {}
+            for pillar_name in ['year', 'month', 'day', 'hour']:
+                pillar_detail = details.get(pillar_name, {})
+                if isinstance(pillar_detail, dict):
+                    ten_gods_from_details[pillar_name] = {
+                        'main_star': pillar_detail.get('main_star', ''),
+                        'hidden_stars': pillar_detail.get('hidden_stars', [])
+                    }
+            if any(ten_gods_from_details.values()):
+                return ten_gods_from_details
+        
+        # 3. 尝试从 bazi_data 的 details 字段中提取
+        bazi_details = bazi_data.get('details', {})
+        if bazi_details and isinstance(bazi_details, dict):
+            ten_gods_from_bazi = {}
+            for pillar_name in ['year', 'month', 'day', 'hour']:
+                pillar_detail = bazi_details.get(pillar_name, {})
+                if isinstance(pillar_detail, dict):
+                    ten_gods_from_bazi[pillar_name] = {
+                        'main_star': pillar_detail.get('main_star', ''),
+                        'hidden_stars': pillar_detail.get('hidden_stars', [])
+                    }
+            if any(ten_gods_from_bazi.values()):
+                return ten_gods_from_bazi
+        
+        return {}
     
-    # 方位选择
-    fangwei = jianyi.get('fangwei', {})
-    if fangwei:
-        best = fangwei.get('best_directions', [])
-        avoid = fangwei.get('avoid_directions', [])
-        if best:
-            prompt_lines.append(f"最佳方位：{'、'.join(best)}")
-        if avoid:
-            prompt_lines.append(f"避开方位：{'、'.join(avoid)}")
+    # 提取基础数据
+    bazi_pillars = bazi_data.get('bazi_pillars', {})
     
-    # 行业选择
-    hangye = jianyi.get('hangye', {})
-    if hangye:
-        best = hangye.get('best_industries', [])
-        avoid = hangye.get('avoid_industries', [])
-        if best:
-            prompt_lines.append(f"适合行业：{'、'.join(best[:5])}")
-        if avoid:
-            prompt_lines.append(f"谨慎行业：{'、'.join(avoid[:3])}")
+    # ⚠️ 修复：从 wangshuai_result 中正确提取旺衰数据
+    wangshuai_data = extract_wangshuai_data(wangshuai_result)
     
-    prompt_lines.append("")
+    # ⚠️ 修复：从 detail_result 或 bazi_data 中提取十神数据
+    ten_gods_data = extract_ten_gods_data(detail_result, bazi_data)
     
-    return '\n'.join(prompt_lines)
+    # 提取十神统计（用于事业星和财富星分析）
+    ten_gods_stats = bazi_data.get('ten_gods_stats', {})
+    
+    # 提取神煞数据
+    deities_data = {}
+    try:
+        details = bazi_data.get('details', {})
+        for pillar_name in ['year', 'month', 'day', 'hour']:
+            pillar_details = details.get(pillar_name, {})
+            deities = pillar_details.get('deities', [])
+            if deities:
+                deities_data[pillar_name] = deities
+    except Exception as e:
+        logger.warning(f"提取神煞数据失败（不影响业务）: {e}")
+    
+    # 提取日柱、月柱、年柱、时柱
+    day_pillar = bazi_pillars.get('day', {})
+    month_pillar = bazi_pillars.get('month', {})
+    year_pillar = bazi_pillars.get('year', {})
+    hour_pillar = bazi_pillars.get('hour', {})
+    
+    # ⚠️ 修复：从 wangshuai_data 中提取旺衰字符串
+    wangshuai = wangshuai_data.get('wangshuai', '')
+    wangshuai_detail = wangshuai_data.get('detail', '')
+    
+    # 提取五行分布
+    element_counts = bazi_data.get('element_counts', {})
+    wuxing_distribution = {
+        '木': element_counts.get('木', 0),
+        '火': element_counts.get('火', 0),
+        '土': element_counts.get('土', 0),
+        '金': element_counts.get('金', 0),
+        '水': element_counts.get('水', 0)
+    }
+    
+    # 提取月令
+    yue_ling = BRANCH_MONTH.get(month_pillar.get('branch', ''), '')
+    
+    # 提取格局类型
+    geju_type = wangshuai_data.get('geju_type', '')
+    
+    # ⚠️ 优化：使用工具函数计算年龄和当前大运（与排盘系统一致）
+    birth_date = bazi_data.get('basic_info', {}).get('solar_date', '')
+    current_age = 0
+    birth_year = None
+    if birth_date:
+        current_age = calculate_user_age(birth_date)
+        try:
+            birth_year = int(birth_date.split('-')[0])
+        except:
+            pass
+    
+    # 获取当前大运（与排盘系统一致）
+    current_dayun_info = get_current_dayun(dayun_sequence, current_age)
+    
+    # ⚠️ 优化：使用工具函数构建增强的大运流年结构（包含优先级、描述、备注等）
+    if special_liunians is None:
+        special_liunians = []
+    
+    enhanced_dayun_structure = build_enhanced_dayun_structure(
+        dayun_sequence=dayun_sequence,
+        special_liunians=special_liunians,
+        current_age=current_age,
+        current_dayun=current_dayun_info,
+        birth_year=birth_year
+    )
+    
+    # ⚠️ 优化：添加后处理函数（清理流月流日字段，限制流年数量）
+    def clean_liunian_data(liunian: Dict[str, Any]) -> Dict[str, Any]:
+        """清理流年数据：移除流月流日字段"""
+        cleaned = liunian.copy()
+        fields_to_remove = ['liuyue_sequence', 'liuri_sequence', 'liushi_sequence']
+        for field in fields_to_remove:
+            cleaned.pop(field, None)
+        return cleaned
+    
+    def limit_liunians_by_priority(liunians: List[Dict[str, Any]], max_count: int = 3) -> List[Dict[str, Any]]:
+        """限制流年数量：只保留优先级最高的N个（已按优先级排序）"""
+        if not liunians:
+            return []
+        return liunians[:max_count]
+    
+    # 提取当前大运数据（优先级1）
+    current_dayun_enhanced = enhanced_dayun_structure.get('current_dayun')
+    current_dayun_data = None
+    if current_dayun_enhanced:
+        raw_liunians = current_dayun_enhanced.get('liunians', [])
+        cleaned_liunians = [clean_liunian_data(liunian) for liunian in raw_liunians]
+        limited_liunians = limit_liunians_by_priority(cleaned_liunians, max_count=3)
+        
+        current_dayun_data = {
+            'step': str(current_dayun_enhanced.get('step', '')),
+            'stem': current_dayun_enhanced.get('gan', current_dayun_enhanced.get('stem', '')),
+            'branch': current_dayun_enhanced.get('zhi', current_dayun_enhanced.get('branch', '')),
+            'age_display': current_dayun_enhanced.get('age_display', current_dayun_enhanced.get('age_range', '')),
+            'main_star': current_dayun_enhanced.get('main_star', ''),
+            'priority': current_dayun_enhanced.get('priority', 1),
+            'life_stage': current_dayun_enhanced.get('life_stage', ''),
+            'description': current_dayun_enhanced.get('description', ''),
+            'note': current_dayun_enhanced.get('note', ''),
+            'liunians': limited_liunians
+        }
+    
+    # 提取关键大运数据（优先级2-10）
+    key_dayuns_enhanced = enhanced_dayun_structure.get('key_dayuns', [])
+    key_dayuns_data = []
+    for key_dayun in key_dayuns_enhanced:
+        raw_liunians = key_dayun.get('liunians', [])
+        cleaned_liunians = [clean_liunian_data(liunian) for liunian in raw_liunians]
+        limited_liunians = limit_liunians_by_priority(cleaned_liunians, max_count=3)
+        
+        key_dayuns_data.append({
+            'step': str(key_dayun.get('step', '')),
+            'stem': key_dayun.get('gan', key_dayun.get('stem', '')),
+            'branch': key_dayun.get('zhi', key_dayun.get('branch', '')),
+            'age_display': key_dayun.get('age_display', key_dayun.get('age_range', '')),
+            'main_star': key_dayun.get('main_star', ''),
+            'priority': key_dayun.get('priority', 999),
+            'life_stage': key_dayun.get('life_stage', ''),
+            'description': key_dayun.get('description', ''),
+            'note': key_dayun.get('note', ''),
+            'liunians': limited_liunians
+        })
+    
+    # 提取事业星和财富星
+    career_star = extract_career_star(ten_gods_stats)
+    wealth_star = extract_wealth_star(ten_gods_stats)
+    shishang_shengcai = check_shishang_shengcai(ten_gods_stats, ten_gods_data)
+    
+    # ⚠️ 修复：从 wangshuai_data 中提取喜忌数据
+    xi_ji_data = {
+        'xi_shen': wangshuai_data.get('xi_shen', ''),
+        'ji_shen': wangshuai_data.get('ji_shen', ''),
+        'xi_ji_elements': wangshuai_data.get('xi_ji_elements', {})
+    }
+    
+    # ⚠️ 如果 xi_ji_elements 为空，尝试从 final_xi_ji 中获取
+    if not xi_ji_data.get('xi_ji_elements'):
+        final_xi_ji = wangshuai_data.get('final_xi_ji', {})
+        if final_xi_ji:
+            xi_ji_data['xi_ji_elements'] = {
+                'xi_shen': final_xi_ji.get('xi_shen_elements', []),
+                'ji_shen': final_xi_ji.get('ji_shen_elements', [])
+            }
+    
+    # 获取方位和行业建议
+    xi_elements = xi_ji_data.get('xi_ji_elements', {}).get('xi_shen', []) if isinstance(xi_ji_data.get('xi_ji_elements'), dict) else []
+    ji_elements = xi_ji_data.get('xi_ji_elements', {}).get('ji_shen', []) if isinstance(xi_ji_data.get('xi_ji_elements'), dict) else []
+    fangwei = get_directions_from_elements(xi_elements, ji_elements)
+    hangye = get_industries_from_elements(xi_elements, ji_elements)
+    
+    # 构建input_data
+    input_data = {
+        # 命盘事业财富总论
+        'mingpan_shiye_caifu_zonglun': {
+            'day_master': {
+                'stem': day_pillar.get('stem', ''),
+                'branch': day_pillar.get('branch', ''),
+                'element': STEM_ELEMENT.get(day_pillar.get('stem', ''), ''),
+                'yin_yang': STEM_YIN_YANG.get(day_pillar.get('stem', ''), '')
+            },
+            'bazi_pillars': {
+                'year': {'stem': year_pillar.get('stem', ''), 'branch': year_pillar.get('branch', '')},
+                'month': {'stem': month_pillar.get('stem', ''), 'branch': month_pillar.get('branch', '')},
+                'day': {'stem': day_pillar.get('stem', ''), 'branch': day_pillar.get('branch', '')},
+                'hour': {'stem': hour_pillar.get('stem', ''), 'branch': hour_pillar.get('branch', '')}
+            },
+            'wuxing_distribution': wuxing_distribution,
+            'wangshuai': wangshuai,
+            'wangshuai_detail': wangshuai_detail,
+            'yue_ling': yue_ling,
+            'yue_ling_shishen': ten_gods_data.get('month', {}).get('main_star', ''),
+            'gender': gender,
+            'geju_type': geju_type,
+            'geju_description': wangshuai_data.get('geju_description', ''),
+            'ten_gods': ten_gods_data
+        },
+        # 事业星与事业宫
+        'shiye_xing_gong': {
+            'shiye_xing': career_star,
+            'month_pillar_analysis': {
+                'stem': month_pillar.get('stem', ''),
+                'branch': month_pillar.get('branch', ''),
+                'stem_shishen': ten_gods_data.get('month', {}).get('main_star', ''),
+                'branch_shishen': '',
+                'hidden_stems': ten_gods_data.get('month', {}).get('hidden_stars', []),
+                'analysis': ''
+            },
+            'ten_gods': ten_gods_data,
+            'ten_gods_stats': ten_gods_stats,
+            'deities': deities_data,
+            'career_judgments': []  # 将在调用处填充
+        },
+        # 财富星与财富宫
+        'caifu_xing_gong': {
+            'caifu_xing': wealth_star,
+            'year_pillar_analysis': {
+                'stem': year_pillar.get('stem', ''),
+                'branch': year_pillar.get('branch', ''),
+                'stem_shishen': ten_gods_data.get('year', {}).get('main_star', ''),
+                'branch_shishen': '',
+                'analysis': ''
+            },
+            'hour_pillar_analysis': {
+                'stem': hour_pillar.get('stem', ''),
+                'branch': hour_pillar.get('branch', ''),
+                'stem_shishen': ten_gods_data.get('hour', {}).get('main_star', ''),
+                'branch_shishen': '',
+                'analysis': ''
+            },
+            'shishang_shengcai': shishang_shengcai,
+            'caiku': {
+                'has_caiku': False,
+                'caiku_position': '',
+                'caiku_status': '',
+                'analysis': ''
+            },
+            'wealth_judgments': []  # 将在调用处填充
+        },
+        # 事业运势
+        'shiye_yunshi': {
+            'current_age': current_age,
+            'current_dayun': current_dayun_data,
+            'key_dayuns': key_dayuns_data,
+            'key_liunian': [],
+            'chonghe_xinghai': {
+                'dayun_relations': [],
+                'liunian_relations': [],
+                'key_conflicts': []
+            }
+        },
+        # 财富运势
+        'caifu_yunshi': {
+            'wealth_stages': {
+                'early': {'age_range': '1-30岁', 'stage_type': '', 'description': ''},
+                'middle': {'age_range': '30-50岁', 'stage_type': '', 'description': ''},
+                'late': {'age_range': '50岁以后', 'stage_type': '', 'description': ''}
+            },
+            'current_dayun': current_dayun_data,
+            'key_dayuns': key_dayuns_data,
+            'liunian_wealth_nodes': [],
+            'caiku_timing': {
+                'has_timing': False,
+                'timing_years': [],
+                'timing_description': ''
+            }
+        },
+        # 提运建议
+        'tiyun_jianyi': {
+            'ten_gods_summary': '',
+            'xi_ji': xi_ji_data,
+            'fangwei': fangwei,
+            'hangye': hangye,
+            'wuxing_hangye': IndustryService.get_industry_mapping()
+        }
+    }
+    
+    return input_data
+
+
+def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
+    """
+    将结构化数据格式化为 JSON 字符串（用于 Coze Bot System Prompt 的 {{input}} 占位符）
+    
+    ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
+    提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
+    
+    Args:
+        input_data: 结构化输入数据
+        
+    Returns:
+        str: JSON 格式的字符串，可以直接替换 {{input}} 占位符
+    """
+    import json
+    
+    # 获取原始数据
+    mingpan = input_data.get('mingpan_shiye_caifu_zonglun', {})
+    shiye = input_data.get('shiye_xing_gong', {})
+    caifu = input_data.get('caifu_xing_gong', {})
+    shiye_yunshi = input_data.get('shiye_yunshi', {})
+    caifu_yunshi = input_data.get('caifu_yunshi', {})
+    tiyun = input_data.get('tiyun_jianyi', {})
+    
+    # ⚠️ 方案2：优化数据结构，使用引用避免重复
+    optimized_data = {
+        # 1. 命盘事业财富总论（基础数据，只提取一次）
+        'mingpan_shiye_caifu_zonglun': mingpan,
+        
+        # 2. 事业星与事业宫（引用十神，不重复存储）
+        'shiye_xing_gong': {
+            'shiye_xing': shiye.get('shiye_xing', {}),
+            'month_pillar_analysis': shiye.get('month_pillar_analysis', {}),
+            'ten_gods': mingpan.get('ten_gods', {}),
+            'ten_gods_stats': shiye.get('ten_gods_stats', {}),
+            'deities': shiye.get('deities', {}),
+            'career_judgments': shiye.get('career_judgments', [])
+        },
+        
+        # 3. 财富星与财富宫（引用十神，不重复存储）
+        'caifu_xing_gong': {
+            'caifu_xing': caifu.get('caifu_xing', {}),
+            'year_pillar_analysis': caifu.get('year_pillar_analysis', {}),
+            'hour_pillar_analysis': caifu.get('hour_pillar_analysis', {}),
+            'shishang_shengcai': caifu.get('shishang_shengcai', {}),
+            'caiku': caifu.get('caiku', {}),
+            'wealth_judgments': caifu.get('wealth_judgments', [])
+        },
+        
+        # 4. 事业运势（引用大运，不重复存储）
+        'shiye_yunshi': {
+            'current_age': shiye_yunshi.get('current_age', 0),
+            'current_dayun': shiye_yunshi.get('current_dayun'),
+            'key_dayuns': shiye_yunshi.get('key_dayuns', []),
+            'key_liunian': shiye_yunshi.get('key_liunian', []),
+            'chonghe_xinghai': shiye_yunshi.get('chonghe_xinghai', {})
+        },
+        
+        # 5. 财富运势（引用大运，不重复存储）
+        'caifu_yunshi': {
+            'wealth_stages': caifu_yunshi.get('wealth_stages', {}),
+            'current_dayun': shiye_yunshi.get('current_dayun'),  # 引用事业运势的当前大运
+            'key_dayuns': shiye_yunshi.get('key_dayuns', []),  # 引用事业运势的关键大运
+            'liunian_wealth_nodes': caifu_yunshi.get('liunian_wealth_nodes', []),
+            'caiku_timing': caifu_yunshi.get('caiku_timing', {})
+        },
+        
+        # 6. 提运建议（引用十神和喜忌，不重复存储）
+        'tiyun_jianyi': {
+            'ten_gods_summary': tiyun.get('ten_gods_summary', ''),
+            'xi_ji': tiyun.get('xi_ji', {}),
+            'fangwei': tiyun.get('fangwei', {}),
+            'hangye': tiyun.get('hangye', {}),
+            'wuxing_hangye': tiyun.get('wuxing_hangye', {})
+        }
+    }
+    
+    # 格式化为 JSON 字符串（美化格式，便于 Bot 理解）
+    return json.dumps(optimized_data, ensure_ascii=False, indent=2)
+
+
+# ⚠️ 已移除：build_natural_language_prompt 函数（方案1已废弃，使用方案2：format_input_data_for_coze）
 
 
 def _calculate_ganzhi_elements(stem: str, branch: str) -> Dict[str, int]:
@@ -570,9 +657,23 @@ def validate_input_data(data: dict) -> tuple:
         'mingpan_shiye_caifu_zonglun': {
             'bazi_pillars': '八字排盘',
             'day_master': '日主信息',
+            'ten_gods': '十神配置',
+            'wangshuai': '旺衰分析',
         },
         'shiye_xing_gong': {
             'ten_gods': '十神配置',
+            'shiye_xing': '事业星',
+        },
+        'caifu_xing_gong': {
+            'caifu_xing': '财富星',
+        },
+        'shiye_yunshi': {
+            'current_dayun': '当前大运',
+            'key_dayuns': '关键大运',
+        },
+        'caifu_yunshi': {
+            'current_dayun': '当前大运',
+            'key_dayuns': '关键大运',
         },
         'tiyun_jianyi': {
             'xi_ji': '喜忌分析',
@@ -766,6 +867,153 @@ class CareerWealthResponse(BaseModel):
     error: Optional[str] = None
 
 
+@router.post("/career-wealth/test", summary="测试接口：返回格式化后的数据（用于 Coze Bot）")
+async def career_wealth_analysis_test(request: CareerWealthRequest):
+    """
+    测试接口：返回格式化后的数据（用于 Coze Bot 的 {{input}} 占位符）
+    
+    ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
+    提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
+    
+    Args:
+        request: 事业财富分析请求参数
+        
+    Returns:
+        dict: 包含格式化后的数据
+    """
+    try:
+        # 处理输入（农历转换等）
+        final_solar_date, final_solar_time, _ = BaziInputProcessor.process_input(
+            request.solar_date, request.solar_time, request.calendar_type or "solar", 
+            request.location, request.latitude, request.longitude
+        )
+        
+        # 使用统一接口获取数据
+        modules = {
+            'bazi': True,
+            'wangshuai': True,
+            'detail': True,
+            'dayun': {
+                'mode': 'count',
+                'count': 13  # 获取所有大运
+            },
+            'special_liunians': {
+                'dayun_config': {
+                    'mode': 'count',
+                    'count': 13  # 获取所有大运
+                },
+                'count': 200  # 获取足够多的特殊流年
+            }
+        }
+        
+        unified_data = await BaziDataOrchestrator.fetch_data(
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
+            gender=request.gender,
+            modules=modules,
+            use_cache=True,
+            parallel=True,
+            calendar_type=request.calendar_type,
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude
+        )
+        
+        # 从统一接口结果中提取数据
+        bazi_result = unified_data.get('bazi', {})
+        wangshuai_result = unified_data.get('wangshuai', {})
+        detail_result = unified_data.get('detail', {})
+        special_liunians = unified_data.get('special_liunians', {}).get('list', [])
+        
+        # 提取和验证数据
+        if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
+            bazi_data = bazi_result['bazi']
+        else:
+            bazi_data = bazi_result
+        bazi_data = validate_bazi_data(bazi_data)
+        
+        # 获取大运序列（从detail_result）
+        dayun_sequence = detail_result.get('dayun_sequence', [])
+        
+        # 匹配规则
+        rule_data = {
+            'basic_info': bazi_data.get('basic_info', {}),
+            'bazi_pillars': bazi_data.get('bazi_pillars', {}),
+            'details': bazi_data.get('details', {}),
+            'ten_gods_stats': bazi_data.get('ten_gods_stats', {}),
+            'elements': bazi_data.get('elements', {}),
+            'element_counts': bazi_data.get('element_counts', {}),
+            'relationships': bazi_data.get('relationships', {})
+        }
+        
+        loop = asyncio.get_event_loop()
+        executor = None
+        
+        matched_rules = await loop.run_in_executor(
+            executor,
+            RuleService.match_rules,
+            rule_data,
+            ['career', 'wealth', 'summary'],
+            True
+        )
+        
+        # 构建input_data
+        input_data = build_career_wealth_input_data(
+            bazi_data,
+            wangshuai_result,
+            detail_result,
+            dayun_sequence,
+            special_liunians,
+            request.gender
+        )
+        
+        # 填充判词数据
+        career_judgments = []
+        wealth_judgments = []
+        for rule in matched_rules:
+            rule_type = rule.get('rule_type', '')
+            rule_name = rule.get('rule_name', '')
+            content = rule.get('content', {})
+            text = content.get('text', '') if isinstance(content, dict) else str(content)
+            
+            if rule_type == 'career':
+                career_judgments.append({'name': rule_name, 'text': text})
+            elif rule_type == 'wealth':
+                wealth_judgments.append({'name': rule_name, 'text': text})
+        
+        input_data['shiye_xing_gong']['career_judgments'] = career_judgments
+        input_data['caifu_xing_gong']['wealth_judgments'] = wealth_judgments
+        
+        # 格式化数据
+        formatted_data = format_input_data_for_coze(input_data)
+        
+        return {
+            "success": True,
+            "formatted_data": formatted_data,
+            "formatted_data_length": len(formatted_data),
+            "data_summary": {
+                "bazi_pillars": input_data.get('mingpan_shiye_caifu_zonglun', {}).get('bazi_pillars', {}),
+                "dayun_count": len(input_data.get('shiye_yunshi', {}).get('key_dayuns', [])),
+                "current_dayun_liunians_count": len(input_data.get('shiye_yunshi', {}).get('current_dayun', {}).get('liunians', [])),
+                "key_dayuns_count": len(input_data.get('shiye_yunshi', {}).get('key_dayuns', [])),
+                "xi_ji": input_data.get('tiyun_jianyi', {}).get('xi_ji', {})
+            },
+            "usage": {
+                "description": "此接口返回的数据可以直接用于 Coze Bot 的 {{input}} 占位符",
+                "coze_bot_setup": "1. 登录 Coze 平台\n2. 找到'事业财富分析' Bot\n3. 进入 Bot 设置 → System Prompt\n4. 复制 docs/需求/Coze_Bot_System_Prompt_事业财富分析.md 中的提示词\n5. 粘贴到 System Prompt 中\n6. 保存设置",
+                "test_command": f'curl -X POST "http://localhost:8001/api/v1/career-wealth/test" -H "Content-Type: application/json" -d \'{{"solar_date": "{request.solar_date}", "solar_time": "{request.solar_time}", "gender": "{request.gender}", "calendar_type": "{request.calendar_type or "solar"}"}}\''
+            }
+        }
+    except Exception as e:
+        import traceback
+        logger.error(f"测试接口异常: {e}\n{traceback.format_exc()}")
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
 @router.post("/career-wealth/stream", summary="流式生成事业财富分析")
 async def career_wealth_analysis_stream(request: CareerWealthRequest):
     """
@@ -811,6 +1059,20 @@ async def career_wealth_stream_generator(
         longitude: 经度（用于时区转换和真太阳时计算，优先级2）
         bot_id: Coze Bot ID（可选）
     """
+    # 记录开始时间和前端输入
+    api_start_time = time.time()
+    frontend_input = {
+        'solar_date': solar_date,
+        'solar_time': solar_time,
+        'gender': gender,
+        'calendar_type': calendar_type,
+        'location': location,
+        'latitude': latitude,
+        'longitude': longitude
+    }
+    llm_first_token_time = None
+    llm_output_chunks = []
+    
     try:
         # 1. 确定使用的 bot_id（优先级：参数 > CAREER_WEALTH_BOT_ID > COZE_BOT_ID）
         if not bot_id:
@@ -859,8 +1121,16 @@ async def career_wealth_stream_generator(
                     gender
                 )
             )
+            detail_task = loop.run_in_executor(
+                executor,
+                lambda: BaziDetailService.calculate_detail_full(
+                    final_solar_date,
+                    final_solar_time,
+                    gender
+                )
+            )
             
-            bazi_result, wangshuai_result = await asyncio.gather(bazi_task, wangshuai_task)
+            bazi_result, wangshuai_result, detail_result = await asyncio.gather(bazi_task, wangshuai_task, detail_task)
             
             # 提取八字数据
             if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
@@ -994,286 +1264,21 @@ async def career_wealth_stream_generator(
             career_judgments = []
             wealth_judgments = []
         
-        # 5. 提取大运流年数据（使用统一接口获取的数据）
-        current_age = calculate_age(final_solar_date)
+        # 5. ⚠️ 优化：使用新的 build_career_wealth_input_data 函数构建 input_data
+        input_data = build_career_wealth_input_data(
+            bazi_data,
+            wangshuai_result,
+            detail_result,
+            dayun_sequence,
+            special_liunians,
+            gender
+        )
         
-        # 计算原局五行统计
-        element_counts = bazi_data.get('element_counts', {})
-        bazi_elements = {
-            '木': element_counts.get('木', 0),
-            '火': element_counts.get('火', 0),
-            '土': element_counts.get('土', 0),
-            '金': element_counts.get('金', 0),
-            '水': element_counts.get('水', 0)
-        }
+        # 6. 填充判词数据
+        input_data['shiye_xing_gong']['career_judgments'] = career_judgments
+        input_data['caifu_xing_gong']['wealth_judgments'] = wealth_judgments
         
-        # 识别现行运和关键节点大运
-        dayun_analysis_result = identify_key_dayuns(dayun_sequence, bazi_elements, current_age)
-        current_dayun_info = dayun_analysis_result.get('current_dayun')
-        key_dayuns_list = dayun_analysis_result.get('key_dayuns', [])
-        
-        # 按大运分组特殊流年
-        dayun_liunians = organize_special_liunians_by_dayun(special_liunians, dayun_sequence)
-        
-        # 构建现行运数据（包含流年）
-        current_dayun = {}
-        if current_dayun_info:
-            current_step = current_dayun_info.get('step')
-            if current_step is None:
-                for idx, dayun in enumerate(dayun_sequence):
-                    if dayun == current_dayun_info:
-                        current_step = idx
-                        break
-            dayun_liunian_data = dayun_liunians.get(current_step, {}) if current_step is not None else {}
-            all_liunians = []
-            if dayun_liunian_data.get('tiankedi_chong'): all_liunians.extend(dayun_liunian_data['tiankedi_chong'])
-            if dayun_liunian_data.get('tianhedi_he'): all_liunians.extend(dayun_liunian_data['tianhedi_he'])
-            if dayun_liunian_data.get('suiyun_binglin'): all_liunians.extend(dayun_liunian_data['suiyun_binglin'])
-            if dayun_liunian_data.get('other'): all_liunians.extend(dayun_liunian_data['other'])
-            current_dayun = {
-                'step': str(current_step) if current_step is not None else '',
-                'stem': current_dayun_info.get('stem', ''),
-                'branch': current_dayun_info.get('branch', ''),
-                'age_display': current_dayun_info.get('age_display', current_dayun_info.get('age_range', '')),
-                'main_star': current_dayun_info.get('main_star', ''),
-                'description': current_dayun_info.get('description', ''),
-                'liunians': all_liunians
-            }
-        
-        # 构建关键节点大运数据（包含流年）
-        key_dayun_list = []
-        for key_dayun_info in key_dayuns_list:
-            key_step = key_dayun_info.get('step')
-            if key_step is None:
-                for idx, dayun in enumerate(dayun_sequence):
-                    if dayun == key_dayun_info:
-                        key_step = idx
-                        break
-            dayun_liunian_data = dayun_liunians.get(key_step, {}) if key_step is not None else {}
-            all_liunians = []
-            if dayun_liunian_data.get('tiankedi_chong'): all_liunians.extend(dayun_liunian_data['tiankedi_chong'])
-            if dayun_liunian_data.get('tianhedi_he'): all_liunians.extend(dayun_liunian_data['tianhedi_he'])
-            if dayun_liunian_data.get('suiyun_binglin'): all_liunians.extend(dayun_liunian_data['suiyun_binglin'])
-            if dayun_liunian_data.get('other'): all_liunians.extend(dayun_liunian_data['other'])
-            key_dayun_list.append({
-                'step': str(key_step) if key_step is not None else '',
-                'stem': key_dayun_info.get('stem', ''),
-                'branch': key_dayun_info.get('branch', ''),
-                'age_display': key_dayun_info.get('age_display', key_dayun_info.get('age_range', '')),
-                'main_star': key_dayun_info.get('main_star', ''),
-                'description': key_dayun_info.get('description', ''),
-                'relation_type': key_dayun_info.get('relation_type', ''),
-                'liunians': all_liunians
-            })
-        
-        # 获取所有大运（用于参考）
-        all_dayuns = []
-        for dayun in dayun_sequence:
-            step = dayun.get('step')
-            if step == '小运':
-                continue
-            dayun_step = dayun.get('step')
-            if dayun_step is None:
-                for idx, d in enumerate(dayun_sequence):
-                    if d == dayun:
-                        dayun_step = idx
-                        break
-            dayun_liunian_data = dayun_liunians.get(dayun_step, {}) if dayun_step is not None else {}
-            all_liunians = []
-            if dayun_liunian_data.get('tiankedi_chong'): all_liunians.extend(dayun_liunian_data['tiankedi_chong'])
-            if dayun_liunian_data.get('tianhedi_he'): all_liunians.extend(dayun_liunian_data['tianhedi_he'])
-            if dayun_liunian_data.get('suiyun_binglin'): all_liunians.extend(dayun_liunian_data['suiyun_binglin'])
-            if dayun_liunian_data.get('other'): all_liunians.extend(dayun_liunian_data['other'])
-            all_dayuns.append({
-                'step': str(dayun_step) if dayun_step is not None else '',
-                'stem': dayun.get('stem', ''),
-                'branch': dayun.get('branch', ''),
-                'age_display': dayun.get('age_display', dayun.get('age_range', '')),
-                'main_star': dayun.get('main_star', ''),
-                'description': dayun.get('description', ''),
-                'liunians': all_liunians
-            })
-        
-        # 6. 提取神煞数据
-        deities_data = {}
-        try:
-            details = bazi_data.get('details', {})
-            for pillar_name in ['year', 'month', 'day', 'hour']:
-                pillar_details = details.get(pillar_name, {})
-                deities = pillar_details.get('deities', [])
-                if deities:
-                    deities_data[pillar_name] = deities
-        except Exception as e:
-            logger.warning(f"提取神煞数据失败（不影响业务）: {e}")
-        
-        # 7. 提取十神数据
-        ten_gods_data = bazi_data.get('ten_gods_stats', {})
-        ten_gods_by_pillar = {}
-        try:
-            details = bazi_data.get('details', {})
-            for pillar_name in ['year', 'month', 'day', 'hour']:
-                pillar_details = details.get(pillar_name, {})
-                ten_gods_by_pillar[pillar_name] = {
-                    'main_star': pillar_details.get('main_star', ''),
-                    'hidden_stars': pillar_details.get('hidden_stars', [])
-                }
-        except Exception as e:
-            logger.warning(f"提取十神数据失败（不影响业务）: {e}")
-        
-        # 8. 提取日柱和月柱数据
-        bazi_pillars = bazi_data.get('bazi_pillars', {})
-        day_pillar = bazi_pillars.get('day', {})
-        month_pillar = bazi_pillars.get('month', {})
-        year_pillar = bazi_pillars.get('year', {})
-        hour_pillar = bazi_pillars.get('hour', {})
-        
-        # 9. 提取喜忌数据
-        xi_ji_data = {}
-        try:
-            if wangshuai_data:
-                xi_ji_data = {
-                    'xi_shen': wangshuai_data.get('xi_shen', []),
-                    'ji_shen': wangshuai_data.get('ji_shen', []),
-                    'xi_shen_elements': wangshuai_data.get('xi_shen_elements', []),
-                    'ji_shen_elements': wangshuai_data.get('ji_shen_elements', []),
-                    'analysis': ''
-                }
-        except Exception as e:
-            logger.warning(f"提取喜忌数据失败（不影响业务）: {e}")
-        
-        # 10. 提取五行分布
-        element_counts = bazi_data.get('element_counts', {})
-        wuxing_distribution = {
-            '木': element_counts.get('木', 0),
-            '火': element_counts.get('火', 0),
-            '土': element_counts.get('土', 0),
-            '金': element_counts.get('金', 0),
-            '水': element_counts.get('水', 0)
-        }
-        
-        # 11. 提取事业星和财富星
-        career_star = extract_career_star(ten_gods_data)
-        wealth_star = extract_wealth_star(ten_gods_data)
-        shishang_shengcai = check_shishang_shengcai(ten_gods_data, ten_gods_by_pillar)
-        
-        # 12. 获取方位和行业建议
-        xi_elements = xi_ji_data.get('xi_shen_elements', [])
-        ji_elements = xi_ji_data.get('ji_shen_elements', [])
-        fangwei = get_directions_from_elements(xi_elements, ji_elements)
-        hangye = get_industries_from_elements(xi_elements, ji_elements)
-        
-        # 13. 构建完整的输入数据
-        input_data = {
-            # 命盘事业财富总论
-            'mingpan_shiye_caifu_zonglun': {
-                'day_master': {
-                    'stem': day_pillar.get('stem', ''),
-                    'branch': day_pillar.get('branch', ''),
-                    'element': STEM_ELEMENT.get(day_pillar.get('stem', ''), ''),
-                    'yin_yang': STEM_YIN_YANG.get(day_pillar.get('stem', ''), '')
-                },
-                'bazi_pillars': {
-                    'year': {'stem': year_pillar.get('stem', ''), 'branch': year_pillar.get('branch', '')},
-                    'month': {'stem': month_pillar.get('stem', ''), 'branch': month_pillar.get('branch', '')},
-                    'day': {'stem': day_pillar.get('stem', ''), 'branch': day_pillar.get('branch', '')},
-                    'hour': {'stem': hour_pillar.get('stem', ''), 'branch': hour_pillar.get('branch', '')}
-                },
-                'wuxing_distribution': wuxing_distribution,
-                'wangshuai': wangshuai_data.get('wangshuai', ''),
-                'wangshuai_detail': wangshuai_data.get('detail', ''),
-                'yue_ling': BRANCH_MONTH.get(month_pillar.get('branch', ''), ''),
-                'gender': gender,
-                'geju_type': wangshuai_data.get('geju_type', ''),
-                'ten_gods': ten_gods_by_pillar
-            },
-            
-            # 事业星与事业宫
-            'shiye_xing_gong': {
-                'shiye_xing': career_star,
-                'month_pillar_analysis': {
-                    'stem': month_pillar.get('stem', ''),
-                    'branch': month_pillar.get('branch', ''),
-                    'stem_shishen': ten_gods_by_pillar.get('month', {}).get('main_star', ''),
-                    'branch_shishen': '',
-                    'hidden_stems': ten_gods_by_pillar.get('month', {}).get('hidden_stars', []),
-                    'analysis': ''
-                },
-                'ten_gods': ten_gods_by_pillar,
-                'ten_gods_stats': ten_gods_data,
-                'deities': deities_data,
-                'career_judgments': career_judgments
-            },
-            
-            # 财富星与财富宫
-            'caifu_xing_gong': {
-                'caifu_xing': wealth_star,
-                'year_pillar_analysis': {
-                    'stem': year_pillar.get('stem', ''),
-                    'branch': year_pillar.get('branch', ''),
-                    'stem_shishen': ten_gods_by_pillar.get('year', {}).get('main_star', ''),
-                    'branch_shishen': '',
-                    'analysis': ''
-                },
-                'hour_pillar_analysis': {
-                    'stem': hour_pillar.get('stem', ''),
-                    'branch': hour_pillar.get('branch', ''),
-                    'stem_shishen': ten_gods_by_pillar.get('hour', {}).get('main_star', ''),
-                    'branch_shishen': '',
-                    'analysis': ''
-                },
-                'shishang_shengcai': shishang_shengcai,
-                'caiku': {
-                    'has_caiku': False,
-                    'caiku_position': '',
-                    'caiku_status': '',
-                    'analysis': ''
-                },
-                'wealth_judgments': wealth_judgments
-            },
-            
-            # 事业运势
-            'shiye_yunshi': {
-                'current_age': calculate_age(final_solar_date),
-                'current_dayun': current_dayun,
-                'key_dayuns': key_dayun_list,
-                'all_dayuns': all_dayuns,
-                'key_liunian': [],
-                'chonghe_xinghai': {
-                    'dayun_relations': [],
-                    'liunian_relations': [],
-                    'key_conflicts': []
-                }
-            },
-            
-            # 财富运势
-            'caifu_yunshi': {
-                'wealth_stages': {
-                    'early': {'age_range': '1-30岁', 'stage_type': '', 'description': ''},
-                    'middle': {'age_range': '30-50岁', 'stage_type': '', 'description': ''},
-                    'late': {'age_range': '50岁以后', 'stage_type': '', 'description': ''}
-                },
-                'current_dayun': current_dayun,
-                'key_dayuns': key_dayun_list,
-                'all_dayuns': all_dayuns,
-                'liunian_wealth_nodes': [],
-                'caiku_timing': {
-                    'has_timing': False,
-                    'timing_years': [],
-                    'timing_description': ''
-                }
-            },
-            
-            # 提运建议
-            'tiyun_jianyi': {
-                'ten_gods_summary': '',
-                'xi_ji': xi_ji_data,
-                'fangwei': fangwei,
-                'hangye': hangye,
-                'wuxing_hangye': IndustryService.get_industry_mapping()  # 从数据库读取
-            }
-        }
-        
-        # 14. 验证数据完整性
+        # 7. 验证数据完整性
         is_valid, validation_error = validate_input_data(input_data)
         if not is_valid:
             logger.error(f"数据完整性验证失败: {validation_error}")
@@ -1286,11 +1291,12 @@ async def career_wealth_stream_generator(
         
         logger.info("✓ 数据完整性验证通过")
         
-        # 15. 构建自然语言 prompt
-        prompt = build_natural_language_prompt(input_data)
-        logger.info(f"发送给 Coze Bot 的自然语言 prompt（前500字符）: {prompt[:500]}...")
+        # 8. ⚠️ 方案2：格式化数据为 Coze Bot 输入格式
+        formatted_data = format_input_data_for_coze(input_data)
+        logger.info(f"格式化数据长度: {len(formatted_data)} 字符")
+        logger.debug(f"格式化数据前500字符: {formatted_data[:500]}")
         
-        # 16. 创建Coze流式服务
+        # 9. 创建Coze流式服务
         try:
             from server.services.coze_stream_service import CozeStreamService
             
@@ -1312,18 +1318,24 @@ async def career_wealth_stream_generator(
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 17. 流式生成
-        logger.info(f"开始流式生成，Bot ID: {actual_bot_id}, Prompt 长度: {len(prompt)}")
+        # 10. ⚠️ 方案2：流式生成（直接发送格式化后的数据）
+        logger.info(f"开始流式生成，Bot ID: {actual_bot_id}, 数据长度: {len(formatted_data)}")
         
         try:
             chunk_count = 0
             has_content = False
+            llm_start_time = time.time()
             
-            async for result in coze_service.stream_custom_analysis(prompt, actual_bot_id):
+            async for result in coze_service.stream_custom_analysis(formatted_data, bot_id=actual_bot_id):
                 chunk_count += 1
+                
+                # 记录第一个token时间
+                if llm_first_token_time is None and result.get('type') == 'progress':
+                    llm_first_token_time = time.time()
                 
                 if result.get('type') == 'progress':
                     content = result.get('content', '')
+                    llm_output_chunks.append(content)  # 收集输出内容
                     if '对不起' in content and '无法回答' in content:
                         logger.warning(f"检测到错误消息片段: {content[:100]}")
                         continue
@@ -1334,21 +1346,47 @@ async def career_wealth_stream_generator(
                         await asyncio.sleep(0.05)
                 elif result.get('type') == 'complete':
                     has_content = True
-                    msg = {'type': 'complete', 'content': result.get('content', '')}
+                    complete_content = result.get('content', '')
+                    llm_output_chunks.append(complete_content)  # 收集完整内容
+                    msg = {'type': 'complete', 'content': complete_content}
                     yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
                     logger.info(f"流式生成完成，共 {chunk_count} 个chunk")
-                    return
+                    break
                 elif result.get('type') == 'error':
                     error_content = result.get('content', '未知错误')
                     logger.error(f"Coze API 返回错误: {error_content}")
                     msg = {'type': 'error', 'content': error_content}
                     yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                    return
+                    break
             
             if not has_content:
                 logger.warning(f"未收到任何内容，chunk_count: {chunk_count}")
                 error_msg = {'type': 'error', 'content': f'Coze Bot 未返回内容，请检查 Bot 配置'}
                 yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+            
+            # 记录交互数据（异步，不阻塞）
+            api_end_time = time.time()
+            api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+            llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
+            llm_output = ''.join(llm_output_chunks)
+            
+            logger_instance = get_user_interaction_logger()
+            logger_instance.log_function_usage_async(
+                function_type='wealth',
+                function_name='八字命理-事业财富',
+                frontend_api='/api/v1/bazi/career-wealth-analysis/stream',
+                frontend_input=frontend_input,
+                input_data=input_data,
+                llm_output=llm_output,
+                llm_api='coze_api',
+                api_response_time_ms=api_response_time_ms,
+                llm_first_token_time_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+                llm_total_time_ms=llm_total_time_ms,
+                round_number=1,
+                bot_id=actual_bot_id,
+                status='success' if has_content else 'failed',
+                streaming=True
+            )
                 
         except Exception as e:
             import traceback
@@ -1356,9 +1394,52 @@ async def career_wealth_stream_generator(
             error_msg = {'type': 'error', 'content': f"流式生成失败: {str(e)}"}
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             
+            # 记录错误
+            api_end_time = time.time()
+            api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+            logger_instance = get_user_interaction_logger()
+            logger_instance.log_function_usage_async(
+                function_type='wealth',
+                function_name='八字命理-事业财富',
+                frontend_api='/api/v1/bazi/career-wealth-analysis/stream',
+                frontend_input=frontend_input,
+                input_data=input_data if 'input_data' in locals() else {},
+                llm_output='',
+                llm_api='coze_api',
+                api_response_time_ms=api_response_time_ms,
+                llm_first_token_time_ms=None,
+                llm_total_time_ms=None,
+                round_number=1,
+                bot_id=actual_bot_id if 'actual_bot_id' in locals() else None,
+                status='failed',
+                error_message=str(e),
+                streaming=True
+            )
+            
     except Exception as e:
         import traceback
         logger.error(f"事业财富分析失败: {e}\n{traceback.format_exc()}")
         error_msg = {'type': 'error', 'content': f"分析失败: {str(e)}"}
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+        
+        # 记录错误
+        api_end_time = time.time()
+        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+        logger_instance = get_user_interaction_logger()
+        logger_instance.log_function_usage_async(
+            function_type='wealth',
+            function_name='八字命理-事业财富',
+            frontend_api='/api/v1/bazi/career-wealth-analysis/stream',
+            frontend_input=frontend_input,
+            input_data={},
+            llm_output='',
+            llm_api='coze_api',
+            api_response_time_ms=api_response_time_ms,
+            llm_first_token_time_ms=None,
+            llm_total_time_ms=None,
+            round_number=1,
+            status='failed',
+            error_message=str(e),
+            streaming=True
+        )
 

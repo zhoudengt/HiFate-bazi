@@ -11,6 +11,7 @@ python-multipart==0.0.6
 PyMySQL==1.1.2
 SQLAlchemy==2.0.25
 redis==7.0.1
+pymongo==4.6.1  # MongoDB支持（用户交互数据存储）
 
 # HTTP 客户端
 httpx==0.28.1

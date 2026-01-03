@@ -6,7 +6,7 @@
     <title>HiFate系统</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/fatetell-layout.css">
-    <script src="js/sidebar.js?v=20250115"></script>
+    <!-- 性能优化：脚本移到body末尾，使用defer延迟加载 -->
 </head>
 <body>
     <div class="app-container">
@@ -92,8 +92,10 @@
         </div>
     </div>
 
+    <!-- 性能优化：脚本移到body末尾，不阻塞页面渲染 -->
     <script src="config.js"></script>
     <script src="js/api.js"></script>
+    <script src="js/sidebar.js?v=20250115"></script>
     <!-- 认证功能已移除，不再需要 auth.js -->
     <script src="js/calendar.js"></script>
 </body>

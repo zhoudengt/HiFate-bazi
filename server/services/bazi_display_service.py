@@ -709,7 +709,9 @@ class BaziDisplayService:
                             dayun_index: Optional[int] = None,
                             dayun_year_start: Optional[int] = None,
                             dayun_year_end: Optional[int] = None,
-                            target_year: Optional[int] = None) -> Dict[str, Any]:
+                            target_year: Optional[int] = None,
+                            quick_mode: bool = True,
+                            async_warmup: bool = True) -> Dict[str, Any]:
         """
         获取大运流年流月数据（统一接口，性能优化，带Redis缓存）
         
@@ -767,8 +769,12 @@ class BaziDisplayService:
         if dayun_year_start is not None and dayun_year_end is not None and dayun_index is None:
             # ✅ 优化：先调用一次获取大运列表（利用缓存，如果之前调用过会命中缓存）
             # 注意：这里调用会利用缓存，性能影响已经减小
+            # 注意：获取大运列表时使用完整模式（quick_mode=False），因为需要所有大运来确定索引
             detail_result_for_index = BaziDetailService.calculate_detail_full(
-                solar_date, solar_time, gender, current_time, None, None
+                solar_date, solar_time, gender, current_time, None, None,
+                quick_mode=False, async_warmup=False,  # 获取列表时不使用快速模式
+                include_wangshuai=False, include_shengong_minggong=False,  # 只获取大运列表，不需要其他数据
+                include_rules=False, include_wuxing_proportion=False, include_rizhu_liujiazi=False
             )
             temp_details = detail_result_for_index.get('details', {}) if detail_result_for_index else {}
             temp_dayun_sequence = temp_details.get('dayun_sequence', [])
@@ -810,7 +816,10 @@ class BaziDisplayService:
             # 只调用一次详细计算（如果指定了大运索引，只计算该大运范围内的流年）
             # 注意：如果第一次调用命中了缓存，第二次调用也会命中缓存（相同的参数）
             detail_result = BaziDetailService.calculate_detail_full(
-                solar_date, solar_time, gender, current_time, resolved_dayun_index, target_year
+                solar_date, solar_time, gender, current_time, resolved_dayun_index, target_year,
+                quick_mode=quick_mode, async_warmup=async_warmup,
+                include_wangshuai=True, include_shengong_minggong=True,
+                include_rules=True, include_wuxing_proportion=True, include_rizhu_liujiazi=True
             )
         if not detail_result:
             return {"success": False, "error": "详细计算失败"}

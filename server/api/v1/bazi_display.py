@@ -56,6 +56,8 @@ class FortuneDisplayRequest(BaziDisplayRequest):
     dayun_year_start: Optional[int] = Field(None, description="大运起始年份（可选），指定要显示的大运的起始年份")
     dayun_year_end: Optional[int] = Field(None, description="大运结束年份（可选），指定要显示的大运的结束年份")
     target_year: Optional[int] = Field(None, description="目标年份（可选），用于计算该年份的流月")
+    quick_mode: Optional[bool] = Field(True, description="快速模式，只计算当前大运，其他大运异步预热（默认True）")
+    async_warmup: Optional[bool] = Field(True, description="是否触发异步预热（默认True）")
 
 
 @router.post("/bazi/pan/display", summary="排盘展示（前端优化）")
@@ -337,19 +339,21 @@ async def get_fortune_display(request: FortuneDisplayRequest):
         # ✅ 使用统一数据服务（内部适配，接口层完全不动）
         from server.services.bazi_data_service import BaziDataService
         
-        result = await BaziDataService.get_fortune_display(
-            solar_date=request.solar_date,
-            solar_time=request.solar_time,
-            gender=request.gender,
-            calendar_type=request.calendar_type or "solar",
-            location=request.location,
-            latitude=request.latitude,
-            longitude=request.longitude,
-            current_time=current_time,
-            dayun_index=request.dayun_index,  # 兼容旧接口
-            dayun_year_start=request.dayun_year_start,
-            dayun_year_end=request.dayun_year_end,
-            target_year=request.target_year
+        # 使用 BaziDisplayService 直接调用（传递快速模式参数）
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            executor,
+            BaziDisplayService.get_fortune_display,
+            final_solar_date,
+            final_solar_time,
+            request.gender,
+            current_time,
+            request.dayun_index,
+            request.dayun_year_start,
+            request.dayun_year_end,
+            request.target_year,
+            request.quick_mode if request.quick_mode is not None else True,  # quick_mode
+            request.async_warmup if request.async_warmup is not None else True  # async_warmup
         )
         
         if result.get('success'):

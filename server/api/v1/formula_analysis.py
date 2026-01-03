@@ -10,6 +10,9 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 import warnings
 import json
+import os
+import time
+import logging
 
 from server.services.bazi_service import BaziService
 from server.services.rule_service import RuleService
@@ -70,11 +73,35 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
         )
         
         # 1. 计算八字
-        bazi_result = BaziService.calculate_bazi_full(
-            solar_date=final_solar_date,
-            solar_time=final_solar_time,
-            gender=request.gender
-        )
+        # ✅ 修复：改为异步执行，避免阻塞事件循环
+        logger = logging.getLogger(__name__)
+        start_time = time.time()
+        loop = asyncio.get_event_loop()
+        from concurrent.futures import ThreadPoolExecutor
+        executor = ThreadPoolExecutor(max_workers=min(os.cpu_count() or 4 * 2, 100))
+        
+        try:
+            # 使用线程池执行，添加30秒超时保护
+            bazi_result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    executor,
+                    BaziService.calculate_bazi_full,
+                    final_solar_date,
+                    final_solar_time,
+                    request.gender
+                ),
+                timeout=30.0
+            )
+            elapsed_time = time.time() - start_time
+            logger.info(f"⏱️ 八字计算耗时: {elapsed_time:.2f}秒")
+        except asyncio.TimeoutError:
+            elapsed_time = time.time() - start_time
+            logger.error(f"❌ 八字计算超时（>{30.0}秒），耗时: {elapsed_time:.2f}秒")
+            raise HTTPException(status_code=500, detail="八字计算超时，请稍后重试")
+        except Exception as e:
+            elapsed_time = time.time() - start_time
+            logger.error(f"❌ 八字计算异常（耗时: {elapsed_time:.2f}秒）: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"八字计算失败: {str(e)}")
         
         # calculate_bazi_full返回的数据结构: {'bazi': {...}, 'rizhu': {...}, 'matched_rules': {...}}
         if not bazi_result or not isinstance(bazi_result, dict):

@@ -7,8 +7,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (userInfo) {
         // 有保存的信息，显示信息卡片，隐藏表单
         showUserInfo(userInfo);
-        // 自动查询
-        queryPan(userInfo.solar_date, userInfo.solar_time, userInfo.gender);
+        // 延迟自动查询（性能优化：避免阻塞页面渲染）
+        // 使用 requestIdleCallback 或 setTimeout 延迟执行
+        if (window.requestIdleCallback) {
+            requestIdleCallback(function() {
+                queryPan(userInfo.solar_date, userInfo.solar_time, userInfo.gender);
+            }, { timeout: 2000 }); // 最多等待2秒
+        } else {
+            // 降级方案：延迟500ms执行，让页面先渲染
+            setTimeout(function() {
+                queryPan(userInfo.solar_date, userInfo.solar_time, userInfo.gender);
+            }, 500);
+        }
     } else {
         // 没有保存的信息，显示表单
         showForm();
@@ -32,7 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 显示信息卡片
         showUserInfo({solar_date, solar_time, gender});
         
-        // 查询
+        // 查询（用户主动操作，立即执行）
         queryPan(solar_date, solar_time, gender);
     });
 });

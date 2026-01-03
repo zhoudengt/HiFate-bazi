@@ -159,12 +159,38 @@ class QAConversationService:
                     if conn:
                         return_mysql_connection(conn)
             
-            # 4. 获取初始问题
+            # 4. 计算并缓存完整八字数据（阶段1优化：数据缓存）
+            with monitor.stage("bazi_data_calculation", "计算并缓存八字数据"):
+                modules = {
+                    'bazi': True,
+                    'wangshuai': True,
+                    'dayun': {'mode': 'current_with_neighbors'},
+                    'liunian': True,
+                    'rules': {'types': ['ALL']},  # 匹配所有规则
+                    'special_liunian': True
+                }
+                
+                data = await BaziDataOrchestrator.fetch_data(
+                    solar_date=solar_date,
+                    solar_time=solar_time,
+                    gender=gender,
+                    modules=modules,
+                    use_cache=True,
+                    parallel=True
+                )
+                
+                # 保存到 session 缓存（使用 BaziSessionService）
+                from server.services.bazi_session_service import BaziSessionService
+                BaziSessionService.save_bazi_session(user_id, data)
+                logger.info(f"✅ 八字数据已计算并缓存: user_id={user_id}")
+                monitor.add_metric("bazi_data_calculation", "modules_count", len(modules))
+            
+            # 5. 获取初始问题
             with monitor.stage("get_initial_question", "获取初始问题"):
                 initial_question = await self._get_initial_question()
                 monitor.add_metric("get_initial_question", "question_length", len(initial_question))
             
-            # 5. 获取分类列表
+            # 6. 获取分类列表
             with monitor.stage("get_categories", "获取分类列表"):
                 categories = await self._get_categories()
                 monitor.add_metric("get_categories", "categories_count", len(categories))
@@ -268,65 +294,105 @@ class QAConversationService:
             # 2. 获取对话历史（用于意图识别 context）
             conversation_history = await self._get_conversation_history(session_id)
             
-            # 3. 意图识别（传递对话历史 context）
-            previous_intents = []
-            for h in conversation_history[-5:]:
-                intent_result = h.get('intent_result', {})
-                if isinstance(intent_result, str):
-                    try:
-                        intent_result = json.loads(intent_result)
-                    except:
-                        intent_result = {}
-                intents = intent_result.get('intents', []) if isinstance(intent_result, dict) else []
-                previous_intents.append(intents)
-            
-            context = {
-                'previous_questions': [h['question'] for h in conversation_history[-5:]],  # 最近5轮
-                'previous_answers': [h['answer'] for h in conversation_history[-5:] if h.get('answer')],
-                'previous_intents': previous_intents,
-                'current_category': session.get('current_category', '')
+            # 3. 意图识别（阶段5优化：如果category明确，可选跳过意图识别）
+            # Category到规则类型的映射（参考 smart_fortune.py）
+            CATEGORY_TO_RULE_TYPE = {
+                "事业财富": "wealth",
+                "婚姻": "marriage",
+                "健康": "health",
+                "子女": "children",
+                "流年运势": "general",
+                "年运报告": "general",
+                "career_wealth": "wealth",
+                "marriage": "marriage",
+                "health": "health",
+                "children": "children",
+                "liunian": "general",
+                "yearly_report": "general"
             }
             
-            # 确保意图识别客户端已初始化
-            intent_client = self._ensure_intent_client()
-            if not intent_client:
-                error_msg = {
-                    'type': 'error',
-                    'content': '意图识别服务不可用，请稍后重试'
+            current_category = session.get('current_category', '')
+            
+            # 如果对话历史中有明确的 category，跳过意图识别
+            if current_category:
+                rule_type = CATEGORY_TO_RULE_TYPE.get(current_category, "general")
+                intent_result = {
+                    "intents": [rule_type],
+                    "rule_types": [rule_type],
+                    "confidence": 1.0,  # 直接使用category，置信度为1.0
+                    "is_fortune_related": True,
+                    "time_intent": {}
                 }
-                yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
-                return
+                logger.info(f"✅ 使用category跳过意图识别: category={current_category}, rule_type={rule_type}")
+            else:
+                # 进行意图识别（传递对话历史 context）
+                previous_intents = []
+                for h in conversation_history[-5:]:
+                    intent_result = h.get('intent_result', {})
+                    if isinstance(intent_result, str):
+                        try:
+                            intent_result = json.loads(intent_result)
+                        except:
+                            intent_result = {}
+                    intents = intent_result.get('intents', []) if isinstance(intent_result, dict) else []
+                    previous_intents.append(intents)
+                
+                context = {
+                    'previous_questions': [h['question'] for h in conversation_history[-5:]],  # 最近5轮
+                    'previous_answers': [h['answer'] for h in conversation_history[-5:] if h.get('answer')],
+                    'previous_intents': previous_intents,
+                    'current_category': current_category
+                }
+                
+                # 确保意图识别客户端已初始化
+                intent_client = self._ensure_intent_client()
+                if not intent_client:
+                    error_msg = {
+                        'type': 'error',
+                        'content': '意图识别服务不可用，请稍后重试'
+                    }
+                    yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+                    return
+                
+                intent_result = intent_client.classify(
+                    question=question,
+                    user_id=user_id,
+                    context=context,  # ⚠️ 关键：传递对话历史
+                    use_cache=True
+                )
+                
+                logger.info(f"✅ 意图识别完成: {intent_result.get('intents', [])}, 置信度: {intent_result.get('confidence', 0)}")
             
-            intent_result = intent_client.classify(
-                question=question,
-                user_id=user_id,
-                context=context,  # ⚠️ 关键：传递对话历史
-                use_cache=True
-            )
+            # 4. 从 session 缓存获取数据（阶段1优化：避免重复计算）
+            from server.services.bazi_session_service import BaziSessionService
+            cached_data = BaziSessionService.get_bazi_session(user_id)
             
-            logger.info(f"✅ 意图识别完成: {intent_result.get('intents', [])}, 置信度: {intent_result.get('confidence', 0)}")
-            
-            # 4. 使用统一数据接口获取命理元数据
-            modules = {
-                'bazi': True,
-                'wangshuai': True,
-                'dayun': {'mode': 'current_with_neighbors'},
-                'liunian': True,
-                'rules': {'types': intent_result.get('rule_types', [])},
-                'special_liunian': True
-            }
-            
-            data = await BaziDataOrchestrator.fetch_data(
-                solar_date=solar_date,
-                solar_time=solar_time,
-                gender=gender,
-                modules=modules,
-                use_cache=True,
-                parallel=True
-            )
+            if not cached_data:
+                # 如果缓存不存在，降级到重新计算（防御性处理）
+                logger.warning(f"⚠️ 会话缓存不存在，降级到重新计算: user_id={user_id}")
+                modules = {
+                    'bazi': True,
+                    'wangshuai': True,
+                    'dayun': {'mode': 'current_with_neighbors'},
+                    'liunian': True,
+                    'rules': {'types': intent_result.get('rule_types', [])},
+                    'special_liunian': True
+                }
+                
+                cached_data = await BaziDataOrchestrator.fetch_data(
+                    solar_date=solar_date,
+                    solar_time=solar_time,
+                    gender=gender,
+                    modules=modules,
+                    use_cache=True,
+                    parallel=True
+                )
+                
+                # 保存到缓存
+                BaziSessionService.save_bazi_session(user_id, cached_data)
             
             # 5. 验证数据完整性
-            is_valid, validation_error = self._validate_input_data(data)
+            is_valid, validation_error = self._validate_input_data(cached_data)
             if not is_valid:
                 yield {
                     'type': 'error',
@@ -335,19 +401,25 @@ class QAConversationService:
                 return
             
             # 6. 提取数据
-            bazi_data = validate_bazi_data(data.get('bazi', {}).get('bazi', data.get('bazi', {})))
-            wangshuai_data = data.get('wangshuai', {})
-            dayun_sequence = data.get('dayun', {}).get('sequence', [])
-            liunian_sequence = data.get('liunian', {}).get('sequence', [])
+            bazi_data = validate_bazi_data(cached_data.get('bazi', {}).get('bazi', cached_data.get('bazi', {})))
+            wangshuai_data = cached_data.get('wangshuai', {})
+            dayun_sequence = cached_data.get('dayun', {}).get('sequence', [])
+            liunian_sequence = cached_data.get('liunian', {}).get('sequence', [])
             
             # 处理规则数据（可能是列表或字典）
-            rules_data = data.get('rules', [])
+            # 如果意图识别指定了规则类型，过滤规则；否则使用所有规则
+            rules_data = cached_data.get('rules', [])
             if isinstance(rules_data, dict):
                 matched_rules = rules_data.get('matched', [])
             elif isinstance(rules_data, list):
                 matched_rules = rules_data
             else:
                 matched_rules = []
+            
+            # 根据意图过滤规则（如果需要）
+            rule_types = intent_result.get('rule_types', [])
+            if rule_types and 'ALL' not in rule_types:
+                matched_rules = [r for r in matched_rules if r.get('rule_type') in rule_types]
             
             # 7. 构建结构化数据（不包含提示词，提示词在 Coze Bot 中）
             input_data = {
@@ -365,64 +437,105 @@ class QAConversationService:
                 }
             }
             
-            # 8. 转换为自然语言格式（用于 Coze Bot）
-            prompt = self._build_natural_language_prompt(input_data)
+            # 8. 使用方案2：format_input_data_for_coze（提示词在 Coze Bot 中）
+            formatted_data = self.format_input_data_for_coze(input_data)
             
-            logger.info(f"📝 Prompt 前500字符: {prompt[:500]}...")
+            logger.info(f"📝 格式化数据大小: {len(formatted_data)}字符")
             
-            # 9. 生成3个相关问题（用户提问后）
-            generated_questions_before = await self.question_generator.generate_questions_after_question(
-                user_question=question,
-                bazi_data=bazi_data,
-                intent_result=intent_result,
-                conversation_history=conversation_history
-            )
-            
-            if generated_questions_before:
-                yield {
-                    'type': 'questions_before',
-                    'content': generated_questions_before
-                }
-            
-            # 10. 调用 Coze API 生成答案（流式）
+            # 9. 调用 Coze API 生成答案（流式，使用方案2）
+            # 阶段3优化：并行生成问题（答案生成到150字时开始）
             answer_parts = []
-            async for chunk in self.coze_service.stream_custom_analysis(prompt, bot_id=self.analysis_bot_id):
+            questions_task = None  # 后台任务
+            cached_questions = []  # 缓存的问题
+            
+            async for chunk in self.coze_service.stream_custom_analysis(formatted_data, bot_id=self.analysis_bot_id):
                 if chunk.get('type') == 'progress':
-                    answer_parts.append(chunk.get('content', ''))
-                    yield chunk
+                    content = chunk.get('content', '')
+                    if content:
+                        answer_parts.append(content)
+                        yield chunk
+                        
+                        # 当累积内容达到150字时，开始并行生成问题
+                        current_answer = ''.join(answer_parts)
+                        if not questions_task and len(current_answer) >= 150:
+                            questions_task = asyncio.create_task(
+                                self.question_generator.generate_questions_after_answer(
+                                    user_question=question,
+                                    answer=current_answer[:200],  # 只传递前200字
+                                    bazi_data=bazi_data,
+                                    intent_result=intent_result,
+                                    conversation_history=conversation_history
+                                )
+                            )
+                            logger.info("✅ 开始并行生成相关问题（答案已输出150字）")
                 elif chunk.get('type') == 'complete':
                     answer_parts.append(chunk.get('content', ''))
                     yield chunk
+                    break
                 elif chunk.get('type') == 'error':
                     yield chunk
                     return
             
             answer = ''.join(answer_parts)
             
-            # 11. 答案生成后生成3个新问题
-            generated_questions_after = await self.question_generator.generate_questions_after_answer(
-                user_question=question,
-                answer=answer,
-                bazi_data=bazi_data,
-                intent_result=intent_result,
-                conversation_history=conversation_history
-            )
+            # 10. 处理相关问题（并行生成或等待完成）
+            if not answer or len(answer.strip()) < 50:
+                logger.warning("详细回答内容为空或太短，跳过相关问题生成")
+                cached_questions = []
+            else:
+                # 如果已经启动了并行任务，等待完成
+                if questions_task:
+                    if not questions_task.done():
+                        logger.info("⏳ 答案已完成，等待问题生成完成...")
+                        try:
+                            cached_questions = await questions_task
+                        except Exception as e:
+                            logger.error(f"并行生成相关问题失败: {e}", exc_info=True)
+                            cached_questions = []
+                    else:
+                        # 问题已经生成完成
+                        try:
+                            cached_questions = questions_task.result()
+                        except Exception as e:
+                            logger.error(f"获取并行生成的问题失败: {e}", exc_info=True)
+                            cached_questions = []
+                    
+                    # 如果并行生成失败，使用降级方案
+                    if not cached_questions:
+                        logger.warning("并行生成问题失败，使用降级方案")
+                        cached_questions = await self.question_generator.generate_questions_after_answer(
+                            user_question=question,
+                            answer=answer,
+                            bazi_data=bazi_data,
+                            intent_result=intent_result,
+                            conversation_history=conversation_history
+                        )
+                else:
+                    # 如果没有启动并行任务（答案太短），串行生成
+                    logger.info(f"详细回答已完成（{len(answer)}字），开始生成相关问题")
+                    cached_questions = await self.question_generator.generate_questions_after_answer(
+                        user_question=question,
+                        answer=answer,
+                        bazi_data=bazi_data,
+                        intent_result=intent_result,
+                        conversation_history=conversation_history
+                    )
             
-            if generated_questions_after:
+            if cached_questions:
                 yield {
                     'type': 'questions_after',
-                    'content': generated_questions_after
+                    'content': cached_questions[:2]  # 只返回2个问题（根据用户提示词要求）
                 }
             
-            # 12. 保存对话历史
+            # 11. 保存对话历史
             turn_number = len(conversation_history) + 1
             await self._save_conversation_history(
                 session_id=session_id,
                 turn_number=turn_number,
                 question=question,
                 answer=answer,
-                generated_questions_before=generated_questions_before,
-                generated_questions_after=generated_questions_after,
+                generated_questions_before=[],  # 不再生成提问前的问题
+                generated_questions_after=cached_questions,
                 intent_result=intent_result
             )
             
@@ -445,6 +558,35 @@ class QAConversationService:
         if missing_modules:
             return False, f"缺失模块：{', '.join(missing_modules)}"
         return True, ""
+    
+    def format_input_data_for_coze(self, input_data: Dict[str, Any]) -> str:
+        """
+        将结构化数据格式化为 JSON 字符串（用于 Coze Bot System Prompt 的 {{input}} 占位符）
+        
+        ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
+        提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
+        
+        Args:
+            input_data: 结构化输入数据
+            
+        Returns:
+            str: JSON 格式的字符串，可以直接替换 {{input}} 占位符
+        """
+        import json
+        
+        # 优化数据结构，使用引用避免重复
+        optimized_data = {
+            'user_question': input_data.get('user_question', ''),
+            'bazi_data': input_data.get('bazi_data', {}),
+            'wangshuai': input_data.get('wangshuai', {}),
+            'dayun_sequence': input_data.get('dayun_sequence', []),
+            'liunian_sequence': input_data.get('liunian_sequence', []),
+            'matched_rules': input_data.get('matched_rules', []),
+            'intent': input_data.get('intent', []),
+            'conversation_context': input_data.get('conversation_context', {})
+        }
+        
+        return json.dumps(optimized_data, ensure_ascii=False, indent=2)
     
     def _build_natural_language_prompt(self, data: dict) -> str:
         """
@@ -545,6 +687,9 @@ class QAConversationService:
             prompt_lines.append("")
         
         return '\n'.join(prompt_lines)
+    
+    # ⚠️ 已废弃：_build_natural_language_prompt 方法（方案1已废弃，使用方案2：format_input_data_for_coze）
+    # 保留此方法仅用于向后兼容，新代码应使用 format_input_data_for_coze
     
     async def _get_initial_question(self) -> str:
         """获取初始问题"""

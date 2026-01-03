@@ -18,6 +18,13 @@ import hashlib
 from typing import Dict, Any, Optional, List
 import logging
 
+# 添加项目根目录到路径
+import sys
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, project_root)
+
+from server.config.input_format_loader import get_format_loader, build_input_data
+
 logger = logging.getLogger(__name__)
 
 # 尝试导入Redis（可选依赖）
@@ -237,16 +244,58 @@ class FortuneLLMClient:
             注意：流式输出不支持缓存
         """
         try:
-            # 构建输入数据（包含规则内容）
-            input_data = self._build_input_data(
-                intent=intent,
-                question=question,
-                bazi_data=bazi_data,
-                fortune_context=fortune_context,
-                matched_rules=matched_rules,
-                category=category,
-                minimal_mode=minimal_mode
-            )
+            # ⭐ 优先使用格式定义构建input_data（从数据库加载格式定义，从Redis获取数据）
+            try:
+                # 确定格式名称
+                if minimal_mode:
+                    format_name = 'fortune_analysis_minimal'
+                else:
+                    format_name = 'fortune_analysis_full'
+                
+                # 构建请求参数
+                request_params = {
+                    'intent': intent,
+                    'question': question,
+                    'category': category,
+                    'solar_date': bazi_data.get('basic_info', {}).get('solar_date', ''),
+                    'solar_time': bazi_data.get('basic_info', {}).get('solar_time', ''),
+                    'gender': bazi_data.get('basic_info', {}).get('gender', '')
+                }
+                
+                # 获取Redis客户端
+                redis_client = None
+                try:
+                    from server.config.redis_config import get_redis_pool
+                    redis_pool = get_redis_pool()
+                    if redis_pool:
+                        redis_client = redis_pool.get_connection()
+                except Exception as e:
+                    logger.warning(f"⚠️ 获取Redis客户端失败，将使用原有方法: {e}")
+                
+                # 尝试使用格式定义构建input_data
+                if redis_client:
+                    format_loader = get_format_loader()
+                    input_data = format_loader.build_input_data(
+                        format_name=format_name,
+                        request_params=request_params,
+                        redis_client=redis_client
+                    )
+                    logger.info(f"✓ 使用格式定义构建input_data: {format_name}")
+                else:
+                    # Redis不可用，使用原有方法
+                    raise ValueError("Redis不可用，使用原有方法")
+            except Exception as e:
+                # 格式定义构建失败，降级到原有方法
+                logger.warning(f"⚠️ 格式定义构建失败，使用原有方法: {e}")
+                input_data = self._build_input_data(
+                    intent=intent,
+                    question=question,
+                    bazi_data=bazi_data,
+                    fortune_context=fortune_context,
+                    matched_rules=matched_rules,
+                    category=category,
+                    minimal_mode=minimal_mode
+                )
             
             logger.info(f"📊 准备调用命理分析Bot，意图: {intent}，问题: {question}，流式: {stream}，缓存: {use_cache}")
             logger.debug(f"输入数据: {json.dumps(input_data, ensure_ascii=False)[:500]}...")

@@ -37,38 +37,11 @@ class QAQuestionGenerator:
         conversation_history: List[Dict[str, Any]]
     ) -> List[str]:
         """
-        用户提问后生成3个相关问题
+        用户提问后生成相关问题（已废弃，不再使用）
         
-        Args:
-            user_question: 用户问题
-            bazi_data: 八字数据
-            intent_result: 意图识别结果
-            conversation_history: 对话历史
-        
-        Returns:
-            3个相关问题列表
+        注意：此方法已不再使用，问题生成改为在答案生成后并行生成
         """
-        try:
-            # 构建输入数据（结构化）
-            input_data = {
-                'user_question': user_question,
-                'intent': intent_result.get('intents', []),
-                'bazi_summary': self._summarize_bazi(bazi_data),
-                'conversation_context': {
-                    'previous_questions': [h['question'] for h in conversation_history[-3:]]
-                }
-            }
-            
-            # 转换为自然语言格式
-            prompt = self._build_question_generation_prompt(input_data, include_answer=False)
-            
-            # 调用问题生成 Bot（提示词在 Coze Bot 中配置）
-            questions = await self._call_question_bot(prompt)
-            return questions[:3]  # 返回3个问题
-            
-        except Exception as e:
-            logger.error(f"生成问题失败（提问后）: {e}", exc_info=True)
-            return []
+        return []  # 不再生成提问前的问题
     
     async def generate_questions_after_answer(
         self,
@@ -79,23 +52,23 @@ class QAQuestionGenerator:
         conversation_history: List[Dict[str, Any]]
     ) -> List[str]:
         """
-        答案生成后生成3个相关问题
+        答案生成后生成相关问题（使用方案2）
         
         Args:
             user_question: 用户问题
-            answer: 答案内容
+            answer: 答案内容（可能只包含前200字，用于并行生成）
             bazi_data: 八字数据
             intent_result: 意图识别结果
             conversation_history: 对话历史
         
         Returns:
-            3个相关问题列表
+            相关问题列表（最多2个）
         """
         try:
             # 构建输入数据（包含答案内容）
             input_data = {
                 'user_question': user_question,
-                'answer': answer,
+                'answer': answer[:500] if answer else '',  # 只取前500字
                 'intent': intent_result.get('intents', []),
                 'bazi_summary': self._summarize_bazi(bazi_data),
                 'conversation_context': {
@@ -104,12 +77,12 @@ class QAQuestionGenerator:
                 }
             }
             
-            # 转换为自然语言格式
-            prompt = self._build_question_generation_prompt(input_data, include_answer=True)
+            # 使用方案2：format_input_data_for_coze
+            formatted_data = self.format_input_data_for_coze(input_data)
             
-            # 调用问题生成 Bot
-            questions = await self._call_question_bot(prompt)
-            return questions[:3]  # 返回3个问题
+            # 调用问题生成 Bot（提示词在 Coze Bot 中）
+            questions = await self._call_question_bot(formatted_data)
+            return questions[:2]  # 返回最多2个问题（根据用户提示词要求）
             
         except Exception as e:
             logger.error(f"生成问题失败（答案后）: {e}", exc_info=True)
@@ -148,20 +121,41 @@ class QAQuestionGenerator:
         
         return '；'.join(summary_parts) if summary_parts else '八字信息待完善'
     
+    def format_input_data_for_coze(self, data: dict) -> str:
+        """
+        格式化输入数据为 JSON 字符串（方案2）
+        
+        ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
+        提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
+        
+        Args:
+            data: 输入数据字典
+            
+        Returns:
+            str: JSON 格式的字符串，可以直接替换 {{input}} 占位符
+        """
+        import json
+        
+        optimized_data = {
+            'user_question': data.get('user_question', ''),
+            'answer': data.get('answer', '')[:500] if data.get('answer') else '',  # 只取前500字
+            'intent': data.get('intent', []),
+            'bazi_summary': data.get('bazi_summary', ''),
+            'conversation_context': data.get('conversation_context', {})
+        }
+        
+        return json.dumps(optimized_data, ensure_ascii=False, indent=2)
+    
+    # ⚠️ 已废弃：_build_question_generation_prompt 方法（方案1已废弃，使用方案2：format_input_data_for_coze）
     def _build_question_generation_prompt(
         self,
         data: dict,
         include_answer: bool = False
     ) -> str:
         """
-        构建问题生成提示词
+        构建问题生成提示词（已废弃，保留用于向后兼容）
         
-        Args:
-            data: 输入数据
-            include_answer: 是否包含答案内容
-        
-        Returns:
-            自然语言格式的提示词
+        注意：新代码应使用 format_input_data_for_coze（方案2）
         """
         prompt_lines = []
         
@@ -203,21 +197,21 @@ class QAQuestionGenerator:
         
         return '\n'.join(prompt_lines)
     
-    async def _call_question_bot(self, prompt: str) -> List[str]:
+    async def _call_question_bot(self, formatted_data: str) -> List[str]:
         """
-        调用问题生成 Bot
+        调用问题生成 Bot（使用方案2）
         
         Args:
-            prompt: 提示词
+            formatted_data: 格式化后的 JSON 数据（方案2）
         
         Returns:
-            问题列表
+            问题列表（最多2个）
         """
         try:
             questions_text = ""
             
-            # 调用 Coze Bot（流式）
-            async for chunk in self.coze_service.stream_custom_analysis(prompt, bot_id=self.question_bot_id):
+            # 调用 Coze Bot（流式，提示词在 Coze Bot 中）
+            async for chunk in self.coze_service.stream_custom_analysis(formatted_data, bot_id=self.question_bot_id):
                 if chunk.get('type') == 'progress':
                     questions_text += chunk.get('content', '')
                 elif chunk.get('type') == 'complete':
@@ -241,7 +235,7 @@ class QAQuestionGenerator:
                 if line and len(line) > 5:  # 至少5个字符
                     questions.append(line)
             
-            return questions[:3]  # 返回最多3个问题
+            return questions[:2]  # 返回最多2个问题（根据用户提示词要求）
             
         except Exception as e:
             logger.error(f"调用问题生成 Bot 失败: {e}", exc_info=True)

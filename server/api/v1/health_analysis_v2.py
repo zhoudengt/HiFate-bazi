@@ -35,6 +35,11 @@ from server.api.v1.general_review_analysis import (
     organize_special_liunians_by_dayun,
     extract_xi_ji_data
 )
+from server.utils.dayun_liunian_helper import (
+    calculate_user_age,
+    get_current_dayun,
+    build_enhanced_dayun_structure
+)
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -49,6 +54,117 @@ class HealthAnalysisV2Request(BaseModel):
     solar_time: str = Field(..., description="出生时间，格式：HH:MM", example="14:30")
     gender: str = Field(..., description="性别：male(男) 或 female(女)", example="male")
     bot_id: Optional[str] = Field(None, description="Coze Bot ID（可选，默认使用环境变量配置）")
+
+
+@router.post("/health-analysis-v2/test", summary="测试接口：返回格式化后的数据（用于 Coze Bot）")
+async def health_analysis_v2_test(request: HealthAnalysisV2Request):
+    """
+    测试接口：返回格式化后的数据（用于 Coze Bot 的 {{input}} 占位符）
+    
+    ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
+    提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
+    
+    Args:
+        request: 健康分析请求参数
+        
+    Returns:
+        dict: 包含格式化后的数据
+    """
+    try:
+        # 处理输入（农历转换等）
+        final_solar_date, final_solar_time, _ = BaziInputProcessor.process_input(
+            request.solar_date, request.solar_time, "solar", None, None, None
+        )
+        
+        # 使用统一接口获取数据
+        modules = {
+            'bazi': True,
+            'wangshuai': True,
+            'detail': True,
+            'health': True,
+            'dayun': {
+                'mode': 'count',
+                'count': 13  # 获取所有大运
+            },
+            'special_liunians': {
+                'dayun_config': {
+                    'mode': 'count',
+                    'count': 13  # 获取所有大运
+                },
+                'count': 200  # 获取足够多的特殊流年
+            }
+        }
+        
+        unified_data = await BaziDataOrchestrator.fetch_data(
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
+            gender=request.gender,
+            modules=modules,
+            use_cache=True,
+            parallel=True,
+            calendar_type="solar",
+            location=None,
+            latitude=None,
+            longitude=None
+        )
+        
+        # 从统一接口结果中提取数据
+        bazi_data = unified_data.get('bazi', {})
+        wangshuai_result = unified_data.get('wangshuai', {})
+        detail_result = unified_data.get('detail', {})
+        health_result = unified_data.get('health', {})
+        special_liunians = unified_data.get('special_liunians', {}).get('list', [])
+        
+        # 提取和验证数据
+        if isinstance(bazi_data, dict) and 'bazi' in bazi_data:
+            bazi_data = bazi_data['bazi']
+        bazi_data = validate_bazi_data(bazi_data)
+        
+        # 获取大运序列（从detail_result）
+        dayun_sequence = detail_result.get('dayun_sequence', [])
+        
+        # 构建input_data
+        input_data = build_health_analysis_input_data(
+            bazi_data,
+            wangshuai_result,
+            detail_result,
+            dayun_sequence,
+            request.gender,
+            final_solar_date,
+            final_solar_time,
+            health_result,
+            special_liunians,
+            None  # xishen_jishen_result
+        )
+        
+        # 格式化数据
+        formatted_data = format_input_data_for_coze(input_data)
+        
+        return {
+            "success": True,
+            "formatted_data": formatted_data,
+            "formatted_data_length": len(formatted_data),
+            "data_summary": {
+                "bazi_pillars": input_data.get('mingpan_tizhi_zonglun', {}).get('bazi_pillars', {}),
+                "dayun_count": len(input_data.get('dayun_jiankang', {}).get('key_dayuns', [])),
+                "current_dayun_liunians_count": len(input_data.get('dayun_jiankang', {}).get('current_dayun', {}).get('liunians', []) if input_data.get('dayun_jiankang', {}).get('current_dayun') else []),
+                "key_dayuns_count": len(input_data.get('dayun_jiankang', {}).get('key_dayuns', [])),
+                "xi_ji": input_data.get('tizhi_tiaoli', {}).get('xi_ji', {})
+            },
+            "usage": {
+                "description": "此接口返回的数据可以直接用于 Coze Bot 的 {{input}} 占位符",
+                "coze_bot_setup": "1. 登录 Coze 平台\n2. 找到'身体健康分析' Bot\n3. 进入 Bot 设置 → System Prompt\n4. 复制 docs/需求/Coze_Bot_System_Prompt_身体健康分析.md 中的提示词\n5. 粘贴到 System Prompt 中\n6. 保存设置",
+                "test_command": f'curl -X POST "http://localhost:8001/api/v1/health-analysis-v2/test" -H "Content-Type: application/json" -d \'{{"solar_date": "{request.solar_date}", "solar_time": "{request.solar_time}", "gender": "{request.gender}"}}\''
+            }
+        }
+    except Exception as e:
+        import traceback
+        logger.error(f"测试接口异常: {e}\n{traceback.format_exc()}")
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
 
 
 @router.post("/health-analysis-v2/stream", summary="流式生成健康分析（V2）")
@@ -230,17 +346,15 @@ async def health_analysis_v2_stream_generator(
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 7. 构建自然语言 Prompt（阶段4：Prompt构建）
-        prompt = build_health_analysis_prompt(input_data)
-        
-        # 记录 Prompt 前500字符到日志（便于调试）
-        prompt_preview = prompt[:500] if len(prompt) > 500 else prompt
-        logger.info(f"[Health Analysis V2 Stream] Prompt 预览（前500字符）: {prompt_preview}...")
+        # 7. ⚠️ 方案2：格式化数据为 Coze Bot 输入格式
+        formatted_data = format_input_data_for_coze(input_data)
+        logger.info(f"[Health Analysis V2 Stream] 格式化数据长度: {len(formatted_data)} 字符")
+        logger.debug(f"[Health Analysis V2 Stream] 格式化数据前500字符: {formatted_data[:500]}")
         
         # 8. 调用 Coze API（阶段5：Coze API调用）
         try:
             coze_service = CozeStreamService(bot_id=used_bot_id)
-            async for chunk in coze_service.stream_custom_analysis(prompt, bot_id=used_bot_id):
+            async for chunk in coze_service.stream_custom_analysis(formatted_data, bot_id=used_bot_id):
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
                 if chunk.get('type') in ['complete', 'error']:
                     break
@@ -305,20 +419,71 @@ def build_health_analysis_input_data(
     Returns:
         dict: 健康分析的input_data
     """
+    # ⚠️ 数据提取辅助函数：从 wangshuai_result 中提取旺衰数据
+    def extract_wangshuai_data(wangshuai_result: Dict[str, Any]) -> Dict[str, Any]:
+        """从 wangshuai_result 中提取旺衰数据"""
+        if isinstance(wangshuai_result, dict):
+            if wangshuai_result.get('success') and 'data' in wangshuai_result:
+                return wangshuai_result.get('data', {})
+            if 'wangshuai' in wangshuai_result or 'xi_shen' in wangshuai_result:
+                return wangshuai_result
+        return {}
+    
+    # ⚠️ 数据提取辅助函数：从 detail_result 或 bazi_data 中提取十神数据
+    def extract_ten_gods_data(detail_result: Dict[str, Any], bazi_data: Dict[str, Any]) -> Dict[str, Any]:
+        """从 detail_result 或 bazi_data 中提取十神数据"""
+        # 1. 先尝试从 detail_result 的顶层获取
+        ten_gods = detail_result.get('ten_gods', {})
+        if ten_gods and isinstance(ten_gods, dict) and len(ten_gods) > 0:
+            return ten_gods
+        
+        # 2. 尝试从 detail_result 的 details 字段中提取
+        details = detail_result.get('details', {})
+        if details and isinstance(details, dict):
+            ten_gods_from_details = {}
+            for pillar_name in ['year', 'month', 'day', 'hour']:
+                pillar_detail = details.get(pillar_name, {})
+                if isinstance(pillar_detail, dict):
+                    ten_gods_from_details[pillar_name] = {
+                        'main_star': pillar_detail.get('main_star', ''),
+                        'hidden_stars': pillar_detail.get('hidden_stars', [])
+                    }
+            if any(ten_gods_from_details.values()):
+                return ten_gods_from_details
+        
+        # 3. 尝试从 bazi_data 的 details 字段中提取
+        bazi_details = bazi_data.get('details', {})
+        if bazi_details and isinstance(bazi_details, dict):
+            ten_gods_from_bazi = {}
+            for pillar_name in ['year', 'month', 'day', 'hour']:
+                pillar_detail = bazi_details.get(pillar_name, {})
+                if isinstance(pillar_detail, dict):
+                    ten_gods_from_bazi[pillar_name] = {
+                        'main_star': pillar_detail.get('main_star', ''),
+                        'hidden_stars': pillar_detail.get('hidden_stars', [])
+                    }
+            if any(ten_gods_from_bazi.values()):
+                return ten_gods_from_bazi
+        
+        return {}
+    
     # 提取基础数据
     bazi_pillars = bazi_data.get('bazi_pillars', {})
     day_pillar = bazi_pillars.get('day', {})
     element_counts = bazi_data.get('element_counts', {})
-    ten_gods_data = bazi_data.get('ten_gods_stats', {})
-    ten_gods_full = bazi_data.get('ten_gods', {})
+    
+    # ⚠️ 修复：从 wangshuai_result 中正确提取旺衰数据
+    wangshuai_data_dict = extract_wangshuai_data(wangshuai_result)
+    wangshuai_data = wangshuai_data_dict.get('wangshuai', '') if isinstance(wangshuai_data_dict, dict) else str(wangshuai_data_dict) if wangshuai_data_dict else ''
+    
+    # ⚠️ 修复：从 detail_result 或 bazi_data 中提取十神数据
+    ten_gods_data = extract_ten_gods_data(detail_result, bazi_data)
+    ten_gods_stats = bazi_data.get('ten_gods_stats', {})
     
     # 提取月令
     month_pillar = bazi_pillars.get('month', {})
     month_branch = month_pillar.get('branch', '')
     yue_ling = f"{month_branch}月" if month_branch else ''
-    
-    # 提取旺衰数据
-    wangshuai_data = wangshuai_result.get('wangshuai', '')
     
     # 提取健康相关数据
     wuxing_balance = health_result.get('wuxing_balance', '') if health_result else ''
@@ -330,92 +495,91 @@ def build_health_analysis_input_data(
     # 提取五行生克关系
     wuxing_relations = pathology_tendency.get('wuxing_relations', {}) if pathology_tendency else {}
     
-    # 提取喜忌数据
+    # ⚠️ 修复：从 wangshuai_result 中提取喜忌数据
     xi_ji_data = extract_xi_ji_data(xishen_jishen_result, wangshuai_result)
     
-    # 提取当前大运
-    current_dayun = None
-    if dayun_sequence:
-        from datetime import datetime
-        birth_date = bazi_data.get('basic_info', {}).get('solar_date', '')
-        if birth_date:
-            try:
-                birth = datetime.strptime(birth_date, '%Y-%m-%d')
-                today = datetime.now()
-                age = today.year - birth.year - (1 if (today.month, today.day) < (birth.month, birth.day) else 0)
-                
-                for dayun in dayun_sequence:
-                    age_range = dayun.get('age_display', '')
-                    if age_range:
-                        try:
-                            parts = age_range.replace('岁', '').split('-')
-                            if len(parts) == 2:
-                                start_age = int(parts[0])
-                                end_age = int(parts[1])
-                                if start_age <= age <= end_age:
-                                    current_dayun = dayun
-                                    break
-                        except:
-                            pass
-                
-                if not current_dayun and dayun_sequence:
-                    current_dayun = dayun_sequence[1] if len(dayun_sequence) > 1 else dayun_sequence[0]
-            except:
-                pass
+    # ⚠️ 优化：使用工具函数计算年龄和当前大运（与排盘系统一致）
+    birth_date = bazi_data.get('basic_info', {}).get('solar_date', '') or solar_date
+    current_age = 0
+    birth_year = None
+    if birth_date:
+        current_age = calculate_user_age(birth_date)
+        try:
+            birth_year = int(birth_date.split('-')[0])
+        except:
+            pass
     
-    # 获取关键大运（第2-4步，索引1、2、3）
-    dayun_list = []
-    for idx in [1, 2, 3]:
-        if idx < len(dayun_sequence):
-            dayun = dayun_sequence[idx]
-            dayun_list.append({
-                'step': dayun.get('step', idx),
-                'stem': dayun.get('stem', ''),
-                'branch': dayun.get('branch', ''),
-                'main_star': dayun.get('main_star', ''),
-                'year_start': dayun.get('year_start', 0),
-                'year_end': dayun.get('year_end', 0),
-                'age_display': dayun.get('age_display', '')
-            })
+    # 获取当前大运（与排盘系统一致）
+    current_dayun_info = get_current_dayun(dayun_sequence, current_age)
     
-    # ⚠️ 关键：按大运分组特殊流年，每个大运最多2条（按优先级）
+    # ⚠️ 优化：使用工具函数构建增强的大运流年结构（包含优先级、描述、备注等）
     if special_liunians is None:
         special_liunians = []
     
-    # 按大运分组特殊流年
-    dayun_liunians = organize_special_liunians_by_dayun(special_liunians, dayun_sequence)
+    enhanced_dayun_structure = build_enhanced_dayun_structure(
+        dayun_sequence=dayun_sequence,
+        special_liunians=special_liunians,
+        current_age=current_age,
+        current_dayun=current_dayun_info,
+        birth_year=birth_year
+    )
     
-    # 每个大运筛选最多2条流年（按优先级：天克地冲 > 天合地合 > 岁运并临 > 其他）
-    for dayun_step, dayun_data in dayun_liunians.items():
-        key_liunians = []
+    # ⚠️ 优化：添加后处理函数（清理流月流日字段，限制流年数量）
+    def clean_liunian_data(liunian: Dict[str, Any]) -> Dict[str, Any]:
+        """清理流年数据：移除流月流日字段"""
+        cleaned = liunian.copy()
+        fields_to_remove = ['liuyue_sequence', 'liuri_sequence', 'liushi_sequence']
+        for field in fields_to_remove:
+            cleaned.pop(field, None)
+        return cleaned
+    
+    def limit_liunians_by_priority(liunians: List[Dict[str, Any]], max_count: int = 3) -> List[Dict[str, Any]]:
+        """限制流年数量：只保留优先级最高的N个（已按优先级排序）"""
+        if not liunians:
+            return []
+        return liunians[:max_count]
+    
+    # 提取当前大运数据（优先级1）
+    current_dayun_enhanced = enhanced_dayun_structure.get('current_dayun')
+    current_dayun_data = None
+    if current_dayun_enhanced:
+        raw_liunians = current_dayun_enhanced.get('liunians', [])
+        cleaned_liunians = [clean_liunian_data(liunian) for liunian in raw_liunians]
+        limited_liunians = limit_liunians_by_priority(cleaned_liunians, max_count=3)
         
-        # 按优先级顺序取流年，最多2条
-        # 优先级1：天克地冲
-        if dayun_data.get('tiankedi_chong'):
-            remaining = 2 - len(key_liunians)
-            if remaining > 0:
-                key_liunians.extend(dayun_data['tiankedi_chong'][:remaining])
+        current_dayun_data = {
+            'step': str(current_dayun_enhanced.get('step', '')),
+            'stem': current_dayun_enhanced.get('gan', current_dayun_enhanced.get('stem', '')),
+            'branch': current_dayun_enhanced.get('zhi', current_dayun_enhanced.get('branch', '')),
+            'age_display': current_dayun_enhanced.get('age_display', current_dayun_enhanced.get('age_range', '')),
+            'main_star': current_dayun_enhanced.get('main_star', ''),
+            'priority': current_dayun_enhanced.get('priority', 1),
+            'life_stage': current_dayun_enhanced.get('life_stage', ''),
+            'description': current_dayun_enhanced.get('description', ''),
+            'note': current_dayun_enhanced.get('note', ''),
+            'liunians': limited_liunians
+        }
+    
+    # 提取关键大运数据（优先级2-10）
+    key_dayuns_enhanced = enhanced_dayun_structure.get('key_dayuns', [])
+    key_dayuns_data = []
+    for key_dayun in key_dayuns_enhanced:
+        raw_liunians = key_dayun.get('liunians', [])
+        cleaned_liunians = [clean_liunian_data(liunian) for liunian in raw_liunians]
+        limited_liunians = limit_liunians_by_priority(cleaned_liunians, max_count=3)
         
-        # 优先级2：天合地合
-        if len(key_liunians) < 2 and dayun_data.get('tianhedi_he'):
-            remaining = 2 - len(key_liunians)
-            if remaining > 0:
-                key_liunians.extend(dayun_data['tianhedi_he'][:remaining])
-        
-        # 优先级3：岁运并临
-        if len(key_liunians) < 2 and dayun_data.get('suiyun_binglin'):
-            remaining = 2 - len(key_liunians)
-            if remaining > 0:
-                key_liunians.extend(dayun_data['suiyun_binglin'][:remaining])
-        
-        # 优先级4：其他
-        if len(key_liunians) < 2 and dayun_data.get('other'):
-            remaining = 2 - len(key_liunians)
-            if remaining > 0:
-                key_liunians.extend(dayun_data['other'][:remaining])
-        
-        # 确保最多2条
-        dayun_data['key_liunian'] = key_liunians[:2]
+        key_dayuns_data.append({
+            'step': str(key_dayun.get('step', '')),
+            'stem': key_dayun.get('gan', key_dayun.get('stem', '')),
+            'branch': key_dayun.get('zhi', key_dayun.get('branch', '')),
+            'age_display': key_dayun.get('age_display', key_dayun.get('age_range', '')),
+            'main_star': key_dayun.get('main_star', ''),
+            'priority': key_dayun.get('priority', 999),
+            'life_stage': key_dayun.get('life_stage', ''),
+            'description': key_dayun.get('description', ''),
+            'note': key_dayun.get('note', ''),
+            'liunians': limited_liunians
+        })
     
     # 构建完整的input_data
     input_data = {
@@ -438,9 +602,8 @@ def build_health_analysis_input_data(
         
         # 3. 大运流年健康警示
         'dayun_jiankang': {
-            'current_dayun': current_dayun,
-            'dayun_list': dayun_list,  # 第2-4步大运
-            'dayun_liunians': dayun_liunians,  # 按大运分组，每个大运最多2条流年
+            'current_dayun': current_dayun_data,
+            'key_dayuns': key_dayuns_data,  # 关键大运（优先级2-10）
             'ten_gods': ten_gods_data
         },
         

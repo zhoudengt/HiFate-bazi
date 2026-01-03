@@ -13,11 +13,14 @@ import threading
 import time
 
 # MySQL 连接配置（从环境变量读取）
+# ⚠️ 重要：所有环境统一连接生产Node1 Docker MySQL，确保数据一致性
+# 生产Node1 Docker MySQL: 8.210.52.217:3306 (公网) / 172.18.121.222:3306 (内网)
+# 用户名: root, 密码: Yuanqizhan@163, 数据库: hifate_bazi
 mysql_config = {
-    'host': os.getenv('MYSQL_HOST', 'localhost'),
+    'host': os.getenv('MYSQL_HOST', '8.210.52.217'),  # 默认连接生产Node1公网IP
     'port': int(os.getenv('MYSQL_PORT', '3306')),
     'user': os.getenv('MYSQL_USER', 'root'),
-    'password': os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', '123456')),
+    'password': os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', 'Yuanqizhan@163')),  # 默认使用生产密码
     'database': os.getenv('MYSQL_DATABASE', 'hifate_bazi'),
     'charset': 'utf8mb4',
     'cursorclass': DictCursor,
