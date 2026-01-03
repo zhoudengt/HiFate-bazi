@@ -3,14 +3,33 @@
 Intent Service 配置
 """
 import os
+import sys
+from typing import Optional
+
+# 添加项目根目录到路径（用于导入配置加载器）
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, project_root)
+
+# 导入配置加载器（从数据库读取配置）
+try:
+    from server.config.config_loader import get_config_from_db_only
+except ImportError:
+    # 如果导入失败，抛出错误（不允许降级）
+    def get_config_from_db_only(key: str) -> Optional[str]:
+        raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
 
 # 服务配置
 SERVICE_PORT = int(os.getenv("SERVICE_PORT", 9008))
 SERVICE_HOST = os.getenv("SERVICE_HOST", "0.0.0.0")
 
-# Coze API 配置
-COZE_ACCESS_TOKEN = os.getenv("COZE_ACCESS_TOKEN", "")
-INTENT_BOT_ID = os.getenv("INTENT_BOT_ID", "PLACEHOLDER_INTENT_BOT_ID")
+# Coze API 配置（只从数据库读取，不降级到环境变量）
+COZE_ACCESS_TOKEN = get_config_from_db_only("COZE_ACCESS_TOKEN")
+if not COZE_ACCESS_TOKEN:
+    raise ValueError("数据库配置缺失: COZE_ACCESS_TOKEN，请在 service_configs 表中配置")
+
+INTENT_BOT_ID = get_config_from_db_only("INTENT_BOT_ID")
+if not INTENT_BOT_ID:
+    raise ValueError("数据库配置缺失: INTENT_BOT_ID，请在 service_configs 表中配置")
 
 # Prompt 版本管理
 PROMPT_VERSION = os.getenv("PROMPT_VERSION", "v1.0")

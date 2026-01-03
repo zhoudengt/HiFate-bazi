@@ -28,6 +28,14 @@ from server.services.health_analysis_service import HealthAnalysisService
 from server.utils.data_validator import validate_bazi_data
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.services.coze_stream_service import CozeStreamService
+
+# 导入配置加载器（从数据库读取配置）
+try:
+    from server.config.config_loader import get_config_from_db_only
+except ImportError:
+    # 如果导入失败，抛出错误（不允许降级）
+    def get_config_from_db_only(key: str) -> Optional[str]:
+        raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
 from server.services.bazi_data_orchestrator import BaziDataOrchestrator
 from server.api.v1.general_review_analysis import organize_special_liunians_by_dayun
 from server.services.special_liunian_service import SpecialLiunianService
@@ -35,6 +43,8 @@ from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
 from server.services.user_interaction_logger import get_user_interaction_logger
 import time
+
+from server.config.input_format_loader import build_input_data_from_result
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -133,7 +143,8 @@ async def health_analysis_debug(request: HealthAnalysisRequest):
             loop.run_in_executor(executor, RuleService.match_rules, rule_data, ['health'], True)
         )
         
-        # 构建input_data
+        # 构建input_data（直接使用硬编码函数，确保数据完整性）
+        # 注：格式定义方式数据不完整问题，暂时禁用，直接使用硬编码函数
         input_data = build_health_input_data(
             bazi_data,
             wangshuai_result,
@@ -142,6 +153,7 @@ async def health_analysis_debug(request: HealthAnalysisRequest):
             health_result if health_result.get('success') else {},
             request.gender
         )
+        logger.info("✅ 使用硬编码函数构建 input_data: health_analysis")
         
         # 添加健康规则
         input_data['health_rules'] = {
@@ -220,18 +232,15 @@ async def health_analysis_stream_generator(
     llm_output_chunks = []
     
     try:
-        # 1. Bot ID 配置检查
+        # 1. Bot ID 配置检查（优先级：参数 > 数据库配置 > 环境变量）
         used_bot_id = bot_id
         if not used_bot_id:
-            # 优先使用专用Bot ID
-            used_bot_id = os.getenv("HEALTH_ANALYSIS_BOT_ID")
+            # 优先级：数据库配置 > 环境变量
+            used_bot_id = get_config_from_db_only("HEALTH_ANALYSIS_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
             if not used_bot_id:
-                # 回退到通用Bot ID
-                used_bot_id = os.getenv("COZE_BOT_ID")
-                if not used_bot_id:
                     error_msg = {
                         'type': 'error',
-                        'content': "Coze Bot ID 配置缺失，请设置 HEALTH_ANALYSIS_BOT_ID 或 COZE_BOT_ID 环境变量"
+                        'content': "数据库配置缺失: HEALTH_ANALYSIS_BOT_ID 或 COZE_BOT_ID，请在 service_configs 表中配置"
                     }
                     yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
                     return
@@ -418,7 +427,7 @@ async def health_analysis_stream_generator(
             loop.run_in_executor(executor, RuleService.match_rules, rule_data, ['health'], True)
         )
         
-        # 7. 构建input_data（传递特殊流年数据）
+        # 7. 构建input_data（直接使用硬编码函数，确保数据完整性）
         input_data = build_health_input_data(
             bazi_data,
             wangshuai_result,
@@ -426,8 +435,9 @@ async def health_analysis_stream_generator(
             dayun_sequence,
             health_result if health_result.get('success') else {},
             gender,
-            special_liunians=special_liunians  # ⚠️ 新增：传递特殊流年数据
+            special_liunians=special_liunians
         )
+        logger.info("✅ 使用硬编码函数构建 input_data: health_analysis")
         
         # 8. 添加健康规则（NEW）
         input_data['health_rules'] = {

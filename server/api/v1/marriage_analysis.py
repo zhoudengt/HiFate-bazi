@@ -28,6 +28,14 @@ from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.services.user_interaction_logger import get_user_interaction_logger
 import time
+
+# 导入配置加载器（从数据库读取配置）
+try:
+    from server.config.config_loader import get_config_from_db_only
+except ImportError:
+    # 如果导入失败，抛出错误（不允许降级）
+    def get_config_from_db_only(key: str) -> Optional[str]:
+        raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
 from server.services.bazi_data_orchestrator import BaziDataOrchestrator
 from server.api.v1.general_review_analysis import organize_special_liunians_by_dayun
 from server.utils.dayun_liunian_helper import (
@@ -300,7 +308,7 @@ def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
     Returns:
         str: JSON 格式的字符串，可以直接替换 {{input}} 占位符
     """
-    import json
+    # 注意：json 模块已在文件开头导入，无需重复导入
     
     # 获取原始数据
     mingpan = input_data.get('mingpan_zonglun', {})
@@ -378,7 +386,8 @@ def validate_input_data(data: dict) -> tuple[bool, str]:
             'zhengyuan_judgments': '正缘判词'
         },
         'ganqing_zoushi': {
-            'dayun_list': '大运流年',
+            'current_dayun': '当前大运',
+            'key_dayuns': '关键大运',
             'ten_gods': '十神'
         },
         'shensha_dianjing': {
@@ -466,16 +475,14 @@ async def marriage_analysis_stream_generator(
     llm_output_chunks = []
     
     try:
-        # 确定使用的 bot_id（优先级：参数 > MARRIAGE_ANALYSIS_BOT_ID > COZE_BOT_ID）
+        # 确定使用的 bot_id（优先级：参数 > 数据库配置 > 环境变量）
         if not bot_id:
-            bot_id = os.getenv("MARRIAGE_ANALYSIS_BOT_ID")
+            # 只从数据库读取，不降级到环境变量
+            bot_id = get_config_from_db_only("MARRIAGE_ANALYSIS_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
             if not bot_id:
-                # 如果没有设置 MARRIAGE_ANALYSIS_BOT_ID，使用 COZE_BOT_ID 作为默认值
-                bot_id = os.getenv("COZE_BOT_ID")
-                if not bot_id:
                     error_msg = {
                         'type': 'error',
-                        'content': "Coze Bot ID 配置缺失: 请设置环境变量 MARRIAGE_ANALYSIS_BOT_ID 或 COZE_BOT_ID 或在请求参数中提供 bot_id。"
+                        'content': "数据库配置缺失: MARRIAGE_ANALYSIS_BOT_ID 或 COZE_BOT_ID，请在 service_configs 表中配置，或在请求参数中提供 bot_id。"
                     }
                     yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
                     return
@@ -697,8 +704,8 @@ async def marriage_analysis_stream_generator(
                 # Redis不可用，使用原有方法
                 raise ValueError("Redis不可用，使用原有方法")
         except Exception as e:
-            # 格式定义构建失败，降级到原有方法
-            logger.warning(f"⚠️ 格式定义构建失败，使用原有方法: {e}")
+            # 格式定义构建失败，直接降级到硬编码函数
+            logger.warning(f"⚠️ 格式定义构建失败，使用硬编码函数: {e}")
             input_data = build_marriage_input_data(
                 bazi_data,
                 wangshuai_result,
@@ -711,7 +718,7 @@ async def marriage_analysis_stream_generator(
             # ⚠️ 将数据存储到Redis（使用格式定义中指定的key格式）
             try:
                 from server.config.redis_config import get_redis_pool
-                import json
+                # 注意：json 模块已在文件开头导入，无需重复导入
                 redis_pool = get_redis_pool()
                 if redis_pool:
                     redis_client = redis_pool.get_connection()
@@ -760,9 +767,9 @@ async def marriage_analysis_stream_generator(
         try:
             from server.services.coze_stream_service import CozeStreamService
             
-            # 确保 bot_id 已设置
+            # 确保 bot_id 已设置（优先级：参数 > 数据库配置）
             if not bot_id:
-                bot_id = os.getenv("MARRIAGE_ANALYSIS_BOT_ID") or os.getenv("COZE_BOT_ID")
+                bot_id = get_config_from_db_only("MARRIAGE_ANALYSIS_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
             
             logger.info(f"使用 Bot ID: {bot_id}")
             

@@ -48,16 +48,26 @@ try:
     if os.path.exists(env_path):
         load_dotenv(env_path, override=True)  # override=True 确保覆盖已存在的环境变量
         print(f"✓ 已加载环境变量文件: {env_path}")
-        # 验证关键环境变量
-        coze_token = os.getenv("COZE_ACCESS_TOKEN")
-        coze_bot_id = os.getenv("COZE_BOT_ID")
-        daily_fortune_action_bot_id = os.getenv("DAILY_FORTUNE_ACTION_BOT_ID")
-        if coze_token:
-            print(f"✓ COZE_ACCESS_TOKEN: {coze_token[:20]}...")
-        if coze_bot_id:
-            print(f"✓ COZE_BOT_ID: {coze_bot_id}")
-        if daily_fortune_action_bot_id:
-            print(f"✓ DAILY_FORTUNE_ACTION_BOT_ID: {daily_fortune_action_bot_id}")
+        # 验证关键配置（从数据库读取）
+        try:
+            from server.config.config_loader import get_config_from_db_only
+            coze_token = get_config_from_db_only("COZE_ACCESS_TOKEN")
+            coze_bot_id = get_config_from_db_only("COZE_BOT_ID")
+            daily_fortune_action_bot_id = get_config_from_db_only("DAILY_FORTUNE_ACTION_BOT_ID")
+            if coze_token:
+                print(f"✓ COZE_ACCESS_TOKEN (数据库): {coze_token[:20]}...")
+            else:
+                print("⚠️ COZE_ACCESS_TOKEN 未在数据库中配置")
+            if coze_bot_id:
+                print(f"✓ COZE_BOT_ID (数据库): {coze_bot_id}")
+            else:
+                print("⚠️ COZE_BOT_ID 未在数据库中配置")
+            if daily_fortune_action_bot_id:
+                print(f"✓ DAILY_FORTUNE_ACTION_BOT_ID (数据库): {daily_fortune_action_bot_id}")
+            else:
+                print("⚠️ DAILY_FORTUNE_ACTION_BOT_ID 未在数据库中配置")
+        except Exception as e:
+            print(f"⚠️ 无法从数据库读取配置: {e}")
 except ImportError:
     print("⚠ python-dotenv 未安装，将使用系统环境变量")
 except Exception as e:

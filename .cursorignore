@@ -1,0 +1,58 @@
+# 模型缓存（393MB）
+models_cache/
+tuned_models/
+
+# 日志文件（48MB）
+logs/
+
+# 热更新备份
+.hot_reload_backups/
+
+# 生成的 proto 代码
+proto/generated/
+
+# Node 模块
+node_modules/
+
+# 测试文件（可选，减少上下文）
+test_*.py
+tests/
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# IDE 配置
+.vscode/
+.idea/
+
+# Git 相关
+.git/
+
+# 临时文件
+*.tmp
+*.bak
+*.swp
+*~
+
+# 大文件
+*.pt
+*.pth
+*.h5
+*.ckpt
+
+# 文档中的大文件（如果不需要 AI 读取）
+*.docx
+*.pdf
+
+# 归档目录（历史文档，不需要 AI 读取）
+docs/archive/
+scripts/archive/

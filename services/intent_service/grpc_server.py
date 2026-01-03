@@ -32,17 +32,21 @@ try:
     else:
         print(f"⚠ services.env 文件不存在: {services_env_path}")
     
-    # 3. 验证关键环境变量是否加载成功
-    intent_bot_id = os.getenv("INTENT_BOT_ID", "NOT_FOUND")
-    coze_token = os.getenv("COZE_ACCESS_TOKEN", "NOT_FOUND")
-    print(f"✓ INTENT_BOT_ID: {intent_bot_id}")
-    print(f"✓ COZE_ACCESS_TOKEN: {coze_token[:20]}..." if len(coze_token) > 20 else f"✗ COZE_ACCESS_TOKEN: {coze_token}")
-    
-    # 4. 如果关键变量缺失，给出警告
-    if intent_bot_id == "NOT_FOUND" or intent_bot_id == "PLACEHOLDER_INTENT_BOT_ID":
-        print(f"⚠️ 警告：INTENT_BOT_ID 未正确加载，将无法调用Coze API")
-    if coze_token == "NOT_FOUND" or coze_token == "":
-        print(f"⚠️ 警告：COZE_ACCESS_TOKEN 未正确加载，将无法调用Coze API")
+    # 3. 验证关键配置（从数据库读取）
+    try:
+        from server.config.config_loader import get_config_from_db_only
+        intent_bot_id = get_config_from_db_only("INTENT_BOT_ID")
+        coze_token = get_config_from_db_only("COZE_ACCESS_TOKEN")
+        if intent_bot_id:
+            print(f"✓ INTENT_BOT_ID (数据库): {intent_bot_id}")
+        else:
+            print(f"⚠️ 警告：INTENT_BOT_ID 未在数据库中配置，将无法调用Coze API")
+        if coze_token:
+            print(f"✓ COZE_ACCESS_TOKEN (数据库): {coze_token[:20]}...")
+        else:
+            print(f"⚠️ 警告：COZE_ACCESS_TOKEN 未在数据库中配置，将无法调用Coze API")
+    except Exception as e:
+        print(f"⚠️ 无法从数据库读取配置: {e}")
         
 except ImportError:
     print("⚠ python-dotenv 未安装，将使用系统环境变量")

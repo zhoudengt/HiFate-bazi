@@ -16,6 +16,14 @@ import asyncio
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
+# 导入配置加载器（从数据库读取配置）
+try:
+    from server.config.config_loader import get_config_from_db_only
+except ImportError:
+    # 如果导入失败，抛出错误（不允许降级）
+    def get_config_from_db_only(key: str) -> Optional[str]:
+        raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
+
 
 class CozeStreamService:
     """Coze 流式服务"""
@@ -26,19 +34,26 @@ class CozeStreamService:
         初始化Coze流式服务
         
         Args:
-            access_token: Coze Access Token，如果为None则从环境变量获取
-            bot_id: Coze Bot ID，如果为None则从环境变量获取
+            access_token: Coze Access Token，如果为None则从数据库获取
+            bot_id: Coze Bot ID，如果为None则从数据库获取（优先级：参数 > 数据库）
             api_base: Coze API 基础URL，默认为 https://api.coze.cn
         """
-        self.access_token = access_token or os.getenv("COZE_ACCESS_TOKEN")
-        self.bot_id = bot_id or os.getenv("COZE_BOT_ID")
+        # 优先级：参数传入 > 数据库配置（只从数据库读取，不降级到环境变量）
+        if not access_token:
+            access_token = get_config_from_db_only("COZE_ACCESS_TOKEN")
+        self.access_token = access_token
+        
+        if not bot_id:
+            bot_id = get_config_from_db_only("COZE_BOT_ID")
+        self.bot_id = bot_id
+        
         self.api_base = api_base.rstrip('/')
         
         if not self.access_token:
-            raise ValueError("需要提供 Coze Access Token 或设置环境变量 COZE_ACCESS_TOKEN")
+            raise ValueError("数据库配置缺失: COZE_ACCESS_TOKEN，请在 service_configs 表中配置")
         
         if not self.bot_id:
-            raise ValueError("需要提供 Coze Bot ID 或设置环境变量 COZE_BOT_ID")
+            raise ValueError("数据库配置缺失: COZE_BOT_ID，请在 service_configs 表中配置")
         
         # 设置请求头（参考 fortune_llm_client.py）
         if self.access_token.startswith("pat_"):
@@ -82,39 +97,38 @@ class CozeStreamService:
         """
         used_bot_id = bot_id or self.bot_id
         
-        # 构建提示词
+        # 构建输入数据（简化格式，让 Bot 根据自己的配置处理）
         yi_text = '、'.join(yi_list) if yi_list else '无'
         ji_text = '、'.join(ji_list) if ji_list else '无'
         
-        prompt = f"""请将以下万年历的宜忌信息美化成两段话，每段不超过60字：
-
-宜：{yi_text}
-忌：{ji_text}
-
-要求：
-1. 宜的内容美化成一段话，不超过60字
-2. 忌的内容美化成一段话，不超过60字
-3. 语言要自然流畅，符合日常表达习惯
-4. 直接输出两段话，不需要额外说明
-
-格式：
-宜：[美化后的内容]
-忌：[美化后的内容]"""
+        # ⚠️ 重要：不在代码中硬编码提示词，让 Bot 使用自己的配置
+        # Bot 的提示词应该在 Coze Bot 控制台中配置
+        prompt = f"""宜：{yi_text}
+忌：{ji_text}"""
         
-        # Coze API 端点（流式）
+        # Coze API 端点（流式）- 使用 v3 API（与 stream_custom_analysis 保持一致）
         possible_endpoints = [
-            "/open_api/v2/chat",  # Coze v2 标准端点
-            "/open_api/v2/chat/completions",
-            "/v2/chat",
+            "/v3/chat",  # Coze v3 标准端点
         ]
         
-        # 流式 payload 格式
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # 流式 payload 格式（使用 additional_messages 格式，与 stream_custom_analysis 保持一致）
         payload = {
             "bot_id": str(used_bot_id),
-            "user": "daily_fortune",
-            "query": prompt,
+            "user_id": "daily_fortune",
+            "additional_messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "content_type": "text"
+                }
+            ],
             "stream": True
         }
+        
+        logger.info(f"🚀 准备调用 Coze API (行动建议): Bot ID={used_bot_id}, Prompt长度={len(prompt)}")
         
         last_error = None
         
@@ -139,38 +153,76 @@ class CozeStreamService:
                         )
                     )
                     
+                    # ⚠️ 检查响应 Content-Type
+                    content_type = response.headers.get('Content-Type', '')
+                    
+                    # 如果响应是 JSON 格式（可能是错误响应），先检查
+                    if 'application/json' in content_type:
+                        try:
+                            error_data = response.json()
+                            error_code = error_data.get('code', 0)
+                            error_msg = error_data.get('msg', '未知错误')
+                            
+                            # Token 错误（code: 4101）
+                            if error_code == 4101:
+                                logger.error(f"❌ Coze API Token 错误 (code: {error_code}): {error_msg}")
+                                yield {
+                                    'type': 'error',
+                                    'content': f'Coze API Token 配置错误（错误码: {error_code}）。请检查环境变量 COZE_ACCESS_TOKEN 是否正确配置。错误信息: {error_msg}'
+                                }
+                                return
+                            
+                            # 其他错误
+                            logger.error(f"❌ Coze API 返回错误 (code: {error_code}): {error_msg}")
+                            yield {
+                                'type': 'error',
+                                'content': f'Coze API 错误（错误码: {error_code}）: {error_msg}'
+                            }
+                            return
+                        except:
+                            # JSON 解析失败，继续处理为 SSE 流
+                            pass
+                    
                     if response.status_code == 200:
-                        # 处理流式响应
+                        # 处理流式响应（使用与 stream_custom_analysis 相同的逻辑）
                         buffer = ""
+                        sent_length = 0
                         has_content = False
+                        current_event = None
+                        stream_ended = False
+                        line_count = 0
+                        
+                        logger.info(f"📡 开始处理 Coze API 流式响应 (行动建议, Bot ID: {used_bot_id})")
+                        
+                        # 按行处理SSE流
                         for line in response.iter_lines():
                             if not line:
                                 continue
                             
-                            # 让出控制权，避免阻塞
                             await asyncio.sleep(0)
                             
-                            line_str = line.decode('utf-8')
+                            line_str = line.decode('utf-8').strip()
+                            if not line_str:
+                                continue
                             
-                            # SSE 格式：data: {...} 或 data:{...} 或 data {...}
-                            data_str = None
-                            if line_str.startswith('data: '):
-                                data_str = line_str[6:]  # 移除 "data: " 前缀
+                            line_count += 1
+                            if line_count <= 20:
+                                logger.info(f"📨 SSE行 {line_count}: {line_str[:200]}")
+                            
+                            # 处理 event: 行
+                            if line_str.startswith('event:'):
+                                current_event = line_str[6:].strip()
+                                continue
+                            
+                            # 处理 data: 行
                             elif line_str.startswith('data:'):
-                                data_str = line_str[5:]  # 移除 "data:" 前缀（没有空格）
-                            elif line_str.startswith('data'):
-                                # 处理 data{...} 格式（没有冒号）
-                                data_str = line_str[4:]  # 移除 "data" 前缀
-                            
-                            if data_str:
-                                if data_str.strip() == '[DONE]':
+                                data_str = line_str[5:].strip()
+                                
+                                if data_str == '[DONE]':
                                     # 流结束
-                                    if buffer.strip():
-                                        # 检查 buffer 中是否包含错误消息
+                                    if has_content and buffer.strip():
                                         if self._is_error_response(buffer.strip()):
-                                            import logging
-                                            logger = logging.getLogger(__name__)
-                                            logger.error(f"Coze Bot 返回错误响应 (stream_action_suggestions): {buffer.strip()[:200]}")
+                                            logger.error(f"Coze Bot 返回错误响应 (行动建议, Bot ID: {used_bot_id}): {buffer.strip()[:200]}")
                                             yield {
                                                 'type': 'error',
                                                 'content': 'Coze Bot 无法处理当前请求。可能原因：1) Bot 配置问题，2) 输入数据格式不符合 Bot 期望，3) Bot Prompt 需要调整。请检查 Bot ID 和 Bot 配置。'
@@ -185,98 +237,228 @@ class CozeStreamService:
                                             'type': 'error',
                                             'content': 'Coze API 返回空内容，请检查Bot配置和提示词'
                                         }
-                                    return
+                                    stream_ended = True
+                                    break
                                 
                                 try:
                                     data = json.loads(data_str)
                                     
-                                    # 跳过技术性消息（如 generate_answer_finish）
-                                    if data.get('msg_type') in ['generate_answer_finish', 'conversation_finish']:
+                                    # 防御性检查
+                                    if not isinstance(data, dict):
+                                        logger.warning(f"⚠️ SSE数据不是字典: {type(data)}, 数据: {data_str[:100]}")
                                         continue
                                     
-                                    # 提取内容（根据Coze API响应格式）
-                                    content = self._extract_content_from_response(data)
-                                    if content:
-                                        # 检测是否为错误消息
-                                        if self._is_error_response(content):
-                                            import logging
-                                            logger = logging.getLogger(__name__)
-                                            logger.warning(f"Coze Bot 返回错误消息: {content[:100]}... (stream_action_suggestions)")
-                                            # 标记有错误，但不立即返回，继续处理其他内容
-                                            continue
+                                    # 使用 current_event 或 data 中的 event 字段
+                                    event_type = current_event or data.get('event', '')
+                                    msg_type = data.get('type', '')
+                                    status = data.get('status', '')
+                                    
+                                    # 优先检查status字段
+                                    if status == 'failed':
+                                        last_error = data.get('last_error', {})
+                                        error_code = last_error.get('code', 0)
+                                        error_msg = last_error.get('msg', 'Bot处理失败')
+                                        logger.error(f"❌ Bot处理失败（行动建议）: code={error_code}, msg={error_msg}")
                                         
-                                        # 过滤掉提示词和指令文本
-                                        if self._is_prompt_or_instruction(content):
-                                            continue
+                                        # 特殊处理配额错误（4028）
+                                        if error_code == 4028:
+                                            # 检查是否有备用 Token
+                                            backup_token = None
+                                            try:
+                                                backup_token = get_config_from_db_only("COZE_ACCESS_TOKEN_BACKUP")
+                                            except Exception:
+                                                pass
+                                            
+                                            if backup_token and backup_token != self.access_token:
+                                                error_content = f'Coze API 免费配额已用完（错误码: 4028）。系统已检测到备用 Token，但当前请求仍失败。请检查备用 Token 是否有效，或升级到付费计划。'
+                                            else:
+                                                error_content = 'Coze API 免费配额已用完（错误码: 4028）。请升级到付费计划或联系管理员。如需使用备用 Token，请在 service_configs 表中配置 COZE_ACCESS_TOKEN_BACKUP。'
+                                        else:
+                                            error_content = f'Bot处理失败: {error_msg} (错误码: {error_code})'
                                         
-                                        has_content = True
-                                        buffer += content
                                         yield {
-                                            'type': 'progress',
-                                            'content': content
+                                            'type': 'error',
+                                            'content': error_content
                                         }
+                                        stream_ended = True
+                                        break
+                                    
+                                    # 处理 conversation.message.delta 事件（增量内容）
+                                    if event_type == 'conversation.message.delta':
+                                        # 跳过非answer类型
+                                        if msg_type in ['knowledge_recall', 'verbose']:
+                                            continue
+                                        
+                                        content = data.get('content', '') or data.get('reasoning_content', '')
+                                        
+                                        if content and isinstance(content, str):
+                                            # 检测是否为错误消息
+                                            if self._is_error_response(content):
+                                                logger.warning(f"⚠️ Coze Bot 返回错误消息: {content[:100]}... (行动建议)")
+                                                continue
+                                            
+                                            # 过滤掉提示词和指令文本（包括思考过程）
+                                            if self._is_prompt_or_instruction(content):
+                                                logger.debug(f"⚠️ 过滤思考过程: {content[:50]}...")
+                                                continue
+                                            
+                                            has_content = True
+                                            buffer += content
+                                            sent_length += len(content)
+                                            yield {
+                                                'type': 'progress',
+                                                'content': content
+                                            }
+                                        continue
+                                    
+                                    # 处理 conversation.message.completed 事件（完整消息）
+                                    elif event_type == 'conversation.message.completed':
+                                        if msg_type == 'verbose':
+                                            continue
+                                        
+                                        if msg_type == 'knowledge_recall':
+                                            continue
+                                        
+                                        # 如果没有收到 delta 事件，尝试从 completed 事件中提取内容
+                                        if not has_content:
+                                            content = data.get('content', '')
+                                            if not content:
+                                                content = self._extract_content_from_response(data)
+                                            
+                                            if content and isinstance(content, str) and len(content.strip()) > 10:
+                                                # 检查 content 是否是JSON字符串
+                                                try:
+                                                    if content.strip().startswith('{'):
+                                                        parsed_content = json.loads(content)
+                                                        if isinstance(parsed_content, dict):
+                                                            if parsed_content.get('msg_type') == 'knowledge_recall':
+                                                                continue
+                                                            text_content = parsed_content.get('text') or parsed_content.get('content') or parsed_content.get('message')
+                                                            if text_content and isinstance(text_content, str):
+                                                                content = text_content
+                                                except (json.JSONDecodeError, AttributeError, ValueError):
+                                                    pass
+                                                
+                                                # 检测是否为错误消息
+                                                if self._is_error_response(content):
+                                                    logger.warning(f"⚠️ Coze Bot 返回错误消息: {content[:100]}... (行动建议)")
+                                                    continue
+                                                
+                                                # 过滤掉提示词和指令文本
+                                                if self._is_prompt_or_instruction(content):
+                                                    continue
+                                                
+                                                has_content = True
+                                                buffer = content
+                                                sent_length = 0
+                                                
+                                                # 分段发送内容
+                                                chunk_size = 100
+                                                for i in range(0, len(content), chunk_size):
+                                                    chunk = content[i:i + chunk_size]
+                                                    yield {
+                                                        'type': 'progress',
+                                                        'content': chunk
+                                                    }
+                                                    sent_length += len(chunk)
+                                        
+                                        continue
+                                    
+                                    # 处理 conversation.chat.completed 事件（对话完成）
+                                    elif event_type == 'conversation.chat.completed':
+                                        logger.info(f"✅ 对话完成（行动建议）: buffer长度={len(buffer)}, 已发送长度={sent_length}, has_content={has_content}")
+                                        if has_content and buffer.strip():
+                                            # 如果有未发送的内容，发送剩余部分
+                                            if len(buffer) > sent_length:
+                                                new_content = buffer[sent_length:]
+                                                yield {
+                                                    'type': 'complete',
+                                                    'content': new_content.strip()
+                                                }
+                                            else:
+                                                # 所有内容已通过 progress 发送，发送空 complete 表示完成
+                                                yield {
+                                                    'type': 'complete',
+                                                    'content': ''
+                                                }
+                                        else:
+                                            # 没有收到任何内容，返回错误
+                                            logger.warning(f"⚠️ 对话完成但无内容: has_content={has_content}, buffer长度={len(buffer)}")
+                                            yield {
+                                                'type': 'error',
+                                                'content': 'Coze API 返回空内容，请检查Bot配置和提示词'
+                                            }
+                                        stream_ended = True
+                                        break
+                                    
+                                    # 处理 conversation.chat.failed 事件（对话失败）
+                                    elif event_type == 'conversation.chat.failed':
+                                        last_error = data.get('last_error', {})
+                                        error_code = last_error.get('code', 0)
+                                        error_msg = last_error.get('msg', '未知错误')
+                                        logger.error(f"❌ Bot处理失败（行动建议）: code={error_code}, msg={error_msg}")
+                                        yield {
+                                            'type': 'error',
+                                            'content': f'Bot处理失败: {error_msg} (code: {error_code})'
+                                        }
+                                        stream_ended = True
+                                        break
+                                    
+                                    # 处理错误事件
+                                    elif event_type == 'error' or msg_type == 'error':
+                                        error_msg = data.get('message', data.get('content', data.get('error', '未知错误')))
+                                        logger.error(f"❌ Bot返回错误（行动建议）: {error_msg}")
+                                        yield {
+                                            'type': 'error',
+                                            'content': error_msg
+                                        }
+                                        stream_ended = True
+                                        break
+                                
                                 except json.JSONDecodeError as e:
-                                    # 忽略无效的JSON，但记录日志
-                                    import logging
-                                    logger = logging.getLogger(__name__)
                                     logger.debug(f"JSON解析失败: {e}, 原始数据: {data_str[:100]}")
                                     continue
                             
-                            # 直接JSON格式
-                            elif line_str.startswith('{'):
-                                try:
-                                    data = json.loads(line_str)
-                                    
-                                    # 跳过技术性消息
-                                    if data.get('msg_type') in ['generate_answer_finish', 'conversation_finish']:
-                                        continue
-                                    
-                                    content = self._extract_content_from_response(data)
-                                    if content:
-                                        # 检测是否为错误消息
-                                        if self._is_error_response(content):
-                                            import logging
-                                            logger = logging.getLogger(__name__)
-                                            logger.warning(f"Coze Bot 返回错误消息: {content[:100]}... (stream_action_suggestions)")
-                                            # 标记有错误，但不立即返回，继续处理其他内容
-                                            continue
-                                        
-                                        # 过滤掉提示词和指令文本
-                                        if self._is_prompt_or_instruction(content):
-                                            continue
-                                        
-                                        has_content = True
-                                        buffer += content
-                                        yield {
-                                            'type': 'progress',
-                                            'content': content
-                                        }
-                                except json.JSONDecodeError:
-                                    continue
+                            # 如果流已结束，跳出循环
+                            if stream_ended:
+                                break
                         
-                        # 流结束
-                        if has_content and buffer.strip():
-                            # 检查 buffer 中是否包含错误消息
-                            if self._is_error_response(buffer.strip()):
-                                import logging
-                                logger = logging.getLogger(__name__)
-                                logger.error(f"Coze Bot 返回错误响应 (stream_action_suggestions): {buffer.strip()[:200]}")
+                        # 流结束处理
+                        if not stream_ended:
+                            if has_content and buffer.strip():
+                                if self._is_error_response(buffer.strip()):
+                                    logger.error(f"Coze Bot 返回错误响应 (行动建议, Bot ID: {used_bot_id}): {buffer.strip()[:200]}")
+                                    yield {
+                                        'type': 'error',
+                                        'content': 'Coze Bot 无法处理当前请求。可能原因：1) Bot 配置问题，2) 输入数据格式不符合 Bot 期望，3) Bot Prompt 需要调整。请检查 Bot ID 和 Bot 配置。'
+                                    }
+                                else:
+                                    logger.info(f"✅ 流式生成完成 (行动建议, Bot ID: {used_bot_id}), buffer长度: {len(buffer)}, has_content: {has_content}")
+                                    yield {
+                                        'type': 'complete',
+                                        'content': buffer.strip()
+                                    }
+                            else:
+                                logger.warning(f"⚠️ Coze API 返回空内容 (行动建议, Bot ID: {used_bot_id})")
+                                logger.warning(f"   响应状态: {response.status_code}")
+                                logger.warning(f"   has_content: {has_content}")
+                                logger.warning(f"   buffer长度: {len(buffer)}")
+                                
+                                error_details = []
+                                error_details.append(f"响应状态: {response.status_code}")
+                                error_details.append(f"Bot ID: {used_bot_id}")
+                                
+                                if not has_content:
+                                    error_details.append("未收到任何内容增量（delta事件）")
+                                if not buffer.strip():
+                                    error_details.append("Buffer为空或只包含空白字符")
+                                
+                                error_msg = f"Coze API 返回空内容。{'; '.join(error_details)}。请检查：1) Bot配置是否正确，2) Prompt格式是否符合Bot期望，3) Bot是否已启用并配置了正确的提示词。"
+                                
                                 yield {
                                     'type': 'error',
-                                    'content': 'Coze Bot 无法处理当前请求。可能原因：1) Bot 配置问题，2) 输入数据格式不符合 Bot 期望，3) Bot Prompt 需要调整。请检查 Bot ID 和 Bot 配置。'
+                                    'content': error_msg
                                 }
-                                return
-                            
-                            yield {
-                                'type': 'complete',
-                                'content': buffer.strip()
-                            }
-                        else:
-                            # 如果没有收到任何内容，返回错误
-                            yield {
-                                'type': 'error',
-                                'content': f'Coze API 返回空内容。响应状态: {response.status_code}，请检查Bot配置、提示词和API端点'
-                            }
                         return
                     
                     elif response.status_code in [401, 403]:
@@ -316,12 +498,13 @@ class CozeStreamService:
                 - type: 'progress' 或 'complete' 或 'error'
                 - content: 内容文本
         """
-        # ⚠️ 关键修复：每次调用时重新读取环境变量（支持热更新环境变量）
-        current_access_token = os.getenv("COZE_ACCESS_TOKEN") or self.access_token
+        # ⚠️ 关键修复：每次调用时重新从数据库读取配置（支持热更新）
+        # 优先级：参数传入 > 数据库配置 > 实例变量（只从数据库读取，不降级到环境变量）
+        current_access_token = get_config_from_db_only("COZE_ACCESS_TOKEN") or self.access_token
         if not current_access_token:
             yield {
                 'type': 'error',
-                'content': 'Coze Access Token 未设置，请检查环境变量 COZE_ACCESS_TOKEN'
+                'content': '数据库配置缺失: COZE_ACCESS_TOKEN，请在 service_configs 表中配置'
             }
             return
         
@@ -344,7 +527,8 @@ class CozeStreamService:
             "Accept": "text/event-stream"
         }
         
-        used_bot_id = bot_id or self.bot_id
+        # 优先级：参数传入 > 数据库配置 > 实例变量（只从数据库读取，不降级到环境变量）
+        used_bot_id = bot_id or get_config_from_db_only("COZE_BOT_ID") or self.bot_id
         
         if not used_bot_id:
             yield {
@@ -925,7 +1109,7 @@ class CozeStreamService:
             if error_msg in text_normalized:
                 return True  # 过滤掉这种错误消息
         
-        # 提示词和指令的关键词
+        # 提示词和指令的关键词（包括思考过程）
         prompt_keywords = [
             '再润色',
             '如何用',
@@ -941,12 +1125,70 @@ class CozeStreamService:
             'generate_answer_finish',
             'finish_reason',
             'from_module',
-            'from_unit'
+            'from_unit',
+            # 过滤思考过程 - 基础关键词
+            '用户现在需要',
+            '首先处理',
+            '然后处理',
+            '然后忌：',
+            '检查字数',
+            '把宜和忌',
+            '按照要求',
+            '按照现代化要求',
+            '不能超过',
+            '不超过60字',
+            '确保简洁',
+            '调整下表述',
+            '调整表述',
+            '这些不利于现代生活',
+            # 过滤思考过程 - 增强关键词
+            '首先，我得',
+            '首先，先从',
+            '首先得按照',
+            '我得按照',
+            '我需要根据',
+            '需要一步步',
+            '一步步来',
+            '一步步详细',
+            '逐步展开',
+            '接下来',
+            '接下来分析',
+            '接下来看',
+            '然后是',
+            '然后再',
+            '现在需要',
+            '现在一步步',
+            '分析。首先',
+            '报告。首先',
+            '来展开',
+            '来分析',
+            '来生成',
+            '按照要求的',
+            '五个部分',
+            '四个部分',
+            '三个部分',
+            '逐一分析',
         ]
         
         text_lower = text.lower()
         for keyword in prompt_keywords:
             if keyword in text:
+                logger.debug(f"🚫 过滤内容（匹配关键词 '{keyword}'）: {text[:80]}...")
+                return True
+        
+        # 检查开头是否是思考过程模式
+        thinking_start_patterns = [
+            '用户现在',
+            '首先，',
+            '首先,',
+            '我现在需要',
+            '现在我需要',
+            '需要分析',
+            '需要根据',
+        ]
+        for pattern in thinking_start_patterns:
+            if text.strip().startswith(pattern):
+                logger.debug(f"🚫 过滤内容（开头匹配 '{pattern}'）: {text[:80]}...")
                 return True
         
         # 检查是否包含JSON结构（技术性消息）

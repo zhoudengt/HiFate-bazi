@@ -45,15 +45,26 @@ def extract_mingge_names_from_rules(shishen_rules: List[Dict]) -> List[str]:
         for rule in shishen_rules:
             found_mingge = None
             
-            # 方法1: 优先从 content.mingge_name 字段提取（如果规则中专门存储了命格名称）
-            content = rule.get('content', {})
-            if isinstance(content, dict):
-                mingge_name_field = content.get('mingge_name')
-                if mingge_name_field and mingge_name_field in all_mingge_names:
-                    found_mingge = mingge_name_field
-                    logger.debug(f"从 content.mingge_name 提取到命格名称: {found_mingge}")
+            # 方法1: 优先从'结果'字段提取（最常见的情况）
+            rule_result = rule.get('结果') or rule.get('result') or ''
+            if rule_result:
+                # 在结果文本中查找命格名称（按长度降序，避免部分匹配）
+                for mingge_name in all_mingge_names_sorted:
+                    if mingge_name in rule_result:
+                        found_mingge = mingge_name
+                        logger.info(f"✅ 从'结果'字段提取到命格名称: {found_mingge} (结果片段: {rule_result[:50]}...)")
+                        break
             
-            # 方法2: 从 rule_name 中精确匹配（优先完整匹配）
+            # 方法2: 从 content.mingge_name 字段提取（如果规则中专门存储了命格名称）
+            if not found_mingge:
+                content = rule.get('content', {})
+                if isinstance(content, dict):
+                    mingge_name_field = content.get('mingge_name')
+                    if mingge_name_field and mingge_name_field in all_mingge_names:
+                        found_mingge = mingge_name_field
+                        logger.debug(f"从 content.mingge_name 提取到命格名称: {found_mingge}")
+            
+            # 方法3: 从 rule_name 中精确匹配（优先完整匹配）
             if not found_mingge:
                 rule_name = rule.get('rule_name', '')
                 if rule_name:
@@ -69,18 +80,20 @@ def extract_mingge_names_from_rules(shishen_rules: List[Dict]) -> List[str]:
                                 logger.debug(f"从 rule_name 包含匹配到命格名称: {found_mingge} (rule_name: {rule_name})")
                                 break
             
-            # 方法3: 从 content.text 中提取命格名称
-            if not found_mingge and isinstance(content, dict):
-                text = content.get('text', '')
-                if text:
-                    # 在文本中查找命格名称（按长度降序，避免部分匹配）
-                    for mingge_name in all_mingge_names_sorted:
-                        if mingge_name in text:
-                            found_mingge = mingge_name
-                            logger.debug(f"从 content.text 提取到命格名称: {found_mingge} (text片段: {text[:50]}...)")
-                            break
+            # 方法4: 从 content.text 中提取命格名称
+            if not found_mingge:
+                content = rule.get('content', {})
+                if isinstance(content, dict):
+                    text = content.get('text', '')
+                    if text:
+                        # 在文本中查找命格名称（按长度降序，避免部分匹配）
+                        for mingge_name in all_mingge_names_sorted:
+                            if mingge_name in text:
+                                found_mingge = mingge_name
+                                logger.debug(f"从 content.text 提取到命格名称: {found_mingge} (text片段: {text[:50]}...)")
+                                break
             
-            # 方法4: 从 description 中提取
+            # 方法5: 从 description 中提取
             if not found_mingge:
                 description = rule.get('description', {})
                 if description:
@@ -101,12 +114,15 @@ def extract_mingge_names_from_rules(shishen_rules: List[Dict]) -> List[str]:
             if found_mingge and found_mingge not in shishen_mingge_names:
                 shishen_mingge_names.append(found_mingge)
         
-        logger.info(f"提取命格名称完成，共提取到 {len(shishen_mingge_names)} 个命格名称: {shishen_mingge_names}")
+        logger.info(f"✅ 提取命格名称完成，共提取到 {len(shishen_mingge_names)} 个命格名称: {shishen_mingge_names}")
         
     except Exception as e:
-        logger.error(f"提取命格名称时发生错误: {e}", exc_info=True)
+        logger.error(f"❌ 提取命格名称时发生错误: {e}", exc_info=True)
+        import traceback
+        logger.error(f"错误堆栈: {traceback.format_exc()}")
         # 返回空列表，不抛出异常，确保不影响主流程
         return []
     
+    logger.info(f"🔚 extract_mingge_names_from_rules 返回: {shishen_mingge_names}")
     return shishen_mingge_names
 

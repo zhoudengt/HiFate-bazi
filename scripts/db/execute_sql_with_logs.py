@@ -43,7 +43,9 @@ print("✅ 解析完成: 共 " + str(len(statements)) + " 条SQL语句", flush=T
 print("🔧 检查并清理阻塞的MySQL进程...", flush=True)
 try:
     # 检查长时间运行的查询和等待表锁的进程
-    check_cmd = 'docker exec -i ' + mysql_container + ' mysql -u' + mysql_user + ' -p' + mysql_password + ' -e "SELECT ID, USER, HOST, DB, COMMAND, TIME, STATE, INFO FROM information_schema.PROCESSLIST WHERE (STATE LIKE \\'%lock%\\' OR (COMMAND=\\'Query\\' AND TIME > 60) OR (COMMAND=\\'Sleep\\' AND TIME > 300)) AND ID != CONNECTION_ID();"'
+    # 使用单引号避免转义问题
+    sql_query = "SELECT ID, USER, HOST, DB, COMMAND, TIME, STATE, INFO FROM information_schema.PROCESSLIST WHERE (STATE LIKE '%lock%' OR (COMMAND='Query' AND TIME > 60) OR (COMMAND='Sleep' AND TIME > 300)) AND ID != CONNECTION_ID();"
+    check_cmd = 'docker exec -i ' + mysql_container + ' mysql -u' + mysql_user + ' -p' + mysql_password + ' -e "' + sql_query + '"'
     check_result = subprocess.run(check_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=10)
     
     if check_result.returncode == 0 and check_result.stdout:

@@ -487,9 +487,42 @@ async def get_shengong_minggong(request: ShengongMinggongRequest, http_request: 
         
         # 处理 current_time 参数
         current_time = None
+        current_time_str = None
         if request.current_time:
             from datetime import datetime
             current_time = datetime.strptime(request.current_time, "%Y-%m-%d %H:%M")
+            current_time_str = request.current_time
+        
+        # ✅ 优化：检查 Redis 缓存
+        cache_key_parts = [
+            final_solar_date,
+            final_solar_time,
+            request.gender,
+            "shengong_minggong",  # 区分缓存类型
+            str(request.dayun_year_start) if request.dayun_year_start else "",
+            str(request.dayun_year_end) if request.dayun_year_end else "",
+            str(request.target_year) if request.target_year else "",
+            current_time_str or ""
+        ]
+        cached_result = bazi_cache.get(
+            final_solar_date,
+            final_solar_time,
+            request.gender,
+            cache_type="shengong_minggong",
+            current_time=current_time_str
+        )
+        
+        if cached_result is not None:
+            # 验证缓存数据的格式
+            if isinstance(cached_result, dict):
+                # 添加转换信息到结果
+                if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+                    cached_result['conversion_info'] = conversion_info
+                cached_result['cache_hit'] = True
+                return BaziResponse(
+                    success=True,
+                    data=cached_result
+                )
         
         # 在线程池中执行CPU密集型计算
         loop = asyncio.get_event_loop()
@@ -503,6 +536,16 @@ async def get_shengong_minggong(request: ShengongMinggongRequest, http_request: 
             request.dayun_year_start,
             request.dayun_year_end,
             request.target_year
+        )
+        
+        # ✅ 优化：缓存计算结果
+        bazi_cache.set(
+            final_solar_date,
+            final_solar_time,
+            request.gender,
+            result,
+            cache_type="shengong_minggong",
+            current_time=current_time_str
         )
         
         # 添加转换信息到结果
@@ -867,6 +910,7 @@ def _calculate_shengong_minggong_details(
         }
     
     # 12. 获取大运流年流月数据（支持参数传递）
+    # ✅ 优化：使用快速模式，只计算当前大运的流年流月，秒出
     dayun_data = {}
     liunian_data = {}
     liuyue_data = {}
@@ -879,8 +923,8 @@ def _calculate_shengong_minggong_details(
         if current_time is None:
             current_time = datetime.now()
         
-        # 调用 BaziDisplayService.get_fortune_display 获取大运流年流月数据
-        # 支持参数传递：dayun_year_start, dayun_year_end, target_year
+        # ✅ 优化：调用快速模式的 get_fortune_display
+        # quick_mode=True 只计算当前大运下的流年，不计算所有大运
         fortune_result = BaziDisplayService.get_fortune_display(
             solar_date,
             solar_time,
@@ -889,7 +933,8 @@ def _calculate_shengong_minggong_details(
             dayun_index=None,
             dayun_year_start=dayun_year_start,
             dayun_year_end=dayun_year_end,
-            target_year=target_year
+            target_year=target_year,
+            quick_mode=True  # ✅ 快速模式：只计算当前大运
         )
         
         if fortune_result.get('success'):

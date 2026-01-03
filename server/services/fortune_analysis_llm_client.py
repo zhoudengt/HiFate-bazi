@@ -25,14 +25,21 @@ class FortuneAnalysisLLMClient:
     
     def __init__(self):
         """初始化客户端"""
-        self.access_token = os.getenv("COZE_ACCESS_TOKEN")
-        self.bot_id = os.getenv("FORTUNE_ANALYSIS_BOT_ID")
-        self.api_base = "https://api.coze.cn/v1"
+        # 导入配置加载器（从数据库读取配置）
+        try:
+            from server.config.config_loader import get_config_from_db_only
+        except ImportError:
+            def get_config_from_db_only(key: str) -> Optional[str]:
+                raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
         
+        # 只从数据库读取，不降级到环境变量
+        self.access_token = get_config_from_db_only("COZE_ACCESS_TOKEN")
         if not self.access_token:
-            raise ValueError("❌ COZE_ACCESS_TOKEN 未配置")
+            raise ValueError("数据库配置缺失: COZE_ACCESS_TOKEN，请在 service_configs 表中配置")
+        
+        self.bot_id = get_config_from_db_only("FORTUNE_ANALYSIS_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
         if not self.bot_id:
-            raise ValueError("❌ FORTUNE_ANALYSIS_BOT_ID 未配置")
+            raise ValueError("❌ FORTUNE_ANALYSIS_BOT_ID 未配置（已检查数据库配置、COZE_BOT_ID和环境变量）")
         
         logger.info(f"✓ FortuneAnalysisLLMClient 初始化成功，Bot ID: {self.bot_id}")
     

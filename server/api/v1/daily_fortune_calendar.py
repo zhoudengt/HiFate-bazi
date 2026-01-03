@@ -24,12 +24,28 @@ from server.services.coze_stream_service import CozeStreamService
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 
+# 导入配置加载器（从数据库读取配置）
+try:
+    from server.config.config_loader import get_config_from_db_only
+except ImportError:
+    # 如果导入失败，抛出错误（不允许降级）
+    def get_config_from_db_only(key: str) -> Optional[str]:
+        raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
+
 router = APIRouter()
 
 
-class DailyFortuneCalendarRequest(BaziBaseRequest):
-    """每日运势日历请求模型（继承 BaziBaseRequest，包含7个标准参数）"""
+class DailyFortuneCalendarRequest(BaseModel):
+    """每日运势日历请求模型（所有参数都是可选的，未登录时只需要date）"""
     date: Optional[str] = Field(None, description="日期（可选，默认为今天），格式：YYYY-MM-DD", example="2025-01-15")
+    # 用户生辰信息（可选，用于十神提示）
+    solar_date: Optional[str] = Field(None, description="用户生辰阳历日期（可选），格式：YYYY-MM-DD", example="1990-05-15")
+    solar_time: Optional[str] = Field(None, description="用户生辰时间（可选），格式：HH:MM", example="14:30")
+    gender: Optional[str] = Field(None, description="用户性别（可选），male/female", example="male")
+    calendar_type: Optional[str] = Field("solar", description="历法类型：solar(阳历) 或 lunar(农历)，默认solar", example="solar")
+    location: Optional[str] = Field(None, description="出生地点（用于时区转换，优先级1）", example="北京")
+    latitude: Optional[float] = Field(None, description="纬度（用于时区转换，优先级2）", example=39.90)
+    longitude: Optional[float] = Field(None, description="经度（用于时区转换和真太阳时计算，优先级2）", example=116.40)
     
     @validator('date')
     def validate_date(cls, v):
@@ -40,6 +56,37 @@ class DailyFortuneCalendarRequest(BaziBaseRequest):
         except ValueError:
             raise ValueError('日期格式错误，应为 YYYY-MM-DD')
         return v
+    
+    @validator('solar_date')
+    def validate_solar_date(cls, v):
+        if v is None:
+            return v
+        # 允许任何格式通过（包括农历日期字符串）
+        return v
+    
+    @validator('solar_time')
+    def validate_solar_time(cls, v):
+        if v is None:
+            return v
+        try:
+            datetime.strptime(v, '%H:%M')
+        except ValueError:
+            raise ValueError('时间格式错误，应为 HH:MM')
+        return v
+    
+    @validator('gender')
+    def validate_gender(cls, v):
+        if v is None:
+            return v
+        if v not in ['male', 'female']:
+            raise ValueError('性别必须为 male 或 female')
+        return v
+    
+    @validator('calendar_type')
+    def validate_calendar_type(cls, v):
+        if v and v not in ['solar', 'lunar']:
+            raise ValueError('历法类型必须为 solar 或 lunar')
+        return v or "solar"
 
 
 class JianchuInfo(BaseModel):
@@ -234,14 +281,14 @@ async def action_suggestions_stream_generator(
         bot_id: Coze Bot ID（可选，优先级：参数 > DAILY_FORTUNE_ACTION_BOT_ID > 默认值）
     """
     try:
-        # 确定使用的 bot_id（优先级：参数 > 环境变量 DAILY_FORTUNE_ACTION_BOT_ID）
+        # 确定使用的 bot_id（优先级：参数 > 数据库配置）
         if not bot_id:
-            # 优先使用专门为每日运势行动建议配置的 BOT_ID
-            bot_id = os.getenv("DAILY_FORTUNE_ACTION_BOT_ID")
+            # 只从数据库读取，不降级到环境变量
+            bot_id = get_config_from_db_only("DAILY_FORTUNE_ACTION_BOT_ID")
             if not bot_id:
                 error_msg = {
                     'type': 'error',
-                    'content': "Coze Bot ID 配置缺失: 请设置环境变量 DAILY_FORTUNE_ACTION_BOT_ID 或在请求参数中提供 bot_id。"
+                    'content': "数据库配置缺失: DAILY_FORTUNE_ACTION_BOT_ID，请在 service_configs 表中配置，或在请求参数中提供 bot_id。"
                 }
                 yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
                 return
@@ -250,10 +297,10 @@ async def action_suggestions_stream_generator(
         try:
             coze_service = CozeStreamService(bot_id=bot_id)
         except ValueError as e:
-            # 环境变量未设置
+            # 数据库配置缺失
             error_msg = {
                 'type': 'error',
-                'content': f"Coze API 配置缺失: {str(e)}。请设置环境变量 COZE_ACCESS_TOKEN 和 COZE_BOT_ID。"
+                'content': f"Coze API 配置缺失: {str(e)}。请在 service_configs 表中配置 COZE_ACCESS_TOKEN 和 COZE_BOT_ID。"
             }
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return

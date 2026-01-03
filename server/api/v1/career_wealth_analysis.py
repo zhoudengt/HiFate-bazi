@@ -30,6 +30,14 @@ from server.utils.bazi_input_processor import BaziInputProcessor
 from server.services.user_interaction_logger import get_user_interaction_logger
 import time
 from server.services.industry_service import IndustryService
+
+# 导入配置加载器（从数据库读取配置）
+try:
+    from server.config.config_loader import get_config_from_db_only
+except ImportError:
+    # 如果导入失败，抛出错误（不允许降级）
+    def get_config_from_db_only(key: str) -> Optional[str]:
+        raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
 from server.services.bazi_data_orchestrator import BaziDataOrchestrator
 from server.api.v1.general_review_analysis import classify_special_liunians, organize_special_liunians_by_dayun
 from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
@@ -38,6 +46,7 @@ from server.utils.dayun_liunian_helper import (
     get_current_dayun,
     build_enhanced_dayun_structure
 )
+from server.config.input_format_loader import build_input_data_from_result
 
 logger = logging.getLogger(__name__)
 
@@ -957,15 +966,29 @@ async def career_wealth_analysis_test(request: CareerWealthRequest):
             True
         )
         
-        # 构建input_data
-        input_data = build_career_wealth_input_data(
-            bazi_data,
-            wangshuai_result,
-            detail_result,
-            dayun_sequence,
-            special_liunians,
-            request.gender
-        )
+        # 构建input_data（优先使用数据库格式定义）
+        try:
+            input_data = build_input_data_from_result(
+                format_name='career_wealth_analysis',
+                bazi_data=bazi_data,
+                detail_result=detail_result,
+                wangshuai_result=wangshuai_result,
+                dayun_sequence=dayun_sequence,
+                special_liunians=special_liunians,
+                gender=request.gender
+            )
+            logger.info("✅ 使用数据库格式定义构建 input_data: career_wealth_analysis")
+        except Exception as e:
+            # 降级到硬编码函数
+            logger.warning(f"⚠️ 格式定义构建失败，使用硬编码函数: {e}")
+            input_data = build_career_wealth_input_data(
+                bazi_data,
+                wangshuai_result,
+                detail_result,
+                dayun_sequence,
+                special_liunians,
+                request.gender
+            )
         
         # 填充判词数据
         career_judgments = []
@@ -1074,15 +1097,14 @@ async def career_wealth_stream_generator(
     llm_output_chunks = []
     
     try:
-        # 1. 确定使用的 bot_id（优先级：参数 > CAREER_WEALTH_BOT_ID > COZE_BOT_ID）
+        # 1. 确定使用的 bot_id（优先级：参数 > 数据库配置 > 环境变量）
         if not bot_id:
-            bot_id = os.getenv("CAREER_WEALTH_BOT_ID")
+            # 只从数据库读取，不降级到环境变量
+            bot_id = get_config_from_db_only("CAREER_WEALTH_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
             if not bot_id:
-                bot_id = os.getenv("COZE_BOT_ID")
-                if not bot_id:
                     error_msg = {
                         'type': 'error',
-                        'content': "Coze Bot ID 配置缺失: 请设置环境变量 CAREER_WEALTH_BOT_ID 或 COZE_BOT_ID。"
+                        'content': "数据库配置缺失: CAREER_WEALTH_BOT_ID 或 COZE_BOT_ID，请在 service_configs 表中配置。"
                     }
                     yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
                     return
@@ -1264,15 +1286,31 @@ async def career_wealth_stream_generator(
             career_judgments = []
             wealth_judgments = []
         
-        # 5. ⚠️ 优化：使用新的 build_career_wealth_input_data 函数构建 input_data
-        input_data = build_career_wealth_input_data(
-            bazi_data,
-            wangshuai_result,
-            detail_result,
-            dayun_sequence,
-            special_liunians,
-            gender
-        )
+        # 5. 构建 input_data（优先使用数据库格式定义）
+        try:
+            # 尝试从数据库格式定义构建
+            input_data = build_input_data_from_result(
+                format_name='career_wealth_analysis',
+                bazi_data=bazi_data,
+                detail_result=detail_result,
+                wangshuai_result=wangshuai_result,
+                rule_result={'matched_rules': matched_rules},
+                dayun_sequence=dayun_sequence,
+                special_liunians=special_liunians,
+                gender=gender
+            )
+            logger.info("✅ 使用数据库格式定义构建 input_data: career_wealth_analysis")
+        except Exception as e:
+            # 降级到硬编码函数
+            logger.warning(f"⚠️ 格式定义构建失败，使用硬编码函数: {e}")
+            input_data = build_career_wealth_input_data(
+                bazi_data,
+                wangshuai_result,
+                detail_result,
+                dayun_sequence,
+                special_liunians,
+                gender
+            )
         
         # 6. 填充判词数据
         input_data['shiye_xing_gong']['career_judgments'] = career_judgments

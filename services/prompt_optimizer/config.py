@@ -46,9 +46,21 @@ MYSQL_CONFIG = {
     'use_unicode': True
 }
 
-# Coze API 配置（用于生成优化建议）
-COZE_ACCESS_TOKEN = os.getenv("COZE_ACCESS_TOKEN", "")
-COZE_BOT_ID = os.getenv("COZE_BOT_ID", "")
+# Coze API 配置（用于生成优化建议，只从数据库读取）
+try:
+    from server.config.config_loader import get_config_from_db_only
+except ImportError:
+    # 如果导入失败，抛出错误（不允许降级）
+    def get_config_from_db_only(key: str):
+        raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
+
+COZE_ACCESS_TOKEN = get_config_from_db_only("COZE_ACCESS_TOKEN")
+if not COZE_ACCESS_TOKEN:
+    raise ValueError("数据库配置缺失: COZE_ACCESS_TOKEN，请在 service_configs 表中配置")
+
+COZE_BOT_ID = get_config_from_db_only("COZE_BOT_ID")
+if not COZE_BOT_ID:
+    raise ValueError("数据库配置缺失: COZE_BOT_ID，请在 service_configs 表中配置")
 
 # 优化策略配置
 ACCURACY_THRESHOLD = 0.95  # 目标准确率

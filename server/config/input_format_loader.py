@@ -200,6 +200,142 @@ class InputDataFormatLoader:
         
         return input_data
     
+    def build_input_data_from_result(
+        self,
+        format_def: Dict[str, Any],
+        bazi_data: Dict[str, Any],
+        detail_result: Dict[str, Any],
+        wangshuai_result: Optional[Dict[str, Any]] = None,
+        rule_result: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        根据格式定义从计算结果直接组装 input_data（不依赖 Redis）
+        
+        Args:
+            format_def: 格式定义字典（从 load_format 获取）
+            bazi_data: 基础八字数据
+            detail_result: 详细计算结果（包含大运流年等）
+            wangshuai_result: 旺衰计算结果（可选）
+            rule_result: 规则匹配结果（可选）
+            **kwargs: 其他数据源
+        
+        Returns:
+            组装好的 input_data 字典
+        """
+        if not format_def:
+            raise ValueError("格式定义不能为空")
+        
+        structure = format_def.get('structure', {})
+        fields = structure.get('fields', {})
+        
+        # 构建数据源映射
+        data_sources = {
+            'bazi_data': bazi_data,
+            'detail_result': detail_result,
+            'wangshuai_result': wangshuai_result or {},
+            'rule_result': rule_result or {},
+            **kwargs
+        }
+        
+        input_data = {}
+        
+        for field_name, field_config in fields.items():
+            source = field_config.get('source')
+            
+            if source == 'result':
+                # 从计算结果提取
+                data_source = field_config.get('data_source', 'detail_result')  # 默认从 detail_result
+                source_data = data_sources.get(data_source, {})
+                
+                # 提取指定字段
+                target_fields = field_config.get('fields', [])
+                if target_fields:
+                    # 提取多个字段
+                    field_data = {}
+                    for target_field in target_fields:
+                        value = self._extract_nested_field(source_data, target_field)
+                        if value is not None:
+                            # 应用转换
+                            transform = field_config.get('transform', {})
+                            if target_field in transform:
+                                value = self._apply_transform(value, transform[target_field])
+                            field_data[target_field] = value
+                    input_data[field_name] = field_data
+                else:
+                    # 提取单个字段或整个数据源
+                    field_path = field_config.get('field')
+                    if field_path:
+                        value = self._extract_nested_field(source_data, field_path)
+                        if value is not None:
+                            input_data[field_name] = value
+                    else:
+                        # 使用整个数据源
+                        input_data[field_name] = source_data
+            
+            elif source == 'calculated':
+                # 计算值（调用计算函数）
+                func_name = field_config.get('function')
+                func_params = field_config.get('params', [])
+                params = [data_sources.get(p, {}) for p in func_params]
+                input_data[field_name] = self._call_calculator(func_name, params)
+            
+            elif source == 'static':
+                # 静态值
+                input_data[field_name] = field_config.get('value')
+            
+            elif source == 'composite':
+                # 复合字段：从多个数据源组合
+                composite_config = field_config.get('composite', {})
+                composite_data = {}
+                for comp_field, comp_config in composite_config.items():
+                    comp_source = comp_config.get('data_source', 'detail_result')
+                    comp_path = comp_config.get('field')
+                    if comp_source in data_sources and comp_path:
+                        value = self._extract_nested_field(data_sources[comp_source], comp_path)
+                        if value is not None:
+                            composite_data[comp_field] = value
+                input_data[field_name] = composite_data
+        
+        return input_data
+    
+    def _extract_nested_field(self, data: Dict[str, Any], field_path: str) -> Any:
+        """
+        从嵌套字典中提取字段（支持点号分隔的路径）
+        
+        Args:
+            data: 数据字典
+            field_path: 字段路径，如 "dayun_sequence.0.year_start"
+        
+        Returns:
+            字段值，如果不存在则返回 None
+        """
+        if not field_path:
+            return None
+        
+        parts = field_path.split('.')
+        current = data
+        
+        for part in parts:
+            if isinstance(current, dict):
+                current = current.get(part)
+            elif isinstance(current, list):
+                try:
+                    index = int(part)
+                    if 0 <= index < len(current):
+                        current = current[index]
+                    else:
+                        return None
+                except ValueError:
+                    return None
+            else:
+                return None
+            
+            if current is None:
+                return None
+        
+        return current
+    
     def _replace_template_vars(self, template: str, params: Dict[str, Any]) -> str:
         """替换模板变量"""
         result = template
@@ -337,4 +473,41 @@ def build_input_data(
         组装好的input_data字典
     """
     return get_format_loader().build_input_data(format_name, request_params, redis_client)
+
+
+def build_input_data_from_result(
+    format_name: str,
+    bazi_data: Dict[str, Any],
+    detail_result: Dict[str, Any],
+    wangshuai_result: Optional[Dict[str, Any]] = None,
+    rule_result: Optional[Dict[str, Any]] = None,
+    **kwargs
+) -> Dict[str, Any]:
+    """
+    根据格式定义从计算结果直接组装 input_data（便捷函数）
+    
+    Args:
+        format_name: 格式名称
+        bazi_data: 基础八字数据
+        detail_result: 详细计算结果
+        wangshuai_result: 旺衰计算结果（可选）
+        rule_result: 规则匹配结果（可选）
+        **kwargs: 其他数据源
+    
+    Returns:
+        组装好的 input_data 字典
+    """
+    format_loader = get_format_loader()
+    format_def = format_loader.load_format(format_name)
+    if not format_def:
+        raise ValueError(f"格式定义不存在: {format_name}")
+    
+    return format_loader.build_input_data_from_result(
+        format_def=format_def,
+        bazi_data=bazi_data,
+        detail_result=detail_result,
+        wangshuai_result=wangshuai_result,
+        rule_result=rule_result,
+        **kwargs
+    )
 

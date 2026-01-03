@@ -165,25 +165,29 @@ async def get_xishen_jishen(request: XishenJishenRequest):
             # 获取十神命格规则的ID列表
             shishen_rule_ids = matched_rules.get('shishen', [])
             
-            # 从所有命格名称列表中匹配
-            all_mingge_names = list(ConfigService.get_all_mingge().keys())
-            # 按长度降序排序，避免部分匹配问题
-            all_mingge_names_sorted = sorted(all_mingge_names, key=len, reverse=True)
+            logger.info(f"   开始提取命格名称，规则ID列表: {shishen_rule_ids}")
+            logger.info(f"   rule_details 的键: {list(rule_details.keys())}")
             
-            shishen_mingge_names = []
+            # ✅ 使用统一的命格提取器
+            from server.services.mingge_extractor import extract_mingge_names_from_rules
+            
+            # 构建规则列表（从 rule_details 中提取）
+            shishen_rules = []
             for rule_id in shishen_rule_ids:
-                rule_detail = rule_details.get(rule_id, {})
-                # 从规则的'结果'字段中提取命格名称
-                rule_result = rule_detail.get('结果') or rule_detail.get('result') or ''
-                
-                if rule_result:
-                    # 在结果文本中查找命格名称（按长度降序，避免部分匹配）
-                    for mingge_name in all_mingge_names_sorted:
-                        if mingge_name in rule_result:
-                            if mingge_name not in shishen_mingge_names:
-                                shishen_mingge_names.append(mingge_name)
-                                logger.debug(f"从规则ID {rule_id} 的结果中提取到命格名称: {mingge_name}")
-                                break  # 每个规则只取第一个匹配的命格名称
+                rule_detail = rule_details.get(str(rule_id), rule_details.get(rule_id, {}))
+                logger.info(f"   规则 {rule_id}: rule_detail 存在 = {bool(rule_detail)}")
+                if rule_detail:
+                    logger.info(f"   规则 {rule_id}: 键 = {list(rule_detail.keys())}")
+                    logger.info(f"   规则 {rule_id}: 结果字段 = {rule_detail.get('结果', rule_detail.get('result', '无'))[:80]}")
+                    shishen_rules.append(rule_detail)
+            
+            logger.info(f"   ✅ 提取到 {len(shishen_rules)} 条规则详情")
+            
+            # 使用统一的提取器提取命格名称
+            logger.info(f"   🔄 调用 extract_mingge_names_from_rules，输入规则数量: {len(shishen_rules)}")
+            shishen_mingge_names = extract_mingge_names_from_rules(shishen_rules)
+            
+            logger.info(f"   🔚 extract_mingge_names_from_rules 返回: {shishen_mingge_names}")
         
         logger.info(f"   十神命格: {shishen_mingge_names}")
         
@@ -230,16 +234,14 @@ async def xishen_jishen_stream_generator(
         bot_id: Coze Bot ID（可选，优先级：参数 > XISHEN_JISHEN_BOT_ID 环境变量）
     """
     try:
-        # 确定使用的 bot_id（优先级：参数 > XISHEN_JISHEN_BOT_ID > COZE_BOT_ID）
+        # 确定使用的 bot_id（优先级：参数 > 数据库配置 > 环境变量）
         if not bot_id:
-            bot_id = os.getenv("XISHEN_JISHEN_BOT_ID")
+            # 优先级：数据库配置 > 环境变量
+            bot_id = get_config_from_db_only("XISHEN_JISHEN_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
             if not bot_id:
-                # 如果没有设置 XISHEN_JISHEN_BOT_ID，使用 COZE_BOT_ID 作为默认值
-                bot_id = os.getenv("COZE_BOT_ID")
-                if not bot_id:
                     error_msg = {
                         'type': 'error',
-                        'content': "Coze Bot ID 配置缺失: 请设置环境变量 XISHEN_JISHEN_BOT_ID 或 COZE_BOT_ID 或在请求参数中提供 bot_id。"
+                        'content': "数据库配置缺失: XISHEN_JISHEN_BOT_ID 或 COZE_BOT_ID，请在 service_configs 表中配置，或在请求参数中提供 bot_id。"
                     }
                     yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
                     return

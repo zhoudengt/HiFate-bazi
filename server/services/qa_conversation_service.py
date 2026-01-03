@@ -47,8 +47,18 @@ class QAConversationService:
     """多轮问答对话服务"""
     
     def __init__(self):
+        # 导入配置加载器（从数据库读取配置）
+        try:
+            from server.config.config_loader import get_config_from_db_only
+        except ImportError:
+            def get_config_from_db_only(key: str) -> Optional[str]:
+                raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
+        
         # Coze 服务（主分析 Bot）
-        self.analysis_bot_id = os.getenv("QA_ANALYSIS_BOT_ID") or os.getenv("COZE_BOT_ID")
+        # 只从数据库读取，不降级到环境变量
+        self.analysis_bot_id = get_config_from_db_only("QA_ANALYSIS_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
+        if not self.analysis_bot_id:
+            raise ValueError("数据库配置缺失: QA_ANALYSIS_BOT_ID 或 COZE_BOT_ID，请在 service_configs 表中配置")
         try:
             self.coze_service = CozeStreamService(bot_id=self.analysis_bot_id)
         except Exception as e:
@@ -421,21 +431,41 @@ class QAConversationService:
             if rule_types and 'ALL' not in rule_types:
                 matched_rules = [r for r in matched_rules if r.get('rule_type') in rule_types]
             
-            # 7. 构建结构化数据（不包含提示词，提示词在 Coze Bot 中）
-            input_data = {
-                'user_question': question,
-                'bazi_data': bazi_data,
-                'wangshuai': wangshuai_data,
-                'dayun_sequence': dayun_sequence,
-                'liunian_sequence': liunian_sequence,
-                'matched_rules': matched_rules,
-                'intent': intent_result.get('intents', []),
-                'conversation_context': {
-                    'previous_questions': context['previous_questions'],
-                    'previous_answers': context['previous_answers'],
-                    'current_category': context['current_category']
+            # 7. 构建结构化数据（优先使用数据库格式定义）
+            try:
+                from server.config.input_format_loader import build_input_data_from_result
+                input_data = build_input_data_from_result(
+                    format_name='qa_conversation',
+                    bazi_data=bazi_data,
+                    detail_result={'dayun_sequence': dayun_sequence, 'liunian_sequence': liunian_sequence},
+                    wangshuai_result=wangshuai_data,
+                    rule_result={'matched_rules': matched_rules},
+                    user_question=question,
+                    intent=intent_result.get('intents', []),
+                    conversation_context={
+                        'previous_questions': context['previous_questions'],
+                        'previous_answers': context['previous_answers'],
+                        'current_category': context['current_category']
+                    }
+                )
+                logger.info("✅ 使用数据库格式定义构建 input_data: qa_conversation")
+            except Exception as e:
+                # 降级到硬编码结构
+                logger.warning(f"⚠️ 格式定义构建失败，使用硬编码结构: {e}")
+                input_data = {
+                    'user_question': question,
+                    'bazi_data': bazi_data,
+                    'wangshuai': wangshuai_data,
+                    'dayun_sequence': dayun_sequence,
+                    'liunian_sequence': liunian_sequence,
+                    'matched_rules': matched_rules,
+                    'intent': intent_result.get('intents', []),
+                    'conversation_context': {
+                        'previous_questions': context['previous_questions'],
+                        'previous_answers': context['previous_answers'],
+                        'current_category': context['current_category']
+                    }
                 }
-            }
             
             # 8. 使用方案2：format_input_data_for_coze（提示词在 Coze Bot 中）
             formatted_data = self.format_input_data_for_coze(input_data)

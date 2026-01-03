@@ -8,6 +8,7 @@
 import logging
 import os
 import sys
+import time
 from typing import Dict, Any, Optional, List, Tuple
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -31,6 +32,14 @@ from server.utils.data_validator import validate_bazi_data
 from server.api.v1.xishen_jishen import get_xishen_jishen, XishenJishenRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.services.coze_stream_service import CozeStreamService
+
+# 导入配置加载器（从数据库读取配置）
+try:
+    from server.config.config_loader import get_config_from_db_only
+except ImportError:
+    # 如果导入失败，抛出错误（不允许降级）
+    def get_config_from_db_only(key: str) -> Optional[str]:
+        raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
 from src.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
 from src.analyzers.fortune_relation_analyzer import FortuneRelationAnalyzer
 from src.analyzers.wuxing_balance_analyzer import WuxingBalanceAnalyzer
@@ -42,6 +51,8 @@ from server.utils.dayun_liunian_helper import (
     get_current_dayun,
     build_enhanced_dayun_structure
 )
+
+from server.config.input_format_loader import build_input_data_from_result
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -143,7 +154,7 @@ async def general_review_analysis_test(request: GeneralReviewRequest):
         except Exception as e:
             logger.warning(f"获取喜忌数据失败（不影响业务）: {e}")
         
-        # 构建input_data
+        # 构建input_data（直接使用硬编码函数，确保数据完整性）
         input_data = build_general_review_input_data(
             bazi_data,
             wangshuai_result,
@@ -159,6 +170,7 @@ async def general_review_analysis_test(request: GeneralReviewRequest):
             special_liunians,
             xishen_jishen_result
         )
+        logger.info("✅ 使用硬编码函数构建 input_data: general_review_analysis")
         
         # 格式化数据
         formatted_data = format_input_data_for_coze(input_data)
@@ -202,6 +214,9 @@ async def general_review_analysis_stream(request: GeneralReviewRequest):
     Returns:
         StreamingResponse: SSE 流式响应
     """
+    logger.info(f"[General Review API] 收到请求: solar_date={request.solar_date}, solar_time={request.solar_time}")
+    print(f"[General Review API] 收到请求: solar_date={request.solar_date}, solar_time={request.solar_time}")
+    
     return StreamingResponse(
         general_review_analysis_stream_generator(
             request.solar_date,
@@ -375,24 +390,24 @@ async def general_review_analysis_debug(request: GeneralReviewRequest):
         # 获取五行统计
         element_counts = bazi_data.get('element_counts', {})
         
-        # 构建input_data（⚠️ 明确使用关键字参数，避免参数对应错误）
-        print(f"[DEBUG] 准备调用 build_general_review_input_data，dayun_sequence 数量: {len(dayun_sequence)}, special_liunians 数量: {len(special_liunians)}")
-        logger.info(f"[General Review Debug] 准备调用 build_general_review_input_data，dayun_sequence 数量: {len(dayun_sequence)}, special_liunians 数量: {len(special_liunians)}")
+        # 构建input_data（优先使用数据库格式定义）
+        # 构建input_data（直接使用硬编码函数，确保数据完整性）
         input_data = build_general_review_input_data(
             bazi_data=bazi_data,
             wangshuai_result=wangshuai_result,
             detail_result=detail_result,
             dayun_sequence=dayun_sequence,
             gender=request.gender,
-            solar_date=final_solar_date,  # ⚠️ 传递原始日期
-            solar_time=final_solar_time,  # ⚠️ 传递原始时间
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
             personality_result=personality_result,
             rizhu_result=rizhu_result,
             health_result=health_result,
-            liunian_sequence=liunian_sequence,  # ⚠️ 传递流年数据
-            special_liunians=special_liunians,  # ⚠️ 传递特殊流年（已筛选）
-            xishen_jishen_result=xishen_jishen_result  # ⚠️ 传递喜忌数据结果
+            liunian_sequence=liunian_sequence,
+            special_liunians=special_liunians,
+            xishen_jishen_result=xishen_jishen_result
         )
+        logger.info("✅ 使用硬编码函数构建 input_data: general_review_analysis")
         
         # ⚠️ DEBUG: 调用后检查变量
         print(f"[DEBUG] build_general_review_input_data 调用后，dayun_sequence 数量: {len(dayun_sequence)}, special_liunians 数量: {len(special_liunians)}")
@@ -483,20 +498,23 @@ async def general_review_analysis_stream_generator(
     llm_first_token_time = None
     llm_output_chunks = []
     
+    # 调试：确认生成器被调用
+    logger.info(f"[General Review Stream DEBUG] 生成器开始执行: solar_date={solar_date}")
+    print(f"[General Review Stream DEBUG] 生成器开始执行: solar_date={solar_date}")
+    
     try:
-        # 1. 确定使用的 bot_id（优先级：参数 > GENERAL_REVIEW_BOT_ID > COZE_BOT_ID）
+        # 1. 确定使用的 bot_id（优先级：参数 > 数据库配置 > 环境变量）
         used_bot_id = bot_id
         if not used_bot_id:
-            used_bot_id = os.getenv("GENERAL_REVIEW_BOT_ID")
+            # 只从数据库读取，不降级到环境变量
+            used_bot_id = get_config_from_db_only("GENERAL_REVIEW_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
             if not used_bot_id:
-                used_bot_id = os.getenv("COZE_BOT_ID")
-                if not used_bot_id:
-                    error_msg = {
-                        'type': 'error',
-                        'content': "Coze Bot ID 配置缺失: 请设置环境变量 GENERAL_REVIEW_BOT_ID 或 COZE_BOT_ID。"
-                    }
-                    yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
-                    return
+                error_msg = {
+                    'type': 'error',
+                    'content': "数据库配置缺失: GENERAL_REVIEW_BOT_ID 或 COZE_BOT_ID，请在 service_configs 表中配置。"
+                }
+                yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+                return
         
         logger.info(f"总评分析请求: solar_date={solar_date}, solar_time={solar_time}, gender={gender}, bot_id={used_bot_id}")
         
@@ -702,26 +720,28 @@ async def general_review_analysis_stream_generator(
         # 获取五行统计
         element_counts = bazi_data.get('element_counts', {})
         
-        # ========== 阶段5：检查 special_liunians 是否正确传递到 build_general_review_input_data ==========
-        logger.info(f"[阶段5-DEBUG] 准备调用 build_general_review_input_data，special_liunians 数量: {len(special_liunians)}")
+        # ========== 阶段5：构建 input_data（直接使用硬编码函数，确保数据完整性） ==========
+        logger.info(f"[阶段5-DEBUG] 准备构建 input_data，special_liunians 数量: {len(special_liunians)}")
         if special_liunians:
             special_liunian_strs = [f"{l.get('year', '')}年{l.get('ganzhi', '')}" for l in special_liunians[:3]]
             logger.info(f"[阶段5-DEBUG] special_liunians 内容: {special_liunian_strs}")
+        
         input_data = build_general_review_input_data(
             bazi_data=bazi_data,
             wangshuai_result=wangshuai_result,
             detail_result=detail_result,
             dayun_sequence=dayun_sequence,
             gender=gender,
-            solar_date=final_solar_date,  # ⚠️ 传递原始日期
-            solar_time=final_solar_time,  # ⚠️ 传递原始时间
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
             personality_result=personality_result,
             rizhu_result=rizhu_result,
             health_result=health_result,
-            liunian_sequence=liunian_sequence,  # ⚠️ 传递流年数据
-            special_liunians=special_liunians,  # ⚠️ 传递特殊流年（已筛选）
-            xishen_jishen_result=xishen_jishen_result  # ⚠️ 传递喜忌数据结果
+            liunian_sequence=liunian_sequence,
+            special_liunians=special_liunians,
+            xishen_jishen_result=xishen_jishen_result
         )
+        logger.info("✅ 使用硬编码函数构建 input_data: general_review_analysis")
         
         # 8. 添加日柱规则（NEW）
         input_data['rizhu_rules'] = {
@@ -1864,6 +1884,44 @@ def validate_general_review_input_data(data: dict) -> Tuple[bool, str]:
     return True, ""
 
 
+def _simplify_dayun(dayun: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    精简大运数据，只保留关键信息，减少数据量
+    
+    Args:
+        dayun: 完整的大运数据
+        
+    Returns:
+        精简后的大运数据
+    """
+    if not dayun:
+        return None
+    
+    # 只保留关键字段
+    simplified = {
+        'ganzhi': dayun.get('ganzhi', ''),
+        'start_age': dayun.get('start_age'),
+        'end_age': dayun.get('end_age'),
+        'wuxing': dayun.get('wuxing', ''),
+        'shishen': dayun.get('shishen', ''),
+        'analysis': dayun.get('analysis', '')[:200] if dayun.get('analysis') else '',  # 限制分析文本
+    }
+    
+    # 精简流年数据，只保留前3个关键流年
+    liunians = dayun.get('liunians', [])
+    if liunians:
+        simplified['key_liunians'] = [
+            {
+                'year': l.get('year'),
+                'ganzhi': l.get('ganzhi', ''),
+                'brief': l.get('analysis', '')[:100] if l.get('analysis') else ''
+            }
+            for l in liunians[:3]
+        ]
+    
+    return simplified
+
+
 def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
     """
     将结构化数据格式化为 JSON 字符串（用于 Coze Bot System Prompt 的 {{input}} 占位符）
@@ -1923,10 +1981,11 @@ def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
         },
         
         # 6. 关键大运与人生节点（引用数据，不重复存储）
+        # ⚠️ 精简大运数据，避免超过 Coze API 输入限制
         'guanjian_dayun': {
-            'current_dayun': guanjian.get('current_dayun'),
-            'key_dayuns': guanjian.get('key_dayuns', []),
-            'dayun_sequence': guanjian.get('dayun_sequence', []),  # 保留用于兼容
+            'current_dayun': _simplify_dayun(guanjian.get('current_dayun')),
+            'key_dayuns': [_simplify_dayun(d) for d in guanjian.get('key_dayuns', [])[:5]],  # 限制5个关键大运
+            # dayun_sequence 太大（可能超过400KB），不传给 Coze Bot
             'chonghe_xinghai': guanjian.get('chonghe_xinghai', {})
         },
         

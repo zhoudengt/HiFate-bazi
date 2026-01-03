@@ -17,9 +17,10 @@ project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from server.config.mysql_config import get_mysql_connection, return_mysql_connection
-from server.utils.unified_logger import get_unified_logger
+import logging
 
-logger = get_unified_logger()
+# 使用标准 logging 模块（UnifiedLogger 主要用于业务日志）
+logger = logging.getLogger(__name__)
 
 
 class ConfigLoader:
@@ -111,6 +112,37 @@ class ConfigLoader:
         # 5. 使用默认值
         return default
     
+    def get_config_from_db_only(self, key: str, use_cache: bool = True) -> Optional[str]:
+        """
+        只从数据库读取配置值（不降级到文件或环境变量）
+        
+        用于 Coze Bot ID 和 Access Token 等关键配置，必须从数据库读取
+        
+        Args:
+            key: 配置键
+            use_cache: 是否使用缓存
+        
+        Returns:
+            配置值，如果数据库中没有配置则返回 None
+        """
+        # 1. 先查缓存
+        if use_cache and key in self._cache:
+            cached_value, cached_time = self._cache[key]
+            if time.time() - cached_time < self._cache_ttl:
+                return cached_value
+        
+        # 2. 只查数据库（不降级）
+        try:
+            value = self._load_from_db(key)
+            if value is not None:
+                self._cache[key] = (value, time.time())
+                return value
+        except Exception as e:
+            logger.error(f"❌ 从数据库加载配置失败: {key}, 错误: {e}")
+        
+        # 3. 数据库中没有配置，返回 None（不降级）
+        return None
+    
     def _load_from_db(self, key: str) -> Optional[str]:
         """从数据库加载配置"""
         conn = None
@@ -120,7 +152,7 @@ class ConfigLoader:
                 sql = """
                     SELECT config_value, config_type 
                     FROM service_configs 
-                    WHERE config_key = %s AND is_active = 1
+                    WHERE config_key = %s
                     ORDER BY version DESC, id DESC
                     LIMIT 1
                 """
@@ -243,6 +275,21 @@ def get_config(key: str, default: Optional[str] = None) -> Optional[str]:
         配置值
     """
     return get_config_loader().get_config(key, default)
+
+
+def get_config_from_db_only(key: str) -> Optional[str]:
+    """
+    只从数据库读取配置值（便捷函数，不降级到文件或环境变量）
+    
+    用于 Coze Bot ID 和 Access Token 等关键配置，必须从数据库读取
+    
+    Args:
+        key: 配置键
+    
+    Returns:
+        配置值，如果数据库中没有配置则返回 None
+    """
+    return get_config_loader().get_config_from_db_only(key)
 
 
 def reload_config(key: Optional[str] = None):

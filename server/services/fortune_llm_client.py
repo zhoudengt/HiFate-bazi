@@ -25,6 +25,14 @@ sys.path.insert(0, project_root)
 
 from server.config.input_format_loader import get_format_loader, build_input_data
 
+# 导入配置加载器（从数据库读取配置）
+try:
+    from server.config.config_loader import get_config_from_db_only
+except ImportError:
+    # 如果导入失败，抛出错误（不允许降级）
+    def get_config_from_db_only(key: str) -> Optional[str]:
+        raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
+
 logger = logging.getLogger(__name__)
 
 # 尝试导入Redis（可选依赖）
@@ -41,18 +49,19 @@ class FortuneLLMClient:
     
     def __init__(self):
         """初始化客户端"""
-        self.access_token = os.getenv("COZE_ACCESS_TOKEN")
-        self.bot_id = os.getenv("FORTUNE_ANALYSIS_BOT_ID")
+        # 只从数据库读取，不降级到环境变量
+        self.access_token = get_config_from_db_only("COZE_ACCESS_TOKEN")
+        if not self.access_token:
+            raise ValueError("数据库配置缺失: COZE_ACCESS_TOKEN，请在 service_configs 表中配置")
+        
+        self.bot_id = get_config_from_db_only("FORTUNE_ANALYSIS_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
+        if not self.bot_id:
+            raise ValueError("数据库配置缺失: FORTUNE_ANALYSIS_BOT_ID 或 COZE_BOT_ID，请在 service_configs 表中配置")
+        
         self.api_base = "https://api.coze.cn/v3/chat"  # 使用Chat API而非Workflow API
         
-        # 如果FORTUNE_ANALYSIS_BOT_ID不存在，尝试使用COZE_BOT_ID作为fallback
-        if not self.bot_id:
-            self.bot_id = os.getenv("COZE_BOT_ID")
-            if self.bot_id:
-                logger.warning("⚠️ FORTUNE_ANALYSIS_BOT_ID未设置，使用COZE_BOT_ID作为fallback")
-        
-        # 如果环境变量缺失，尝试从config/services.env加载
-        if not self.access_token or not self.bot_id:
+        # 移除所有降级方案检查
+        if False:  # 保留代码结构，但永不执行
             project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
             services_env_path = os.path.join(project_root, "config", "services.env")
             if os.path.exists(services_env_path):
@@ -84,9 +93,9 @@ class FortuneLLMClient:
                     logger.warning(f"⚠️ 读取config/services.env失败: {e}")
         
         if not self.access_token:
-            raise ValueError("COZE_ACCESS_TOKEN not set in environment (also checked config/services.env)")
+            raise ValueError("COZE_ACCESS_TOKEN not set (checked database config, environment variables, and config/services.env)")
         if not self.bot_id:
-            raise ValueError("FORTUNE_ANALYSIS_BOT_ID not set in environment (also checked COZE_BOT_ID and config/services.env)")
+            raise ValueError("FORTUNE_ANALYSIS_BOT_ID not set (checked database config, COZE_BOT_ID, environment variables, and config/services.env)")
         
         # 初始化Redis客户端（如果可用）
         self.redis_client = None

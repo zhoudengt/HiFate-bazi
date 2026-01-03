@@ -27,6 +27,14 @@ from server.services.rule_service import RuleService
 from server.utils.data_validator import validate_bazi_data
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.services.coze_stream_service import CozeStreamService
+
+# 导入配置加载器（从数据库读取配置）
+try:
+    from server.config.config_loader import get_config_from_db_only
+except ImportError:
+    # 如果导入失败，抛出错误（不允许降级）
+    def get_config_from_db_only(key: str) -> Optional[str]:
+        raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
 from server.services.bazi_data_orchestrator import BaziDataOrchestrator
 from server.api.v1.general_review_analysis import organize_special_liunians_by_dayun
 from server.services.special_liunian_service import SpecialLiunianService
@@ -39,6 +47,7 @@ from server.utils.dayun_liunian_helper import (
     get_current_dayun,
     build_enhanced_dayun_structure
 )
+from server.config.input_format_loader import build_input_data_from_result
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -167,15 +176,30 @@ async def children_study_analysis_test(request: ChildrenStudyRequest):
             True
         )
         
-        # 构建input_data（传入特殊流年数据）
-        input_data = build_children_study_input_data(
-            bazi_data,
-            wangshuai_result,
-            detail_result,
-            dayun_sequence,
-            request.gender,
-            special_liunians=special_liunians
-        )
+        # 构建input_data（优先使用数据库格式定义）
+        try:
+            input_data = build_input_data_from_result(
+                format_name='children_study_analysis',
+                bazi_data=bazi_data,
+                detail_result=detail_result,
+                wangshuai_result=wangshuai_result,
+                rule_result={'matched_rules': matched_rules},
+                dayun_sequence=dayun_sequence,
+                special_liunians=special_liunians,
+                gender=request.gender
+            )
+            logger.info("✅ 使用数据库格式定义构建 input_data: children_study_analysis")
+        except Exception as e:
+            # 降级到硬编码函数
+            logger.warning(f"⚠️ 格式定义构建失败，使用硬编码函数: {e}")
+            input_data = build_children_study_input_data(
+                bazi_data,
+                wangshuai_result,
+                detail_result,
+                dayun_sequence,
+                request.gender,
+                special_liunians=special_liunians
+            )
         
         # 添加子女规则
         input_data['children_rules'] = {
@@ -317,15 +341,30 @@ async def children_study_analysis_debug(request: ChildrenStudyRequest):
             True
         )
         
-        # 构建input_data（传入特殊流年数据）
-        input_data = build_children_study_input_data(
-            bazi_data,
-            wangshuai_result,
-            detail_result,
-            dayun_sequence,
-            request.gender,
-            special_liunians=special_liunians
-        )
+        # 构建input_data（优先使用数据库格式定义）
+        try:
+            input_data = build_input_data_from_result(
+                format_name='children_study_analysis',
+                bazi_data=bazi_data,
+                detail_result=detail_result,
+                wangshuai_result=wangshuai_result,
+                rule_result={'matched_rules': matched_rules},
+                dayun_sequence=dayun_sequence,
+                special_liunians=special_liunians,
+                gender=request.gender
+            )
+            logger.info("✅ 使用数据库格式定义构建 input_data: children_study_analysis")
+        except Exception as e:
+            # 降级到硬编码函数
+            logger.warning(f"⚠️ 格式定义构建失败，使用硬编码函数: {e}")
+            input_data = build_children_study_input_data(
+                bazi_data,
+                wangshuai_result,
+                detail_result,
+                dayun_sequence,
+                request.gender,
+                special_liunians=special_liunians
+            )
         
         # 添加子女规则
         input_data['children_rules'] = {
@@ -408,18 +447,15 @@ async def children_study_analysis_stream_generator(
     llm_output_chunks = []
     
     try:
-        # 1. Bot ID 配置检查
+        # 1. Bot ID 配置检查（优先级：参数 > 数据库配置 > 环境变量）
         used_bot_id = bot_id
         if not used_bot_id:
-            # 优先使用专用Bot ID
-            used_bot_id = os.getenv("CHILDREN_STUDY_BOT_ID")
+            # 优先级：数据库配置 > 环境变量
+            used_bot_id = get_config_from_db_only("CHILDREN_STUDY_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
             if not used_bot_id:
-                # 回退到通用Bot ID
-                used_bot_id = os.getenv("COZE_BOT_ID")
-                if not used_bot_id:
                     error_msg = {
                         'type': 'error',
-                        'content': "Coze Bot ID 配置缺失，请设置 CHILDREN_STUDY_BOT_ID 或 COZE_BOT_ID 环境变量"
+                        'content': "Coze Bot ID 配置缺失，请设置数据库配置 CHILDREN_STUDY_BOT_ID 或 COZE_BOT_ID，或环境变量"
                     }
                     yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
                     return
@@ -605,15 +641,30 @@ async def children_study_analysis_stream_generator(
             True
         )
         
-        # 6. 构建input_data（传入特殊流年数据）
-        input_data = build_children_study_input_data(
-            bazi_data,
-            wangshuai_result,
-            detail_result,
-            dayun_sequence,
-            gender,
-            special_liunians=special_liunians  # ⚠️ 新增：传入特殊流年数据
-        )
+        # 6. 构建input_data（优先使用数据库格式定义）
+        try:
+            input_data = build_input_data_from_result(
+                format_name='children_study_analysis',
+                bazi_data=bazi_data,
+                detail_result=detail_result,
+                wangshuai_result=wangshuai_result,
+                rule_result={'matched_rules': matched_rules},
+                dayun_sequence=dayun_sequence,
+                special_liunians=special_liunians,
+                gender=gender
+            )
+            logger.info("✅ 使用数据库格式定义构建 input_data: children_study_analysis")
+        except Exception as e:
+            # 降级到硬编码函数
+            logger.warning(f"⚠️ 格式定义构建失败，使用硬编码函数: {e}")
+            input_data = build_children_study_input_data(
+                bazi_data,
+                wangshuai_result,
+                detail_result,
+                dayun_sequence,
+                gender,
+                special_liunians=special_liunians
+            )
         
         # 7. 添加子女规则（NEW）
         input_data['children_rules'] = {

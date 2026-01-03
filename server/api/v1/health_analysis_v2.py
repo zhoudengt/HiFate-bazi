@@ -30,6 +30,14 @@ from server.utils.data_validator import validate_bazi_data
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.services.coze_stream_service import CozeStreamService
 from server.services.bazi_data_orchestrator import BaziDataOrchestrator
+
+# 导入配置加载器（从数据库读取配置）
+try:
+    from server.config.config_loader import get_config_from_db_only
+except ImportError:
+    # 如果导入失败，抛出错误（不允许降级）
+    def get_config_from_db_only(key: str) -> Optional[str]:
+        raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
 from server.api.v1.general_review_analysis import (
     classify_special_liunians,
     organize_special_liunians_by_dayun,
@@ -202,16 +210,15 @@ async def health_analysis_v2_stream_generator(
 ):
     """流式生成健康分析的生成器（一级接口）"""
     try:
-        # 1. 确定使用的 bot_id（优先级：参数 > HEALTH_ANALYSIS_BOT_ID > COZE_BOT_ID）
+        # 1. 确定使用的 bot_id（优先级：参数 > 数据库配置）
         used_bot_id = bot_id
         if not used_bot_id:
-            used_bot_id = os.getenv("HEALTH_ANALYSIS_BOT_ID")
+            # 只从数据库读取，不降级到环境变量
+            used_bot_id = get_config_from_db_only("HEALTH_ANALYSIS_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
             if not used_bot_id:
-                used_bot_id = os.getenv("COZE_BOT_ID")
-                if not used_bot_id:
                     error_msg = {
                         'type': 'error',
-                        'content': "Coze Bot ID 配置缺失: 请设置环境变量 HEALTH_ANALYSIS_BOT_ID 或 COZE_BOT_ID。"
+                        'content': "数据库配置缺失: HEALTH_ANALYSIS_BOT_ID 或 COZE_BOT_ID，请在 service_configs 表中配置。"
                     }
                     yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
                     return

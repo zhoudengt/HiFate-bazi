@@ -8,7 +8,9 @@
 import logging
 import os
 import sys
+import time
 from datetime import datetime
+from typing import Optional, Dict, Any, List
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -469,17 +471,33 @@ class BaziDetailService:
         """
         from concurrent.futures import ThreadPoolExecutor
         import threading
+        from server.services.bazi_cache_service import BaziCacheService
+        
+        # 检查是否已有其他进程在预热（分布式锁）
+        if not BaziCacheService.acquire_lock(solar_date, solar_time, gender, "warmup"):
+            logger.debug(f"⚠️ [异步预热] 已有其他进程在预热，跳过: {solar_date} {solar_time} {gender}")
+            return
+        
+        # 检查是否已经就绪
+        if BaziCacheService.is_ready(solar_date, solar_time, gender):
+            BaziCacheService.release_lock(solar_date, solar_time, gender, "warmup")
+            logger.debug(f"✅ [异步预热] 数据已就绪，跳过预热: {solar_date} {solar_time} {gender}")
+            return
         
         def warmup_dayun(dayun_idx: int):
             """预热单个大运"""
             try:
-                # 计算该大运的数据并写入缓存
-                compute_local_detail(
+                # 计算该大运的数据
+                result = compute_local_detail(
                     solar_date, solar_time, gender,
                     current_time=current_time,
                     dayun_index=dayun_idx
                 )
-                logger.debug(f"✅ [异步预热] 大运 {dayun_idx} 预热完成")
+                
+                # 写入统一缓存键（Level 1）
+                if result:
+                    BaziCacheService.set_dayun(solar_date, solar_time, gender, dayun_idx, result)
+                    logger.debug(f"✅ [异步预热] 大运 {dayun_idx} 预热完成并写入缓存")
             except Exception as e:
                 logger.warning(f"⚠️ [异步预热] 大运 {dayun_idx} 预热失败: {e}")
         
@@ -491,12 +509,74 @@ class BaziDetailService:
                 for dayun_index in range(10):
                     future = executor.submit(warmup_dayun, dayun_index)
                     futures.append(future)
-                # 不等待完成，让它在后台运行
-                logger.info(f"✅ [异步预热] 已触发10个大运的异步预热任务")
+                
+                # 等待所有大运预热完成
+                import concurrent.futures
+                concurrent.futures.wait(futures, timeout=300)  # 最多等待5分钟
+                
+                # 组装完整数据并写入 Level 2 缓存
+                try:
+                    full_data = BaziDetailService._assemble_full_data_from_dayuns(
+                        solar_date, solar_time, gender, current_time
+                    )
+                    if full_data:
+                        BaziCacheService.set_full(solar_date, solar_time, gender, full_data)
+                        logger.info(f"✅ [异步预热] 完整数据已写入缓存")
+                except Exception as e:
+                    logger.warning(f"⚠️ [异步预热] 组装完整数据失败: {e}")
+                
+                # 释放锁
+                BaziCacheService.release_lock(solar_date, solar_time, gender, "warmup")
+                logger.info(f"✅ [异步预热] 10个大运的异步预热任务完成")
             except Exception as e:
                 logger.warning(f"⚠️ [异步预热] 启动预热任务失败: {e}")
+                # 确保释放锁
+                BaziCacheService.release_lock(solar_date, solar_time, gender, "warmup")
         
         # 启动后台线程
         warmup_thread = threading.Thread(target=start_warmup, daemon=True)
         warmup_thread.start()
+    
+    @staticmethod
+    def _assemble_full_data_from_dayuns(solar_date: str, solar_time: str, gender: str, current_time: datetime = None) -> Optional[dict]:
+        """
+        从各个大运缓存组装完整数据
+        
+        Args:
+            solar_date: 阳历日期
+            solar_time: 出生时间
+            gender: 性别
+            current_time: 当前时间
+        
+        Returns:
+            完整数据字典，如果组装失败则返回 None
+        """
+        try:
+            from server.services.bazi_cache_service import BaziCacheService
+            
+            # 获取基础数据
+            base_data = BaziCacheService.get_base(solar_date, solar_time, gender)
+            if not base_data:
+                logger.warning("⚠️ [组装完整数据] 基础数据不存在，无法组装")
+                return None
+            
+            # 获取所有大运数据
+            dayun_sequence = []
+            for dayun_index in range(10):
+                dayun_data = BaziCacheService.get_dayun(solar_date, solar_time, gender, dayun_index)
+                if dayun_data:
+                    dayun_sequence.append(dayun_data)
+            
+            # 组装完整数据
+            full_data = {
+                **base_data,
+                "dayun_sequence": dayun_sequence,
+                "warmup_completed": True,
+                "warmup_timestamp": time.time()
+            }
+            
+            return full_data
+        except Exception as e:
+            logger.error(f"❌ [组装完整数据] 失败: {e}", exc_info=True)
+            return None
 

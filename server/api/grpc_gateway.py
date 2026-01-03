@@ -498,6 +498,8 @@ async def _handle_calendar_query(payload: Dict[str, Any]):
 @_register("/daily-fortune-calendar/query")
 async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
     """处理每日运势日历查询请求"""
+    # ⚠️ 重要：DailyFortuneCalendarRequest 的所有字段都是可选的
+    # 未登录用户只需要提供 date 参数
     request_model = DailyFortuneCalendarRequest(**payload)
     return await query_daily_fortune_calendar(request_model)
 
@@ -807,6 +809,8 @@ async def grpc_web_gateway(request: Request):
                 )
                 async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
                     """处理每日运势日历查询请求"""
+                    # ⚠️ 重要：DailyFortuneCalendarRequest 的所有字段都是可选的
+                    # 未登录用户只需要提供 date 参数
                     request_model = DailyFortuneCalendarRequest(**payload)
                     return await query_daily_fortune_calendar(request_model)
                 SUPPORTED_ENDPOINTS["/daily-fortune-calendar/query"] = _handle_daily_fortune_calendar_query
@@ -1167,6 +1171,8 @@ def _ensure_endpoints_registered():
                 
                 async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
                     """处理每日运势日历查询请求"""
+                    # ⚠️ 重要：DailyFortuneCalendarRequest 的所有字段都是可选的
+                    # 未登录用户只需要提供 date 参数
                     request_model = DailyFortuneCalendarRequest(**payload)
                     return await query_daily_fortune_calendar(request_model)
                 

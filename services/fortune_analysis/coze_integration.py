@@ -15,13 +15,27 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 PROJECT_ROOT = BASE_DIR
 sys.path.insert(0, PROJECT_ROOT)
 
+# 导入配置加载器（从数据库读取配置）
+try:
+    from server.config.config_loader import get_config_from_db_only
+except ImportError:
+    # 如果导入失败，抛出错误（不允许降级）
+    def get_config_from_db_only(key: str) -> Optional[str]:
+        raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
+
 
 class CozeIntegration:
     """Coze API 集成"""
     
     def __init__(self):
-        self.access_token = os.getenv("COZE_ACCESS_TOKEN")
-        self.bot_id = os.getenv("COZE_BOT_ID")
+        # 只从数据库读取，不降级到环境变量
+        self.access_token = get_config_from_db_only("COZE_ACCESS_TOKEN")
+        if not self.access_token:
+            raise ValueError("数据库配置缺失: COZE_ACCESS_TOKEN，请在 service_configs 表中配置")
+        
+        self.bot_id = get_config_from_db_only("COZE_BOT_ID")
+        if not self.bot_id:
+            raise ValueError("数据库配置缺失: COZE_BOT_ID，请在 service_configs 表中配置")
         # Coze API 基础地址（不包含版本号）
         api_base_env = os.getenv("COZE_API_BASE", "https://api.coze.cn")
         # 移除可能的版本号
