@@ -41,6 +41,10 @@ PROJECT_DIR="/opt/HiFate-bazi"
 # SSH 密码（从环境变量或默认值读取）
 SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
 
+# 允许自动数据库同步（非交互式）
+# 设置为 true 时，自动生成并执行数据库同步脚本，无需用户确认
+AUTO_SYNC_DB=${AUTO_SYNC_DB:-false}
+
 # SSH 执行函数（支持密码登录）
 ssh_exec() {
     local host=$1
@@ -274,10 +278,10 @@ if [ $DB_DETECT_EXIT -eq 0 ]; then
         echo -e "${YELLOW}⚠️  发现数据库变更${NC}"
         DB_SYNC_NEEDED=true
         
-        # 询问是否生成同步脚本
-        read -p "是否生成数据库同步脚本？(y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
+        # 检查是否自动同步数据库
+        if [ "$AUTO_SYNC_DB" = "true" ]; then
+            # 自动模式：自动生成并执行同步脚本
+            echo -e "${GREEN}✅ 自动数据库同步模式已启用，自动生成并执行同步脚本${NC}"
             DEPLOYMENT_ID=$(date +%Y%m%d_%H%M%S)
             echo "生成同步脚本..."
             python3 scripts/db/detect_db_changes.py --generate-sync-script 2>&1 | tail -5
@@ -290,33 +294,58 @@ if [ $DB_DETECT_EXIT -eq 0 ]; then
                 SYNC_SCRIPT="$LATEST_SYNC_SCRIPT"
                 echo -e "${GREEN}✅ 同步脚本已生成: $SYNC_SCRIPT${NC}"
                 
-                # 询问是否立即同步
-                read -p "是否立即同步到生产环境（Node1）？(y/N): " -n 1 -r
-                echo
-                if [[ $REPLY =~ ^[Yy]$ ]]; then
-                    echo "🔄 同步数据库到 Node1..."
-                    bash scripts/db/sync_production_db.sh --node node1 --deployment-id $DEPLOYMENT_ID
-                    
-                    # 询问是否同步到Node2
-                    read -p "是否同步到 Node2？(y/N): " -n 1 -r
-                    echo
-                    if [[ $REPLY =~ ^[Yy]$ ]]; then
-                        echo "🔄 同步数据库到 Node2..."
-                        bash scripts/db/sync_production_db.sh --node node2 --deployment-id $DEPLOYMENT_ID
-                    fi
-                else
-                    echo -e "${YELLOW}⚠️  数据库同步已跳过，请稍后手动执行：${NC}"
-                    echo "  bash scripts/db/sync_production_db.sh --node node1 --deployment-id $DEPLOYMENT_ID"
-                fi
+                # 自动同步到 Node1（生产数据库在 Node1）
+                echo "🔄 自动同步数据库到 Node1（生产数据库）..."
+                bash scripts/db/sync_production_db.sh --node node1 --deployment-id $DEPLOYMENT_ID
+                
+                # 注意：所有环境统一连接生产 Node1 Docker MySQL，不需要同步到 Node2
+                echo -e "${GREEN}✅ 数据库同步完成（生产数据库在 Node1）${NC}"
             else
                 echo -e "${YELLOW}⚠️  同步脚本生成失败${NC}"
             fi
         else
-            # 非交互式环境，自动跳过
-            if [ ! -t 0 ] || [ -n "$CI" ]; then
+            # 交互式模式：询问用户
+            # 检查是否在交互式环境
+            if [ -t 0 ] && [ -z "$CI" ]; then
+                # 交互式环境，询问是否生成同步脚本
+                read -p "是否生成数据库同步脚本？(y/N): " -n 1 -r
+                echo
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    DEPLOYMENT_ID=$(date +%Y%m%d_%H%M%S)
+                    echo "生成同步脚本..."
+                    python3 scripts/db/detect_db_changes.py --generate-sync-script 2>&1 | tail -5
+                    SYNC_SCRIPT="scripts/db/sync_${DEPLOYMENT_ID}.sql"
+                    
+                    # 查找最新生成的同步脚本
+                    LATEST_SYNC_SCRIPT=$(ls -t scripts/db/sync_*.sql 2>/dev/null | head -1)
+                    if [ -n "$LATEST_SYNC_SCRIPT" ] && [ -f "$LATEST_SYNC_SCRIPT" ]; then
+                        DEPLOYMENT_ID=$(basename "$LATEST_SYNC_SCRIPT" | sed 's/sync_//;s/.sql//')
+                        SYNC_SCRIPT="$LATEST_SYNC_SCRIPT"
+                        echo -e "${GREEN}✅ 同步脚本已生成: $SYNC_SCRIPT${NC}"
+                        
+                        # 询问是否立即同步
+                        read -p "是否立即同步到生产环境（Node1）？(y/N): " -n 1 -r
+                        echo
+                        if [[ $REPLY =~ ^[Yy]$ ]]; then
+                            echo "🔄 同步数据库到 Node1..."
+                            bash scripts/db/sync_production_db.sh --node node1 --deployment-id $DEPLOYMENT_ID
+                            
+                            # 注意：所有环境统一连接生产 Node1 Docker MySQL，不需要同步到 Node2
+                            echo -e "${GREEN}✅ 数据库同步完成（生产数据库在 Node1）${NC}"
+                        else
+                            echo -e "${YELLOW}⚠️  数据库同步已跳过，请稍后手动执行：${NC}"
+                            echo "  bash scripts/db/sync_production_db.sh --node node1 --deployment-id $DEPLOYMENT_ID"
+                        fi
+                    else
+                        echo -e "${YELLOW}⚠️  同步脚本生成失败${NC}"
+                    fi
+                else
+                    echo -e "${YELLOW}⚠️  数据库同步脚本生成已跳过${NC}"
+                fi
+            else
+                # 非交互式环境，自动跳过
                 echo -e "${YELLOW}⚠️  数据库同步脚本生成已跳过（非交互式环境）${NC}"
-        else
-            echo -e "${YELLOW}⚠️  数据库同步脚本生成已跳过${NC}"
+                echo -e "${YELLOW}💡 提示：设置 AUTO_SYNC_DB=true 可自动同步数据库${NC}"
             fi
         fi
     else
