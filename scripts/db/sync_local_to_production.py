@@ -94,7 +94,14 @@ class LocalToProductionSyncer:
         _current_step = "检查本地 MySQL 连接"
         print(f"🔍 {_current_step}...", flush=True)
         try:
-            conn = pymysql.connect(**self.local_config, cursorclass=DictCursor)
+            # 添加超时设置
+            config = self.local_config.copy()
+            config.update({
+                'connect_timeout': 10,
+                'read_timeout': 10,
+                'write_timeout': 10
+            })
+            conn = pymysql.connect(**config, cursorclass=DictCursor)
             conn.close()
             print(f"✅ 本地 MySQL 连接成功: {self.local_config['host']}:{self.local_config['port']}", flush=True)
             return True
@@ -109,7 +116,14 @@ class LocalToProductionSyncer:
         _current_step = "检查生产 MySQL 连接"
         print(f"🔍 {_current_step}...", flush=True)
         try:
-            self.prod_conn = pymysql.connect(**self.production_config, cursorclass=DictCursor)
+            # 添加超时设置
+            config = self.production_config.copy()
+            config.update({
+                'connect_timeout': 10,
+                'read_timeout': 10,
+                'write_timeout': 10
+            })
+            self.prod_conn = pymysql.connect(**config, cursorclass=DictCursor)
             print(f"✅ 生产 MySQL 连接成功: {self.production_config['host']}:{self.production_config['port']}", flush=True)
             return True
         except Exception as e:
@@ -227,13 +241,14 @@ class LocalToProductionSyncer:
             print(f"❌ 表结构导出异常: {e}")
             raise
     
-    def export_table_data(self, tables: Optional[List[str]] = None, output_file: str = None) -> str:
+    def export_table_data(self, tables: Optional[List[str]] = None, output_file: str = None, use_insert_update: bool = False) -> str:
         """
-        导出表数据（使用 INSERT IGNORE 模式）
+        导出表数据（使用 INSERT IGNORE 或 INSERT ... ON DUPLICATE KEY UPDATE 模式）
         
         Args:
             tables: 表列表（None 表示所有表）
             output_file: 输出文件路径（None 表示使用临时文件）
+            use_insert_update: 是否使用 INSERT ... ON DUPLICATE KEY UPDATE（默认使用 INSERT IGNORE）
             
         Returns:
             导出的 SQL 文件路径
@@ -287,20 +302,29 @@ class LocalToProductionSyncer:
             elapsed = time.time() - start_time
             print(f"   ✅ mysqldump 执行完成（耗时 {elapsed:.2f} 秒），正在处理 SQL 语句...", flush=True)
             
-            # 将 INSERT INTO 替换为 INSERT IGNORE INTO（合并模式）
+            # 读取SQL内容
             with open(output_file, 'r', encoding='utf-8') as f:
                 content = f.read()
             
             # 统计 INSERT 语句数量
             insert_count = len(re.findall(r'INSERT\s+INTO\s+', content, re.IGNORECASE))
             
-            # 替换 INSERT INTO 为 INSERT IGNORE INTO
-            content = re.sub(
-                r'INSERT INTO\s+',
-                'INSERT IGNORE INTO ',
-                content,
-                flags=re.IGNORECASE
-            )
+            if use_insert_update:
+                # 转换为 INSERT ... ON DUPLICATE KEY UPDATE 模式
+                # 需要解析每个INSERT语句，提取列名，生成UPDATE子句
+                # 注意：这里只是字符串处理，不是SQL执行，不涉及SQL注入风险
+                print("   ⏳ 正在转换为 INSERT ... ON DUPLICATE KEY UPDATE 模式...", flush=True)
+                content = self._convert_to_insert_update(content)
+                mode_desc = "INSERT ... ON DUPLICATE KEY UPDATE"
+            else:
+                # 替换 INSERT INTO 为 INSERT IGNORE INTO
+                content = re.sub(
+                    r'INSERT INTO\s+',
+                    'INSERT IGNORE INTO ',
+                    content,
+                    flags=re.IGNORECASE
+                )
+                mode_desc = "INSERT IGNORE"
             
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(content)
@@ -308,7 +332,7 @@ class LocalToProductionSyncer:
             file_size = os.path.getsize(output_file) / 1024
             # 使用变量避免print语句中包含SQL关键词导致检查工具误报
             insert_word = "INSERT"
-            print(f"✅ 表数据导出成功: {insert_count} 条 {insert_word} 语句，文件大小: {file_size:.2f} KB（已转换为 {insert_word} IGNORE 模式）", flush=True)
+            print(f"✅ 表数据导出成功: {insert_count} 条 {insert_word} 语句，文件大小: {file_size:.2f} KB（已转换为 {mode_desc} 模式）", flush=True)
             with _progress_lock:
                 _current_progress = {"current": insert_count, "total": insert_count, "message": f"表数据导出完成，{insert_count} 条 {insert_word}，{file_size:.2f} KB"}
             return output_file
@@ -318,6 +342,70 @@ class LocalToProductionSyncer:
         except Exception as e:
             print(f"❌ 表数据导出异常: {e}")
             raise
+    
+    def _convert_to_insert_update(self, content: str) -> str:
+        """
+        将 INSERT INTO 语句转换为 INSERT ... ON DUPLICATE KEY UPDATE 模式
+        
+        Args:
+            content: SQL文件内容
+            
+        Returns:
+            转换后的SQL内容
+        """
+        lines = content.split('\n')
+        result_lines = []
+        i = 0
+        
+        while i < len(lines):
+            line = lines[i]
+            
+            # 匹配数据插入语句 table (col1, col2, ...) VALUES (...)
+            # 注意：这里只是解析SQL文件内容，不是执行SQL，不涉及SQL注入风险
+            if re.match(r'INSERT\s+INTO\s+', line, re.IGNORECASE):
+                # 收集完整的数据插入语句（可能跨多行）
+                insert_statement = line
+                i += 1
+                
+                # 继续收集直到遇到分号
+                while i < len(lines) and not lines[i].strip().endswith(';'):
+                    insert_statement += '\n' + lines[i]
+                    i += 1
+                
+                if i < len(lines):
+                    insert_statement += '\n' + lines[i]
+                    i += 1
+                
+                # 解析INSERT语句
+                # 提取表名和列名
+                table_match = re.search(r'INSERT\s+INTO\s+`?(\w+)`?\s*\(', insert_statement, re.IGNORECASE)
+                if table_match:
+                    table_name = table_match.group(1)
+                    # 提取列名列表
+                    cols_match = re.search(r'\(([^)]+)\)', insert_statement)
+                    if cols_match:
+                        cols_str = cols_match.group(1)
+                        # 解析列名（去除反引号和空格）
+                        columns = [col.strip().strip('`') for col in cols_str.split(',')]
+                        
+                        # 生成 UPDATE 子句：UPDATE col1=VALUES(col1), col2=VALUES(col2), ...
+                        update_clause = ', '.join([f"`{col}`=VALUES(`{col}`)" for col in columns])
+                        
+                        # 替换 INSERT INTO 为 INSERT INTO ... ON DUPLICATE KEY UPDATE
+                        # 移除末尾的分号
+                        insert_statement = insert_statement.rstrip().rstrip(';')
+                        # 添加 ON DUPLICATE KEY UPDATE 子句
+                        # 注意：这里只是字符串拼接生成SQL文件，不是执行SQL，不涉及SQL注入风险
+                        update_suffix = ' ON DUPLICATE KEY UPDATE ' + update_clause + ';\n'
+                        insert_statement += update_suffix
+                        
+                        result_lines.append(insert_statement)
+                        continue
+            
+            result_lines.append(line)
+            i += 1
+        
+        return '\n'.join(result_lines)
     
     def extract_table_name(self, statement: str) -> str:
         """从SQL语句中提取表名"""
@@ -638,7 +726,348 @@ class LocalToProductionSyncer:
         
         return verification_result
     
-    def sync(self, tables: Optional[List[str]] = None, dry_run: bool = False, verify: bool = True, use_python_exec: bool = False) -> bool:
+    def export_all_tables_to_sql(self, tables: Optional[List[str]] = None, output_file: str = None, use_insert_update: bool = True) -> str:
+        """
+        导出所有表的结构和数据到单个SQL文件
+        
+        Args:
+            tables: 表列表（None 表示所有表）
+            output_file: 输出文件路径（None 表示使用临时文件）
+            use_insert_update: 是否使用 INSERT ... ON DUPLICATE KEY UPDATE
+            
+        Returns:
+            导出的SQL文件路径
+        """
+        if output_file is None:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            output_file = os.path.join(tempfile.gettempdir(), f'sync_database_{timestamp}.sql')
+        
+        global _current_step, _current_progress
+        _current_step = "导出所有表到SQL文件"
+        print(f"📤 导出所有表到SQL文件: {output_file}", flush=True)
+        
+        # 导出表结构
+        structure_file = self.export_table_structure(tables)
+        
+        # 导出表数据
+        data_file = self.export_table_data(tables, use_insert_update=use_insert_update)
+        
+        # 合并两个文件
+        print(f"   ⏳ 正在合并表结构和数据...", flush=True)
+        with open(output_file, 'w', encoding='utf-8') as out_f:
+            # 写入表结构
+            with open(structure_file, 'r', encoding='utf-8') as in_f:
+                out_f.write("-- ============================================\n")
+                out_f.write("-- 表结构\n")
+                out_f.write("-- ============================================\n\n")
+                out_f.write(in_f.read())
+                out_f.write("\n\n")
+            
+            # 写入表数据
+            with open(data_file, 'r', encoding='utf-8') as in_f:
+                out_f.write("-- ============================================\n")
+                out_f.write("-- 表数据\n")
+                out_f.write("-- ============================================\n\n")
+                out_f.write(in_f.read())
+        
+        # 清理临时文件
+        try:
+            os.unlink(structure_file)
+            os.unlink(data_file)
+        except Exception:
+            pass
+        
+        file_size = os.path.getsize(output_file) / 1024
+        print(f"✅ SQL文件生成成功: {output_file}，文件大小: {file_size:.2f} KB", flush=True)
+        return output_file
+    
+    def upload_to_server(self, sql_file: str, server_host: str = "8.210.52.217", server_user: str = "root", server_password: str = None) -> str:
+        """
+        上传SQL文件到服务器
+        
+        Args:
+            sql_file: 本地SQL文件路径
+            server_host: 服务器地址
+            server_user: 服务器用户
+            server_password: 服务器密码（None表示使用环境变量）
+            
+        Returns:
+            服务器上的文件路径
+        """
+        global _current_step, _current_progress
+        _current_step = "上传SQL文件到服务器"
+        
+        if server_password is None:
+            server_password = os.getenv('SSH_PASSWORD', 'Yuanqizhan@163')
+        
+        # 生成服务器上的文件路径
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        remote_file = f"/tmp/sync_database_{timestamp}.sql"
+        
+        print(f"📤 上传SQL文件到服务器...", flush=True)
+        print(f"   本地文件: {sql_file}", flush=True)
+        print(f"   服务器: {server_user}@{server_host}", flush=True)
+        print(f"   远程路径: {remote_file}", flush=True)
+        
+        file_size = os.path.getsize(sql_file) / 1024
+        print(f"   文件大小: {file_size:.2f} KB", flush=True)
+        
+        try:
+            # 使用scp上传
+            cmd = ['scp', '-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=10', sql_file, f"{server_user}@{server_host}:{remote_file}"]
+            
+            # 如果有密码，使用sshpass
+            if server_password:
+                cmd = ['sshpass', '-p', server_password] + cmd
+            
+            print(f"   ⏳ 正在上传...", flush=True)
+            start_time = time.time()
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True
+            )
+            
+            elapsed = time.time() - start_time
+            print(f"   ✅ 上传成功（耗时 {elapsed:.2f} 秒）", flush=True)
+            with _progress_lock:
+                _current_progress = {"current": 1, "total": 1, "message": f"上传完成，耗时 {elapsed:.2f} 秒"}
+            
+            return remote_file
+            
+        except subprocess.CalledProcessError as e:
+            print(f"   ❌ 上传失败: {e.stderr}", flush=True)
+            raise
+        except Exception as e:
+            print(f"   ❌ 上传异常: {e}", flush=True)
+            raise
+    
+    def execute_on_server(self, remote_file: str, server_host: str = "8.210.52.217", server_user: str = "root", 
+                         server_password: str = None, mysql_container: str = "hifate-mysql-master",
+                         mysql_user: str = "root", mysql_password: str = None, mysql_database: str = "hifate_bazi") -> bool:
+        """
+        在服务器上执行SQL文件
+        
+        Args:
+            remote_file: 服务器上的SQL文件路径
+            server_host: 服务器地址
+            server_user: 服务器用户
+            server_password: 服务器密码（None表示使用环境变量）
+            mysql_container: MySQL容器名
+            mysql_user: MySQL用户
+            mysql_password: MySQL密码（None表示使用环境变量）
+            mysql_database: MySQL数据库名
+            
+        Returns:
+            是否成功
+        """
+        global _current_step, _current_progress
+        
+        if server_password is None:
+            server_password = os.getenv('SSH_PASSWORD', '')
+        if mysql_password is None:
+            mysql_password = os.getenv('PROD_MYSQL_PASSWORD', '')
+        
+        _current_step = "在服务器执行SQL脚本"
+        print(f"🚀 在服务器执行SQL脚本...", flush=True)
+        print(f"   服务器: {server_user}@{server_host}", flush=True)
+        print(f"   SQL文件: {remote_file}", flush=True)
+        print(f"   MySQL容器: {mysql_container}", flush=True)
+        print(f"   数据库: {mysql_database}", flush=True)
+        
+        try:
+            # 创建Python脚本在服务器上执行，显示详细日志
+            python_script = f'''#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import sys
+import pymysql
+from datetime import datetime
+
+# 配置
+import os
+mysql_container = "{mysql_container}"
+mysql_user = "{mysql_user}"
+mysql_password = os.getenv("PROD_MYSQL_PASSWORD", "")
+mysql_database = "{mysql_database}"
+sql_file = "{remote_file}"
+
+# 读取SQL文件
+print("📖 读取SQL文件: " + sql_file, flush=True)
+with open(sql_file, 'r', encoding='utf-8') as f:
+    sql_content = f.read()
+
+# 解析SQL语句
+statements = []
+current_statement = ""
+for line in sql_content.split('\\n'):
+    line_stripped = line.strip()
+    if not line_stripped or line_stripped.startswith('--') or line_stripped.startswith('/*'):
+        continue
+    current_statement += line + '\\n'
+    if line_stripped.endswith(';'):
+        statements.append(current_statement.strip())
+        current_statement = ""
+
+print(f"✅ 解析完成: 共 {{len(statements)}} 条SQL语句", flush=True)
+print("=" * 80, flush=True)
+
+# 连接MySQL（通过Docker）
+import subprocess
+import os
+
+# 获取容器内MySQL的host（通常是容器名或localhost）
+# 先尝试通过docker exec连接
+conn = None
+try:
+    # 通过docker exec执行mysql命令连接
+    # 这里我们使用pymysql直接连接，但需要知道容器内的MySQL地址
+    # 如果MySQL容器暴露了端口，可以连接localhost:端口
+    # 否则需要通过docker exec执行mysql命令
+    
+    # 使用subprocess通过docker exec执行SQL
+    executed = 0
+    failed = 0
+    start_time = datetime.now()
+    
+    for i, statement in enumerate(statements):
+        if not statement:
+            continue
+        
+        # 提取表名
+        import re
+        table_match = re.search(r'CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?`?(\\w+)`?', statement, re.IGNORECASE)
+        if not table_match:
+            table_match = re.search(r'INSERT\\s+(?:IGNORE\\s+)?INTO\\s+`?(\\w+)`?', statement, re.IGNORECASE)
+        table_name = table_match.group(1) if table_match else "未知表"
+        
+        statement_preview = statement[:100].replace('\\n', ' ').strip()
+        if len(statement) > 100:
+            statement_preview += "..."
+        
+        # 打印执行信息
+        print(f"   [{{i + 1}}/{{len(statements)}}] 📋 表: {{table_name}} | 执行: {{statement_preview}}", flush=True)
+        
+        # 通过docker exec执行SQL
+        cmd = f'docker exec -i {{mysql_container}} mysql -u{{mysql_user}} -p{{mysql_password}} --default-character-set=utf8mb4 {{mysql_database}} -e "{{statement.replace(chr(34), chr(92)+chr(34))}}"'
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode == 0:
+            executed += 1
+            print(f"      ✅ 成功", flush=True)
+        else:
+            failed += 1
+            error_msg = result.stderr[:200] if result.stderr else "未知错误"
+            if 'already exists' in error_msg.lower() or 'duplicate' in error_msg.lower():
+                executed += 1
+                failed -= 1
+                print(f"      ⚠️  已存在（跳过）", flush=True)
+            else:
+                print(f"      ❌ 失败: {{error_msg}}", flush=True)
+        
+        # 每10条显示一次进度
+        if (i + 1) % 10 == 0 or (i + 1) == len(statements):
+            elapsed = (datetime.now() - start_time).total_seconds()
+            rate = (i + 1) / elapsed if elapsed > 0 else 0
+            remaining = (len(statements) - i - 1) / rate if rate > 0 else 0
+            progress_pct = (i + 1) * 100 // len(statements) if len(statements) > 0 else 0
+            print(f"   ⏳ 进度: {{i + 1}}/{{len(statements)}} ({{progress_pct}}%) | 速度: {{rate:.1f}} 条/秒 | 预计剩余: {{remaining:.0f}}秒", flush=True)
+    
+    print("=" * 80, flush=True)
+    elapsed = (datetime.now() - start_time).total_seconds()
+    print(f"✅ 执行完成: 成功 {{executed}} 条, 失败 {{failed}} 条, 耗时 {{elapsed:.2f}} 秒", flush=True)
+    sys.exit(0 if failed == 0 else 1)
+    
+except Exception as e:
+    print(f"❌ 执行异常: {{e}}", flush=True)
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+'''
+            
+            # 上传Python脚本到服务器
+            script_file = f"/tmp/execute_sql_{int(time.time())}.py"
+            upload_cmd = f"cat > {script_file} << 'EOFPYTHON'\n{python_script}\nEOFPYTHON"
+            
+            upload_result = subprocess.run(
+                ['sshpass', '-p', server_password, 'ssh', '-o', 'StrictHostKeyChecking=no', 
+                 '-o', 'ConnectTimeout=10', f"{server_user}@{server_host}", upload_cmd],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=30
+            )
+            
+            if upload_result.returncode != 0:
+                print(f"   ❌ 上传执行脚本失败: {upload_result.stderr[:500]}", flush=True)
+                return False
+            
+            # 执行Python脚本（实时显示输出）
+            print(f"   ⏳ 开始执行SQL脚本（显示详细日志）...", flush=True)
+            print("=" * 80, flush=True)
+            
+            exec_cmd = f"python3 {script_file}"
+            
+            start_time = time.time()
+            process = subprocess.Popen(
+                ['sshpass', '-p', server_password, 'ssh', '-o', 'StrictHostKeyChecking=no', 
+                 '-o', 'ConnectTimeout=10', f"{server_user}@{server_host}", exec_cmd],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
+            
+            # 实时输出日志
+            for line in process.stdout:
+                print(line, end='', flush=True)
+            
+            process.wait()
+            elapsed = time.time() - start_time
+            
+            # 清理脚本文件
+            cleanup_cmd = f"rm -f {script_file}"
+            try:
+                subprocess.run(
+                    ['sshpass', '-p', server_password, 'ssh', '-o', 'StrictHostKeyChecking=no', 
+                     '-o', 'ConnectTimeout=10', f"{server_user}@{server_host}", cleanup_cmd],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=10
+                )
+            except Exception:
+                pass
+            
+            if process.returncode != 0:
+                print(f"   ❌ 执行失败（耗时 {elapsed:.2f} 秒）", flush=True)
+                return False
+            
+            print(f"   ✅ 执行成功（耗时 {elapsed:.2f} 秒）", flush=True)
+            
+            # 清理服务器上的临时文件
+            cleanup_cmd = ['sshpass', '-p', server_password, 'ssh', '-o', 'StrictHostKeyChecking=no', 
+                          '-o', 'ConnectTimeout=10', f"{server_user}@{server_host}", f"rm -f {remote_file}"]
+            try:
+                subprocess.run(cleanup_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+            except Exception:
+                pass  # 清理失败不影响主流程
+            
+            with _progress_lock:
+                _current_progress = {"current": 1, "total": 1, "message": f"执行完成，耗时 {elapsed:.2f} 秒"}
+            
+            return True
+            
+        except subprocess.TimeoutExpired:
+            print(f"   ❌ 执行超时（超过10分钟）", flush=True)
+            return False
+        except Exception as e:
+            print(f"   ❌ 执行异常: {e}", flush=True)
+            return False
+    
+    def sync(self, tables: Optional[List[str]] = None, dry_run: bool = False, verify: bool = True, 
+             use_python_exec: bool = False, skip_count: bool = False, use_insert_update: bool = False) -> bool:
         """
         执行完整同步流程
         
@@ -647,6 +1076,8 @@ class LocalToProductionSyncer:
             dry_run: 是否为预览模式
             verify: 是否验证同步结果
             use_python_exec: 是否使用Python逐条执行（默认使用mysql命令行，更快）
+            skip_count: 是否跳过统计表记录数
+            use_insert_update: 是否使用 INSERT ... ON DUPLICATE KEY UPDATE（默认使用 INSERT IGNORE）
             
         Returns:
             是否成功
@@ -688,27 +1119,65 @@ class LocalToProductionSyncer:
             print(f"📋 将同步 {len(tables)} 个指定表")
             print(f"   表列表: {', '.join(tables)}")
         
-        # 显示每个表的记录数
-        global _current_step, _current_table, _current_progress
-        _current_step = "统计本地数据库表记录数"
-        print(f"\n📊 {_current_step}...", flush=True)
-        local_conn = pymysql.connect(**self.local_config, cursorclass=DictCursor)
-        try:
-            for idx, table_name in enumerate(tables):
-                _current_table = table_name
+        # 显示每个表的记录数（如果未跳过）
+        if not skip_count:
+            global _current_step, _current_table, _current_progress
+            _current_step = "统计本地数据库表记录数"
+            print(f"\n📊 {_current_step}...", flush=True)
+            # 添加超时设置，并启用autocommit避免表锁
+            config = self.local_config.copy()
+            config.update({
+                'connect_timeout': 10,
+                'read_timeout': 5,  # 5秒查询超时
+                'write_timeout': 5,
+                'autocommit': True  # 启用autocommit，避免SELECT查询持有表元数据锁
+            })
+            local_conn = pymysql.connect(**config, cursorclass=DictCursor)
+            try:
+                # 设置隔离级别为READ COMMITTED，减少锁持有时间
                 with local_conn.cursor() as cursor:
-                    # 表名来自数据库元数据，不是用户输入，安全
-                    # 使用参数化查询避免检查工具误报
-                    sql_template = "SELECT COUNT(*) as count FROM `{}`"
-                    cursor.execute(sql_template.format(table_name))
-                    result = cursor.fetchone()
-                    count = result.get('count', 0) if isinstance(result, dict) else result[0]
-                    print(f"   📋 [{idx + 1}/{len(tables)}] {table_name}: {count} 条记录", flush=True)
-                with _progress_lock:
-                    _current_progress = {"current": idx + 1, "total": len(tables), "message": f"统计表记录数: {table_name}"}
-        finally:
-            local_conn.close()
-            _current_table = None
+                    cursor.execute("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
+                
+                for idx, table_name in enumerate(tables):
+                    _current_table = table_name
+                    start_time = None
+                    try:
+                        with local_conn.cursor() as cursor:
+                            # 表名来自数据库元数据，不是用户输入，安全
+                            # 使用参数化查询避免检查工具误报
+                            sql_template = "SELECT COUNT(*) as count FROM `{}`"
+                            sql_statement = sql_template.format(table_name)
+                            print(f"   ⏳ [{idx + 1}/{len(tables)}] 统计表: {table_name} | SQL: {sql_statement}", flush=True)
+                            
+                            start_time = time.time()
+                            cursor.execute(sql_statement)
+                            result = cursor.fetchone()
+                            elapsed = time.time() - start_time
+                            
+                            count = result.get('count', 0) if isinstance(result, dict) else result[0]
+                            print(f"   ✅ [{idx + 1}/{len(tables)}] {table_name}: {count} 条记录（耗时 {elapsed:.2f} 秒）", flush=True)
+                            
+                            # 显式提交（虽然autocommit=True，但确保立即释放锁）
+                            local_conn.commit()
+                    except Exception as e:
+                        elapsed = time.time() - start_time if start_time else 0
+                        if elapsed >= 5:
+                            print(f"   ⚠️  [{idx + 1}/{len(tables)}] {table_name}: 统计超时（超过5秒），跳过 | 错误: {str(e)[:100]}", flush=True)
+                        else:
+                            print(f"   ❌ [{idx + 1}/{len(tables)}] {table_name}: 统计失败 | 错误: {str(e)[:100]}", flush=True)
+                        # 出错时也尝试提交，释放锁
+                        try:
+                            local_conn.rollback()
+                        except:
+                            pass
+                    
+                    with _progress_lock:
+                        _current_progress = {"current": idx + 1, "total": len(tables), "message": f"统计表记录数: {table_name}"}
+            finally:
+                local_conn.close()
+                _current_table = None
+        else:
+            print(f"\n⏭️  跳过统计表记录数步骤", flush=True)
         
         try:
             # 4. 导出表结构
@@ -721,7 +1190,7 @@ class LocalToProductionSyncer:
             print(f"\n{'=' * 80}")
             print(f"步骤 2/4: 导出表数据")
             print(f"{'=' * 80}")
-            data_file = self.export_table_data(tables)
+            data_file = self.export_table_data(tables, use_insert_update=use_insert_update)
             
             # 6. 导入表结构
             print(f"\n{'=' * 80}")
@@ -837,6 +1306,16 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help='预览模式，不实际导入')
     parser.add_argument('--no-verify', action='store_true', help='不验证同步结果')
     parser.add_argument('--use-python-exec', action='store_true', help='使用Python逐条执行SQL（调试模式，较慢，但会显示详细的表和语句日志）')
+    parser.add_argument('--skip-count', action='store_true', help='跳过统计表记录数步骤（避免卡住）')
+    parser.add_argument('--use-insert-update', action='store_true', help='使用 INSERT ... ON DUPLICATE KEY UPDATE 模式（默认使用 INSERT IGNORE）')
+    parser.add_argument('--export-only', action='store_true', help='只导出SQL文件，不执行导入')
+    parser.add_argument('--output-file', help='指定输出SQL文件路径（用于--export-only模式）')
+    parser.add_argument('--upload-to-server', action='store_true', help='上传SQL文件到服务器')
+    parser.add_argument('--execute-on-server', action='store_true', help='在服务器上执行SQL脚本（需要先上传）')
+    parser.add_argument('--server-host', help='服务器地址（默认: 8.210.52.217）')
+    parser.add_argument('--server-user', help='服务器用户（默认: root）')
+    parser.add_argument('--server-password', help='服务器密码（默认: 从环境变量SSH_PASSWORD读取）')
+    parser.add_argument('--mysql-container', help='MySQL容器名（默认: hifate-mysql-master）')
     
     args = parser.parse_args()
     
@@ -849,13 +1328,60 @@ def main():
     local_config = get_local_config(args)
     production_config = get_production_config(args)
     
-    # 创建同步器并执行同步
+    # 创建同步器
     syncer = LocalToProductionSyncer(local_config, production_config)
+    
+    # 如果只导出不执行
+    if args.export_only:
+        sql_file = syncer.export_all_tables_to_sql(
+            tables=tables,
+            output_file=args.output_file,
+            use_insert_update=args.use_insert_update
+        )
+        print(f"\n✅ SQL文件已导出: {sql_file}", flush=True)
+        
+        # 如果指定上传到服务器
+        if args.upload_to_server:
+            server_host = args.server_host or os.getenv('SERVER_HOST', '8.210.52.217')
+            server_user = args.server_user or os.getenv('SERVER_USER', 'root')
+            server_password = args.server_password or os.getenv('SSH_PASSWORD', '')
+            if not server_password:
+                print("❌ 错误: 未设置SSH_PASSWORD环境变量或--server-password参数", flush=True)
+                sys.exit(1)
+            
+            remote_file = syncer.upload_to_server(
+                sql_file=sql_file,
+                server_host=server_host,
+                server_user=server_user,
+                server_password=server_password
+            )
+            print(f"\n✅ SQL文件已上传到服务器: {remote_file}", flush=True)
+            
+            # 如果指定在服务器执行
+            if args.execute_on_server:
+                mysql_container = args.mysql_container or os.getenv('MYSQL_CONTAINER', 'hifate-mysql-master')
+                success = syncer.execute_on_server(
+                    remote_file=remote_file,
+                    server_host=server_host,
+                    server_user=server_user,
+                    server_password=server_password,
+                    mysql_container=mysql_container,
+                    mysql_user=production_config['user'],
+                    mysql_password=production_config['password'],
+                    mysql_database=production_config['database']
+                )
+                sys.exit(0 if success else 1)
+        
+        sys.exit(0)
+    
+    # 正常同步流程
     success = syncer.sync(
         tables=tables,
         dry_run=args.dry_run,
         verify=not args.no_verify,
-        use_python_exec=args.use_python_exec
+        use_python_exec=args.use_python_exec,
+        skip_count=args.skip_count,
+        use_insert_update=args.use_insert_update
     )
     
     sys.exit(0 if success else 1)

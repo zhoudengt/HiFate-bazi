@@ -40,9 +40,21 @@ class MySQLConnector:
             list: 查询结果（字典列表）
         """
         with self.get_connection() as conn:
+            # 对于只读查询，启用autocommit并设置READ COMMITTED隔离级别，避免表元数据锁
+            if sql.strip().upper().startswith('SELECT'):
+                conn.autocommit(True)
+                with conn.cursor() as cursor:
+                    cursor.execute("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
+            
             with conn.cursor() as cursor:
                 cursor.execute(sql, params)
-                return cursor.fetchall()
+                result = cursor.fetchall()
+                
+                # 只读查询立即提交，释放表元数据锁
+                if sql.strip().upper().startswith('SELECT'):
+                    conn.commit()
+                
+                return result
     
     def execute_update(self, sql: str, params: tuple = None) -> int:
         """

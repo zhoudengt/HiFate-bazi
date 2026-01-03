@@ -469,9 +469,21 @@ def execute_query(sql: str, params: tuple = None) -> list:
     """
     conn = get_mysql_connection()
     try:
+        # 对于只读查询，启用autocommit并设置READ COMMITTED隔离级别，避免表元数据锁
+        if sql.strip().upper().startswith('SELECT'):
+            conn.autocommit(True)
+            with conn.cursor() as cursor:
+                cursor.execute("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
+        
         with conn.cursor() as cursor:
             cursor.execute(sql, params)
-            return cursor.fetchall()
+            result = cursor.fetchall()
+            
+            # 只读查询立即提交，释放锁
+            if sql.strip().upper().startswith('SELECT'):
+                conn.commit()
+            
+            return result
     finally:
         return_mysql_connection(conn)
 

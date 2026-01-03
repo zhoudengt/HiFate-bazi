@@ -20,9 +20,10 @@ MYSQL_CONFIG = {
     "provider": "mysql",
     "driver": "mysql",
     "name": "MySQL - Node1 Docker (生产)",
-    "description": "生产环境 Node1 Docker MySQL 数据库",
+    "description": "生产环境 Node1 Docker MySQL 数据库（可编辑）",
     "save-password": True,
     "show-system-objects": False,
+    "read-only": False,  # 明确设置为可编辑
     "configuration": {
         "host": "8.210.52.217",
         "port": "3306",
@@ -34,6 +35,7 @@ MYSQL_CONFIG = {
         "password": "Yuanqizhan@163",
         "configurationType": "MANUAL",
         "closeIdleConnection": True,
+        "read-only": False,  # 连接配置中明确设置为可编辑
         "properties": {
             "connectTimeout": "20000",
             "rewriteBatchedStatements": "true",
