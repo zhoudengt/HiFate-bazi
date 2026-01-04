@@ -434,32 +434,33 @@ class BaziDetailService:
     @staticmethod
     def _calculate_current_dayun_index(dayun_sequence: list, current_time: datetime) -> int:
         """
-        计算当前时间对应的大运索引
+        计算当前时间对应的大运索引（返回 step 值，用于 _calculate_liunian_sequence_for_dayun）
         
         Args:
             dayun_sequence: 大运序列
             current_time: 当前时间
         
         Returns:
-            int: 当前大运索引，如果未找到则返回0
+            int: 当前大运的 step 值，如果未找到则返回 1（第一个大运的 step）
         """
         if not dayun_sequence:
-            return 0
+            return 1  # 默认返回第一个大运的 step
         
         current_year = current_time.year
         
-        for idx, dayun in enumerate(dayun_sequence):
+        for dayun in dayun_sequence:
             year_start = dayun.get('year_start', 0)
             year_end = dayun.get('year_end', 0)
             
             if year_start <= current_year <= year_end:
-                return idx
+                # ✅ 返回 step 值而非数组索引
+                return dayun.get('step', 1)
         
-        # 如果未找到，返回第一个或最后一个
+        # 如果未找到，返回第一个或最后一个的 step
         if current_year < dayun_sequence[0].get('year_start', 0):
-            return 0
+            return dayun_sequence[0].get('step', 1)
         else:
-            return len(dayun_sequence) - 1
+            return dayun_sequence[-1].get('step', len(dayun_sequence))
     
     @staticmethod
     def _trigger_async_warmup(solar_date: str, solar_time: str, gender: str, current_time: datetime = None):
