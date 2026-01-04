@@ -487,10 +487,16 @@ class BaziCalculator:
         # 计算大运序列
         self._calculate_dayun_sequence()
 
-        # ✅ 性能优化：当只需要大运列表时，跳过耗时的流年/流月计算（约2秒）
+        # ✅ 性能优化：
+        # - skip_liunian_sequence=True: 完全跳过流年计算（用于只获取大运列表）
+        # - dayun_index 不为 None: 只计算指定大运的流年（性能提升约10倍）
         if not skip_liunian_sequence:
-            # 计算流年序列
-            self._calculate_liunian_sequence()
+            if dayun_index is not None:
+                # ✅ 性能优化：只计算指定大运的流年，而非所有大运
+                self._calculate_liunian_sequence_for_dayun(dayun_index)
+            else:
+                # 计算所有大运的流年序列
+                self._calculate_liunian_sequence()
 
             # 计算流日序列
             self._calculate_liuri_sequence()
@@ -1222,8 +1228,55 @@ class BaziCalculator:
             dayun['liunian_sequence'] = liunians
             all_liunians.extend(liunians)
         
-        # 全局流年序列（包含所有大运的流年）
+        # 设置全局流年序列
         self.details['liunian_sequence'] = all_liunians
+
+    def _calculate_liunian_sequence_for_dayun(self, dayun_index: int):
+        """
+        ✅ 性能优化：只为指定的大运生成流年序列
+        
+        Args:
+            dayun_index: 大运索引（step值），只计算该大运的流年
+        """
+        dayun_sequence = self.details.get('dayun_sequence', [])
+        
+        # 查找指定的大运
+        target_dayun = None
+        for dayun in dayun_sequence:
+            if dayun.get('step') == dayun_index:
+                target_dayun = dayun
+                break
+        
+        # 如果没找到，使用数组索引作为降级方案
+        if target_dayun is None and 0 <= dayun_index < len(dayun_sequence):
+            target_dayun = dayun_sequence[dayun_index]
+        
+        if target_dayun is None:
+            return
+        
+        # 跳过小运（小运没有流年）
+        if target_dayun.get('is_xiaoyun', False):
+            target_dayun['liunian_sequence'] = []
+            return
+        
+        year_start = target_dayun.get('year_start', 0)
+        year_end = target_dayun.get('year_end', 0)
+        dayun_stem = target_dayun.get('stem', '')
+        dayun_branch = target_dayun.get('branch', '')
+        
+        # 只为指定大运生成流年序列
+        liunians = self._generate_liunian_for_range(
+            self.bazi_pillars['day']['stem'],
+            year_start,
+            year_end,
+            dayun_stem=dayun_stem,
+            dayun_branch=dayun_branch,
+            bazi_pillars=self.bazi_pillars
+        )
+        target_dayun['liunian_sequence'] = liunians
+        
+        # 全局流年序列只包含该大运的流年
+        self.details['liunian_sequence'] = liunians
 
     def _calculate_liuyue_sequence(self):
         """计算流月序列 - 使用统一的农历转换方法"""
