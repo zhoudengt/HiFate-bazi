@@ -1131,19 +1131,17 @@ class BaziCalculator:
         month_branch_index = EARTHLY_BRANCHES.index('寅')
 
         liuyue_sequence = []
-        star_calc = StarFortuneCalculator()
-        deities_calc = DeitiesCalculator()
+        # ✅ 性能优化：排盘页面不需要流月的详细信息（十神、藏干、星运、神煞等）
+        # 详细信息可在需要时通过专门的接口获取
         for i in range(12):
             stem = HEAVENLY_STEMS[(start_index + i) % 10]
             branch = EARTHLY_BRANCHES[(month_branch_index + i) % 12]
-            detail = self._build_pillar_detail(stem, branch, star_calc, deities_calc, level='month')
             liuyue_sequence.append({
                 'month': i + 1,
                 'solar_term': solar_terms[i],
                 'term_date': term_dates[i],  # 使用实际年份的节气日期
                 'stem': stem,
-                'branch': branch,
-                **detail
+                'branch': branch
             })
         return liuyue_sequence
 

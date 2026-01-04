@@ -102,6 +102,22 @@ def get_redis_client() -> Optional[redis.Redis]:
     return redis_client
 
 
+def get_redis_pool() -> Optional[ConnectionPool]:
+    """
+    获取 Redis 连接池
+    
+    Returns:
+        Redis 连接池实例，如果未初始化则自动初始化后返回
+    """
+    global redis_pool
+    
+    if redis_pool is None:
+        # 自动初始化
+        init_redis()
+    
+    return redis_pool
+
+
 def get_redis_client_with_retry(max_retries: int = 3, retry_delay: float = 1.0) -> Optional[redis.Redis]:
     """
     获取 Redis 客户端（带重试机制）（优化方案1.2）
