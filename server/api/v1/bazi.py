@@ -925,6 +925,7 @@ def _calculate_shengong_minggong_details(
         
         # ✅ 优化：调用快速模式的 get_fortune_display
         # quick_mode=True 只计算当前大运下的流年，不计算所有大运
+        # ✅ 性能优化：关闭身宫命宫等冗余计算（因为已经在上面并行计算过了）
         fortune_result = BaziDisplayService.get_fortune_display(
             solar_date,
             solar_time,
@@ -934,7 +935,12 @@ def _calculate_shengong_minggong_details(
             dayun_year_start=dayun_year_start,
             dayun_year_end=dayun_year_end,
             target_year=target_year,
-            quick_mode=True  # ✅ 快速模式：只计算当前大运
+            quick_mode=True,  # ✅ 快速模式：只计算当前大运
+            # ✅ 性能优化：避免重复调用（身宫命宫已在上面计算，规则匹配此页面不需要）
+            include_shengong_minggong=False,
+            include_rules=False,
+            include_wuxing_proportion=False,
+            include_rizhu_liujiazi=False
         )
         
         if fortune_result.get('success'):

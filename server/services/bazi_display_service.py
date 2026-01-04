@@ -6,8 +6,9 @@
 
 import sys
 import os
-from typing import Dict, Any, Optional
-from datetime import datetime
+import logging
+from typing import Dict, Any, Optional, List, Tuple
+from datetime import datetime, timedelta
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -17,8 +18,156 @@ from server.services.bazi_service import BaziService
 from server.services.bazi_detail_service import BaziDetailService
 
 # 导入常量
-from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
+from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS, HEAVENLY_STEMS
 from src.data.stems_branches import STEM_YINYANG, BRANCH_YINYANG
+
+logger = logging.getLogger(__name__)
+
+
+def _get_year_stem(year: int) -> str:
+    """获取年份的天干"""
+    # 天干循环：甲、乙、丙、丁、戊、己、庚、辛、壬、癸
+    # 1984年是甲子年，以此为基准
+    base_year = 1984
+    year_diff = year - base_year
+    stem_index = (year_diff % 10 + 10) % 10
+    return HEAVENLY_STEMS[stem_index]
+
+
+def _get_year_branch(year: int) -> str:
+    """获取年份的地支"""
+    # 地支循环：子、丑、寅、卯、辰、巳、午、未、申、酉、戌、亥
+    # 1984年是甲子年，以此为基准
+    EARTHLY_BRANCHES = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥']
+    base_year = 1984
+    year_diff = year - base_year
+    branch_index = (year_diff % 12 + 12) % 12
+    return EARTHLY_BRANCHES[branch_index]
+
+
+def _calculate_default_liunian(year: int, birth_year: int, day_stem: str = None) -> Dict[str, Any]:
+    """
+    计算默认的流年数据（当流年序列中没有当前年份时使用）
+    
+    Args:
+        year: 目标年份
+        birth_year: 出生年份
+        day_stem: 日主天干（用于计算十神等详细信息）
+        
+    Returns:
+        Dict: 包含完整流年信息的字典
+    """
+    stem = _get_year_stem(year)
+    branch = _get_year_branch(year)
+    virtual_age = year - birth_year + 1  # 虚岁
+    
+    # ✅ 修复：计算完整的流年详细信息
+    main_star = ''
+    hidden_stems = []
+    hidden_stars = []
+    star_fortune = ''
+    self_sitting = ''
+    kongwang = ''
+    nayin = ''
+    deities = []
+    
+    try:
+        # 导入计算器
+        from src.bazi_fortune.calculators.star_fortune_calculator import StarFortuneCalculator
+        from src.bazi_fortune.calculators.deities_calculator import DeitiesCalculator
+        from src.bazi_fortune.constants import HIDDEN_STEMS, NAYIN_MAP, TEN_GODS_MAP
+        
+        star_calc = StarFortuneCalculator()
+        deities_calc = DeitiesCalculator()
+        
+        # 计算十神（主星）
+        if day_stem and stem:
+            main_star = TEN_GODS_MAP.get(day_stem, {}).get(stem, '')
+        
+        # 获取藏干
+        hidden_stems = HIDDEN_STEMS.get(branch, [])
+        
+        # 计算藏干十神
+        if day_stem and hidden_stems:
+            for hs in hidden_stems:
+                hs_star = TEN_GODS_MAP.get(day_stem, {}).get(hs, '')
+                if hs_star:
+                    hidden_stars.append(hs_star)
+        
+        # 计算星运（日主对地支的十二长生）
+        if day_stem:
+            star_fortune = star_calc.get_stem_fortune(day_stem, branch)
+        
+        # 计算自坐（天干对地支的十二长生）
+        self_sitting = star_calc.get_stem_fortune(stem, branch)
+        
+        # 计算空亡
+        kongwang = star_calc.get_kongwang(f"{stem}{branch}")
+        
+        # 查询纳音
+        nayin = NAYIN_MAP.get((stem, branch), '')
+        
+    except Exception as e:
+        logger.warning(f"计算默认流年详细信息失败: {e}")
+    
+    return {
+        'year': year,
+        'stem': stem,
+        'branch': branch,
+        'age': virtual_age,
+        'age_display': f"{virtual_age}岁",
+        'nayin': nayin,
+        'main_star': main_star,
+        'hidden_stems': hidden_stems,
+        'hidden_stars': hidden_stars,
+        'star_fortune': star_fortune,
+        'self_sitting': self_sitting,
+        'kongwang': kongwang,
+        'deities': deities,
+        'relations': []
+    }
+
+
+def _determine_current_dayun_by_jiaoyun(
+    current_time: datetime,
+    dayun_sequence: List[Dict[str, Any]],
+    jiaoyun_info: Dict[str, Any],
+    birth_year: int
+) -> Optional[Dict[str, Any]]:
+    """
+    根据年份范围判断当前大运（与问真八字一致）
+    
+    核心逻辑：
+    只按年份范围判断，不检查精确的交运日期。
+    只要当前年份在某个大运的年份范围内，就是那个大运。
+    
+    例如：乙丑大运（2026-2035），2026年1月4日 → 当前大运是乙丑
+    
+    Args:
+        current_time: 当前时间
+        dayun_sequence: 大运序列
+        jiaoyun_info: 交运信息（保留参数兼容性，但不再使用精确日期判断）
+        birth_year: 出生年份
+        
+    Returns:
+        Dict: 当前大运对象，如果无法判断则返回None
+    """
+    if not current_time or not dayun_sequence:
+        return None
+    
+    current_year = current_time.year
+    
+    # ✅ 修复：只按年份范围判断当前大运（与问真一致）
+    # 不再检查精确的交运日期
+    for dayun in dayun_sequence:
+        year_start = dayun.get('year_start', 0)
+        year_end = dayun.get('year_end', 0)
+        if year_start <= current_year <= year_end:
+            logger.debug(f"当前年份{current_year}在大运范围[{year_start}-{year_end}]内，当前大运: {dayun.get('stem', '')}{dayun.get('branch', '')}")
+            return dayun
+    
+    # 如果没找到匹配的大运，返回最后一个
+    return dayun_sequence[-1] if dayun_sequence else None
 
 
 class BaziDisplayService:
@@ -140,11 +289,23 @@ class BaziDisplayService:
         qiyun_info = details.get('qiyun', {})
         jiaoyun_info = details.get('jiaoyun', {})
         
-        # 确定当前大运
+        # 确定当前大运 - 使用交运日期判断（年份+节气后N天）
         current_dayun = None
-        if current_time:
+        birth_year = int(solar_date.split('-')[0])
+        
+        # ✅ 修复：如果没有提供 current_time，使用当前系统时间
+        if current_time is None:
+            current_time = datetime.now()
+        
+        if jiaoyun_info:
+            # ✅ 优先使用交运日期判断（更精确）
+            current_dayun = _determine_current_dayun_by_jiaoyun(
+                current_time, dayun_sequence, jiaoyun_info, birth_year
+            )
+        
+        # 如果交运日期判断失败，降级到虚岁判断
+        if current_dayun is None:
             current_year = current_time.year
-            birth_year = int(solar_date.split('-')[0])
             current_age = current_year - birth_year + 1  # 虚岁计算
             
             for dayun in dayun_sequence:
@@ -551,6 +712,11 @@ class BaziDisplayService:
         branch = dayun.get('branch', '')
         ganzhi = stem + branch if stem and branch else ''
         
+        # ✅ 新增：判断是否是小运
+        is_xiaoyun = dayun.get('is_xiaoyun', False)
+        # ✅ 新增：显示名称（小运显示"小运"，大运显示干支）
+        display_name = "小运" if is_xiaoyun else ganzhi
+        
         age_range = dayun.get('age_range', {})
         if not age_range:
             # 从 age_display 解析
@@ -572,7 +738,9 @@ class BaziDisplayService:
         # ✅ 添加五行属性（由后端计算，前端只负责展示）
         return {
             "index": dayun.get('step', 0),
-            "ganzhi": ganzhi,
+            "ganzhi": ganzhi,  # ✅ 细盘计算用（始终是真正的干支）
+            "display_name": display_name,  # ✅ 新增：大运列表显示用
+            "is_xiaoyun": is_xiaoyun,  # ✅ 新增：标识是否是小运
             "stem": {
                 "char": stem,
                 "wuxing": STEM_ELEMENTS.get(stem, '')  # ✅ 后端提供五行属性
@@ -711,13 +879,19 @@ class BaziDisplayService:
                             dayun_year_end: Optional[int] = None,
                             target_year: Optional[int] = None,
                             quick_mode: bool = True,
-                            async_warmup: bool = True) -> Dict[str, Any]:
+                            async_warmup: bool = True,
+                            # ✅ 新增参数 - 控制是否计算附加数据（避免重复调用）
+                            include_shengong_minggong: bool = True,
+                            include_rules: bool = True,
+                            include_wuxing_proportion: bool = True,
+                            include_rizhu_liujiazi: bool = True) -> Dict[str, Any]:
         """
         获取大运流年流月数据（统一接口，性能优化，带Redis缓存）
         
         性能优化：
         1. 只计算指定大运范围内的流年（约10年），而不是所有流年
         2. 使用多级缓存（L1内存 + L2 Redis，30天TTL）
+        3. 支持通过 include_* 参数控制是否计算附加数据（避免重复调用）
         
         Args:
             solar_date: 阳历日期
@@ -728,6 +902,10 @@ class BaziDisplayService:
             dayun_year_start: 大运起始年份（可选），指定要显示的大运的起始年份
             dayun_year_end: 大运结束年份（可选），指定要显示的大运的结束年份
             target_year: 目标年份（可选），用于计算该年份的流月，默认为当前流年
+            include_shengong_minggong: 是否包含身宫命宫数据（默认True）
+            include_rules: 是否包含规则匹配数据（默认True）
+            include_wuxing_proportion: 是否包含五行比例数据（默认True）
+            include_rizhu_liujiazi: 是否包含日柱六十甲子数据（默认True）
             
         Returns:
             dict: 包含大运、流年、流月的前端友好数据
@@ -815,11 +993,15 @@ class BaziDisplayService:
         else:
             # 只调用一次详细计算（如果指定了大运索引，只计算该大运范围内的流年）
             # 注意：如果第一次调用命中了缓存，第二次调用也会命中缓存（相同的参数）
+            # ✅ 优化：传递 include_* 参数，避免重复计算
             detail_result = BaziDetailService.calculate_detail_full(
                 solar_date, solar_time, gender, current_time, resolved_dayun_index, target_year,
                 quick_mode=quick_mode, async_warmup=async_warmup,
-                include_wangshuai=True, include_shengong_minggong=True,
-                include_rules=True, include_wuxing_proportion=True, include_rizhu_liujiazi=True
+                include_wangshuai=True, 
+                include_shengong_minggong=include_shengong_minggong,
+                include_rules=include_rules, 
+                include_wuxing_proportion=include_wuxing_proportion, 
+                include_rizhu_liujiazi=include_rizhu_liujiazi
             )
         if not detail_result:
             return {"success": False, "error": "详细计算失败"}
@@ -832,11 +1014,25 @@ class BaziDisplayService:
         qiyun_info = details.get('qiyun', {})
         jiaoyun_info = details.get('jiaoyun', {})
         
-        # 确定当前大运
+        # 确定当前大运 - 使用交运日期判断（年份+节气后N天）
         current_dayun = None
-        if current_time:
+        birth_year = int(solar_date.split('-')[0])
+        
+        # ✅ 修复：如果没有提供 current_time，使用当前系统时间
+        if current_time is None:
+            current_time = datetime.now()
+        
+        if jiaoyun_info:
+            # ✅ 优先使用交运日期判断（更精确）
+            current_dayun = _determine_current_dayun_by_jiaoyun(
+                current_time, dayun_sequence, jiaoyun_info, birth_year
+            )
+            if current_dayun:
+                logger.debug(f"按交运日期判断当前大运: {current_dayun.get('stem', '')}{current_dayun.get('branch', '')}")
+        
+        # 如果交运日期判断失败，降级到虚岁判断
+        if current_dayun is None:
             current_year = current_time.year
-            birth_year = int(solar_date.split('-')[0])
             current_age = current_year - birth_year + 1  # 虚岁计算
             
             for dayun in dayun_sequence:
@@ -846,6 +1042,7 @@ class BaziDisplayService:
                     age_end = age_range.get('end', 0)
                     if age_start <= current_age <= age_end:
                         current_dayun = dayun
+                        logger.debug(f"按虚岁判断当前大运(降级): {dayun.get('stem', '')}{dayun.get('branch', '')}")
                         break
         
         # 确定要显示的大运（如果指定了dayun_index，使用指定的；否则使用当前大运）
@@ -871,12 +1068,19 @@ class BaziDisplayService:
                 formatted['is_current'] = True
             formatted_dayun_list.append(formatted)
         
-        # 处理流年数据 - 底层服务已经根据dayun_index生成了对应大运范围内的流年
-        from datetime import datetime
+        # 处理流年数据 - ✅ 只返回当前大运下的流年（约10年）
         current_year = datetime.now().year if not current_time else current_time.year
         
-        # ✅ 直接使用底层服务返回的流年序列（底层已经根据dayun_index生成了对应大运范围内的流年）
-        liunian_sequence = details.get('liunian_sequence', [])
+        # ✅ 优先使用当前大运（或目标大运）下的流年序列
+        # 每个大运都有自己的 liunian_sequence（在 bazi_calculator_docs.py 中计算）
+        if current_dayun and not current_dayun.get('is_xiaoyun', False):
+            # 使用当前大运的流年序列
+            liunian_sequence = current_dayun.get('liunian_sequence', [])
+            logger.debug(f"使用当前大运 {current_dayun.get('stem', '')}{current_dayun.get('branch', '')} 的流年序列，共 {len(liunian_sequence)} 年")
+        else:
+            # 降级：使用全局流年序列
+            liunian_sequence = details.get('liunian_sequence', [])
+            logger.debug(f"使用全局流年序列（降级），共 {len(liunian_sequence)} 年")
         
         # 确定当前流年
         current_liunian = None
@@ -885,11 +1089,21 @@ class BaziDisplayService:
                 current_liunian = liunian
                 break
         
-        # 格式化流年列表（底层已经只包含目标大运范围内的流年，约10年）
+        # ✅ 修复：如果流年序列中没有当前年份，计算默认流年数据（包含完整详细信息）
+        # 这确保细盘流年列始终有数据显示
+        if current_liunian is None:
+            # 获取日主用于计算十神等详细信息
+            bazi_pillars = detail_result.get('bazi_pillars', {})
+            day_stem = bazi_pillars.get('day', {}).get('stem', '')
+            current_liunian = _calculate_default_liunian(current_year, birth_year, day_stem)
+            logger.debug(f"使用默认流年数据: {current_year}年 {current_liunian.get('stem', '')}{current_liunian.get('branch', '')} (含详细信息)")
+        
+        # 格式化流年列表（只包含当前大运范围内的流年，约10年）
         formatted_liunian_list = []
         for liunian in liunian_sequence:
             formatted = BaziDisplayService._format_liunian_item(liunian)
-            if current_liunian and liunian.get('year') == current_liunian.get('year'):
+            # ✅ 标识当前年份
+            if liunian.get('year') == current_year:
                 formatted['is_current'] = True
             formatted_liunian_list.append(formatted)
         

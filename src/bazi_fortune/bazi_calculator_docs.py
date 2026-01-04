@@ -3,6 +3,7 @@
 
 import sys
 import os
+import logging
 
 # 添加项目根目录到模块路径，确保与原脚本行为一致
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -14,6 +15,8 @@ import contextlib
 import io
 from typing import Dict, Any, Optional
 from typing import Dict, Any, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 from src.data.constants import *  # noqa: F401,F403
 from src.data.stems_branches import *  # noqa: F401,F403
@@ -137,9 +140,7 @@ class BaziCalculator:
             self.last_result = result
             return result
         except Exception as e:
-            print(f"计算错误: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"计算错误: {e}", exc_info=True)
             return None
 
     def _calculate_with_lunar_converter(self):
@@ -154,10 +155,9 @@ class BaziCalculator:
         self.adjusted_solar_time = lunar_result['adjusted_solar_time']
         self.is_zi_shi_adjusted = lunar_result['is_zi_shi_adjusted']
 
-        # 输出调试信息
+        # 子时调整日志（仅debug级别）
         if self.is_zi_shi_adjusted:
-            print(f"注意：23点以后，日期调整为: {self.adjusted_solar_date} {self.adjusted_solar_time}")
-            print(f"年柱保持为: {self.bazi_pillars['year']['stem']}{self.bazi_pillars['year']['branch']}")
+            logger.debug(f"子时调整: {self.adjusted_solar_date} {self.adjusted_solar_time}")
 
     def _calculate_ten_gods(self):
         """计算十神"""
@@ -435,44 +435,19 @@ class BaziCalculator:
 
     def print_matched_rules(self, rule_types=None, include_content=True):
         """
-        打印规则匹配结果（类似 print_rizhu_gender_analysis）
+        打印规则匹配结果（仅用于调试）
         """
-        print("\n" + "=" * 80)
-        print("规则匹配结果")
-        print("=" * 80)
-
         try:
             matched = self.match_rules(rule_types=rule_types)
         except Exception as exc:
-            print(f"规则匹配失败: {exc}")
+            logger.error(f"规则匹配失败: {exc}")
             return []
 
         if not matched:
-            print("未匹配到任何规则。")
+            logger.debug("未匹配到任何规则")
             return matched
 
-        for idx, rule in enumerate(matched, 1):
-            rule_code = rule.get('rule_code') or rule.get('rule_id', '')
-            rule_name = rule.get('rule_name', '')
-            rule_type = rule.get('rule_type', '')
-            print(f"{idx}. [{rule_type}] {rule_code} - {rule_name}")
-            if include_content:
-                content = rule.get('content', {})
-                text_lines = []
-                if isinstance(content, dict):
-                    if 'text' in content and content['text']:
-                        text_lines.append(content['text'])
-                    elif 'items' in content:
-                        for item in content['items']:
-                            line = item.get('text')
-                            if line:
-                                text_lines.append(line)
-                elif isinstance(content, str):
-                    text_lines.append(content)
-
-                for line in text_lines:
-                    print(f"   {line}")
-
+        logger.debug(f"匹配到 {len(matched)} 条规则")
         return matched
 
     def get_calculation_result(self):
@@ -633,9 +608,42 @@ class BaziCalculator:
             'direction': dayun_direction
         }
 
+    def _calculate_xiaoyun_ganzhi(self) -> Tuple[str, str]:
+        """
+        计算小运干支（方法2：从时柱的下一个干支开始）
+        
+        规则：
+        - 阳年(年干阳)生男、阴年(年干阴)生女 → 顺推
+        - 阴年(年干阴)生男、阳年(年干阳)生女 → 逆推
+        - 从时柱的下一个干支开始
+        
+        Returns:
+            Tuple[str, str]: (小运天干, 小运地支)
+        """
+        hour_stem = self.bazi_pillars['hour']['stem']
+        hour_branch = self.bazi_pillars['hour']['branch']
+        year_stem = self.bazi_pillars['year']['stem']
+        
+        year_yinyang = STEM_YINYANG.get(year_stem, '阳')
+        is_male = self.gender == 'male'
+        
+        # 阳年生男、阴年生女 → 顺推；阴年生男、阳年生女 → 逆推
+        if (year_yinyang == '阳' and is_male) or (year_yinyang == '阴' and not is_male):
+            direction = 1  # 顺推
+        else:
+            direction = -1  # 逆推
+        
+        stem_index = HEAVENLY_STEMS.index(hour_stem)
+        branch_index = EARTHLY_BRANCHES.index(hour_branch)
+        
+        # 从时柱的下一个干支开始
+        xiaoyun_stem = HEAVENLY_STEMS[(stem_index + direction) % 10]
+        xiaoyun_branch = EARTHLY_BRANCHES[(branch_index + direction) % 12]
+        
+        return xiaoyun_stem, xiaoyun_branch
+
     def _calculate_dayun_sequence(self):
         """计算大运序列 - 基于起运时间动态计算"""
-        print("\n=== 大运序列计算 ===")
 
         day_stem = self.bazi_pillars['day']['stem']
         month_stem = self.bazi_pillars['month']['stem']
@@ -649,6 +657,10 @@ class BaziCalculator:
         qiyun_years = qiyun_info.get('years', 0)
         qiyun_months = qiyun_info.get('months', 0)
         qiyun_days = qiyun_info.get('days', 0)
+        
+        # ✅ 获取交运信息（用于计算大运年份）
+        jiaoyun_info = self.details.get('jiaoyun', {})
+        jiaoyun_stems = jiaoyun_info.get('stems', [])
 
         # 计算起运总年龄（年+月换算为年）
         # 比如 7年2月21天，换算为大约7.25岁（2月=2/12≈0.17年）
@@ -657,7 +669,26 @@ class BaziCalculator:
             qiyun_total_age = 0
 
         qiyun_total_age = max(qiyun_total_age, 0)
-        print(f"起运年龄: {qiyun_years}年{qiyun_months}月 约{qiyun_total_age:.2f}岁")
+        
+        # ✅ 计算第一个交运年（出生年之后第一个匹配交运天干的年份）
+        def _get_year_stem(year: int) -> str:
+            """获取年份的天干"""
+            base_year = 1984  # 甲子年
+            year_diff = year - base_year
+            stem_index = (year_diff % 10 + 10) % 10
+            return HEAVENLY_STEMS[stem_index]
+        
+        # ✅ 修复：计算起运年（直接使用出生年 + 起运年数，不做月份调整）
+        # 与问真一致：起运年 = 出生年 + 起运年数
+        qiyun_year = birth_year + qiyun_years
+        
+        # 找出起运年之后第一个匹配交运天干的年份
+        first_jiaoyun_year = qiyun_year
+        if jiaoyun_stems:
+            for year in range(qiyun_year, qiyun_year + 10):
+                if _get_year_stem(year) in jiaoyun_stems:
+                    first_jiaoyun_year = year
+                    break
 
         # 判断大运排法
         year_stem = self.bazi_pillars['year']['stem']
@@ -682,17 +713,37 @@ class BaziCalculator:
         age_start = 1  # 虚岁从1开始
         age_end = min(first_end_age_virtual, max_age_limit)  # 1 + 起运年数
         year_start = birth_year
-        year_end = birth_year + (age_end - 1)  # 虚岁转周岁计算年份
+        # ✅ 修复：小运结束年份 = 第一个交运年 - 1（而非基于虚岁计算）
+        year_end = first_jiaoyun_year - 1
 
         step = 1
         age_display = f"{age_start}-{age_end}岁"  # 小运显示范围格式
+        
+        # ✅ 计算小运真正的干支（从时柱的下一个开始）
+        xiaoyun_stem, xiaoyun_branch = self._calculate_xiaoyun_ganzhi()
+        
+        # 初始化计算器（用于计算小运详细信息）
+        star_calc = StarFortuneCalculator()
+        deities_calc = DeitiesCalculator()
+        
+        # ✅ 计算小运的详细信息（按真正的干支计算）
+        xiaoyun_detail = self._build_pillar_detail(xiaoyun_stem, xiaoyun_branch, star_calc, deities_calc, level='dayun')
+        
         dayun_sequence.append({
             'step': step,
-            'stem': "小运",
-            'branch': "",
-            'main_star': "",
+            'stem': xiaoyun_stem,  # ✅ 使用真正的干支
+            'branch': xiaoyun_branch,  # ✅ 使用真正的干支
+            'is_xiaoyun': True,  # ✅ 新增：标识这是小运
+            'main_star': xiaoyun_detail.get('main_star', ''),  # ✅ 按干支计算
+            'hidden_stems': xiaoyun_detail.get('hidden_stems', []),
+            'hidden_stars': xiaoyun_detail.get('hidden_stars', []),
+            'star_fortune': xiaoyun_detail.get('star_fortune', ''),
+            'self_sitting': xiaoyun_detail.get('self_sitting', ''),
+            'kongwang': xiaoyun_detail.get('kongwang', ''),
+            'nayin': xiaoyun_detail.get('nayin', ''),
+            'deities': xiaoyun_detail.get('deities', []),
             'age_display': age_display,
-            'age_range': {"start": age_start, "end": age_end},  # 新增：便于前端使用
+            'age_range': {"start": age_start, "end": age_end},  # 便于前端使用
             'year_start': year_start,
             'year_end': year_end
         })
@@ -700,14 +751,17 @@ class BaziCalculator:
         # 第二段：第一个大运（从小运结束年龄开始，虚岁）
         age_start = age_end  # 第一个大运从小运结束年龄开始（虚岁）
         age_end = min(age_start + 9, max_age_limit)
-        year_start = birth_year + (age_start - 1)  # 虚岁转周岁计算年份
-        year_end = birth_year + (age_end - 1)  # 虚岁转周岁计算年份
+        
+        # ✅ 修复：大运年份基于交运年计算（而非虚岁）
+        # 第一个大运从 first_jiaoyun_year 开始
+        dayun_year_start = first_jiaoyun_year
+        year_start = dayun_year_start
+        year_end = dayun_year_start + 9
 
-        # 初始化计算器（用于计算大运详细信息）
-        star_calc = StarFortuneCalculator()
-        deities_calc = DeitiesCalculator()
+        # 注：star_calc 和 deities_calc 已在小运计算时初始化，此处复用
 
         offset = 0
+        dayun_index = 0  # 大运计数器（用于计算年份）
         while age_start <= max_age_limit:
             if dayun_direction == '正排':
                 stem_index = (month_stem_index + offset + 1) % 10
@@ -745,15 +799,15 @@ class BaziCalculator:
             if age_start > max_age_limit:
                 break
             age_end = min(age_start + 9, max_age_limit)
-            year_start = birth_year + (age_start - 1)  # 虚岁转周岁计算年份
-            year_end = birth_year + (age_end - 1)  # 虚岁转周岁计算年份
+            
+            # ✅ 修复：大运年份基于交运年计算
+            dayun_index += 1
+            year_start = first_jiaoyun_year + (dayun_index * 10)
+            year_end = year_start + 9
+            
             offset += 1
 
         self.details['dayun_sequence'] = dayun_sequence
-
-        print(f"大运序列 ({dayun_direction}排):")
-        for dayun in dayun_sequence:
-            print(f"  第{dayun['step']}步大运: {dayun['stem']}{dayun['branch']} ({dayun['main_star']}) - {dayun['age_display']} - {dayun['year_start']}~{dayun['year_end']}年")
 
     def _calculate_liunian_relations(
         self,
@@ -905,8 +959,9 @@ class BaziCalculator:
                     d_branch = d.get('branch', '')
                     d_year_start = d.get('year_start', 0)
                     d_year_end = d.get('year_end', 0)
-                    # 如果大运年份范围与流年年份范围有重叠
-                    if (d_stem and d_stem != '小运' and 
+                    d_is_xiaoyun = d.get('is_xiaoyun', False)
+                    # 如果大运年份范围与流年年份范围有重叠（排除小运）
+                    if (d_stem and not d_is_xiaoyun and 
                         d_branch and
                         not (d_year_end < start_year or d_year_start > end_year)):
                         dayun_stem = d_stem
@@ -962,9 +1017,10 @@ class BaziCalculator:
                             d_branch = d.get('branch', '')
                             d_year_start = d.get('year_start', 0)
                             d_year_end = d.get('year_end', 0)
+                            d_is_xiaoyun = d.get('is_xiaoyun', False)
                             # ✅ 修复：确保正确匹配大运（排除小运，确保有stem和branch）
                             # 注意：stem 和 branch 应该是字符串，不是字典
-                            if (d_stem and isinstance(d_stem, str) and d_stem != '小运' and 
+                            if (d_stem and isinstance(d_stem, str) and not d_is_xiaoyun and 
                                 d_branch and isinstance(d_branch, str) and
                                 d_year_start <= year <= d_year_end):
                                 year_dayun_stem = d_stem
@@ -1039,11 +1095,12 @@ class BaziCalculator:
         }
         solar_terms = ['立春', '惊蛰', '清明', '立夏', '芒种', '小暑', '立秋', '白露', '寒露', '立冬', '大雪', '小寒']
         
-        # ✅ 修复问题3：使用实际年份获取节气日期，而不是硬编码
-        # 获取该年份的节气表
-        base_solar = Solar.fromYmdHms(year, 1, 1, 0, 0, 0)
-        lunar_year = base_solar.getLunar()
-        jieqi_table = lunar_year.getJieQiTable()
+        # ✅ 性能优化：使用节气表缓存，避免重复计算
+        if year not in BaziCalculator._jieqi_table_cache:
+            base_solar = Solar.fromYmdHms(year, 1, 1, 0, 0, 0)
+            lunar_year = base_solar.getLunar()
+            BaziCalculator._jieqi_table_cache[year] = lunar_year.getJieQiTable()
+        jieqi_table = BaziCalculator._jieqi_table_cache[year]
         
         # 从节气表获取实际日期
         term_dates = []
@@ -1130,16 +1187,17 @@ class BaziCalculator:
             'deities': deities,
         }
 
+    # 节气表缓存（类级别，避免重复计算）
+    _jieqi_table_cache: dict = {}
+    
     def _calculate_liunian_sequence(self):
         """为每个大运生成流年序列"""
-        print("\n=== 流年序列计算 ===")
         dayun_sequence = self.details.get('dayun_sequence', [])
         
-        # ✅ 修复：为每个大运生成流年序列
         all_liunians = []
         for dayun in dayun_sequence:
             # 跳过小运（小运没有流年）
-            if dayun.get('stem', '') == '小运':
+            if dayun.get('is_xiaoyun', False):
                 dayun['liunian_sequence'] = []
                 continue
             
@@ -1165,7 +1223,6 @@ class BaziCalculator:
 
     def _calculate_liuyue_sequence(self):
         """计算流月序列 - 使用统一的农历转换方法"""
-        print("\n=== 流月序列计算 ===")
 
         # 获取当前年份的干支
         current_year = self.current_time.year
@@ -1203,13 +1260,8 @@ class BaziCalculator:
 
         self.details['liuyue_sequence'] = liuyue_sequence
 
-        print("流月序列:")
-        for liuyue in liuyue_sequence:
-            print(f"  {liuyue['month']}月: {liuyue['stem']}{liuyue['branch']}")
-
     def _calculate_liuri_sequence(self):
         """计算流日序列 - 使用统一的农历转换方法"""
-        print("\n=== 流日序列计算 ===")
 
         from datetime import timedelta
 
@@ -1237,18 +1289,8 @@ class BaziCalculator:
 
         self.details['liuri_sequence'] = liuri_sequence
 
-        print("流日序列:")
-        dates_line = "  ".join([f"{item['date']}" for item in liuri_sequence])
-        stems_line = "  ".join([f"{item['stem']}{item['main_star']}" for item in liuri_sequence])
-        branches_line = "  ".join([f"{item['branch']}" for item in liuri_sequence])
-
-        print(f"  日期: {dates_line}")
-        print(f"  天干: {stems_line}")
-        print(f"  地支: {branches_line}")
-
     def _calculate_liushi_sequence(self):
         """计算流时序列 - 使用统一的农历转换方法"""
-        print("\n=== 流时序列计算 ===")
 
         from datetime import timedelta
 
@@ -1276,18 +1318,8 @@ class BaziCalculator:
 
         self.details['liushi_sequence'] = liushi_sequence
 
-        print("流时序列:")
-        times_line = "  ".join([f"{item['time']}" for item in liushi_sequence])
-        stems_line = "  ".join([f"{item['stem']}{item['main_star']}" for item in liushi_sequence])
-        branches_line = "  ".join([f"{item['branch']}" for item in liushi_sequence])
-
-        print(f"  时间: {times_line}")
-        print(f"  天干: {stems_line}")
-        print(f"  地支: {branches_line}")
-
     def _calculate_qiyun_jiaoyun(self):
         """计算起运与交运信息 - 按照表格标准算法"""
-        print("\n=== 起运与交运计算 ===")
 
         from datetime import datetime, timedelta
         from calendar import monthrange
@@ -1312,8 +1344,6 @@ class BaziCalculator:
         else:
             dayun_direction = '逆排'
 
-        print(f"大运排法: {dayun_direction} (年干{year_stem}{year_yinyang}, {'男' if is_male else '女'})")
-
         # 1. 首先确认每一年的节气具体时间
         current_jieqi = lunar.getJieQi()
         # getJieQi()返回的是字符串，需要获取节气的名称
@@ -1321,7 +1351,6 @@ class BaziCalculator:
             current_jieqi_name = current_jieqi
         else:
             current_jieqi_name = current_jieqi.getName()
-        print(f"当前节气: {current_jieqi_name}")
 
         # 2. 根据大运排法确定起运节气
         if dayun_direction == '顺排':
@@ -1330,8 +1359,6 @@ class BaziCalculator:
         else:
             # 逆排：用户出生时间至上一个节气的具体时间
             start_jieqi = lunar.getPrevJie()
-
-        print(f"起运节气: {start_jieqi.getName()}")
 
         # 3. 计算从出生到起运节气的精确时间差
         start_solar = start_jieqi.getSolar()
@@ -1374,13 +1401,6 @@ class BaziCalculator:
         
         # 转换为时辰（1时辰 = 2小时）
         shichen = actual_hours / 2.0
-        
-        print(f"  从出生到起运节气的精确时间:")
-        print(f"    总天数: {total_days:.6f}天")
-        print(f"    实际天数: {actual_days}天")
-        print(f"    实际小时: {actual_hours:.6f}小时")
-        print(f"    实际分钟: {actual_minutes:.2f}分钟")
-        print(f"    时辰数: {shichen:.6f}时辰")
 
         # 4. 按照表格换算规则计算起运时间
         # 换算规则：1天=4个月，1时辰=10天
@@ -1419,44 +1439,16 @@ class BaziCalculator:
         # 归一化：小时（保持原样）
         qiyun_hours = total_hours_final
 
-        print(f"  换算过程:")
-        print(f"    天数({actual_days}天) × 4 = {months_from_days}个月")
-        print(f"    时辰数({shichen:.6f}时辰) × 10 = {shichen * 10:.6f}天 = {days_from_shichen}天 + {hours_from_shichen_fraction:.2f}小时")
-        print(f"  起运结果: {qiyun_years}年{qiyun_months}月{qiyun_days}天{qiyun_hours}时")
-
         # 5. 计算交运信息
-        # 交运规则：逢(起运年天干)、(起运年+5年天干)年(起运所在的节气)后(起运节气的具体多少)天交大运
+        # ✅ 修复：交运计算逻辑（与问真八字一致）
+        # 步骤：
+        # 1. 计算起运时间点 = 出生时间 + 起运年月日时
+        # 2. 交运天干 = 起运时间点所在年份的天干，以及+5年的天干
+        # 3. 找到起运时间点所在的节气（该时间点之前最近的节气）
+        # 4. 节气后天数 = 起运时间点 - 这个节气的时间
         
-        # 计算起运年（出生年 + 起运年数）
         birth_year = birth_date.year
-        qiyun_year = birth_year + qiyun_years
         
-        # 获取起运年天干（根据年份计算）
-        # 天干循环：甲、乙、丙、丁、戊、己、庚、辛、壬、癸
-        # 1984年是甲子年，以此为基准
-        base_year = 1984
-        year_diff = qiyun_year - base_year
-        qiyun_year_stem_index = (year_diff % 10 + 10) % 10
-        
-        # 根据表格逻辑，起运年天干可能需要基于起运时间对应的实际年份
-        # 如果起运月份>=4，起运年应该+1（因为已经过了4个月，相当于跨年了）
-        if qiyun_months >= 4:
-            qiyun_year_adjusted = qiyun_year + 1
-            year_diff_adjusted = qiyun_year_adjusted - base_year
-            qiyun_year_stem_index = (year_diff_adjusted % 10 + 10) % 10
-        else:
-            qiyun_year_stem_index = (year_diff % 10 + 10) % 10
-        
-        qiyun_year_stem = HEAVENLY_STEMS[qiyun_year_stem_index]
-        
-        # 计算起运年+5年天干
-        qiyun_year_plus5_stem_index = (qiyun_year_stem_index + 5) % 10
-        qiyun_year_plus5_stem = HEAVENLY_STEMS[qiyun_year_plus5_stem_index]
-        
-        # 起运所在的节气（使用起运节气）
-        qiyun_solar_term = start_jieqi.getName()
-        
-        # 起运节气的具体多少天：取起运实际时间与当年对应节气时间的差值
         def _add_years_months_days_hours(dt, years, months, days, hours):
             year = dt.year + years
             month = dt.month + months
@@ -1471,6 +1463,7 @@ class BaziCalculator:
             result += timedelta(days=days, hours=hours)
             return result
 
+        # 计算起运时间点
         start_luck_datetime = _add_years_months_days_hours(
             birth_datetime,
             qiyun_years,
@@ -1479,61 +1472,73 @@ class BaziCalculator:
             qiyun_hours
         )
 
-        def _get_solar_term_datetime(year, term_name):
+        # ✅ 找到起运时间点所在的节气（该时间点之前最近的节气）
+        def _find_current_solar_term(target_datetime):
+            """找到目标时间点所在的节气（即该时间点之前最近的节气）"""
+            year = target_datetime.year
             base_solar = Solar.fromYmdHms(year, 1, 1, 0, 0, 0)
             lunar_year = base_solar.getLunar()
             jieqi_table = lunar_year.getJieQiTable()
-
-            solar_obj = jieqi_table.get(term_name)
-            if solar_obj is None:
-                target_key = None
-                lower_name = term_name.lower()
-                for key in jieqi_table.keys():
-                    if isinstance(key, str) and key.lower() == lower_name:
-                        target_key = key
-                        break
-                if target_key:
-                    solar_obj = jieqi_table[target_key]
+            
+            # 收集所有节气及其时间
+            jieqi_list = []
+            for name, jq_solar in jieqi_table.items():
+                if jq_solar and isinstance(name, str):
+                    jq_dt = datetime(jq_solar.getYear(), jq_solar.getMonth(), jq_solar.getDay(), 
+                                     jq_solar.getHour(), jq_solar.getMinute(), jq_solar.getSecond())
+                    jieqi_list.append((name, jq_dt))
+            
+            # 按时间排序
+            jieqi_list.sort(key=lambda x: x[1])
+            
+            # 找到目标时间点之前最近的节气
+            current_jieqi = None
+            current_jieqi_dt = None
+            for name, jq_dt in jieqi_list:
+                if jq_dt <= target_datetime:
+                    current_jieqi = name
+                    current_jieqi_dt = jq_dt
                 else:
-                    solar_obj = start_jieqi.getSolar()
-
-            return datetime(
-                solar_obj.getYear(),
-                solar_obj.getMonth(),
-                solar_obj.getDay(),
-                solar_obj.getHour(),
-                solar_obj.getMinute(),
-                solar_obj.getSecond()
+                    break
+            
+            return current_jieqi, current_jieqi_dt
+        
+        # 找到起运时间点所在的节气
+        qiyun_solar_term, solar_term_datetime = _find_current_solar_term(start_luck_datetime)
+        
+        # 如果找不到节气（不太可能），降级使用原始起运节气
+        if qiyun_solar_term is None:
+            qiyun_solar_term = start_jieqi.getName()
+            solar_term_datetime = datetime(
+                start_jieqi.getSolar().getYear(),
+                start_jieqi.getSolar().getMonth(),
+                start_jieqi.getSolar().getDay(),
+                start_jieqi.getSolar().getHour(),
+                start_jieqi.getSolar().getMinute(),
+                start_jieqi.getSolar().getSecond()
             )
 
-        solar_term_datetime = _get_solar_term_datetime(start_luck_datetime.year, qiyun_solar_term)
+        # ✅ 计算节气后天数 = 起运时间点 - 节气时间
         diff_days = (start_luck_datetime - solar_term_datetime).total_seconds() / 86400.0
-
-        # 部分命例中（尤其是出生后尚未跨日的情况），问真排盘的交运天数明显小于
-        # 按常规换算得到的值。根据对比结果，当 total_days < 1（出生时间距离起运节气不足一天）
-        # 时，实际展示的天数约等于 “时辰换算天数 ÷ 6” 的整数部分。
-        if total_days < 1:
-            special_days = int((shichen * 10) // 6)
-            if special_days <= 0:
-                special_days = max(int(math.floor(diff_days + 0.5)), 0)
-            jiaoyun_days_after = special_days
-        else:
-            jiaoyun_days_after = max(int(math.floor(diff_days + 0.5)), 0)
-
-        print(f"  交运天数调试信息:")
-        print(f"    起运时间: {start_luck_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"    当年节气时间: {solar_term_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"    节气后天数差: {diff_days:.6f} (取整后 {jiaoyun_days_after} 天)")
         
+        # 使用向下取整（与问真一致）
+        jiaoyun_days_after = max(int(diff_days), 0)
+
+        # ✅ 修复：交运天干使用起运时间点所在年份来计算（与问真一致）
+        # 而不是简单的 出生年 + 起运年数
+        # 例如：1988年9月出生，起运7年4月，起运时间点是1996年2月，所以用1996年的天干
+        qiyun_year = start_luck_datetime.year
+        base_year = 1984  # 甲子年
+        year_diff = qiyun_year - base_year
+        qiyun_year_stem_index = (year_diff % 10 + 10) % 10
+        qiyun_year_stem = HEAVENLY_STEMS[qiyun_year_stem_index]
+        
+        # 起运年+5年天干
+        qiyun_year_plus5_stem_index = (qiyun_year_stem_index + 5) % 10
+        qiyun_year_plus5_stem = HEAVENLY_STEMS[qiyun_year_plus5_stem_index]
+
         # 交运年天干列表
         jiaoyun_stems = [qiyun_year_stem, qiyun_year_plus5_stem]
-        
-        print(f"  交运计算:")
-        print(f"    起运年: {qiyun_year}年 (天干: {qiyun_year_stem})")
-        print(f"    起运年+5年: {qiyun_year + 5}年 (天干: {qiyun_year_plus5_stem})")
-        print(f"    起运节气: {qiyun_solar_term}")
-        print(f"    节气后天数: {jiaoyun_days_after}天")
-        print(f"  交运结果: 逢{'、'.join(jiaoyun_stems)}年{qiyun_solar_term}后{jiaoyun_days_after}天交大运")
 
         # 保存结果
         self.details['qiyun'] = {
@@ -1551,9 +1556,6 @@ class BaziCalculator:
             'days_after': jiaoyun_days_after,
             'description': f'逢{"、".join(jiaoyun_stems)}年{qiyun_solar_term}后{jiaoyun_days_after}天交大运'
         }
-
-        print(f"起运: {self.details['qiyun']['description']}")
-        print(f"交运: {self.details['jiaoyun']['description']}")
 
     def _build_current_context(self, dayun_index: Optional[int] = None, target_year: Optional[int] = None) -> Dict[str, Any]:
         current_year = self.current_time.year
@@ -1662,8 +1664,9 @@ class BaziCalculator:
 
         # 获取大运天干地支（用于关系计算，但不改变原有逻辑）
         # 如果是小运，设置为None，关系计算会被跳过
-        dayun_stem = dayun.get('stem', '') if dayun.get('stem', '') != '小运' else None
-        dayun_branch = dayun.get('branch', '') if dayun.get('stem', '') != '小运' else None
+        is_xiaoyun = dayun.get('is_xiaoyun', False)
+        dayun_stem = dayun.get('stem', '') if not is_xiaoyun else None
+        dayun_branch = dayun.get('branch', '') if not is_xiaoyun else None
         
         # ✅ 修复：确保使用正确的大运信息计算关系
         # 如果当前大运是小运，需要查找包含目标年份的大运
@@ -1675,13 +1678,14 @@ class BaziCalculator:
         relation_dayun_branch = dayun_branch
         
         # ✅ 修复：如果当前大运是小运，或者年份范围不包含目标年份，查找包含目标年份的大运
-        if (dayun_stem is None or dayun_stem == '小运' or 
+        if (dayun_stem is None or is_xiaoyun or 
             (dayun.get('year_start', 0) > selected_year or dayun.get('year_end', 0) < selected_year)):
             # 查找包含目标年份的大运（优先查找非小运的大运）
             for d in dayun_sequence:
                 d_stem = d.get('stem', '')
                 d_branch = d.get('branch', '')
-                if (d_stem and d_stem != '小运' and 
+                d_is_xiaoyun = d.get('is_xiaoyun', False)
+                if (d_stem and not d_is_xiaoyun and 
                     d_branch and
                     d.get('year_start', 0) <= selected_year <= d.get('year_end', 0)):
                     relation_dayun_stem = d_stem

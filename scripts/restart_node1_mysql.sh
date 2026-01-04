@@ -117,3 +117,6 @@ echo "  2. 检查主从复制状态（如果有从库）"
 echo "  3. 监控 MySQL 日志：docker logs hifate-mysql-master -f"
 echo ""
 
+
+
+

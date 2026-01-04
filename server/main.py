@@ -433,6 +433,30 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠ 缓存同步订阅器启动失败（单机模式）: {e}")
     
+    # ✅ 性能优化：预热节气表缓存（服务启动时预计算常用年份）
+    try:
+        from datetime import datetime
+        from src.bazi_fortune.bazi_calculator_docs import BaziCalculator as DocsBaziCalculator
+        
+        current_year = datetime.now().year
+        # 预热当前年份前后各5年的节气表（共11年）
+        warmup_years = list(range(current_year - 5, current_year + 6))
+        
+        # 使用一个临时计算器实例来预热缓存
+        temp_calc = DocsBaziCalculator("2000-01-01", "12:00", "male")
+        
+        from lunar_python import Solar
+        for year in warmup_years:
+            if year not in DocsBaziCalculator._jieqi_table_cache:
+                base_solar = Solar.fromYmdHms(year, 1, 1, 0, 0, 0)
+                lunar_year = base_solar.getLunar()
+                jieqi_table = lunar_year.getJieQiTable()
+                DocsBaziCalculator._jieqi_table_cache[year] = jieqi_table
+        
+        logger.info(f"✓ 节气表缓存预热完成（{len(warmup_years)}年: {warmup_years[0]}-{warmup_years[-1]}）")
+    except Exception as e:
+        logger.warning(f"⚠ 节气表缓存预热失败（不影响正常使用）: {e}")
+    
     # 启动MySQL连接清理任务（定期清理空闲连接）
     try:
         import asyncio

@@ -12,20 +12,30 @@ import argparse
 import re
 from datetime import datetime
 
-def generate_import_script(local_host="127.0.0.1", local_port=3306, 
-                            local_user="root", local_password="123456",
-                            local_database="hifate_bazi", output_file=None):
+def generate_import_script(local_host=None, local_port=None, 
+                            local_user=None, local_password=None,
+                            local_database=None, output_file=None):
     """
     生成导入脚本（INSERT ... ON DUPLICATE KEY UPDATE 模式）
     
     Args:
-        local_host: 本地 MySQL 主机
-        local_port: 本地 MySQL 端口
-        local_user: 本地 MySQL 用户
-        local_password: 本地 MySQL 密码
-        local_database: 本地数据库名
+        local_host: 本地 MySQL 主机（默认从环境变量 MYSQL_HOST 读取）
+        local_port: 本地 MySQL 端口（默认从环境变量 MYSQL_PORT 读取）
+        local_user: 本地 MySQL 用户（默认从环境变量 MYSQL_USER 读取）
+        local_password: 本地 MySQL 密码（默认从环境变量 MYSQL_PASSWORD 读取）
+        local_database: 本地数据库名（默认从环境变量 MYSQL_DATABASE 读取）
         output_file: 输出文件路径
     """
+    # ✅ 安全优化：从环境变量读取敏感配置，避免硬编码
+    local_host = local_host or os.environ.get("MYSQL_HOST", "127.0.0.1")
+    local_port = local_port or int(os.environ.get("MYSQL_PORT", "3306"))
+    local_user = local_user or os.environ.get("MYSQL_USER", "root")
+    local_password = local_password or os.environ.get("MYSQL_PASSWORD", "")
+    local_database = local_database or os.environ.get("MYSQL_DATABASE", "hifate_bazi")
+    
+    if not local_password:
+        print("⚠️  警告：MYSQL_PASSWORD 环境变量未设置，请通过 --password 参数或环境变量提供密码")
+        return None
     if not output_file:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_file = f"/tmp/hifate_db_import_{timestamp}.sql"
