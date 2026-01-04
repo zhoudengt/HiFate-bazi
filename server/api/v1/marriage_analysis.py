@@ -1089,7 +1089,7 @@ async def extract_marriage_analysis_data(
         
         input_data = build_marriage_input_data(
             bazi_data,
-            wangshuai_result,
+            wangshuai_data,  # ✅ 修复：变量名应为 wangshuai_data
             detail_result,
             dayun_sequence,
             special_liunians,

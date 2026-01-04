@@ -144,8 +144,6 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
             )
             
             # 记录数据获取结果（用于调试）
-            import logging
-            logger = logging.getLogger(__name__)
             if isinstance(wangshuai_result, Exception):
                 logger.warning(f"获取喜忌数据失败: {wangshuai_result}")
             if isinstance(detail_result, Exception):
@@ -154,8 +152,6 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
                 logger.warning(f"获取健康分析数据失败: {health_result}")
         except Exception as e:
             # 如果并行调用失败，使用默认值，不影响主流程
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(f"并行数据获取异常: {e}")
             wangshuai_result = {}
             detail_result = {}
@@ -195,8 +191,6 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
         )
         
         # 调试日志：检查数据获取情况（在所有变量定义之后）
-        import logging
-        logger = logging.getLogger(__name__)
         logger.info(f"[FormulaAnalysis] xi_ji_data: {bool(xi_ji_data)}, dayun_sequence: {len(dayun_sequence) if dayun_sequence else 0}, special_liunians: {len(special_liunians) if special_liunians else 0}, health_analysis: {bool(health_analysis)}")
         
         # 2. 匹配规则（使用RuleService，已迁移到数据库）
@@ -237,8 +231,6 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
         formatted_dayun = _format_dayun_sequence(dayun_sequence) if dayun_sequence else []
         
         # 调试日志：检查变量值
-        import logging
-        logger = logging.getLogger(__name__)
         logger.info(f"[FormulaAnalysis DEBUG] Before building response_data: xi_ji_data={bool(xi_ji_data)}, formatted_dayun={len(formatted_dayun) if formatted_dayun else 0}, special_liunians={len(special_liunians) if special_liunians else 0}, health_analysis={bool(health_analysis)}")
         
         response_data = {

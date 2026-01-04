@@ -25,7 +25,7 @@ IS_LOCAL_DEV = os.getenv("ENV", os.getenv("APP_ENV", "local")).lower() in ["loca
 if IS_LOCAL_DEV:
     # 本地开发：使用本地MySQL
     DEFAULT_MYSQL_HOST = 'localhost'
-    DEFAULT_MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', ''))
+    DEFAULT_MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', '123456'))  # 本地开发默认密码
 else:
     # 生产环境：使用生产MySQL
     DEFAULT_MYSQL_HOST = '8.210.52.217'  # 生产Node1公网IP
