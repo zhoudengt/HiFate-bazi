@@ -763,6 +763,7 @@ class BaziDisplayService:
             "self_sitting": dayun.get('self_sitting', ''),
             "kongwang": dayun.get('kongwang', ''),
             "deities": dayun.get('deities', []),
+            "liunian_sequence": dayun.get('liunian_sequence', []),  # ✅ 保留流年序列
             "is_current": False  # 由调用方设置
         }
     
