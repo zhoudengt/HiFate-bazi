@@ -946,7 +946,6 @@ class BaziCalculator:
         birth_year = int(self.solar_date.split('-')[0])
 
         liunians = []
-        star_calc = StarFortuneCalculator()
         
         # ✅ 修复：如果传入的 dayun_stem 和 dayun_branch 为 None，尝试从 self.details 中查找
         # 这确保了即使传入的参数为 None，也能正确计算关系
@@ -967,7 +966,8 @@ class BaziCalculator:
                         dayun_stem = d_stem
                         dayun_branch = d_branch
                         break
-        deities_calc = DeitiesCalculator()
+        # ✅ 性能优化：排盘页面不需要流年的详细信息（十神、藏干、星运、神煞等）
+        # 详细信息可在需要时通过专门的接口获取
         for year in range(start_year, end_year + 1):
             # 计算年龄（虚岁：出生即1岁）
             age = year - birth_year + 1  # 虚岁计算
@@ -979,7 +979,8 @@ class BaziCalculator:
 
             year_stem = bazi[0][0]
             year_branch = bazi[0][1]
-            detail = self._build_pillar_detail(year_stem, year_branch, star_calc, deities_calc, level='year')
+            # ✅ 性能优化：跳过详细信息计算，只保留基础干支
+            # detail = self._build_pillar_detail(year_stem, year_branch, star_calc, deities_calc, level='year')
             # ✅ 修复问题3：传递年份参数，用于获取实际年份的节气日期
             liuyue_sequence = self._generate_liuyue_for_year(year_stem, year)
 
@@ -1065,15 +1066,15 @@ class BaziCalculator:
                 else:
                     relations = []
 
+            # ✅ 性能优化：只保留基础信息，跳过详细信息
             liunians.append({
                 'year': year,
-                'age': age,  # 新增：年龄（整数）
-                'age_display': age_display,  # 新增：年龄显示格式
+                'age': age,  # 年龄（整数）
+                'age_display': age_display,  # 年龄显示格式
                 'stem': year_stem,
                 'branch': year_branch,
-                **detail,
                 'liuyue_sequence': liuyue_sequence,
-                'relations': relations  # 新增：关系列表
+                'relations': relations  # 关系列表
             })
         return liunians
 
