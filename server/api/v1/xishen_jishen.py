@@ -27,6 +27,7 @@ from server.services.config_service import ConfigService
 from server.utils.data_validator import validate_bazi_data
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
+from server.config.config_loader import get_config_from_db_only
 
 logger = logging.getLogger(__name__)
 
