@@ -454,13 +454,16 @@ class BaziCalculator:
         """获取计算结果 - 供其他模块调用"""
         return self.calculate()
 
-    def calculate_dayun_liunian(self, current_time=None, dayun_index=None, target_year=None):
+    def calculate_dayun_liunian(self, current_time=None, dayun_index=None, target_year=None, 
+                                 skip_liunian_sequence=False):
         """
         计算大运和流年信息 - 使用统一的农历转换方法
         Args:
             current_time: 当前时间，用于计算流年，默认为系统当前时间
             dayun_index: 大运索引（可选），指定要计算的大运，只计算该大运范围内的流年（性能优化）
             target_year: 目标年份（可选），指定要计算流月的年份，默认为大运起始年份
+            skip_liunian_sequence: 是否跳过流年序列计算（默认False）。
+                                   当只需要获取大运列表时设为True可大幅提升性能（约2秒）
         """
         if not hasattr(self, 'details') or not self.details:
             self.calculate()
@@ -484,14 +487,16 @@ class BaziCalculator:
         # 计算大运序列
         self._calculate_dayun_sequence()
 
-        # 计算流年序列
-        self._calculate_liunian_sequence()
+        # ✅ 性能优化：当只需要大运列表时，跳过耗时的流年/流月计算（约2秒）
+        if not skip_liunian_sequence:
+            # 计算流年序列
+            self._calculate_liunian_sequence()
 
-        # 计算流日序列
-        self._calculate_liuri_sequence()
+            # 计算流日序列
+            self._calculate_liuri_sequence()
 
-        # 计算流时序列
-        self._calculate_liushi_sequence()
+            # 计算流时序列
+            self._calculate_liushi_sequence()
 
         # 计算起运交运信息
         self._calculate_qiyun_jiaoyun()

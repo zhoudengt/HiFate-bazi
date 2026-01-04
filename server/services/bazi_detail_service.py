@@ -140,8 +140,11 @@ class BaziDetailService:
                     if current_time is None:
                         from datetime import datetime
                         current_time = datetime.now()
-                    # 计算大运序列以获取当前大运索引
-                    fortune_calc.calculate_dayun_liunian(current_time=current_time)
+                    # ✅ 性能优化：只获取大运列表，跳过耗时的流年序列计算（约2秒）
+                    fortune_calc.calculate_dayun_liunian(
+                        current_time=current_time,
+                        skip_liunian_sequence=True  # 只需要大运列表，不需要流年
+                    )
                     dayun_sequence = fortune_calc.details.get('dayun_sequence', [])
                     # 找到当前时间对应的大运索引
                     dayun_index = BaziDetailService._calculate_current_dayun_index(
