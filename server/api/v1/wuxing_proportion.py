@@ -93,151 +93,128 @@ async def get_wuxing_proportion(request: WuxingProportionRequest):
 
 
 async def wuxing_proportion_stream_generator(
-    solar_date: str,
-    solar_time: str,
-    gender: str
+    request: WuxingProportionRequest,
+    bot_id: Optional[str] = None
 ):
     """
     五行占比流式分析生成器
     
+    先返回完整的五行占比数据，然后流式返回大模型分析
+    
     Args:
-        solar_date: 阳历日期
-        solar_time: 出生时间
-        gender: 性别
+        request: 五行占比请求（与普通接口相同）
+        bot_id: Coze Bot ID（可选）
     
     Yields:
         SSE格式的流式数据
     """
+    import traceback
+    
     try:
-        # 1. 发送开始消息
-        start_msg = {
-            'type': 'start',
-            'statusText': '开始分析五行占比',
-            'showAnalysis': True
-        }
-        yield f"data: {json.dumps(start_msg, ensure_ascii=False)}\n\n"
-        await asyncio.sleep(0.05)
+        # 1. 处理农历输入和时区转换
+        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+            request.solar_date,
+            request.solar_time,
+            request.calendar_type or "solar",
+            request.location,
+            request.latitude,
+            request.longitude
+        )
         
         # 2. 获取五行占比数据
-        progress_msg = {
-            'type': 'progress',
-            'statusText': '正在计算五行占比...',
-            'showAnalysis': True
-        }
-        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-        await asyncio.sleep(0.1)
-        
         proportion_data = WuxingProportionService.calculate_proportion(
-            solar_date, solar_time, gender
+            final_solar_date, final_solar_time, request.gender
         )
         
         if not proportion_data.get('success'):
             error_msg = {
                 'type': 'error',
-                'error': proportion_data.get('error', '计算失败'),
-                'statusText': '分析失败',
-                'showAnalysis': False
+                'content': proportion_data.get('error', '计算失败')
             }
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 3. 构建大模型提示词
-        progress_msg = {
-            'type': 'progress',
-            'statusText': '正在构建分析提示词...',
-            'showAnalysis': True
-        }
-        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-        await asyncio.sleep(0.1)
+        # 3. 添加转换信息到结果
+        if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+            proportion_data['conversion_info'] = conversion_info
         
+        # 4. 构建响应数据（与普通接口一致）
+        response_data = {
+            'success': True,
+            'data': proportion_data
+        }
+        
+        # 5. 先发送完整的五行占比数据（type: "data"）
+        data_msg = {
+            'type': 'data',
+            'content': response_data
+        }
+        yield f"data: {json.dumps(data_msg, ensure_ascii=False)}\n\n"
+        
+        # 6. 构建大模型提示词
         prompt = WuxingProportionService.build_llm_prompt(proportion_data)
         
         if not prompt:
-            error_msg = {
-                'type': 'error',
-                'error': '提示词构建失败',
-                'statusText': '分析失败',
-                'showAnalysis': False
+            # 没有提示词，直接返回完成
+            complete_msg = {
+                'type': 'complete',
+                'content': ''
             }
-            yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 4. 调用流式服务
-        progress_msg = {
-            'type': 'progress',
-            'statusText': '正在调用大模型分析...',
-            'showAnalysis': True
-        }
-        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-        await asyncio.sleep(0.1)
+        # 7. 确定使用的 bot_id
+        actual_bot_id = bot_id or WUXING_PROPORTION_BOT_ID
         
-        # 初始化 Coze 流式服务
+        # 8. 创建Coze流式服务
         try:
-            coze_service = CozeStreamService(bot_id=WUXING_PROPORTION_BOT_ID)
+            coze_service = CozeStreamService(bot_id=actual_bot_id)
+        except ValueError as e:
+            # 配置缺失，跳过大模型分析
+            complete_msg = {
+                'type': 'complete',
+                'content': ''
+            }
+            yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
+            return
         except Exception as e:
-            error_msg = {
-                'type': 'error',
-                'error': f'Coze服务初始化失败: {str(e)}',
-                'statusText': '分析失败',
-                'showAnalysis': False
+            complete_msg = {
+                'type': 'complete',
+                'content': ''
             }
-            yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 调用流式分析（使用自定义方法）
-        try:
-            # 创建新的服务实例（使用指定的bot_id）
-            coze_service_custom = CozeStreamService(bot_id=WUXING_PROPORTION_BOT_ID)
-            async for chunk in coze_service_custom.stream_custom_analysis(prompt):
-                chunk_type = chunk.get('type', 'progress')
+        # 9. 流式生成大模型分析
+        async for chunk in coze_service.stream_custom_analysis(prompt):
+            chunk_type = chunk.get('type', 'progress')
+            
+            if chunk_type == 'progress':
+                msg = {
+                    'type': 'progress',
+                    'content': chunk.get('content', '')
+                }
+                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0.05)
+            elif chunk_type == 'complete':
+                msg = {
+                    'type': 'complete',
+                    'content': chunk.get('content', '')
+                }
+                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                return
+            elif chunk_type == 'error':
+                msg = {
+                    'type': 'error',
+                    'content': chunk.get('content', '分析失败')
+                }
+                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                return
                 
-                if chunk_type == 'progress':
-                    # 流式内容
-                    progress_msg = {
-                        'type': 'progress',
-                        'content': chunk.get('content', ''),
-                        'statusText': '正在生成分析...',
-                        'showAnalysis': True
-                    }
-                    yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-                elif chunk_type == 'complete':
-                    # 完成
-                    complete_msg = {
-                        'type': 'complete',
-                        'content': chunk.get('content', ''),
-                        'statusText': '分析完成',
-                        'showAnalysis': True
-                    }
-                    yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
-                elif chunk_type == 'error':
-                    # 错误
-                    error_msg = {
-                        'type': 'error',
-                        'error': chunk.get('content', '分析失败'),
-                        'statusText': '分析失败',
-                        'showAnalysis': False
-                    }
-                    yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
-                    return
-        except Exception as e:
-            import traceback
-            print(f"❌ 流式分析失败: {e}\n{traceback.format_exc()}")
-            error_msg = {
-                'type': 'error',
-                'error': f'流式分析失败: {str(e)}',
-                'statusText': '分析失败',
-                'showAnalysis': False
-            }
-            yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
-    
     except Exception as e:
-        import traceback
-        print(f"❌ 流式生成器异常: {e}\n{traceback.format_exc()}")
         error_msg = {
             'type': 'error',
-            'error': f'分析失败: {str(e)}',
-            'statusText': '分析失败',
-            'showAnalysis': False
+            'content': f"流式生成五行占比分析失败: {str(e)}\n{traceback.format_exc()}"
         }
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
 
@@ -247,29 +224,45 @@ async def stream_wuxing_proportion(request: WuxingProportionRequest):
     """
     五行占比流式分析接口
     
-    使用大模型（Coze Bot）基于五行占比、十神、旺衰等信息进行流式分析
+    与 /bazi/wuxing-proportion 接口相同的输入，但以SSE流式方式返回数据：
+    1. 首先返回完整的五行占比数据（type: "data"）
+    2. 然后流式返回大模型分析（type: "progress"）
+    3. 最后返回完成标记（type: "complete"）
     
     **参数说明**：
-    - **solar_date**: 阳历日期，格式：YYYY-MM-DD
+    - **solar_date**: 阳历日期，格式：YYYY-MM-DD（当calendar_type=lunar时，可为农历日期）
     - **solar_time**: 出生时间，格式：HH:MM
     - **gender**: 性别，male(男) 或 female(女)
+    - **calendar_type**: 历法类型：solar(阳历) 或 lunar(农历)，默认solar
+    - **location**: 出生地点（用于时区转换，优先级1）
+    - **latitude**: 纬度（用于时区转换，优先级2）
+    - **longitude**: 经度（用于时区转换和真太阳时计算，优先级2）
     
-    使用 Server-Sent Events (SSE) 实时返回分析结果
+    **返回格式**：
+    SSE流式响应，每行格式：`data: {"type": "data|progress|complete|error", "content": ...}`
+    
+    **示例**：
+    ```
+    data: {"type": "data", "content": {"success": true, "data": {...}}}
+    data: {"type": "progress", "content": "五行分析："}
+    data: {"type": "progress", "content": "您的八字..."}
+    data: {"type": "complete", "content": "完整的大模型分析内容"}
+    ```
     """
     try:
         return StreamingResponse(
-            wuxing_proportion_stream_generator(
-                request.solar_date,
-                request.solar_time,
-                request.gender
-            ),
+            wuxing_proportion_stream_generator(request),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"  # 禁用 nginx 缓冲
+                "X-Accel-Buffering": "no"
             }
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"流式分析失败: {str(e)}")
+        import traceback
+        raise HTTPException(
+            status_code=500,
+            detail=f"流式查询五行占比异常: {str(e)}\n{traceback.format_exc()}"
+        )
 

@@ -220,60 +220,48 @@ async def get_xishen_jishen(request: XishenJishenRequest):
 
 
 async def xishen_jishen_stream_generator(
-    solar_date: str,
-    solar_time: str,
-    gender: str,
+    request: XishenJishenRequest,
     bot_id: Optional[str] = None
 ):
     """
     流式生成喜神忌神大模型分析
     
+    先返回完整的喜神忌神数据，然后流式返回大模型分析
+    
     Args:
-        solar_date: 阳历日期
-        solar_time: 出生时间
-        gender: 性别
-        bot_id: Coze Bot ID（可选，优先级：参数 > XISHEN_JISHEN_BOT_ID 环境变量）
+        request: 喜神忌神请求（与普通接口相同）
+        bot_id: Coze Bot ID（可选）
     """
+    import traceback
+    
     try:
-        # 确定使用的 bot_id（优先级：参数 > 数据库配置 > 环境变量）
-        if not bot_id:
-            # 优先级：数据库配置 > 环境变量
-            bot_id = get_config_from_db_only("XISHEN_JISHEN_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
-            if not bot_id:
-                    error_msg = {
-                        'type': 'error',
-                        'content': "数据库配置缺失: XISHEN_JISHEN_BOT_ID 或 COZE_BOT_ID，请在 service_configs 表中配置，或在请求参数中提供 bot_id。"
-                    }
-                    yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
-                    return
+        # 1. 获取完整的喜神忌神数据（调用普通接口逻辑）
+        base_result = await get_xishen_jishen(request)
         
-        # 1. 先获取基础数据
-        try:
-            request = XishenJishenRequest(
-                solar_date=solar_date,
-                solar_time=solar_time,
-                gender=gender
-            )
-            base_result = await get_xishen_jishen(request)
-            
-            if not base_result.success or not base_result.data:
-                error_msg = {
-                    'type': 'error',
-                    'content': f"获取基础数据失败: {base_result.error or '未知错误'}"
-                }
-                yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
-                return
-            
-            data = base_result.data
-        except Exception as e:
+        if not base_result.success or not base_result.data:
             error_msg = {
                 'type': 'error',
-                'content': f"获取基础数据异常: {str(e)}"
+                'content': f"获取喜神忌神数据失败: {base_result.error or '未知错误'}"
             }
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 2. 构建提示词
+        data = base_result.data
+        
+        # 2. 构建响应数据（与普通接口一致）
+        response_data = {
+            'success': True,
+            'data': data
+        }
+        
+        # 3. 先发送完整的喜神忌神数据（type: "data"）
+        data_msg = {
+            'type': 'data',
+            'content': response_data
+        }
+        yield f"data: {json.dumps(data_msg, ensure_ascii=False)}\n\n"
+        
+        # 4. 构建提示词
         xi_elements_text = '、'.join([e['name'] for e in data.get('xi_shen_elements', [])]) or '无'
         ji_elements_text = '、'.join([e['name'] for e in data.get('ji_shen_elements', [])]) or '无'
         mingge_text = '、'.join([m['name'] for m in data.get('shishen_mingge', [])]) or '无'
@@ -288,28 +276,41 @@ async def xishen_jishen_stream_generator(
 
 请基于这些信息，生成详细的命理分析内容。"""
         
-        # 3. 创建Coze流式服务
+        # 5. 确定使用的 bot_id
+        actual_bot_id = bot_id
+        if not actual_bot_id:
+            actual_bot_id = get_config_from_db_only("XISHEN_JISHEN_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
+            if not actual_bot_id:
+                # 没有配置bot_id，跳过大模型分析
+                complete_msg = {
+                    'type': 'complete',
+                    'content': ''
+                }
+                yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
+                return
+        
+        # 6. 创建Coze流式服务
         try:
             from server.services.coze_stream_service import CozeStreamService
-            coze_service = CozeStreamService(bot_id=bot_id)
+            coze_service = CozeStreamService(bot_id=actual_bot_id)
         except ValueError as e:
-            error_msg = {
-                'type': 'error',
-                'content': f"Coze API 配置缺失: {str(e)}。请设置环境变量 COZE_ACCESS_TOKEN 和 COZE_BOT_ID。"
+            # 配置缺失，跳过大模型分析
+            complete_msg = {
+                'type': 'complete',
+                'content': ''
             }
-            yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
             return
         except Exception as e:
-            error_msg = {
-                'type': 'error',
-                'content': f"初始化 Coze 服务失败: {str(e)}"
+            complete_msg = {
+                'type': 'complete',
+                'content': ''
             }
-            yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 4. 流式生成
-        async for result in coze_service.stream_custom_analysis(prompt, bot_id):
-            # 转换为SSE格式
+        # 7. 流式生成大模型分析
+        async for result in coze_service.stream_custom_analysis(prompt, actual_bot_id):
             if result.get('type') == 'progress':
                 msg = {
                     'type': 'progress',
@@ -333,46 +334,46 @@ async def xishen_jishen_stream_generator(
                 return
                 
     except Exception as e:
-        import traceback
         error_msg = {
             'type': 'error',
-            'content': f"流式生成失败: {str(e)}\n{traceback.format_exc()}"
+            'content': f"流式生成喜神忌神分析失败: {str(e)}\n{traceback.format_exc()}"
         }
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
 
 
-class XishenJishenStreamRequest(BaseModel):
-    """喜神忌神流式请求模型"""
-    solar_date: str = Field(..., description="阳历日期，格式：YYYY-MM-DD", example="1990-05-15")
-    solar_time: str = Field(..., description="出生时间，格式：HH:MM", example="14:30")
-    gender: str = Field(..., description="性别：male(男) 或 female(女)", example="male")
-    bot_id: Optional[str] = Field(None, description="Coze Bot ID（可选，优先级：参数 > XISHEN_JISHEN_BOT_ID 环境变量）")
-
-
 @router.post("/bazi/xishen-jishen/stream", summary="流式生成喜神忌神分析")
-async def xishen_jishen_stream(request: XishenJishenStreamRequest):
+async def xishen_jishen_stream(request: XishenJishenRequest):
     """
     流式生成喜神忌神大模型分析
     
-    使用Coze大模型基于十神命格、喜神五行、忌神五行生成详细分析，返回SSE流式响应。
+    与 /bazi/xishen-jishen 接口相同的输入，但以SSE流式方式返回数据：
+    1. 首先返回完整的喜神忌神数据（type: "data"）
+    2. 然后流式返回大模型分析（type: "progress"）
+    3. 最后返回完成标记（type: "complete"）
     
     **参数说明**：
-    - **solar_date**: 阳历日期（必填）
-    - **solar_time**: 出生时间（必填）
-    - **gender**: 性别（必填）
-    - **bot_id**: Coze Bot ID（可选，优先级：参数 > XISHEN_JISHEN_BOT_ID 环境变量）
+    - **solar_date**: 阳历日期，格式：YYYY-MM-DD（当calendar_type=lunar时，可为农历日期）
+    - **solar_time**: 出生时间，格式：HH:MM
+    - **gender**: 性别，male(男) 或 female(女)
+    - **calendar_type**: 历法类型：solar(阳历) 或 lunar(农历)，默认solar
+    - **location**: 出生地点（用于时区转换，优先级1）
+    - **latitude**: 纬度（用于时区转换，优先级2）
+    - **longitude**: 经度（用于时区转换和真太阳时计算，优先级2）
     
     **返回格式**：
-    SSE流式响应，每行格式：`data: {"type": "progress|complete|error", "content": "..."}`
+    SSE流式响应，每行格式：`data: {"type": "data|progress|complete|error", "content": ...}`
+    
+    **示例**：
+    ```
+    data: {"type": "data", "content": {"success": true, "data": {...}}}
+    data: {"type": "progress", "content": "喜神忌神分析："}
+    data: {"type": "progress", "content": "您的命局..."}
+    data: {"type": "complete", "content": "完整的大模型分析内容"}
+    ```
     """
     try:
         return StreamingResponse(
-            xishen_jishen_stream_generator(
-                request.solar_date,
-                request.solar_time,
-                request.gender,
-                request.bot_id
-            ),
+            xishen_jishen_stream_generator(request),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -382,5 +383,8 @@ async def xishen_jishen_stream(request: XishenJishenStreamRequest):
         )
     except Exception as e:
         logger.error(f"❌ 流式生成异常: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"流式生成失败: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"流式查询喜神忌神异常: {str(e)}"
+        )
 
