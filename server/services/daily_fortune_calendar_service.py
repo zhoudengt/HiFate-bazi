@@ -227,6 +227,10 @@ class DailyFortuneCalendarService:
                 'lunar_date': calendar_result.get('lunar_date', ''),
                 'weekday': calendar_result.get('weekday', ''),
                 'weekday_en': calendar_result.get('weekday_en', ''),
+                # 当天干支信息
+                'year_pillar': liunian,
+                'month_pillar': liuyue,
+                'day_pillar': liuri,
                 # 万年历信息
                 'yi': calendar_result.get('yi', []),
                 'ji': calendar_result.get('ji', []),
