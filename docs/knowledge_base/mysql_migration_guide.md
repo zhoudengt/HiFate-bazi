@@ -26,6 +26,184 @@
 
 ---
 
+## 主备环境详细配置
+
+### Node1 - 主库 (Master)
+
+| 配置项 | 值 |
+|--------|-----|
+| 服务器IP（公网） | 8.210.52.217 |
+| 服务器IP（内网） | 172.18.121.222 |
+| SSH用户 | root |
+| SSH密码 | Yuanqizhan@163 |
+| Docker容器名 | hifate-mysql-master |
+| MySQL版本 | 8.0 |
+| MySQL端口 | 3306 |
+| MySQL用户 | root |
+| MySQL密码 | Yuanqizhan@163 |
+| 数据库名 | hifate_bazi |
+| 项目目录 | /opt/HiFate-bazi |
+
+### Node2 - 备库 (Slave)
+
+| 配置项 | 值 |
+|--------|-----|
+| 服务器IP（公网） | 47.243.160.43 |
+| 服务器IP（内网） | 172.18.121.223 |
+| SSH用户 | root |
+| SSH密码 | Yuanqizhan@163 |
+| Docker容器名 | hifate-mysql-slave |
+| MySQL版本 | 8.0 |
+| MySQL端口 | 3306 |
+| MySQL用户 | root |
+| MySQL密码 | Yuanqizhan@163 |
+| 数据库名 | hifate_bazi |
+| 项目目录 | /opt/HiFate-bazi |
+
+---
+
+## 数据同步方案
+
+### 主从复制原理
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    MySQL 主从复制流程                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   ┌─────────────┐                    ┌─────────────┐        │
+│   │   Master    │                    │   Slave     │        │
+│   │  (Node1)    │                    │  (Node2)    │        │
+│   └──────┬──────┘                    └──────┬──────┘        │
+│          │                                  │               │
+│          │ 1. 写入操作                       │               │
+│          ▼                                  │               │
+│   ┌─────────────┐                           │               │
+│   │ Binary Log  │ ──── 2. 传输日志 ────────▶│               │
+│   └─────────────┘                           │               │
+│                                             ▼               │
+│                                      ┌─────────────┐        │
+│                                      │ Relay Log   │        │
+│                                      └──────┬──────┘        │
+│                                             │               │
+│                                             │ 3. 重放SQL    │
+│                                             ▼               │
+│                                      ┌─────────────┐        │
+│                                      │   数据      │        │
+│                                      │   同步完成  │        │
+│                                      └─────────────┘        │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 同步特点
+
+1. **异步复制**：主库写入后立即返回，不等待备库确认
+2. **自动同步**：DDL（表结构）和 DML（数据操作）都会自动同步
+3. **延迟极低**：正常情况下延迟在毫秒级别
+4. **只读备库**：备库默认只读，避免数据冲突
+
+### 同步内容
+
+| 操作类型 | 是否自动同步 | 说明 |
+|---------|-------------|------|
+| CREATE TABLE | ✅ 是 | 表结构自动同步到备库 |
+| ALTER TABLE | ✅ 是 | 表结构修改自动同步 |
+| INSERT/UPDATE/DELETE | ✅ 是 | 数据操作自动同步 |
+| DROP TABLE | ✅ 是 | 删除操作自动同步（谨慎！） |
+| CREATE INDEX | ✅ 是 | 索引自动同步 |
+
+### 检查主从同步状态
+
+```bash
+# 在主库查看主从状态
+docker exec -i hifate-mysql-master mysql -uroot -p'Yuanqizhan@163' -e "SHOW MASTER STATUS\G"
+
+# 在备库查看同步状态
+sshpass -p 'Yuanqizhan@163' ssh root@47.243.160.43 "docker exec -i hifate-mysql-slave mysql -uroot -p'Yuanqizhan@163' -e 'SHOW SLAVE STATUS\G'"
+
+# 关键指标：
+# - Slave_IO_Running: Yes
+# - Slave_SQL_Running: Yes
+# - Seconds_Behind_Master: 0 (延迟秒数)
+```
+
+---
+
+## 一键同步脚本
+
+### 快速同步函数（添加到 ~/.bashrc 或 ~/.zshrc）
+
+```bash
+# MySQL 迁移同步函数
+mysql_migrate() {
+    local SQL_FILE=$1
+    
+    if [ -z "$SQL_FILE" ]; then
+        echo "用法: mysql_migrate <sql文件路径>"
+        echo "示例: mysql_migrate server/db/migrations/create_xxx.sql"
+        return 1
+    fi
+    
+    if [ ! -f "$SQL_FILE" ]; then
+        echo "错误: 文件不存在 - $SQL_FILE"
+        return 1
+    fi
+    
+    echo "📤 开始同步 SQL 到生产主库..."
+    echo "   文件: $SQL_FILE"
+    
+    # 1. 推送代码到远程
+    echo "1️⃣ 推送代码到 Git..."
+    git add "$SQL_FILE"
+    git commit -m "db: 添加迁移文件 $(basename $SQL_FILE)" --no-verify 2>/dev/null || true
+    git push origin master
+    git push gitee master
+    
+    # 2. 在 Node1 主库执行迁移
+    echo "2️⃣ 在 Node1 主库执行迁移..."
+    sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@8.210.52.217 \
+        "cd /opt/HiFate-bazi && git pull origin master && docker exec -i hifate-mysql-master mysql -uroot -p'Yuanqizhan@163' hifate_bazi < $SQL_FILE"
+    
+    # 3. 验证结果
+    echo "3️⃣ 验证迁移结果..."
+    sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@8.210.52.217 \
+        "docker exec -i hifate-mysql-master mysql -uroot -p'Yuanqizhan@163' hifate_bazi -e 'SHOW TABLES;'"
+    
+    echo "✅ 迁移完成！备库将自动同步。"
+}
+
+# 检查主从同步状态
+mysql_check_sync() {
+    echo "🔍 检查主从同步状态..."
+    
+    echo "📊 主库状态 (Node1):"
+    sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@8.210.52.217 \
+        "docker exec -i hifate-mysql-master mysql -uroot -p'Yuanqizhan@163' -e 'SHOW MASTER STATUS\G'" 2>/dev/null | grep -E "File|Position"
+    
+    echo ""
+    echo "📊 备库状态 (Node2):"
+    sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@47.243.160.43 \
+        "docker exec -i hifate-mysql-slave mysql -uroot -p'Yuanqizhan@163' -e 'SHOW SLAVE STATUS\G'" 2>/dev/null | grep -E "Slave_IO_Running|Slave_SQL_Running|Seconds_Behind_Master"
+}
+```
+
+### 使用方法
+
+```bash
+# 加载函数（首次使用或新终端）
+source ~/.zshrc  # 或 source ~/.bashrc
+
+# 执行迁移
+cd /Users/zhoudt/Downloads/project/HiFate-bazi
+mysql_migrate server/db/migrations/create_xxx.sql
+
+# 检查同步状态
+mysql_check_sync
+```
+
+---
+
 ## 迁移文件规范
 
 ### 存放位置
