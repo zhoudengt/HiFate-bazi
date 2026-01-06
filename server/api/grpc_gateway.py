@@ -101,6 +101,34 @@ from server.api.v1.xishen_jishen import (
 )
 from server.services.bazi_interface_service import BaziInterfaceService
 
+# 流式接口导入
+from server.api.v1.wuxing_proportion import (
+    wuxing_proportion_stream_generator,
+)
+from server.api.v1.xishen_jishen import (
+    xishen_jishen_stream_generator,
+)
+from server.api.v1.marriage_analysis import (
+    MarriageAnalysisRequest,
+    marriage_analysis_stream_generator,
+)
+from server.api.v1.career_wealth_analysis import (
+    CareerWealthRequest,
+    career_wealth_stream_generator,
+)
+from server.api.v1.children_study_analysis import (
+    ChildrenStudyRequest,
+    children_study_analysis_stream_generator,
+)
+from server.api.v1.health_analysis import (
+    HealthAnalysisRequest,
+    health_analysis_stream_generator,
+)
+from server.api.v1.general_review_analysis import (
+    GeneralReviewRequest,
+    general_review_analysis_stream_generator,
+)
+
 # 文件上传相关
 import base64
 from io import BytesIO
@@ -466,6 +494,156 @@ async def _handle_wuxing_proportion(payload: Dict[str, Any]):
     return await get_wuxing_proportion(request_model)
 
 
+@_register("/bazi/wuxing-proportion/stream")
+async def _handle_wuxing_proportion_stream(payload: Dict[str, Any]):
+    """处理五行占比流式分析请求（gRPC-Web 转发）"""
+    request_model = WuxingProportionRequest(**payload)
+    generator = wuxing_proportion_stream_generator(request_model)
+    return await _collect_sse_stream(generator)
+
+
+@_register("/bazi/xishen-jishen/stream")
+async def _handle_xishen_jishen_stream(payload: Dict[str, Any]):
+    """处理喜神忌神流式分析请求（gRPC-Web 转发）"""
+    request_model = XishenJishenRequest(**payload)
+    generator = xishen_jishen_stream_generator(request_model)
+    return await _collect_sse_stream(generator)
+
+
+@_register("/bazi/marriage-analysis/stream")
+async def _handle_marriage_analysis_stream(payload: Dict[str, Any]):
+    """处理感情婚姻流式分析请求（gRPC-Web 转发）"""
+    request_model = MarriageAnalysisRequest(**payload)
+    generator = marriage_analysis_stream_generator(
+        request_model.solar_date,
+        request_model.solar_time,
+        request_model.gender,
+        request_model.calendar_type,
+        request_model.location,
+        request_model.latitude,
+        request_model.longitude,
+        request_model.bot_id
+    )
+    return await _collect_sse_stream(generator)
+
+
+@_register("/career-wealth/stream")
+async def _handle_career_wealth_stream(payload: Dict[str, Any]):
+    """处理事业财富流式分析请求（gRPC-Web 转发）"""
+    request_model = CareerWealthRequest(**payload)
+    generator = career_wealth_stream_generator(
+        request_model.solar_date,
+        request_model.solar_time,
+        request_model.gender,
+        request_model.calendar_type,
+        request_model.location,
+        request_model.latitude,
+        request_model.longitude,
+        request_model.bot_id
+    )
+    return await _collect_sse_stream(generator)
+
+
+@_register("/children-study/stream")
+async def _handle_children_study_stream(payload: Dict[str, Any]):
+    """处理子女学习流式分析请求（gRPC-Web 转发）"""
+    request_model = ChildrenStudyRequest(**payload)
+    generator = children_study_analysis_stream_generator(
+        request_model.solar_date,
+        request_model.solar_time,
+        request_model.gender,
+        request_model.calendar_type,
+        request_model.location,
+        request_model.latitude,
+        request_model.longitude,
+        request_model.bot_id
+    )
+    return await _collect_sse_stream(generator)
+
+
+@_register("/health/stream")
+async def _handle_health_stream(payload: Dict[str, Any]):
+    """处理健康分析流式请求（gRPC-Web 转发）"""
+    request_model = HealthAnalysisRequest(**payload)
+    generator = health_analysis_stream_generator(
+        request_model.solar_date,
+        request_model.solar_time,
+        request_model.gender,
+        request_model.calendar_type,
+        request_model.location,
+        request_model.latitude,
+        request_model.longitude,
+        request_model.bot_id
+    )
+    return await _collect_sse_stream(generator)
+
+
+@_register("/general-review/stream")
+async def _handle_general_review_stream(payload: Dict[str, Any]):
+    """处理总评分析流式请求（gRPC-Web 转发）"""
+    request_model = GeneralReviewRequest(**payload)
+    generator = general_review_analysis_stream_generator(
+        request_model.solar_date,
+        request_model.solar_time,
+        request_model.gender,
+        request_model.calendar_type,
+        request_model.location,
+        request_model.latitude,
+        request_model.longitude,
+        request_model.bot_id
+    )
+    return await _collect_sse_stream(generator)
+
+
+@_register("/smart-fortune/smart-analyze-stream")
+async def _handle_smart_analyze_stream(payload: Dict[str, Any]):
+    """处理智能运势流式分析请求（gRPC-Web 转发）
+    
+    注意：原接口是 GET 请求，通过 query params 传参
+    这里转换为 POST body 传参
+    """
+    from server.api.v1.smart_fortune import (
+        _scenario_1_generator,
+        _scenario_2_generator,
+        _original_scenario_generator,
+        PerformanceMonitor,
+        _sse_message,
+    )
+    
+    # 从 payload 提取参数
+    question = payload.get("question")
+    year = payload.get("year")
+    month = payload.get("month")
+    day = payload.get("day")
+    hour = payload.get("hour", 12)
+    gender = payload.get("gender")
+    user_id = payload.get("user_id")
+    category = payload.get("category")
+    
+    # 初始化性能监控器
+    monitor = PerformanceMonitor()
+    
+    # 场景判断
+    is_scenario_1 = category and (not question or question == category)
+    is_scenario_2 = category and question and question != category
+    
+    # 根据场景选择生成器
+    if is_scenario_1:
+        if not user_id or not year or not month or not day or not gender:
+            return {"success": False, "error": "场景1需要提供完整的生辰信息（year, month, day, gender, user_id）"}
+        generator = _scenario_1_generator(year, month, day, hour, gender, category, user_id, monitor)
+    elif is_scenario_2:
+        if not user_id:
+            return {"success": False, "error": "场景2需要提供user_id参数"}
+        generator = _scenario_2_generator(question, category, user_id, year, month, day, hour, gender, monitor)
+    elif question and year and month and day and gender:
+        generator = _original_scenario_generator(question, year, month, day, hour, gender, user_id, monitor)
+    else:
+        return {"success": False, "error": "参数不完整，请检查输入"}
+    
+    return await _collect_sse_stream(generator)
+
+
 @_register("/payment/unified/create")
 async def _handle_unified_payment_create(payload: Dict[str, Any]):
     """处理统一支付创建请求"""
@@ -726,6 +904,100 @@ def _deep_clean_for_serialization(obj: Any, visited: set = None) -> Any:
             return str(obj)
     finally:
         visited.discard(obj_id)
+
+
+async def _collect_sse_stream(generator) -> Dict[str, Any]:
+    """
+    收集 SSE 流式响应的所有数据
+    
+    将流式生成器的输出收集为统一的响应格式：
+    - 收集所有 progress 消息
+    - 提取 data 消息作为基础数据
+    - 提取 complete 消息作为最终内容
+    - 捕获 error 消息
+    
+    Args:
+        generator: 流式生成器
+        
+    Returns:
+        Dict: 包含 success, data, stream_content, error 的响应字典
+    """
+    data_content = None
+    progress_contents = []
+    complete_content = None
+    error_content = None
+    
+    try:
+        async for chunk in generator:
+            if not chunk:
+                continue
+            
+            # 解析 SSE 格式：data: {...}
+            chunk_str = chunk if isinstance(chunk, str) else chunk.decode('utf-8')
+            
+            # 处理多行 SSE 数据
+            for line in chunk_str.split('\n'):
+                line = line.strip()
+                if not line or not line.startswith('data:'):
+                    continue
+                
+                try:
+                    # 移除 "data: " 前缀
+                    json_str = line[5:].strip()
+                    if not json_str:
+                        continue
+                    
+                    msg = json.loads(json_str)
+                    msg_type = msg.get('type', '')
+                    content = msg.get('content', '')
+                    
+                    if msg_type == 'data':
+                        # 基础数据
+                        data_content = content
+                    elif msg_type == 'progress':
+                        # 流式进度内容
+                        progress_contents.append(content)
+                    elif msg_type == 'complete':
+                        # 完成内容
+                        complete_content = content
+                    elif msg_type == 'error':
+                        # 错误内容
+                        error_content = content if isinstance(content, str) else content.get('message', str(content))
+                    elif msg_type == 'end':
+                        # 结束标记，忽略
+                        pass
+                except json.JSONDecodeError:
+                    # 非 JSON 格式，可能是普通文本
+                    progress_contents.append(line[5:].strip())
+                except Exception as e:
+                    logger.warning(f"解析 SSE 消息失败: {e}, 原始数据: {line[:100]}")
+        
+        # 构建响应
+        if error_content:
+            return {
+                "success": False,
+                "error": error_content
+            }
+        
+        # 合并流式内容
+        stream_content = ''.join(progress_contents) if progress_contents else None
+        if complete_content:
+            stream_content = complete_content
+        
+        result = {
+            "success": True,
+            "data": data_content,
+            "stream_content": stream_content
+        }
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"收集 SSE 流失败: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": f"流式处理失败: {str(e)}"
+        }
 
 
 def _grpc_cors_headers() -> Dict[str, str]:
