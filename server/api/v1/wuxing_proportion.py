@@ -111,18 +111,8 @@ async def wuxing_proportion_stream_generator(
     import traceback
     
     try:
-        # 0. 立即发送开始消息，让客户端知道连接已建立
-        start_msg = {
-            'type': 'start',
-            'content': '正在计算五行占比...'
-        }
-        yield f"data: {json.dumps(start_msg, ensure_ascii=False)}\n\n"
-        
-        # 1. 处理农历输入和时区转换（异步执行，避免阻塞）
-        loop = asyncio.get_event_loop()
-        final_solar_date, final_solar_time, conversion_info = await loop.run_in_executor(
-            None,  # 使用默认线程池
-            BaziInputProcessor.process_input,
+        # 1. 处理农历输入和时区转换
+        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
             request.solar_date,
             request.solar_time,
             request.calendar_type or "solar",
@@ -132,7 +122,7 @@ async def wuxing_proportion_stream_generator(
         )
         
         # 2. 获取五行占比数据（异步执行，避免阻塞事件循环）
-        # ✅ 修复：将同步计算放到线程池中执行，解决首字节响应慢的问题
+        loop = asyncio.get_event_loop()
         proportion_data = await loop.run_in_executor(
             None,  # 使用默认线程池
             WuxingProportionService.calculate_proportion,
