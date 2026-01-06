@@ -38,18 +38,15 @@ class IntentServiceStub(object):
         self.Classify = channel.unary_unary(
                 '/intent.IntentService/Classify',
                 request_serializer=proto_dot_intent__pb2.ClassifyRequest.SerializeToString,
-                response_deserializer=proto_dot_intent__pb2.ClassifyResponse.FromString,
-                _registered_method=True)
+                response_deserializer=proto_dot_intent__pb2.ClassifyResponse.FromString)
         self.BatchClassify = channel.unary_unary(
                 '/intent.IntentService/BatchClassify',
                 request_serializer=proto_dot_intent__pb2.BatchClassifyRequest.SerializeToString,
-                response_deserializer=proto_dot_intent__pb2.BatchClassifyResponse.FromString,
-                _registered_method=True)
+                response_deserializer=proto_dot_intent__pb2.BatchClassifyResponse.FromString)
         self.HealthCheck = channel.unary_unary(
                 '/intent.IntentService/HealthCheck',
                 request_serializer=proto_dot_intent__pb2.HealthCheckRequest.SerializeToString,
-                response_deserializer=proto_dot_intent__pb2.HealthCheckResponse.FromString,
-                _registered_method=True)
+                response_deserializer=proto_dot_intent__pb2.HealthCheckResponse.FromString)
 
 
 class IntentServiceServicer(object):
@@ -127,8 +124,7 @@ class IntentService(object):
             compression,
             wait_for_ready,
             timeout,
-            metadata,
-            _registered_method=True)
+            metadata)
 
     @staticmethod
     def BatchClassify(request,
@@ -154,8 +150,7 @@ class IntentService(object):
             compression,
             wait_for_ready,
             timeout,
-            metadata,
-            _registered_method=True)
+            metadata)
 
     @staticmethod
     def HealthCheck(request,
@@ -181,5 +176,4 @@ class IntentService(object):
             compression,
             wait_for_ready,
             timeout,
-            metadata,
-            _registered_method=True)
+            metadata)
