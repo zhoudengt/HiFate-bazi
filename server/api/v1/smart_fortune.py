@@ -921,13 +921,29 @@ async def _scenario_1_generator(
             )
             
             full_brief_response = ""
+            new_conversation_id = None  # ⭐ 用于保存从LLM响应中提取的 conversation_id
+            
             for chunk in brief_response_generator:
-                if chunk.get('type') == 'chunk':
+                if chunk.get('type') == 'start':
+                    # start chunk 可能包含 conversation_id（如果从 created 事件获取）
+                    conv_id = chunk.get('conversation_id')
+                    if conv_id:
+                        new_conversation_id = conv_id
+                elif chunk.get('type') == 'chunk':
                     content = chunk.get('content', '')
                     if content:
                         full_brief_response += content
                         yield _sse_message("brief_response_chunk", {"content": content})
                 elif chunk.get('type') == 'end':
+                    # ⭐ 从 end chunk 中提取 conversation_id（Coze API 在 completed 事件返回）
+                    conv_id = chunk.get('conversation_id')
+                    if conv_id:
+                        new_conversation_id = conv_id
+                    
+                    # 保存 conversation_id 用于后续多轮对话
+                    if new_conversation_id:
+                        logger.info(f"📥 场景1：从LLM响应获取到 conversation_id: {new_conversation_id[:20]}...")
+                        BaziSessionService.save_coze_conversation_id(user_id, new_conversation_id)
                     break
                 elif chunk.get('type') == 'error':
                     error_msg = chunk.get('error', '未知错误')
@@ -1022,6 +1038,10 @@ async def _scenario_2_generator(
     """场景2：点击预设问题/输入问题 → 生成详细流式回答 + 2个相关问题"""
     from server.services.bazi_session_service import BaziSessionService
     from server.services.fortune_llm_client import get_fortune_llm_client
+    from server.services.conversation_history_service import ConversationHistoryService
+    import time
+    
+    start_time = time.time()  # 记录开始时间，用于计算响应时间
     
     try:
         # ==================== 从会话缓存获取完整八字数据 ====================
@@ -1032,6 +1052,18 @@ async def _scenario_2_generator(
             yield _sse_message("error", {"message": "会话不存在，请先点击选择项"})
             yield _sse_message("end", {})
             return
+        
+        # ==================== 获取 Coze conversation_id（用于多轮对话上下文） ====================
+        conversation_id = BaziSessionService.get_coze_conversation_id(user_id)
+        if conversation_id:
+            logger.info(f"✅ 场景2：从Redis获取到 conversation_id: {conversation_id[:20]}...")
+        else:
+            logger.warning(f"⚠️ 场景2：未找到 conversation_id，将作为新对话")
+        
+        # ==================== 获取历史对话上下文（最近5轮） ====================
+        history_context = ConversationHistoryService.get_history_from_redis(user_id)
+        current_round = len(history_context) + 1
+        logger.info(f"✅ 场景2：获取历史上下文，当前第{current_round}轮对话，历史{len(history_context)}轮")
         
         # 从session获取所有数据
         bazi_result = complete_bazi_data.get("bazi_result", {})
@@ -1085,7 +1117,8 @@ async def _scenario_2_generator(
         with monitor.stage("llm_analysis", "LLM深度解读（流式）", intent=main_intent):
             llm_client = get_fortune_llm_client()
             
-            # 调用LLM生成详细回答（传递category作为上下文，使用精简模式）
+            # 调用LLM生成详细回答（使用分层数据结构）
+            # ⭐ 传递完整数据：基础数据 + 当前问题 + 历史上下文
             llm_result = llm_client.analyze_fortune(
                 intent=main_intent,
                 question=question,
@@ -1093,20 +1126,27 @@ async def _scenario_2_generator(
                 fortune_context=fortune_context,
                 matched_rules=matched_rules,
                 stream=True,
-                category=category,  # 传递category作为上下文
-                minimal_mode=True  # 场景2使用精简模式，减少数据传递
+                category=category,
+                minimal_mode=True,  # 使用分层模式（已重构为完整数据+历史压缩）
+                conversation_id=conversation_id,
+                history_context=history_context  # ⭐ 传递历史上下文（最近5轮的关键词+摘要）
             )
             
             full_response = ""
             chunk_received = False
             questions_task = None  # 后台任务
             cached_questions = []  # 缓存的问题
+            new_conversation_id = None  # ⭐ 从LLM响应中提取的新 conversation_id
             
             for chunk in llm_result:
                 chunk_received = True
                 chunk_type = chunk.get('type') if isinstance(chunk, dict) else None
                 
                 if chunk_type == 'start':
+                    # start chunk 可能包含 conversation_id（如果从 created 事件获取）
+                    conv_id = chunk.get('conversation_id')
+                    if conv_id:
+                        new_conversation_id = conv_id
                     yield _sse_message("llm_start", {})
                 elif chunk_type == 'chunk':
                     content = chunk.get('content', '')
@@ -1126,6 +1166,54 @@ async def _scenario_2_generator(
                             )
                             logger.info("✅ 开始并行生成相关问题（答案已输出150字）")
                 elif chunk_type == 'end':
+                    # ⭐ 从 end chunk 中提取 conversation_id（Coze API 在 completed 事件返回）
+                    conv_id = chunk.get('conversation_id')
+                    if conv_id:
+                        new_conversation_id = conv_id
+                    
+                    # 保存 conversation_id（更新或新建）
+                    if new_conversation_id:
+                        logger.info(f"📥 场景2：从LLM响应获取到 conversation_id: {new_conversation_id[:20]}...")
+                        BaziSessionService.save_coze_conversation_id(user_id, new_conversation_id)
+                    
+                    # ==================== 异步保存对话记录到MySQL ====================
+                    response_time_ms = int((time.time() - start_time) * 1000)
+                    
+                    # 获取八字摘要
+                    bazi_pillars = bazi_result.get('bazi', {}).get('bazi_pillars', {})
+                    bazi_summary = ""
+                    if bazi_pillars:
+                        bazi_summary = f"{bazi_pillars.get('year', {}).get('stem', '')}{bazi_pillars.get('year', {}).get('branch', '')}、{bazi_pillars.get('month', {}).get('stem', '')}{bazi_pillars.get('month', {}).get('branch', '')}、{bazi_pillars.get('day', {}).get('stem', '')}{bazi_pillars.get('day', {}).get('branch', '')}、{bazi_pillars.get('hour', {}).get('stem', '')}{bazi_pillars.get('hour', {}).get('branch', '')}"
+                    
+                    # 异步保存到MySQL
+                    asyncio.create_task(
+                        ConversationHistoryService.save_conversation_async(
+                            user_id=user_id,
+                            session_id=user_id,  # 使用user_id作为session_id
+                            category=category,
+                            question=question,
+                            answer=full_response,
+                            intent=main_intent,
+                            bazi_summary=bazi_summary,
+                            round_number=current_round,
+                            response_time_ms=response_time_ms,
+                            conversation_id=new_conversation_id or conversation_id or ""
+                        )
+                    )
+                    
+                    # ==================== 更新历史摘要到Redis（用于下次传递给LLM） ====================
+                    keywords = ConversationHistoryService.extract_keywords(question, full_response)
+                    summary = ConversationHistoryService.compress_to_summary(question, full_response)
+                    
+                    round_data = {
+                        "round": current_round,
+                        "keywords": keywords,
+                        "summary": summary
+                    }
+                    ConversationHistoryService.save_history_to_redis(user_id, round_data)
+                    
+                    logger.info(f"✅ 场景2：第{current_round}轮对话完成，关键词={keywords}，摘要={summary[:50]}...")
+                    
                     yield _sse_message("llm_end", {})
                     break
                 elif chunk_type == 'error':

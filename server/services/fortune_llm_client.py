@@ -248,7 +248,9 @@ class FortuneLLMClient:
         stream: bool = False,
         use_cache: bool = True,
         category: Optional[str] = None,
-        minimal_mode: bool = False
+        minimal_mode: bool = False,
+        conversation_id: Optional[str] = None,
+        history_context: List[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         调用命理分析Bot，生成深度解读（支持缓存）
@@ -261,6 +263,10 @@ class FortuneLLMClient:
             matched_rules: 匹配到的规则列表（可选）
             stream: 是否使用流式输出（默认False）
             use_cache: 是否使用缓存（默认True）
+            category: 分类（可选）
+            minimal_mode: 是否精简模式（默认False）
+            conversation_id: Coze对话ID（可选，用于多轮对话上下文）
+            history_context: 历史对话上下文（可选，最近5轮的关键词+摘要）
         
         Returns:
             如果stream=False:
@@ -274,6 +280,7 @@ class FortuneLLMClient:
             如果stream=True:
             返回一个生成器（generator），逐个yield分析片段
             注意：流式输出不支持缓存
+            每个chunk可能包含 'conversation_id' 字段（首个chunk）
         """
         try:
             # ⭐ 优先使用格式定义构建input_data（从数据库加载格式定义，从Redis获取数据）
@@ -326,7 +333,8 @@ class FortuneLLMClient:
                     fortune_context=fortune_context,
                     matched_rules=matched_rules,
                     category=category,
-                    minimal_mode=minimal_mode
+                    minimal_mode=minimal_mode,
+                    history_context=history_context
                 )
             
             logger.info(f"📊 准备调用命理分析Bot，意图: {intent}，问题: {question}，流式: {stream}，缓存: {use_cache}")
@@ -335,8 +343,12 @@ class FortuneLLMClient:
             # 如果是流式输出，不使用缓存
             if stream:
                 logger.info("🌊 流式输出模式，跳过缓存")
-                logger.info(f"[fortune_llm_client] 📞 调用 _call_coze_api_stream，输入数据大小: {len(json.dumps(input_data, ensure_ascii=False))}字符")
-                generator = self._call_coze_api_stream(input_data)
+                if conversation_id:
+                    logger.info(f"[fortune_llm_client] 📞 调用 _call_coze_api_stream（带conversation_id: {conversation_id[:20]}...）")
+                else:
+                    logger.info(f"[fortune_llm_client] 📞 调用 _call_coze_api_stream（无conversation_id，首次对话）")
+                logger.info(f"[fortune_llm_client] 📤 输入数据大小: {len(json.dumps(input_data, ensure_ascii=False))}字符")
+                generator = self._call_coze_api_stream(input_data, conversation_id=conversation_id)
                 
                 # ⭐ 关键检查：确保返回的是生成器
                 if isinstance(generator, dict):
@@ -407,44 +419,108 @@ class FortuneLLMClient:
         fortune_context: Dict[str, Any],
         matched_rules: List[Dict[str, Any]] = None,
         category: Optional[str] = None,
-        minimal_mode: bool = False
+        minimal_mode: bool = False,
+        history_context: List[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        构建发送给Bot的输入数据
+        构建发送给Bot的输入数据（分层结构）
         
-        将分散的数据整合为结构化JSON，包含：
-        - intent: 用户意图
-        - question: 用户问题
-        - bazi: 八字原局数据
-        - liunian: 流年数据
-        - dayun: 大运数据
-        - balance_analysis: 五行平衡分析
-        - relation_analysis: 关系分析
-        - xi_ji: 喜忌神
-        - wangshuai: 旺衰
-        - matched_rules: 匹配到的规则（按意图分类）
+        数据分为三层，按优先级组织：
+        1. base_data（基础数据层）：八字、流年大运、喜忌、五行、规则 - 每次完整传递
+        2. current_query（当前问题层）：用户问题、意图、分类 - 完整传递
+        3. history_context（历史上下文层）：最近5轮的关键词+摘要 - 压缩后传递
         
         Args:
-            minimal_mode: 精简模式，只传递必要数据（场景2使用）
+            intent: 用户意图
+            question: 用户问题
+            bazi_data: 八字数据
+            fortune_context: 流年大运上下文
+            matched_rules: 匹配的规则
+            category: 分类
+            minimal_mode: 是否精简模式（已废弃，现在始终使用完整分层模式）
+            history_context: 历史对话上下文（最近5轮的关键词+摘要）
         """
-        # 精简模式：只传递必要数据
+        # ==================== 提取基础数据 ====================
+        # 正确提取八字数据（支持多种数据结构）
+        bazi_pillars = (
+            bazi_data.get('bazi_pillars') or 
+            bazi_data.get('bazi', {}).get('bazi_pillars') or 
+            {}
+        )
+        
+        # 从四柱中提取日主天干
+        day_stem = (
+            bazi_data.get('day_stem') or
+            bazi_pillars.get('day', {}).get('stem', '')
+        )
+        
+        # 提取基本信息
+        basic_info = (
+            bazi_data.get('basic_info') or
+            bazi_data.get('bazi', {}).get('basic_info') or
+            {}
+        )
+        
+        # 格式化四柱为易读字符串
+        pillars_str = ""
+        if bazi_pillars:
+            year = bazi_pillars.get('year', {})
+            month = bazi_pillars.get('month', {})
+            day = bazi_pillars.get('day', {})
+            hour = bazi_pillars.get('hour', {})
+            pillars_str = f"年柱:{year.get('stem', '')}{year.get('branch', '')} 月柱:{month.get('stem', '')}{month.get('branch', '')} 日柱:{day.get('stem', '')}{day.get('branch', '')} 时柱:{hour.get('stem', '')}{hour.get('branch', '')}"
+        
+        # 提取十神和五行统计
+        ten_gods_stats = (
+            bazi_data.get('ten_gods_stats') or
+            bazi_data.get('bazi', {}).get('ten_gods_stats') or
+            {}
+        )
+        element_counts = (
+            bazi_data.get('element_counts') or
+            bazi_data.get('bazi', {}).get('element_counts') or
+            {}
+        )
+        
+        # ==================== 精简模式：使用分层数据结构 ====================
         if minimal_mode:
+            # 构建分层数据
             input_data = {
-                'intent': intent,
-                'question': question,
-                'category': category,
-                'bazi': {
-                    'pillars': bazi_data.get('bazi_pillars', {}),
-                    'day_stem': bazi_data.get('day_stem', ''),
+                # 第一层：基础数据（每次完整传递）
+                'base_data': {
+                    'bazi': {
+                        'pillars': bazi_pillars,
+                        'pillars_str': pillars_str,
+                        'day_stem': day_stem,
+                        'basic_info': basic_info,
+                        'ten_gods_stats': ten_gods_stats,
+                        'element_counts': element_counts
+                    },
+                    'fortune_context': self._extract_fortune_context(fortune_context, question),
+                    'matched_rules': self._extract_rules_summary(matched_rules, intent)
                 },
-                'language_style': '通俗易懂，避免专业术语，面向普通用户。用日常语言解释命理概念，如"正官"可以说成"稳定的工作机会"，"七杀"可以说成"挑战和压力"。',
-                'note': '八字详细信息已在第一次调用时提供，本次只基于用户问题和类别生成答案。请快速响应，在10秒内生成内容。'
+                
+                # 第二层：当前问题（完整传递）
+                'current_query': {
+                    'question': question,
+                    'intent': intent,
+                    'category': category
+                },
+                
+                # 第三层：历史上下文（压缩后传递）
+                'history_context': {
+                    'total_rounds': len(history_context) if history_context else 0,
+                    'recent_rounds': history_context or []
+                },
+                
+                'language_style': '通俗易懂，避免专业术语，面向普通用户。用日常语言解释命理概念，如"正官"可以说成"稳定的工作机会"，"七杀"可以说成"挑战和压力"。'
             }
             
-            # 精简日志
+            # 日志
             import json
             data_size = len(json.dumps(input_data, ensure_ascii=False))
-            logger.info(f"[精简模式] 发送给LLM的数据: intent={intent}, category={category}, size={data_size}字符")
+            history_rounds = len(history_context) if history_context else 0
+            logger.info(f"[分层模式] 发送给LLM: intent={intent}, category={category}, pillars={pillars_str}, history_rounds={history_rounds}, size={data_size}字符")
             return input_data
         
         # 完整模式：传递所有数据（场景1使用）
@@ -590,6 +666,123 @@ class FortuneLLMClient:
         logger.debug(f"[STEP5] 发送给LLM的数据: intent={intent}, year={liunian.get('year', 'N/A')}, size={data_size}字符")
         
         return input_data
+    
+    def _extract_fortune_context(
+        self,
+        fortune_context: Dict[str, Any],
+        question: str
+    ) -> Dict[str, Any]:
+        """
+        从 fortune_context 中提取流年大运、喜忌、旺衰数据（用于分层模式）
+        
+        Args:
+            fortune_context: 流年大运上下文
+            question: 用户问题（用于智能匹配年份）
+            
+        Returns:
+            精简后的流年大运数据
+        """
+        if not fortune_context:
+            return {}
+        
+        result = {}
+        
+        # 提取流年数据
+        time_analysis = fortune_context.get('time_analysis', {})
+        liunian_list = time_analysis.get('liunian_list', [])
+        
+        if liunian_list:
+            # 从问题中提取年份，匹配对应流年
+            import re
+            year_match = re.search(r'(\d{4})年?', question)
+            if year_match:
+                target_year = int(year_match.group(1))
+                liunian = next(
+                    (ln for ln in liunian_list if ln.get('year') == target_year),
+                    liunian_list[-1]
+                )
+            else:
+                liunian = liunian_list[-1]
+            
+            result['liunian'] = {
+                'year': liunian.get('year', ''),
+                'stem': liunian.get('stem', ''),
+                'branch': liunian.get('branch', ''),
+                'stem_shishen': liunian.get('stem_shishen', ''),
+                'branch_shishen': liunian.get('branch_shishen', ''),
+                'balance_summary': liunian.get('balance_analysis', {}).get('analysis', {}).get('summary', '')[:200],
+                'relation_summary': liunian.get('relation_analysis', {}).get('summary', '')[:200]
+            }
+        
+        # 提取大运数据
+        dayun = time_analysis.get('dayun', {})
+        if dayun:
+            result['dayun'] = {
+                'stem': dayun.get('stem', ''),
+                'branch': dayun.get('branch', ''),
+                'age_range': dayun.get('age_range', '')
+            }
+        
+        # 提取喜忌神
+        xi_ji = fortune_context.get('xi_ji', {})
+        if xi_ji:
+            result['xi_ji'] = {
+                'xi_shen': xi_ji.get('xi_shen', [])[:5],
+                'ji_shen': xi_ji.get('ji_shen', [])[:5]
+            }
+        
+        # 提取旺衰
+        result['wangshuai'] = fortune_context.get('wangshuai', '')
+        
+        return result
+    
+    def _extract_rules_summary(
+        self,
+        matched_rules: List[Dict[str, Any]],
+        intent: str
+    ) -> Dict[str, Any]:
+        """
+        从匹配的规则中提取摘要（用于分层模式）
+        
+        Args:
+            matched_rules: 匹配到的规则列表
+            intent: 用户意图
+            
+        Returns:
+            规则摘要数据
+        """
+        if not matched_rules:
+            return {'rules_count': 0, 'rules_summary': []}
+        
+        try:
+            from server.services.rule_classifier import build_rules_for_llm
+            
+            # 只传递当前意图相关的规则
+            target_intents = [intent] if intent != 'general' else None
+            
+            rules_data = build_rules_for_llm(
+                matched_rules=matched_rules,
+                target_intents=target_intents,
+                max_rules_per_intent=10
+            )
+            
+            return {
+                'rules_count': len(matched_rules),
+                'rules_by_intent': rules_data.get('rules_by_intent', {}),
+                'intent_counts': rules_data.get('rules_count', {})
+            }
+            
+        except Exception as e:
+            logger.warning(f"提取规则摘要失败: {e}")
+            # 简单回退：返回规则名称列表
+            rules_summary = [
+                rule.get('rule_name', rule.get('name', '未知规则'))[:50]
+                for rule in matched_rules[:10]
+            ]
+            return {
+                'rules_count': len(matched_rules),
+                'rules_summary': rules_summary
+            }
     
     def _get_messages(self, conversation_id: str, chat_id: str) -> Dict[str, Any]:
         """
@@ -752,19 +945,21 @@ class FortuneLLMClient:
             'error': f'Bot处理超时（>{max_retries*2}秒）'
         }
     
-    def _call_coze_api_stream(self, input_data: Dict[str, Any]):
+    def _call_coze_api_stream(self, input_data: Dict[str, Any], conversation_id: Optional[str] = None):
         """
         调用Coze API（流式输出）
         
         Args:
             input_data: 结构化输入数据
+            conversation_id: Coze对话ID（可选，用于多轮对话上下文）
         
         Yields:
             每次yield一个字典:
             {
                 'type': 'start' | 'chunk' | 'end' | 'error',
                 'content': str,  # chunk类型时是文本片段
-                'error': str  # error类型时的错误信息
+                'error': str,  # error类型时的错误信息
+                'conversation_id': str  # 仅在start时返回（如果从响应中提取到）
             }
         """
         headers = {
@@ -792,6 +987,17 @@ class FortuneLLMClient:
             ]
         }
         
+        # ⭐ 如果有 conversation_id，传递给 API 维护多轮对话上下文
+        if conversation_id:
+            payload['conversation_id'] = conversation_id
+            logger.info(f"[fortune_llm_client] 📤 使用已有 conversation_id: {conversation_id}")
+            logger.info(f"[fortune_llm_client] 📤 完整 payload: {json.dumps(payload, ensure_ascii=False)[:1000]}...")
+        else:
+            logger.info("[fortune_llm_client] 📤 首次对话，无 conversation_id")
+        
+        # 用于存储从响应中提取的 conversation_id
+        extracted_conversation_id = None
+        
         try:
             logger.info("🚀 开始流式调用 Coze API...")
             logger.info(f"[fortune_llm_client] 📤 请求URL: {self.api_base}")
@@ -799,8 +1005,7 @@ class FortuneLLMClient:
             logger.info(f"[fortune_llm_client] 📤 请求体大小: {len(json.dumps(payload, ensure_ascii=False))}字符")
             
             self._content_received = False  # 重置内容接收标志
-            logger.info(f"[fortune_llm_client] ✅ 发送 start chunk")
-            yield {'type': 'start', 'content': '', 'error': None}
+            # 注意：start chunk 会在收到 conversation_id 后发送，以便携带 conversation_id
             
             logger.info(f"📤 发送请求到Coze API: {self.api_base}")
             logger.debug(f"   请求头: {headers}")
@@ -828,8 +1033,6 @@ class FortuneLLMClient:
             # 设置响应编码为 UTF-8
             response.encoding = 'utf-8'
             
-            # 注意：start 事件已在第 685 行发送，这里不再重复发送
-            
             # 逐行读取SSE数据（使用更大的chunk避免UTF-8截断）
             buffer = ""
             stream_ended = False  # ⭐ 标志：流是否已结束（通过error或end）
@@ -837,6 +1040,7 @@ class FortuneLLMClient:
             is_thinking = False  # 标志位：是否处于思考过程中
             thinking_buffer = ""  # 累积思考过程内容，用于检测
             has_sent_content = False  # 是否已发送过有效内容
+            has_sent_start = False  # ⭐ 是否已发送 start chunk（用于携带 conversation_id）
             for chunk in response.iter_content(chunk_size=8192, decode_unicode=True):
                 if not chunk:
                     continue
@@ -905,6 +1109,37 @@ class FortuneLLMClient:
                                 stream_ended = True
                                 break
                             
+                            # ⭐ 新增：处理 conversation.chat.created 事件，提取 conversation_id
+                            if event_type == 'conversation.chat.created':
+                                # 从响应中提取 conversation_id
+                                new_conversation_id = data.get('conversation_id', '')
+                                if new_conversation_id:
+                                    extracted_conversation_id = new_conversation_id
+                                    logger.info(f"📥 从 conversation.chat.created 提取到 conversation_id: {extracted_conversation_id[:20]}...")
+                                
+                                # 发送 start chunk（携带 conversation_id）
+                                if not has_sent_start:
+                                    has_sent_start = True
+                                    logger.info(f"[fortune_llm_client] ✅ 发送 start chunk（含 conversation_id）")
+                                    yield {
+                                        'type': 'start', 
+                                        'content': '', 
+                                        'error': None,
+                                        'conversation_id': extracted_conversation_id
+                                    }
+                                continue
+                            
+                            # 如果还没有发送 start，在收到第一个其他事件时发送
+                            if not has_sent_start:
+                                has_sent_start = True
+                                logger.info(f"[fortune_llm_client] ✅ 发送 start chunk（无 conversation_id 事件）")
+                                yield {
+                                    'type': 'start', 
+                                    'content': '', 
+                                    'error': None,
+                                    'conversation_id': extracted_conversation_id
+                                }
+                            
                             # 新版格式：conversation.message.delta（事件在 event: 行中，内容在 data 中）
                             if event_type == 'conversation.message.delta':
                                 # ⭐ Coze API 的 delta 格式：data 中直接包含 content 字段，不是嵌套在 delta 中
@@ -963,9 +1198,21 @@ class FortuneLLMClient:
                             
                             # 新版格式：conversation.chat.completed
                             elif event_type == 'conversation.chat.completed':
+                                # ⭐ 从 completed 事件中提取 conversation_id（Coze API 在此事件返回）
+                                completed_conversation_id = data.get('conversation_id', '')
+                                if completed_conversation_id and not extracted_conversation_id:
+                                    extracted_conversation_id = completed_conversation_id
+                                    logger.info(f"📥 从 conversation.chat.completed 提取到 conversation_id: {extracted_conversation_id[:20]}...")
+                                
                                 logger.info("✅ 对话完成（conversation.chat.completed）")
                                 logger.info(f"[fortune_llm_client] ✅ 收到 conversation.chat.completed，发送 end chunk")
-                                yield {'type': 'end', 'content': '', 'error': None}
+                                # ⭐ 在 end chunk 中返回 conversation_id
+                                yield {
+                                    'type': 'end', 
+                                    'content': '', 
+                                    'error': None,
+                                    'conversation_id': extracted_conversation_id
+                                }
                                 stream_ended = True
                                 break
                             
