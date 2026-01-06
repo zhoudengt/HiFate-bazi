@@ -11,6 +11,8 @@
 - **开发规范摘要**：`docs/knowledge_base/development_rules.md`
 - **常见问题库**：`docs/knowledge_base/common_issues.md`
 - **最佳实践库**：`docs/knowledge_base/best_practices.md`
+- **🔴 问题错误记录本**：`docs/knowledge_base/error_records.md`（必读！预防重复问题）
+- **🔴 增量部署指南**：`docs/knowledge_base/deployment_guide.md`（部署必读）
 - **详细规范文档**：`docs/standards/`（见 `docs/standards/README.md`）
 
 ### 智能开发工具（快速命令）
@@ -41,6 +43,7 @@ python3 scripts/ai/completeness_validator.py --type api --name xxx
 2. 可观测性：所有关键路径必须记录详细日志和性能指标
 3. 防御性编程：所有外部依赖必须有降级方案
 4. 架构思维：从系统整体角度思考问题
+5. **知识积累**：遇到问题时主动更新错误记录本，形成持续改进
 
 ---
 
@@ -203,22 +206,57 @@ python3 scripts/ai/completeness_validator.py --type api --name xxx
 
 ---
 
+## 📝 问题记录与知识积累（自动执行）
+
+### 🔴 错误记录规则（AI 必须遵守）
+
+1. **开发前必读**：开始新任务前，先阅读 `docs/knowledge_base/error_records.md`，检查是否有类似问题
+2. **主动记录**：遇到新问题时，**立即**更新错误记录本，无需等待用户要求
+3. **记录内容**：问题描述、根因分析、解决方案、预防措施
+4. **持续改进**：每次问题解决后，思考如何预防类似问题
+
+### 🔴 部署规范（AI 必须遵守）
+
+1. **部署前必读**：执行部署前，先阅读 `docs/knowledge_base/deployment_guide.md`
+2. **遵循流程**：严格按照部署指南的标准流程执行
+3. **记录问题**：部署失败时，将问题记录到错误记录本
+4. **更新指南**：发现新的部署问题时，更新部署指南
+
+### 🔴 gRPC 端点注册检查（重要！）
+
+新增 API 端点时，必须检查：
+- [ ] 是否需要通过 gRPC-Web 访问？
+- [ ] 如需 gRPC-Web 访问，是否在 `server/api/grpc_gateway.py` 中注册？
+- [ ] 如是流式接口，是否使用 `_collect_sse_stream()` 处理？
+
+**已知问题**：流式接口忘记注册到 gRPC 网关，导致 `grpc-status: 12` 错误。详见错误记录本 ERR-API-001。
+
+---
+
 ## 🔄 开发完成后的标准流程
 
 1. ✅ 代码修改完成
-2. ✅ 运行完整性验证：`python3 scripts/ai/completeness_validator.py --type <type> --name <name>`
-3. ✅ **自动触发热更新**：`python3 scripts/ai/auto_hot_reload.py --trigger`
-4. ✅ 验证热更新成功：`python3 scripts/ai/auto_hot_reload.py --verify`
-5. ✅ 验证功能正常（必须！）
-6. ✅ 提交代码
+2. ✅ **检查错误记录本**：确认没有引入已知问题
+3. ✅ 运行完整性验证：`python3 scripts/ai/completeness_validator.py --type <type> --name <name>`
+4. ✅ **自动触发热更新**：`python3 scripts/ai/auto_hot_reload.py --trigger`
+5. ✅ 验证热更新成功：`python3 scripts/ai/auto_hot_reload.py --verify`
+6. ✅ 验证功能正常（必须！）
+7. ✅ 提交代码
+8. ✅ **部署到生产环境**（按照部署指南执行）
 
 ---
 
 **核心要点**：
 - 🔴 **最高优先级**：所有新功能必须遵守开发规范
-- ✅ **开发前必读**：开发新功能前必须阅读相关规范章节
+- ✅ **开发前必读**：开发新功能前必须阅读相关规范章节和错误记录本
 - 📋 **强制检查**：所有新功能必须通过开发规范检查清单验证
 - 🚫 **禁止操作**：严格禁止在服务器上直接修改代码、重启服务等操作
+- 📝 **知识积累**：遇到问题主动更新错误记录本，形成持续改进
+- 🚀 **部署规范**：部署时参考部署指南，遵循标准流程
 - 📚 **详细规范**：深入学习请查看 `docs/standards/` 目录下的详细规范文档
+
+**重要文档**：
+- **错误记录本**：`docs/knowledge_base/error_records.md` - 预防重复问题
+- **部署指南**：`docs/knowledge_base/deployment_guide.md` - 标准化部署流程
 
 **完整版本**：如需查看完整规范，请参考 `.cursorrules.backup` 文件。
