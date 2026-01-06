@@ -13,7 +13,7 @@ services:
     image: nginx:alpine
     container_name: hifate-nginx
     ports:
-      - "80:80"
+      - "8080:80"  # 改为 8080 端口，避免与前端 Nginx（80 端口）冲突
       - "443:443"
     volumes:
       - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
