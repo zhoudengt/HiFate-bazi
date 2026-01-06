@@ -1041,16 +1041,24 @@ async def _collect_sse_stream(generator) -> Dict[str, Any]:
         # 合并流式内容
         stream_content = ''.join(stream_contents) if stream_contents else None
         
+        # 如果没有收集到任何数据，记录警告
+        if not data_content and not stream_content:
+            logger.warning(f"[_collect_sse_stream] 警告：没有收集到任何数据，chunk_count={chunk_count}")
+        
         result = {
             "success": True,
             "data": data_content if data_content else None,
             "stream_content": stream_content
         }
         
+        logger.info(f"[_collect_sse_stream] 返回结果: success={result['success']}, data_keys={list(result['data'].keys()) if result['data'] else None}, stream_content_len={len(stream_content) if stream_content else 0}")
+        
         return result
         
     except Exception as e:
         logger.error(f"收集 SSE 流失败: {e}", exc_info=True)
+        import traceback
+        logger.error(f"堆栈跟踪: {traceback.format_exc()}")
         return {
             "success": False,
             "error": f"流式处理失败: {str(e)}"
