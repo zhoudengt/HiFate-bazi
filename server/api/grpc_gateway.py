@@ -928,7 +928,9 @@ async def _collect_sse_stream(generator) -> Dict[str, Any]:
     current_event_type = None
     
     try:
+        chunk_count = 0
         async for chunk in generator:
+            chunk_count += 1
             if not chunk:
                 continue
             
@@ -945,6 +947,7 @@ async def _collect_sse_stream(generator) -> Dict[str, Any]:
                 # 解析 event: 行
                 if line.startswith('event:'):
                     current_event_type = line[6:].strip()
+                    logger.debug(f"[_collect_sse_stream] 收到事件: {current_event_type}")
                     continue
                 
                 # 解析 data: 行
@@ -962,56 +965,71 @@ async def _collect_sse_stream(generator) -> Dict[str, Any]:
                             content = msg.get('content', '')
                             if content:
                                 stream_contents.append(content)
+                                logger.debug(f"[_collect_sse_stream] 收集到流式内容块: {len(content)} 字符")
                         
                         elif current_event_type == 'brief_response_end':
                             # 简短答复结束，保存完整内容
                             content = msg.get('content', '')
                             if content:
                                 data_content['brief_response'] = content
+                                logger.debug(f"[_collect_sse_stream] 保存简短答复: {len(content)} 字符")
                         
                         elif current_event_type == 'llm_end':
                             # LLM结束（场景2），如果有完整响应可以保存
                             # 注意：完整响应在stream_content中，这里只标记结束
                             data_content['llm_completed'] = True
+                            logger.debug(f"[_collect_sse_stream] LLM完成标记")
                         
                         elif current_event_type == 'preset_questions':
                             # 预设问题列表（场景1）
                             questions = msg.get('questions', [])
                             if questions:
                                 data_content['preset_questions'] = questions
+                                logger.debug(f"[_collect_sse_stream] 保存预设问题: {len(questions)} 个")
                         
                         elif current_event_type == 'related_questions':
                             # 相关问题列表（场景2）
                             questions = msg.get('questions', [])
                             if questions:
                                 data_content['related_questions'] = questions
+                                logger.debug(f"[_collect_sse_stream] 保存相关问题: {len(questions)} 个")
                         
                         elif current_event_type == 'basic_analysis':
                             # 基础分析结果（场景2）
                             data_content['basic_analysis'] = msg
+                            logger.debug(f"[_collect_sse_stream] 保存基础分析结果")
                         
                         elif current_event_type == 'performance':
                             # 性能数据
                             data_content['performance'] = msg
+                            logger.debug(f"[_collect_sse_stream] 保存性能数据")
                         
                         elif current_event_type == 'status':
                             # 状态信息，保存最后一个状态
                             data_content['last_status'] = msg
+                            logger.debug(f"[_collect_sse_stream] 更新状态: {msg.get('stage', 'unknown')}")
                         
                         elif current_event_type == 'error':
                             # 错误信息
                             error_content = msg.get('message', str(msg))
+                            logger.warning(f"[_collect_sse_stream] 收到错误: {error_content}")
                         
                         elif current_event_type == 'end':
                             # 结束标记，忽略
+                            logger.debug(f"[_collect_sse_stream] 收到结束标记")
                             pass
+                        else:
+                            logger.debug(f"[_collect_sse_stream] 未处理的事件类型: {current_event_type}")
                         
                     except json.JSONDecodeError:
                         # 非 JSON 格式，可能是普通文本
                         if current_event_type in ('brief_response_chunk', 'llm_chunk'):
                             stream_contents.append(json_str)
+                            logger.debug(f"[_collect_sse_stream] 收集到非JSON流式内容: {len(json_str)} 字符")
                     except Exception as e:
                         logger.warning(f"解析 SSE 消息失败: {e}, 事件类型: {current_event_type}, 原始数据: {line[:100]}")
+        
+        logger.info(f"[_collect_sse_stream] 完成收集，共收到 {chunk_count} 个chunk, stream_contents={len(stream_contents)}, data_keys={list(data_content.keys())}")
         
         # 构建响应
         if error_content:
