@@ -24,6 +24,8 @@ class BaziSessionService:
     
     # Redis key前缀
     SESSION_KEY_PREFIX = "bazi_session:"
+    # Coze conversation_id 的 Redis key 前缀
+    COZE_CONVERSATION_KEY_PREFIX = "coze_conversation:"
     # 默认TTL：24小时
     DEFAULT_TTL = 86400
     
@@ -201,5 +203,139 @@ class BaziSessionService:
             
         except Exception as e:
             logger.error(f"❌ 检查会话存在性失败: {e}", exc_info=True)
+            return False
+    
+    # ==================== Coze Conversation ID 管理 ====================
+    
+    @staticmethod
+    def _get_coze_conversation_key(user_id: str) -> str:
+        """生成 Coze conversation_id 的 Redis key"""
+        return f"{BaziSessionService.COZE_CONVERSATION_KEY_PREFIX}{user_id}"
+    
+    @staticmethod
+    def save_coze_conversation_id(user_id: str, conversation_id: str, ttl: int = None) -> bool:
+        """
+        保存 Coze conversation_id 到 Redis，用于维护多轮对话上下文
+        
+        Args:
+            user_id: 用户ID
+            conversation_id: Coze API 返回的 conversation_id
+            ttl: 过期时间（秒），默认24小时
+            
+        Returns:
+            bool: 是否保存成功
+        """
+        if not REDIS_AVAILABLE:
+            logger.warning("Redis不可用，无法保存 conversation_id")
+            return False
+        
+        if not user_id:
+            logger.warning("user_id为空，无法保存 conversation_id")
+            return False
+        
+        if not conversation_id:
+            logger.warning("conversation_id为空，无法保存")
+            return False
+        
+        try:
+            redis_client = get_redis_client()
+            if not redis_client:
+                logger.warning("Redis客户端不可用")
+                return False
+            
+            key = BaziSessionService._get_coze_conversation_key(user_id)
+            ttl = ttl or BaziSessionService.DEFAULT_TTL
+            
+            # 保存 conversation_id
+            redis_client.setex(key, ttl, conversation_id)
+            
+            logger.info(f"✅ 保存 Coze conversation_id 成功: user_id={user_id}, conversation_id={conversation_id[:20]}..., ttl={ttl}秒")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ 保存 Coze conversation_id 失败: {e}", exc_info=True)
+            return False
+    
+    @staticmethod
+    def get_coze_conversation_id(user_id: str) -> Optional[str]:
+        """
+        从 Redis 获取 Coze conversation_id
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            str: conversation_id，如果不存在则返回 None
+        """
+        if not REDIS_AVAILABLE:
+            logger.warning("Redis不可用，无法获取 conversation_id")
+            return None
+        
+        if not user_id:
+            logger.warning("user_id为空，无法获取 conversation_id")
+            return None
+        
+        try:
+            redis_client = get_redis_client()
+            if not redis_client:
+                logger.warning("Redis客户端不可用")
+                return None
+            
+            key = BaziSessionService._get_coze_conversation_key(user_id)
+            
+            # 获取 conversation_id
+            conversation_id = redis_client.get(key)
+            if not conversation_id:
+                logger.info(f"⚠️ Coze conversation_id 不存在: user_id={user_id}")
+                return None
+            
+            # 处理字节类型
+            if isinstance(conversation_id, bytes):
+                conversation_id = conversation_id.decode('utf-8')
+            
+            logger.info(f"✅ 获取 Coze conversation_id 成功: user_id={user_id}, conversation_id={conversation_id[:20]}...")
+            return conversation_id
+            
+        except Exception as e:
+            logger.error(f"❌ 获取 Coze conversation_id 失败: {e}", exc_info=True)
+            return None
+    
+    @staticmethod
+    def clear_coze_conversation_id(user_id: str) -> bool:
+        """
+        清除 Coze conversation_id（开始新对话时调用）
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            bool: 是否清除成功
+        """
+        if not REDIS_AVAILABLE:
+            logger.warning("Redis不可用，无法清除 conversation_id")
+            return False
+        
+        if not user_id:
+            logger.warning("user_id为空，无法清除 conversation_id")
+            return False
+        
+        try:
+            redis_client = get_redis_client()
+            if not redis_client:
+                logger.warning("Redis客户端不可用")
+                return False
+            
+            key = BaziSessionService._get_coze_conversation_key(user_id)
+            deleted = redis_client.delete(key)
+            
+            if deleted:
+                logger.info(f"✅ 清除 Coze conversation_id 成功: user_id={user_id}")
+            else:
+                logger.info(f"⚠️ Coze conversation_id 不存在，无需清除: user_id={user_id}")
+            
+            return bool(deleted)
+            
+        except Exception as e:
+            logger.error(f"❌ 清除 Coze conversation_id 失败: {e}", exc_info=True)
             return False
 

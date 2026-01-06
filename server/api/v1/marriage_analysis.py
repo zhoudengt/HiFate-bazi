@@ -43,7 +43,7 @@ from server.utils.dayun_liunian_helper import (
     get_current_dayun,
     build_enhanced_dayun_structure
 )
-from server.config.input_format_loader import get_format_loader
+from server.config.input_format_loader import get_format_loader, build_input_data_from_result
 
 logger = logging.getLogger(__name__)
 
@@ -670,42 +670,31 @@ async def marriage_analysis_stream_generator(
         except Exception as e:
             logger.warning(f"规则匹配失败（不影响业务）: {e}")
         
-        # 4. ⚠️ 优先使用格式定义构建input_data（从数据库加载格式定义，从Redis获取数据）
+        # 4. 构建 input_data（优先使用数据库格式定义，验证失败则降级到硬编码函数）
+        use_hardcoded = False
         try:
-            # 获取格式定义加载器
-            format_loader = get_format_loader()
-            
-            # 构建请求参数
-            request_params = {
-                'solar_date': final_solar_date,
-                'solar_time': final_solar_time,
-                'gender': gender
-            }
-            
-            # 获取Redis客户端
-            redis_client = None
-            try:
-                from server.config.redis_config import get_redis_pool
-                redis_pool = get_redis_pool()
-                if redis_pool:
-                    redis_client = redis_pool.get_connection()
-            except Exception as e:
-                logger.warning(f"⚠️ 获取Redis客户端失败: {e}")
-            
-            # 尝试使用格式定义构建input_data
-            if redis_client:
-                input_data = format_loader.build_input_data(
-                    format_name='marriage_analysis',
-                    request_params=request_params,
-                    redis_client=redis_client
-                )
-                logger.info("✓ 使用格式定义构建input_data: marriage_analysis")
+            input_data = build_input_data_from_result(
+                format_name='marriage_analysis',
+                bazi_data=bazi_data,
+                detail_result=detail_result,
+                wangshuai_result=wangshuai_result,
+                dayun_sequence=dayun_sequence,
+                special_liunians=special_liunians,
+                gender=gender
+            )
+            # 验证格式定义构建的数据是否完整
+            is_valid_temp, validation_error_temp = validate_input_data(input_data)
+            if not is_valid_temp:
+                logger.warning(f"⚠️ 格式定义构建的数据不完整，降级到硬编码函数: {validation_error_temp}")
+                use_hardcoded = True
             else:
-                # Redis不可用，使用原有方法
-                raise ValueError("Redis不可用，使用原有方法")
+                logger.info("✅ 使用数据库格式定义构建 input_data: marriage_analysis")
         except Exception as e:
-            # 格式定义构建失败，直接降级到硬编码函数
+            # 格式定义构建失败，降级到硬编码函数
             logger.warning(f"⚠️ 格式定义构建失败，使用硬编码函数: {e}")
+            use_hardcoded = True
+        
+        if use_hardcoded:
             input_data = build_marriage_input_data(
                 bazi_data,
                 wangshuai_result,
@@ -714,25 +703,6 @@ async def marriage_analysis_stream_generator(
                 special_liunians,
                 gender
             )
-            
-            # ⚠️ 将数据存储到Redis（使用格式定义中指定的key格式）
-            try:
-                from server.config.redis_config import get_redis_pool
-                # 注意：json 模块已在文件开头导入，无需重复导入
-                redis_pool = get_redis_pool()
-                if redis_pool:
-                    redis_client = redis_pool.get_connection()
-                    if redis_client:
-                        # 存储各个部分到Redis
-                        base_key = f"marriage:{final_solar_date}:{final_solar_time}:{gender}"
-                        redis_client.setex(f"{base_key}:mingpan", 86400, json.dumps(input_data.get('mingpan_zonglun', {}), ensure_ascii=False))
-                        redis_client.setex(f"{base_key}:peiou", 86400, json.dumps(input_data.get('peiou_tezheng', {}), ensure_ascii=False))
-                        redis_client.setex(f"{base_key}:ganqing", 86400, json.dumps(input_data.get('ganqing_zoushi', {}), ensure_ascii=False))
-                        redis_client.setex(f"{base_key}:shensha", 86400, json.dumps(input_data.get('shensha_dianjing', {}), ensure_ascii=False))
-                        redis_client.setex(f"{base_key}:jianyi", 86400, json.dumps(input_data.get('jianyi_fangxiang', {}), ensure_ascii=False))
-                        logger.info("✓ 数据已存储到Redis")
-            except Exception as e:
-                logger.warning(f"⚠️ 存储数据到Redis失败: {e}")
         
         # 5. 填充判词数据（如果使用格式定义，判词数据可能已经在Redis中，这里作为补充）
         if 'peiou_tezheng' in input_data:
