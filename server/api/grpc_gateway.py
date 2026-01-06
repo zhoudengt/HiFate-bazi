@@ -911,9 +911,9 @@ async def _collect_sse_stream(generator) -> Dict[str, Any]:
     收集 SSE 流式响应的所有数据
     
     将流式生成器的输出收集为统一的响应格式：
-    - 收集所有 progress 消息
-    - 提取 data 消息作为基础数据
-    - 提取 complete 消息作为最终内容
+    - 收集所有 brief_response_chunk 内容到 stream_content
+    - 收集 preset_questions 到 data
+    - 收集 performance 到 data
     - 捕获 error 消息
     
     Args:
@@ -922,55 +922,96 @@ async def _collect_sse_stream(generator) -> Dict[str, Any]:
     Returns:
         Dict: 包含 success, data, stream_content, error 的响应字典
     """
-    data_content = None
-    progress_contents = []
-    complete_content = None
+    data_content = {}
+    stream_contents = []  # 收集所有流式内容
     error_content = None
+    current_event_type = None
     
     try:
         async for chunk in generator:
             if not chunk:
                 continue
             
-            # 解析 SSE 格式：data: {...}
+            # 解析 SSE 格式：event: xxx\ndata: {...}
             chunk_str = chunk if isinstance(chunk, str) else chunk.decode('utf-8')
             
             # 处理多行 SSE 数据
-            for line in chunk_str.split('\n'):
+            lines = chunk_str.split('\n')
+            for line in lines:
                 line = line.strip()
-                if not line or not line.startswith('data:'):
+                if not line:
                     continue
                 
-                try:
-                    # 移除 "data: " 前缀
+                # 解析 event: 行
+                if line.startswith('event:'):
+                    current_event_type = line[6:].strip()
+                    continue
+                
+                # 解析 data: 行
+                if line.startswith('data:'):
                     json_str = line[5:].strip()
                     if not json_str:
                         continue
                     
-                    msg = json.loads(json_str)
-                    msg_type = msg.get('type', '')
-                    content = msg.get('content', '')
-                    
-                    if msg_type == 'data':
-                        # 基础数据
-                        data_content = content
-                    elif msg_type == 'progress':
-                        # 流式进度内容
-                        progress_contents.append(content)
-                    elif msg_type == 'complete':
-                        # 完成内容
-                        complete_content = content
-                    elif msg_type == 'error':
-                        # 错误内容
-                        error_content = content if isinstance(content, str) else content.get('message', str(content))
-                    elif msg_type == 'end':
-                        # 结束标记，忽略
-                        pass
-                except json.JSONDecodeError:
-                    # 非 JSON 格式，可能是普通文本
-                    progress_contents.append(line[5:].strip())
-                except Exception as e:
-                    logger.warning(f"解析 SSE 消息失败: {e}, 原始数据: {line[:100]}")
+                    try:
+                        msg = json.loads(json_str)
+                        
+                        # 根据事件类型处理数据
+                        if current_event_type in ('brief_response_chunk', 'llm_chunk'):
+                            # 流式内容块（场景1用brief_response_chunk，场景2用llm_chunk）
+                            content = msg.get('content', '')
+                            if content:
+                                stream_contents.append(content)
+                        
+                        elif current_event_type == 'brief_response_end':
+                            # 简短答复结束，保存完整内容
+                            content = msg.get('content', '')
+                            if content:
+                                data_content['brief_response'] = content
+                        
+                        elif current_event_type == 'llm_end':
+                            # LLM结束（场景2），如果有完整响应可以保存
+                            # 注意：完整响应在stream_content中，这里只标记结束
+                            data_content['llm_completed'] = True
+                        
+                        elif current_event_type == 'preset_questions':
+                            # 预设问题列表（场景1）
+                            questions = msg.get('questions', [])
+                            if questions:
+                                data_content['preset_questions'] = questions
+                        
+                        elif current_event_type == 'related_questions':
+                            # 相关问题列表（场景2）
+                            questions = msg.get('questions', [])
+                            if questions:
+                                data_content['related_questions'] = questions
+                        
+                        elif current_event_type == 'basic_analysis':
+                            # 基础分析结果（场景2）
+                            data_content['basic_analysis'] = msg
+                        
+                        elif current_event_type == 'performance':
+                            # 性能数据
+                            data_content['performance'] = msg
+                        
+                        elif current_event_type == 'status':
+                            # 状态信息，保存最后一个状态
+                            data_content['last_status'] = msg
+                        
+                        elif current_event_type == 'error':
+                            # 错误信息
+                            error_content = msg.get('message', str(msg))
+                        
+                        elif current_event_type == 'end':
+                            # 结束标记，忽略
+                            pass
+                        
+                    except json.JSONDecodeError:
+                        # 非 JSON 格式，可能是普通文本
+                        if current_event_type in ('brief_response_chunk', 'llm_chunk'):
+                            stream_contents.append(json_str)
+                    except Exception as e:
+                        logger.warning(f"解析 SSE 消息失败: {e}, 事件类型: {current_event_type}, 原始数据: {line[:100]}")
         
         # 构建响应
         if error_content:
@@ -980,13 +1021,11 @@ async def _collect_sse_stream(generator) -> Dict[str, Any]:
             }
         
         # 合并流式内容
-        stream_content = ''.join(progress_contents) if progress_contents else None
-        if complete_content:
-            stream_content = complete_content
+        stream_content = ''.join(stream_contents) if stream_contents else None
         
         result = {
             "success": True,
-            "data": data_content,
+            "data": data_content if data_content else None,
             "stream_content": stream_content
         }
         
