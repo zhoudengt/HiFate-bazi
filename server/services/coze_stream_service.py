@@ -142,6 +142,8 @@ class CozeStreamService:
                     # 发送流式请求（在线程池中运行，避免阻塞）
                     import asyncio
                     loop = asyncio.get_event_loop()
+                    # 超时设置：(连接超时, 读取超时)
+                    # 大模型生成内容需要较长时间，读取超时设置为 180 秒
                     response = await loop.run_in_executor(
                         None,
                         lambda: requests.post(
@@ -149,7 +151,7 @@ class CozeStreamService:
                             headers=headers_to_use,
                             json=payload,
                             stream=True,
-                            timeout=60
+                            timeout=(30, 180)  # 连接30秒，读取180秒
                         )
                     )
                     
@@ -574,6 +576,8 @@ class CozeStreamService:
                 try:
                     # 发送流式请求（在线程池中运行，避免阻塞）
                     loop = asyncio.get_event_loop()
+                    # 超时设置：(连接超时, 读取超时)
+                    # 大模型生成内容需要较长时间，读取超时设置为 180 秒
                     response = await loop.run_in_executor(
                         None,
                         lambda: requests.post(
@@ -581,7 +585,7 @@ class CozeStreamService:
                             headers=headers_to_use,
                             json=payload,
                             stream=True,
-                            timeout=60
+                            timeout=(30, 180)  # 连接30秒，读取180秒
                         )
                     )
                     
