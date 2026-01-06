@@ -28,6 +28,27 @@ except ImportError:
 class CozeStreamService:
     """Coze 流式服务"""
     
+    # 思考过程开头特征（需过滤）
+    THINKING_START_PATTERNS = [
+        '我现在需要', '现在我需要', '我需要处理', '我需要根据',
+        '首先，', '首先,', '首先看', '首先处理', '首先分析',
+        '用户现在', '用户提供', '用户输入',
+        '根据传统术语', '根据术语对照', '根据对照表',
+        '接下来要', '接下来需要', '接下来分析',
+        '检查一下', '检查字数', '确保格式',
+        '然后看', '然后处理', '然后分析',
+        '需要将', '需要把', '需要转化',
+    ]
+    
+    # 正式答案开头特征（停止过滤）
+    ANSWER_START_PATTERNS = [
+        '宜：', '忌：', '宜:', '忌:',
+        '因为', '原因是', '这是由于',
+        '您的', '你的', '命主',
+        '今日', '本月', '今年',
+        '适合', '不适合', '建议',
+    ]
+    
     def __init__(self, access_token: Optional[str] = None, bot_id: Optional[str] = None,
                  api_base: str = "https://api.coze.cn"):
         """
@@ -193,6 +214,8 @@ class CozeStreamService:
                         current_event = None
                         stream_ended = False
                         line_count = 0
+                        is_thinking = False  # 标志位：是否处于思考过程中
+                        thinking_buffer = ""  # 累积思考过程内容，用于检测
                         
                         logger.info(f"📡 开始处理 Coze API 流式响应 (行动建议, Bot ID: {used_bot_id})")
                         
@@ -291,7 +314,8 @@ class CozeStreamService:
                                         if msg_type in ['knowledge_recall', 'verbose']:
                                             continue
                                         
-                                        content = data.get('content', '') or data.get('reasoning_content', '')
+                                        # 只使用 content 字段，过滤掉深度思考模型的 reasoning_content（思考过程）
+                                        content = data.get('content', '')
                                         
                                         if content and isinstance(content, str):
                                             # 检测是否为错误消息
@@ -299,9 +323,31 @@ class CozeStreamService:
                                                 logger.warning(f"⚠️ Coze Bot 返回错误消息: {content[:100]}... (行动建议)")
                                                 continue
                                             
-                                            # 过滤掉提示词和指令文本（包括思考过程）
+                                            # 累积内容用于检测思考过程
+                                            thinking_buffer += content
+                                            
+                                            # 标志位检测逻辑：检测思考过程开头和正式答案开头
+                                            if not has_content:  # 还没有发送过内容
+                                                if self._is_thinking_start(thinking_buffer):
+                                                    is_thinking = True
+                                                    logger.debug(f"🧠 检测到思考过程开头，开始过滤: {thinking_buffer[:50]}...")
+                                                elif self._is_answer_start(thinking_buffer):
+                                                    is_thinking = False
+                                                    logger.debug(f"✅ 检测到正式答案开头: {thinking_buffer[:50]}...")
+                                            
+                                            # 如果正在思考过程中，检测是否出现正式答案
+                                            if is_thinking:
+                                                if self._is_answer_start(content):
+                                                    is_thinking = False
+                                                    logger.debug(f"✅ 思考过程结束，检测到正式答案: {content[:50]}...")
+                                                else:
+                                                    # 仍在思考过程中，跳过此内容
+                                                    logger.debug(f"🧠 过滤思考过程: {content[:50]}...")
+                                                    continue
+                                            
+                                            # 过滤掉提示词和指令文本（作为备选过滤）
                                             if self._is_prompt_or_instruction(content):
-                                                logger.debug(f"⚠️ 过滤思考过程: {content[:50]}...")
+                                                logger.debug(f"⚠️ 过滤提示词/指令: {content[:50]}...")
                                                 continue
                                             
                                             has_content = True
@@ -630,6 +676,8 @@ class CozeStreamService:
                         current_event = None  # 保存当前事件类型
                         stream_ended = False
                         line_count = 0  # 记录行数
+                        is_thinking = False  # 标志位：是否处于思考过程中
+                        thinking_buffer = ""  # 累积思考过程内容，用于检测
                         
                         logger.info(f"📡 开始处理 Coze API 流式响应 (Bot ID: {used_bot_id})")
                         logger.info(f"📋 请求URL: {url}")
@@ -719,15 +767,12 @@ class CozeStreamService:
                                             logger.debug(f"⏭️ 跳过 {msg_type} 类型的delta消息")
                                             continue
                                         
-                                        # ⚠️ 关键修复：Coze API 可能将内容放在 reasoning_content 字段而不是 content 字段
-                                        content = data.get('content', '') or data.get('reasoning_content', '')
+                                        # 只使用 content 字段，过滤掉深度思考模型的 reasoning_content（思考过程）
+                                        content = data.get('content', '')
                                         
-                                        # 增强日志：记录所有delta事件，即使content为空
+                                        # 增强日志：记录delta事件
                                         if not content:
-                                            logger.debug(f"⚠️ Delta事件content和reasoning_content都为空: event={event_type}, type={msg_type}, data_keys={list(data.keys())[:10]}")
-                                            # 记录所有可能的字段
-                                            if 'reasoning_content' in data:
-                                                logger.debug(f"⚠️ Delta事件有reasoning_content但为空: {data.get('reasoning_content', '')[:50]}")
+                                            logger.debug(f"⚠️ Delta事件content为空: event={event_type}, type={msg_type}, data_keys={list(data.keys())[:10]}")
                                         
                                         if content and isinstance(content, str):
                                             # 处理content可能是JSON字符串的情况
@@ -751,7 +796,29 @@ class CozeStreamService:
                                                 logger.warning(f"⚠️ Coze Bot 返回错误消息: {content[:100]}... (Bot ID: {used_bot_id})")
                                                 continue
                                             
-                                            # 过滤掉提示词和指令文本
+                                            # 累积内容用于检测思考过程
+                                            thinking_buffer += content
+                                            
+                                            # 标志位检测逻辑：检测思考过程开头和正式答案开头
+                                            if not has_content:  # 还没有发送过内容
+                                                if self._is_thinking_start(thinking_buffer):
+                                                    is_thinking = True
+                                                    logger.debug(f"🧠 检测到思考过程开头，开始过滤: {thinking_buffer[:50]}...")
+                                                elif self._is_answer_start(thinking_buffer):
+                                                    is_thinking = False
+                                                    logger.debug(f"✅ 检测到正式答案开头: {thinking_buffer[:50]}...")
+                                            
+                                            # 如果正在思考过程中，检测是否出现正式答案
+                                            if is_thinking:
+                                                if self._is_answer_start(content):
+                                                    is_thinking = False
+                                                    logger.debug(f"✅ 思考过程结束，检测到正式答案: {content[:50]}...")
+                                                else:
+                                                    # 仍在思考过程中，跳过此内容
+                                                    logger.debug(f"🧠 过滤思考过程: {content[:50]}...")
+                                                    continue
+                                            
+                                            # 过滤掉提示词和指令文本（作为备选过滤）
                                             if self._is_prompt_or_instruction(content):
                                                 logger.info(f"⚠️ 内容被过滤（提示词/指令）: {content[:50]}...")
                                                 continue
@@ -1085,6 +1152,42 @@ class CozeStreamService:
             logger.debug(f"无法从Coze响应中提取内容，原始数据: {data}")
         
         return content or ''
+    
+    def _is_thinking_start(self, text: str) -> bool:
+        """
+        检测文本是否以思考过程特征开头
+        
+        Args:
+            text: 文本内容
+            
+        Returns:
+            bool: 如果是思考过程开头返回True
+        """
+        if not text:
+            return False
+        text_stripped = text.strip()
+        for pattern in self.THINKING_START_PATTERNS:
+            if text_stripped.startswith(pattern):
+                return True
+        return False
+    
+    def _is_answer_start(self, text: str) -> bool:
+        """
+        检测文本是否以正式答案特征开头
+        
+        Args:
+            text: 文本内容
+            
+        Returns:
+            bool: 如果是正式答案开头返回True
+        """
+        if not text:
+            return False
+        text_stripped = text.strip()
+        for pattern in self.ANSWER_START_PATTERNS:
+            if text_stripped.startswith(pattern):
+                return True
+        return False
     
     def _is_prompt_or_instruction(self, text: str) -> bool:
         """

@@ -47,6 +47,29 @@ except ImportError:
 class FortuneLLMClient:
     """命理分析专用 LLM 客户端（支持Redis缓存）"""
     
+    # 思考过程开头特征（需过滤）
+    THINKING_START_PATTERNS = [
+        '我现在需要', '现在我需要', '我需要处理', '我需要根据',
+        '首先，', '首先,', '首先看', '首先处理', '首先分析',
+        '用户现在', '用户提供', '用户输入',
+        '根据传统术语', '根据术语对照', '根据对照表',
+        '接下来要', '接下来需要', '接下来分析',
+        '检查一下', '检查字数', '确保格式',
+        '然后看', '然后处理', '然后分析',
+        '需要将', '需要把', '需要转化',
+    ]
+    
+    # 正式答案开头特征（停止过滤）
+    ANSWER_START_PATTERNS = [
+        '宜：', '忌：', '宜:', '忌:',
+        '因为', '原因是', '这是由于',
+        '您的', '你的', '命主',
+        '今日', '本月', '今年',
+        '适合', '不适合', '建议',
+        '根据您的', '根据你的',
+        '从八字', '从命理',
+    ]
+    
     def __init__(self):
         """初始化客户端"""
         # 只从数据库读取，不降级到环境变量
@@ -811,6 +834,9 @@ class FortuneLLMClient:
             buffer = ""
             stream_ended = False  # ⭐ 标志：流是否已结束（通过error或end）
             current_event = None  # ⭐ 记录当前SSE事件名称
+            is_thinking = False  # 标志位：是否处于思考过程中
+            thinking_buffer = ""  # 累积思考过程内容，用于检测
+            has_sent_content = False  # 是否已发送过有效内容
             for chunk in response.iter_content(chunk_size=8192, decode_unicode=True):
                 if not chunk:
                     continue
@@ -906,6 +932,29 @@ class FortuneLLMClient:
                                     except (json.JSONDecodeError, AttributeError):
                                         pass
                                     
+                                    # 累积内容用于检测思考过程
+                                    thinking_buffer += content
+                                    
+                                    # 标志位检测逻辑：检测思考过程开头和正式答案开头
+                                    if not has_sent_content:  # 还没有发送过内容
+                                        if self._is_thinking_start(thinking_buffer):
+                                            is_thinking = True
+                                            logger.debug(f"🧠 检测到思考过程开头，开始过滤: {thinking_buffer[:50]}...")
+                                        elif self._is_answer_start(thinking_buffer):
+                                            is_thinking = False
+                                            logger.debug(f"✅ 检测到正式答案开头: {thinking_buffer[:50]}...")
+                                    
+                                    # 如果正在思考过程中，检测是否出现正式答案
+                                    if is_thinking:
+                                        if self._is_answer_start(content):
+                                            is_thinking = False
+                                            logger.debug(f"✅ 思考过程结束，检测到正式答案: {content[:50]}...")
+                                        else:
+                                            # 仍在思考过程中，跳过此内容
+                                            logger.debug(f"🧠 过滤思考过程: {content[:50]}...")
+                                            continue
+                                    
+                                    has_sent_content = True
                                     self._content_received = True
                                     logger.debug(f"📝 收到delta chunk ({msg_type}): {len(content)}字符")
                                     logger.info(f"[fortune_llm_client] 📝 发送chunk: {len(content)}字符, 预览: {content[:50]}...")
@@ -1569,6 +1618,42 @@ class FortuneLLMClient:
         except Exception as e:
             logger.warning(f"解析问题列表失败: {e}, 原始响应: {response_text[:200]}")
             return []
+    
+    def _is_thinking_start(self, text: str) -> bool:
+        """
+        检测文本是否以思考过程特征开头
+        
+        Args:
+            text: 文本内容
+            
+        Returns:
+            bool: 如果是思考过程开头返回True
+        """
+        if not text:
+            return False
+        text_stripped = text.strip()
+        for pattern in self.THINKING_START_PATTERNS:
+            if text_stripped.startswith(pattern):
+                return True
+        return False
+    
+    def _is_answer_start(self, text: str) -> bool:
+        """
+        检测文本是否以正式答案特征开头
+        
+        Args:
+            text: 文本内容
+            
+        Returns:
+            bool: 如果是正式答案开头返回True
+        """
+        if not text:
+            return False
+        text_stripped = text.strip()
+        for pattern in self.ANSWER_START_PATTERNS:
+            if text_stripped.startswith(pattern):
+                return True
+        return False
 
 
 # 全局单例
