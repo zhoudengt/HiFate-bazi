@@ -254,10 +254,14 @@ async def xishen_jishen_stream_generator(
             'data': data
         }
         
-        # 3. 先发送完整的喜神忌神数据（type: "data"）
+        # 填充数据：2KB 空格，强制刷新网络缓冲区
+        PADDING = ' ' * 2048
+        
+        # 3. 先发送完整的喜神忌神数据（type: "data"，带填充）
         data_msg = {
             'type': 'data',
-            'content': response_data
+            'content': response_data,
+            '_padding': PADDING  # 填充数据强制刷新缓冲区
         }
         yield f"data: {json.dumps(data_msg, ensure_ascii=False)}\n\n"
         
@@ -315,6 +319,8 @@ async def xishen_jishen_stream_generator(
         from asyncio import Queue
         
         HEARTBEAT_INTERVAL = 10  # 心跳间隔（秒）
+        # 填充数据：2KB 空格，强制刷新网络缓冲区（解决 XHR 缓冲问题）
+        PADDING = ' ' * 2048
         data_queue = Queue()
         stop_heartbeat = asyncio.Event()
         
@@ -326,14 +332,15 @@ async def xishen_jishen_stream_generator(
                     await asyncio.wait_for(stop_heartbeat.wait(), timeout=HEARTBEAT_INTERVAL)
                     break  # 如果收到停止信号，退出
                 except asyncio.TimeoutError:
-                    # 超时，发送心跳
+                    # 超时，发送心跳（带填充数据）
                     heartbeat_count += 1
                     heartbeat_msg = {
                         'type': 'heartbeat',
-                        'content': f'正在生成AI分析... ({heartbeat_count * HEARTBEAT_INTERVAL}秒)'
+                        'content': f'正在生成AI分析... ({heartbeat_count * HEARTBEAT_INTERVAL}秒)',
+                        '_padding': PADDING  # 填充数据强制刷新缓冲区
                     }
                     await data_queue.put(heartbeat_msg)
-                    logger.info(f"[喜神忌神流式] 发送心跳包 #{heartbeat_count}")
+                    logger.info(f"[喜神忌神流式] 发送心跳包 #{heartbeat_count} (带2KB填充)")
         
         # 数据任务：从 Coze API 读取数据
         async def data_task():
@@ -349,13 +356,14 @@ async def xishen_jishen_stream_generator(
             finally:
                 stop_heartbeat.set()
         
-        # 发送初始心跳
+        # 发送初始心跳（带填充数据）
         heartbeat_msg = {
             'type': 'heartbeat',
-            'content': '正在生成AI分析，请稍候...'
+            'content': '正在生成AI分析，请稍候...',
+            '_padding': PADDING  # 填充数据强制刷新缓冲区
         }
         yield f"data: {json.dumps(heartbeat_msg, ensure_ascii=False)}\n\n"
-        logger.info("[喜神忌神流式] 发送初始心跳")
+        logger.info("[喜神忌神流式] 发送初始心跳 (带2KB填充)")
         
         # 启动心跳和数据任务
         heartbeat_coro = asyncio.create_task(heartbeat_task())
