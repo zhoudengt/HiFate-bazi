@@ -423,16 +423,7 @@ async def xishen_jishen_stream_generator(
 
 
 @router.api_route("/bazi/xishen-jishen/stream", methods=["GET", "POST"], summary="流式生成喜神忌神分析")
-async def xishen_jishen_stream(
-    request: Request,
-    solar_date: Optional[str] = Query(None, description="阳历日期，格式：YYYY-MM-DD"),
-    solar_time: Optional[str] = Query(None, description="出生时间，格式：HH:MM"),
-    gender: Optional[str] = Query(None, description="性别，male(男) 或 female(女)"),
-    calendar_type: Optional[str] = Query(None, description="历法类型：solar(阳历) 或 lunar(农历)"),
-    location: Optional[str] = Query(None, description="出生地点"),
-    latitude: Optional[float] = Query(None, description="纬度"),
-    longitude: Optional[float] = Query(None, description="经度")
-):
+async def xishen_jishen_stream(request: Request):
     """
     流式生成喜神忌神大模型分析
     
@@ -478,12 +469,26 @@ async def xishen_jishen_stream(
                     detail=f"POST 请求体解析失败: {str(e)}"
                 )
         else:
-            # GET 请求：从 URL 参数读取
+            # GET 请求：从 URL 参数手动读取（避免 FastAPI Query 依赖注入问题）
+            query_params = request.query_params
+            solar_date = query_params.get("solar_date")
+            solar_time = query_params.get("solar_time")
+            gender = query_params.get("gender")
+            calendar_type = query_params.get("calendar_type")
+            location = query_params.get("location")
+            latitude_str = query_params.get("latitude")
+            longitude_str = query_params.get("longitude")
+            
             if not solar_date or not solar_time or not gender:
                 raise HTTPException(
                     status_code=400,
                     detail="缺少必需参数：solar_date, solar_time, gender"
                 )
+            
+            # 转换可选参数
+            latitude = float(latitude_str) if latitude_str else None
+            longitude = float(longitude_str) if longitude_str else None
+            
             params = XishenJishenRequest(
                 solar_date=solar_date,
                 solar_time=solar_time,
