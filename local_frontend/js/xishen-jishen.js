@@ -137,8 +137,8 @@ async function generateLLMAnalysis(userInfo) {
     const llmContent = document.getElementById('llmContent');
     if (!llmContent) return;
     
-    // 使用相对路径（同域访问，避免跨域和公网缓冲问题）
-    const PRODUCTION_API = '';
+    // 硬编码生产API地址进行流式测试
+    const PRODUCTION_API = 'http://8.210.52.217:8001';
     let fullContent = '';
     let hasReceivedContent = false;
     
