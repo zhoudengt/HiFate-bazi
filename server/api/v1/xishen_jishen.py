@@ -422,8 +422,8 @@ async def xishen_jishen_stream_generator(
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
 
 
-@router.api_route("/bazi/xishen-jishen/stream", methods=["GET", "POST"], summary="流式生成喜神忌神分析")
-async def xishen_jishen_stream(request: Request):
+async def _xishen_jishen_stream_handler(request: Request):
+    """内部处理函数，供 GET 和 POST 路由共享"""
     """
     流式生成喜神忌神大模型分析
     
@@ -516,4 +516,17 @@ async def xishen_jishen_stream(request: Request):
             status_code=500,
             detail=f"流式查询喜神忌神异常: {str(e)}"
         )
+
+
+# 注册 GET 和 POST 路由（都指向同一个处理函数）
+@router.get("/bazi/xishen-jishen/stream", summary="流式生成喜神忌神分析（GET）")
+async def xishen_jishen_stream_get(request: Request):
+    """GET 方式流式生成喜神忌神分析（用于 EventSource API）"""
+    return await _xishen_jishen_stream_handler(request)
+
+
+@router.post("/bazi/xishen-jishen/stream", summary="流式生成喜神忌神分析（POST）")
+async def xishen_jishen_stream_post(request: Request):
+    """POST 方式流式生成喜神忌神分析（向后兼容）"""
+    return await _xishen_jishen_stream_handler(request)
 
