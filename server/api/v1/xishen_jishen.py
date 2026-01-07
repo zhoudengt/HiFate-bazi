@@ -319,8 +319,8 @@ async def xishen_jishen_stream_generator(
         from asyncio import Queue
         
         HEARTBEAT_INTERVAL = 10  # 心跳间隔（秒）
-        # 填充数据：2KB 空格，强制刷新网络缓冲区（解决 XHR 缓冲问题）
-        PADDING = ' ' * 2048
+        # 填充数据：16KB 空格，强制刷新网络缓冲区（解决跨域网络缓冲问题）
+        PADDING = ' ' * 16384
         data_queue = Queue()
         stop_heartbeat = asyncio.Event()
         
@@ -340,7 +340,7 @@ async def xishen_jishen_stream_generator(
                         '_padding': PADDING  # 填充数据强制刷新缓冲区
                     }
                     await data_queue.put(heartbeat_msg)
-                    logger.info(f"[喜神忌神流式] 发送心跳包 #{heartbeat_count} (带2KB填充)")
+                    logger.info(f"[喜神忌神流式] 发送心跳包 #{heartbeat_count} (带16KB填充)")
         
         # 数据任务：从 Coze API 读取数据
         async def data_task():
