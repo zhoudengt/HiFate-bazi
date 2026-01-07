@@ -127,9 +127,9 @@ async function generateLLMAnalysis(userInfo) {
     try {
         llmContent.innerHTML = '<div class="loading">正在生成分析...</div>';
         
-        // 调用流式API
-        const apiBaseUrl = API_CONFIG.baseURL.replace('/api/v1', '');
-        const response = await fetch(`${apiBaseUrl}/api/v1/bazi/xishen-jishen/stream`, {
+        // 硬编码生产接口地址
+        const PRODUCTION_API = 'http://8.210.52.217:8001';
+        const response = await fetch(`${PRODUCTION_API}/api/v1/bazi/xishen-jishen/stream`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -179,25 +179,16 @@ async function generateLLMAnalysis(userInfo) {
                             const newContent = data.content || '';
                             if (newContent) {
                                 // 逐个字符显示，确保用户能看到流式效果
-                                const startLength = fullContent.length;
                                 for (let i = 0; i < newContent.length; i++) {
                                     fullContent += newContent[i];
                                     llmContent.textContent = fullContent;
                                     
-                                    // 每显示一个字符后，等待一小段时间让浏览器渲染
-                                    // 使用 setTimeout 而不是 requestAnimationFrame，确保有足够的时间让用户看到
-                                    if (i < newContent.length - 1) { // 最后一个字符不需要等待
-                                        await new Promise(resolve => {
-                                            // 使用双重 requestAnimationFrame + 小延迟，确保浏览器有时间渲染
-                                            requestAnimationFrame(() => {
-                                                requestAnimationFrame(() => {
-                                                    setTimeout(resolve, 10); // 10ms延迟，让用户能看到每个字符
-                                                });
-                                            });
-                                        });
+                                    // 每显示一个字符后，等待让浏览器渲染（每个字符20ms延迟，确保用户能看到）
+                                    if (i < newContent.length - 1) {
+                                        await new Promise(resolve => setTimeout(resolve, 20));
                                     }
                                     
-                                    // 滚动到底部，让用户看到最新内容
+                                    // 滚动到底部
                                     if (llmContent.scrollHeight > llmContent.clientHeight) {
                                         llmContent.scrollTop = llmContent.scrollHeight;
                                     }
