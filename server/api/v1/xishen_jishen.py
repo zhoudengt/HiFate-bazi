@@ -9,7 +9,7 @@ import logging
 import os
 import sys
 from typing import Dict, Any, Optional, List
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Query
 from pydantic import BaseModel, Field, validator
 from fastapi.responses import StreamingResponse
 import json
@@ -422,10 +422,24 @@ async def xishen_jishen_stream_generator(
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
 
 
-@router.post("/bazi/xishen-jishen/stream", summary="流式生成喜神忌神分析")
-async def xishen_jishen_stream(request: XishenJishenRequest):
+@router.api_route("/bazi/xishen-jishen/stream", methods=["GET", "POST"], summary="流式生成喜神忌神分析")
+async def xishen_jishen_stream(
+    request: Request,
+    solar_date: Optional[str] = Query(None, description="阳历日期，格式：YYYY-MM-DD"),
+    solar_time: Optional[str] = Query(None, description="出生时间，格式：HH:MM"),
+    gender: Optional[str] = Query(None, description="性别，male(男) 或 female(女)"),
+    calendar_type: Optional[str] = Query(None, description="历法类型：solar(阳历) 或 lunar(农历)"),
+    location: Optional[str] = Query(None, description="出生地点"),
+    latitude: Optional[float] = Query(None, description="纬度"),
+    longitude: Optional[float] = Query(None, description="经度"),
+    req_body: Optional[XishenJishenRequest] = None
+):
     """
     流式生成喜神忌神大模型分析
+    
+    支持 GET 和 POST 两种方式：
+    - GET: 通过 URL 参数传递（用于 EventSource API）
+    - POST: 通过请求体传递（向后兼容）
     
     与 /bazi/xishen-jishen 接口相同的输入，但以SSE流式方式返回数据：
     1. 首先返回完整的喜神忌神数据（type: "data"）
@@ -453,8 +467,28 @@ async def xishen_jishen_stream(request: XishenJishenRequest):
     ```
     """
     try:
+        # 优先使用 POST body，否则使用 GET 参数
+        if req_body:
+            params = req_body
+        else:
+            # 从 GET 参数构建请求对象
+            if not solar_date or not solar_time or not gender:
+                raise HTTPException(
+                    status_code=400,
+                    detail="缺少必需参数：solar_date, solar_time, gender"
+                )
+            params = XishenJishenRequest(
+                solar_date=solar_date,
+                solar_time=solar_time,
+                gender=gender,
+                calendar_type=calendar_type,
+                location=location,
+                latitude=latitude,
+                longitude=longitude
+            )
+        
         return StreamingResponse(
-            xishen_jishen_stream_generator(request),
+            xishen_jishen_stream_generator(params),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -462,6 +496,8 @@ async def xishen_jishen_stream(request: XishenJishenRequest):
                 "X-Accel-Buffering": "no"
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ 流式生成异常: {e}", exc_info=True)
         raise HTTPException(

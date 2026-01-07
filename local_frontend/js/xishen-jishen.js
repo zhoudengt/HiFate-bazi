@@ -55,9 +55,9 @@ async function loadXishenJishen(userInfo) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                solar_date: userInfo.solar_date,
-                solar_time: userInfo.solar_time,
-                gender: userInfo.gender
+            solar_date: userInfo.solar_date,
+            solar_time: userInfo.solar_time,
+            gender: userInfo.gender
             })
         });
         
@@ -132,18 +132,19 @@ function displayMingge(containerId, minggeList) {
     }).join('');
 }
 
-// 流式生成大模型分析 - 使用 Fetch API + ReadableStream，实现逐字显示
+// 流式生成大模型分析 - 使用 EventSource API，实现真正的实时流式显示
 async function generateLLMAnalysis(userInfo) {
     const llmContent = document.getElementById('llmContent');
     if (!llmContent) return;
     
     // 同域访问，使用相对路径
-    const API_URL = '/api/v1/bazi/xishen-jishen/stream';
+    const API_BASE = '/api/v1/bazi/xishen-jishen/stream';
     let fullContent = '';
     let pendingContent = ''; // 待显示的字符队列
     let hasReceivedContent = false;
     let isDisplaying = false; // 是否正在逐字显示
     let displayTimer = null;
+    let eventSource = null;
     
     // 逐字显示函数
     const displayCharByChar = () => {
@@ -177,127 +178,126 @@ async function generateLLMAnalysis(userInfo) {
         }
     };
     
-    // 处理单行 SSE 数据
-    const processLine = (line) => {
-        if (!line.trim() || !line.startsWith('data: ')) return;
-        
-        try {
-            const data = JSON.parse(line.substring(6));
-            
-            if (data.type === 'progress') {
-                const newContent = data.content || '';
-                if (newContent) {
-                    hasReceivedContent = true;
-                    addToDisplayQueue(newContent);
-                }
-            } else if (data.type === 'complete') {
-                if (data.content) {
-                    addToDisplayQueue(data.content);
-                }
-                console.log('✅ 流式传输完成');
-            } else if (data.type === 'data') {
-                console.log('📊 收到基础数据，等待AI分析...');
-                if (!hasReceivedContent) {
-                    llmContent.innerHTML = '<div class="loading">⏳ 正在生成AI分析（大模型生成需要约1-2分钟）...</div>';
-                }
-            } else if (data.type === 'heartbeat') {
-                console.log('💓 心跳:', data.content);
-                if (!hasReceivedContent) {
-                    llmContent.innerHTML = `<div class="loading">⏳ ${data.content || '正在生成AI分析...'}</div>`;
-                }
-            } else if (data.type === 'error') {
-                throw new Error(data.content || '生成失败');
-            }
-        } catch (e) {
-            // 忽略填充数据的解析错误
-            if (!line.includes('_padding')) {
-                console.warn('解析失败:', e.message);
-            }
+    // 清理函数
+    const cleanup = () => {
+        if (displayTimer) {
+            clearTimeout(displayTimer);
+            displayTimer = null;
+        }
+        if (eventSource) {
+            eventSource.close();
+            eventSource = null;
         }
     };
     
     try {
         llmContent.innerHTML = '<div class="loading">🔄 正在连接AI服务...</div>';
-        console.log('📡 开始连接:', API_URL);
         
-        // 使用 Fetch API + ReadableStream 处理真正的流式响应
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                solar_date: userInfo.solar_date,
-                solar_time: userInfo.solar_time,
-                gender: userInfo.gender
-            })
+        // EventSource 只支持 GET 请求，通过 URL 参数传递数据
+        const params = new URLSearchParams({
+            solar_date: userInfo.solar_date,
+            solar_time: userInfo.solar_time,
+            gender: userInfo.gender
         });
         
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // 如果有其他可选参数，也添加进去
+        if (userInfo.calendar_type) {
+            params.append('calendar_type', userInfo.calendar_type);
+        }
+        if (userInfo.location) {
+            params.append('location', userInfo.location);
+        }
+        if (userInfo.latitude !== undefined) {
+            params.append('latitude', userInfo.latitude);
+        }
+        if (userInfo.longitude !== undefined) {
+            params.append('longitude', userInfo.longitude);
         }
         
-        console.log('📡 连接成功，开始读取流...');
+        const apiUrl = `${API_BASE}?${params.toString()}`;
+        console.log('📡 开始连接:', apiUrl);
         
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
+        // 使用 EventSource API（浏览器原生 SSE 支持）
+        eventSource = new EventSource(apiUrl);
         
-        while (true) {
-            const { done, value } = await reader.read();
-            
-            if (done) {
-                console.log('📭 流读取完成');
-                break;
-            }
-            
-            // 解码收到的数据块
-            const chunk = decoder.decode(value, { stream: true });
-            buffer += chunk;
-            
-            console.log('📦 收到数据块:', chunk.length, '字节');
-            
-            // 按行分割处理
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-            
-            for (const line of lines) {
-                if (line.trim()) {
-                    processLine(line);
+        // 连接打开
+        eventSource.onopen = () => {
+            console.log('📡 EventSource 连接成功，开始接收流式数据...');
+        };
+        
+        // 接收消息（实时触发，无缓冲）
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                
+                // 忽略填充数据
+                if (data._padding) {
+                    return;
                 }
-            }
-        }
-        
-        // 处理最后的缓冲区
-        if (buffer.trim()) {
-            const lines = buffer.split('\n');
-            for (const line of lines) {
-                if (line.trim()) {
-                    processLine(line);
-                }
-            }
-        }
-        
-        // 等待显示队列清空
-        await new Promise(resolve => {
-            const waitForDisplay = setInterval(() => {
-                if (pendingContent.length === 0 && !isDisplaying) {
-                    clearInterval(waitForDisplay);
-                    if (fullContent) {
-                        llmContent.textContent = fullContent;
-                        console.log('✅ 最终内容长度:', fullContent.length);
-                    } else if (!hasReceivedContent) {
-                        llmContent.innerHTML = '<div class="error">⚠️ 未收到AI分析内容，请稍后重试</div>';
+                
+                if (data.type === 'progress') {
+                    const newContent = data.content || '';
+                    if (newContent) {
+                        hasReceivedContent = true;
+                        addToDisplayQueue(newContent);
+                        console.log('📨 收到进度数据:', newContent.length, '字符');
                     }
-                    resolve();
+                } else if (data.type === 'complete') {
+                    // 完成时，显示剩余内容
+                    if (data.content) {
+                        addToDisplayQueue(data.content);
+                    }
+                    console.log('✅ 收到完成消息');
+                    // 等待显示队列清空后关闭连接
+                    const waitForDisplay = setInterval(() => {
+                        if (pendingContent.length === 0 && !isDisplaying) {
+                            clearInterval(waitForDisplay);
+                            if (fullContent) {
+                                llmContent.textContent = fullContent;
+                                console.log('✅ 流式传输完成，总长度:', fullContent.length);
+                            } else if (!hasReceivedContent) {
+                                llmContent.innerHTML = '<div class="error">⚠️ 未收到AI分析内容，请稍后重试</div>';
+                            }
+                            cleanup();
+                        }
+                    }, 100);
+                } else if (data.type === 'data') {
+                    console.log('📊 收到基础数据，等待AI分析...');
+                    if (!hasReceivedContent) {
+                        llmContent.innerHTML = '<div class="loading">⏳ 正在生成AI分析（大模型生成需要约1-2分钟）...</div>';
+                    }
+                } else if (data.type === 'heartbeat') {
+                    console.log('💓 收到心跳:', data.content);
+                    if (!hasReceivedContent) {
+                        llmContent.innerHTML = `<div class="loading">⏳ ${data.content || '正在生成AI分析...'}</div>`;
+                    }
+                } else if (data.type === 'error') {
+                    throw new Error(data.content || '生成失败');
                 }
-            }, 100);
-        });
+            } catch (e) {
+                console.warn('解析SSE数据失败:', e.message, '原始数据:', event.data.substring(0, 100));
+            }
+        };
+        
+        // 错误处理
+        eventSource.onerror = (error) => {
+            console.error('EventSource 错误:', error);
+            // EventSource 会自动重连，但如果是致命错误，需要手动关闭
+            if (eventSource.readyState === EventSource.CLOSED) {
+                cleanup();
+                if (fullContent) {
+                    llmContent.textContent = fullContent;
+                } else {
+                    llmContent.innerHTML = '<div class="error">⚠️ 连接已关闭，请刷新页面重试</div>';
+                }
+            }
+        };
+        
+        // 等待完成（EventSource 会保持连接直到服务器关闭）
+        // 注意：这里不需要 await，因为 EventSource 是事件驱动的
         
     } catch (error) {
-        if (displayTimer) {
-            clearTimeout(displayTimer);
-        }
+        cleanup();
         console.error('流式生成失败:', error);
         if (fullContent) {
             llmContent.textContent = fullContent;
