@@ -47,8 +47,11 @@ function displayUserInfo(userInfo) {
 // 加载喜神忌神数据
 async function loadXishenJishen(userInfo) {
     try {
-        // 硬编码生产接口地址
-        const PRODUCTION_API = 'http://8.210.52.217:8001';
+        // 通过 Nginx 代理访问（利用 SSE 配置）
+        // 优先使用域名，如果没有则使用 IP（通过 80 端口访问 Nginx）
+        const PRODUCTION_API = window.location.hostname === 'localhost' 
+            ? 'http://8.210.52.217'  // 本地测试时使用 IP，通过 Nginx 80 端口
+            : (window.location.protocol + '//' + window.location.host);  // 生产环境使用当前域名
         const response = await fetch(`${PRODUCTION_API}/api/v1/bazi/xishen-jishen`, {
             method: 'POST',
             headers: {
@@ -137,8 +140,11 @@ async function generateLLMAnalysis(userInfo) {
     const llmContent = document.getElementById('llmContent');
     if (!llmContent) return;
     
-    // 硬编码生产接口地址
-    const PRODUCTION_API = 'http://8.210.52.217:8001';
+    // 通过 Nginx 代理访问（利用 SSE 配置）
+    // 优先使用域名，如果没有则使用 IP（通过 80 端口访问 Nginx）
+    const PRODUCTION_API = window.location.hostname === 'localhost' 
+        ? 'http://8.210.52.217'  // 本地测试时使用 IP，通过 Nginx 80 端口
+        : (window.location.protocol + '//' + window.location.host);  // 生产环境使用当前域名
     let fullContent = '';
     let hasReceivedContent = false;
     
