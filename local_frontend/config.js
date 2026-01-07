@@ -95,14 +95,14 @@ const GRPC_CONFIG = (function() {
 // 调试信息（显示当前环境配置）
 (function() {
     const forceProduction = getForceProduction();
-    if (forceProduction) {
-        console.log('🌐 生产环境（URL 参数强制切换）');
-        console.log('📍 目标服务器:', productionNode);
-        console.log('📍 API 地址:', API_CONFIG.baseURL);
-        console.log('📍 gRPC 地址:', GRPC_CONFIG.baseURL);
-    } else if (API_CONFIG.env === 'development') {
-        console.log('🔧 开发环境');
-        console.log('📍 API 地址:', API_CONFIG.baseURL);
-        console.log('📍 gRPC 地址:', GRPC_CONFIG.baseURL);
-    }
+if (forceProduction) {
+    console.log('🌐 生产环境（URL 参数强制切换）');
+    console.log('📍 目标服务器:', productionNode);
+    console.log('📍 API 地址:', API_CONFIG.baseURL);
+    console.log('📍 gRPC 地址:', GRPC_CONFIG.baseURL);
+} else if (API_CONFIG.env === 'development') {
+    console.log('🔧 开发环境');
+    console.log('📍 API 地址:', API_CONFIG.baseURL);
+    console.log('📍 gRPC 地址:', GRPC_CONFIG.baseURL);
+}
 })();

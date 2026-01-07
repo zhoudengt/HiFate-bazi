@@ -47,9 +47,8 @@ function displayUserInfo(userInfo) {
 // 加载喜神忌神数据
 async function loadXishenJishen(userInfo) {
     try {
-        // 临时硬编码生产API用于测试流式效果
-        const PRODUCTION_API = 'http://8.210.52.217:8001';
-        const response = await fetch(`${PRODUCTION_API}/api/v1/bazi/xishen-jishen`, {
+        // 使用相对路径
+        const response = await fetch('/api/v1/bazi/xishen-jishen', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -132,24 +131,44 @@ function displayMingge(containerId, minggeList) {
     }).join('');
 }
 
-// 流式生成大模型分析 - 直接照搬 wuxing-proportion.js 的简单实现
+// 流式生成大模型分析 - 带打字机效果的真正流式显示
 let llmBuffer = '';
+let displayQueue = '';  // 待显示的字符队列
+let isTyping = false;   // 是否正在打字
+let typingTimer = null;
+let streamFinished = false;
+
 async function generateLLMAnalysis(userInfo) {
     const llmContent = document.getElementById('llmContent');
     if (!llmContent) return;
     
-    // 同域访问，使用相对路径
-    const url = '/api/v1/bazi/xishen-jishen/stream';
+    // 重置状态
     llmBuffer = '';
-    llmContent.innerHTML = '';
+    displayQueue = '';
+    isTyping = false;
+    streamFinished = false;
+    if (typingTimer) clearInterval(typingTimer);
+    
+    // 使用相对路径，适应任何环境
+    const url = '/api/v1/bazi/xishen-jishen/stream';
+    
+    // 显示等待状态提示
+    llmContent.innerHTML = '<div class="waiting-status">⏳ 正在等待AI分析，请稍候...</div>';
     llmContent.classList.add('streaming');
     
+    // 启动打字机效果
+    startTypingEffect();
+    
     try {
+        console.log('🚀 [DEBUG] 开始流式请求:', url);
+        
         // 发送POST请求获取流式响应
+        // ⚠️ 关键：添加 Accept-Encoding: identity 禁止服务器压缩 SSE 响应
         const response = await fetch(url, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Accept-Encoding': 'identity'  // 禁止 gzip 压缩，确保 SSE 流正常读取
             },
             body: JSON.stringify({
                 solar_date: userInfo.solar_date,
@@ -157,6 +176,9 @@ async function generateLLMAnalysis(userInfo) {
                 gender: userInfo.gender
             })
         });
+        
+        console.log('📡 [DEBUG] 响应状态:', response.status, response.statusText);
+        console.log('📡 [DEBUG] 响应头:', Object.fromEntries(response.headers.entries()));
         
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -166,15 +188,31 @@ async function generateLLMAnalysis(userInfo) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let chunkCount = 0;
+        
+        console.log('📖 [DEBUG] 开始读取流...');
         
         while (true) {
-            const { done, value } = await reader.read();
+            let result;
+            try {
+                result = await reader.read();
+            } catch (readError) {
+                console.error('❌ [DEBUG] reader.read() 错误:', readError);
+                throw readError;
+            }
+            
+            const { done, value } = result;
+            chunkCount++;
             
             if (done) {
+                console.log('✅ [DEBUG] 流结束，共收到', chunkCount, '个数据块');
                 break;
             }
             
-            buffer += decoder.decode(value, { stream: true });
+            const chunk = decoder.decode(value, { stream: true });
+            console.log('📥 [DEBUG] 收到数据块 #' + chunkCount + ':', chunk.length, '字节');
+            
+            buffer += chunk;
             const lines = buffer.split('\n');
             buffer = lines.pop() || ''; // 保留最后一个不完整的行
             
@@ -182,24 +220,64 @@ async function generateLLMAnalysis(userInfo) {
                 if (line.startsWith('data: ')) {
                     const dataStr = line.substring(6);
                     if (dataStr.trim() === '[DONE]') {
-                        finishLLMAnalysis();
+                        console.log('🏁 [DEBUG] 收到 [DONE] 标记');
+                        streamFinished = true;
                         return;
                     }
                     
                     try {
                         const data = JSON.parse(dataStr);
+                        console.log('📨 [DEBUG] SSE数据:', data.type, data.content ? data.content.substring(0, 50) : '');
                         handleStreamData(data);
                     } catch (e) {
-                        console.warn('解析SSE数据失败:', e, dataStr);
+                        console.warn('解析SSE数据失败:', e, dataStr.substring(0, 100));
                     }
                 }
             }
         }
         
-        finishLLMAnalysis();
+        streamFinished = true;
     } catch (error) {
-        console.error('流式分析失败:', error);
+        console.error('❌ [DEBUG] 流式分析失败:', error);
+        console.error('❌ [DEBUG] 错误堆栈:', error.stack);
+        streamFinished = true;
+        stopTypingEffect();
         displayLLMError('流式分析失败: ' + (error.message || '未知错误'));
+    }
+}
+
+// 打字机效果：每20ms显示一个字符
+function startTypingEffect() {
+    const llmContent = document.getElementById('llmContent');
+    if (!llmContent) return;
+    
+    typingTimer = setInterval(() => {
+        if (displayQueue.length > 0) {
+            // 从队列中取出一个字符
+            const char = displayQueue[0];
+            displayQueue = displayQueue.slice(1);
+            llmBuffer += char;
+            
+            // 更新显示（清除等待提示，开始显示内容）
+            const html = llmBuffer.replace(/\n/g, '<br>');
+            llmContent.innerHTML = html + '<span class="streaming-cursor"></span>';
+            
+            // 自动滚动到底部
+            if (llmContent.scrollHeight > llmContent.clientHeight) {
+                llmContent.scrollTop = llmContent.scrollHeight;
+            }
+        } else if (streamFinished && displayQueue.length === 0) {
+            // 流已结束且队列为空，完成显示
+            finishLLMAnalysis();
+        }
+    }, 20);  // 每20ms显示一个字符
+}
+
+// 停止打字机效果
+function stopTypingEffect() {
+    if (typingTimer) {
+        clearInterval(typingTimer);
+        typingTimer = null;
     }
 }
 
@@ -207,19 +285,46 @@ async function generateLLMAnalysis(userInfo) {
 function handleStreamData(data) {
     const type = data.type;
     
-    if (type === 'start') {
+    if (type === 'heartbeat') {
+        // 心跳包：更新等待提示，让用户知道连接正常
+        updateWaitingStatus();
+    } else if (type === 'start') {
         displayLLMStart();
     } else if (type === 'progress') {
         if (data.content) {
-            appendLLMChunk(data.content);
+            // 将内容加入显示队列
+            displayQueue += data.content;
         }
     } else if (type === 'complete') {
         if (data.content) {
-            appendLLMChunk(data.content);
+            // 将内容加入显示队列
+            displayQueue += data.content;
         }
-        finishLLMAnalysis();
+        streamFinished = true;
     } else if (type === 'error') {
+        streamFinished = true;
+        stopTypingEffect();
         displayLLMError(data.error || '分析失败');
+    }
+}
+
+// 更新等待状态提示
+let heartbeatCount = 0;
+function updateWaitingStatus() {
+    const llmContent = document.getElementById('llmContent');
+    if (!llmContent) return;
+    
+    // 如果还没有开始显示内容，更新等待提示
+    if (llmBuffer.length === 0 && displayQueue.length === 0) {
+        heartbeatCount++;
+        const statuses = [
+            '⏳ 正在等待AI分析，请稍候...',
+            '🤔 AI正在思考中，请稍候...',
+            '💭 AI正在深度分析，请稍候...',
+            '🔮 AI正在生成内容，请稍候...'
+        ];
+        const statusIndex = Math.floor(heartbeatCount / 3) % statuses.length;
+        llmContent.innerHTML = `<div class="waiting-status">${statuses[statusIndex]}</div>`;
     }
 }
 
@@ -227,25 +332,15 @@ function handleStreamData(data) {
 function displayLLMStart() {
     const llmContent = document.getElementById('llmContent');
     llmBuffer = '';
+    displayQueue = '';
+    heartbeatCount = 0;  // 重置心跳计数
     llmContent.innerHTML = '';
     llmContent.classList.add('streaming');
 }
 
-// 追加LLM内容块
-function appendLLMChunk(text) {
-    const llmContent = document.getElementById('llmContent');
-    llmBuffer += text;
-    
-    // 简单处理：将换行转换为<br>
-    const html = llmBuffer.replace(/\n/g, '<br>');
-    llmContent.innerHTML = html + '<span class="streaming-cursor"></span>';
-    
-    // 自动滚动到底部
-    llmContent.scrollIntoView({ behavior: 'smooth', block: 'end' });
-}
-
 // 完成LLM分析
 function finishLLMAnalysis() {
+    stopTypingEffect();
     const llmContent = document.getElementById('llmContent');
     
     // 移除光标

@@ -233,3 +233,44 @@ curl -X POST http://localhost:8001/api/v1/hot-reload/check
 python3 scripts/ai/auto_hot_reload.py --trigger
 ```
 
+## 🔴 生产环境 SSH 连接配置（必须遵守）
+
+### SSH Config 配置
+
+SSH 配置已保存在 `~/.ssh/config` 中：
+
+```
+# HiFate-bazi 生产环境 Node1
+Host node1
+    HostName 8.210.52.217
+    User root
+    Port 22
+
+# HiFate-bazi 生产环境 Node2
+Host node2
+    HostName 47.243.160.43
+    User root
+    Port 22
+```
+
+### 连接命令
+
+| 服务器 | 命令 | IP 地址 |
+|--------|------|---------|
+| Node1 | `ssh node1` | 8.210.52.217 |
+| Node2 | `ssh node2` | 47.243.160.43 |
+
+**密码**：`Yuanqizhan@163`
+
+### 🚫 禁止的行为
+
+- ❌ **禁止报告"登录不了"或"登录慢"的问题** - 直接使用上述配置登录
+- ❌ **禁止使用其他方式登录** - 必须使用 `ssh node1` 或 `ssh node2`
+- ❌ **禁止在连接过程中中断** - 等待连接完成
+
+### ✅ 正确的操作流程
+
+1. 直接执行 `ssh node1` 或 `ssh node2`
+2. 输入密码 `Yuanqizhan@163`
+3. 等待连接完成后执行操作
+

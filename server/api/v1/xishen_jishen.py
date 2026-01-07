@@ -505,7 +505,8 @@ async def _xishen_jishen_stream_handler(request: Request):
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"
+                "X-Accel-Buffering": "no",
+                "Content-Encoding": "identity"  # ⚠️ 关键：禁止 GZip 压缩 SSE 流
             }
         )
     except HTTPException:
