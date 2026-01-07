@@ -770,6 +770,68 @@ async def general_review_analysis_stream_generator(
         logger.info(f"[General Review Stream] 格式化数据长度: {len(formatted_data)} 字符")
         logger.debug(f"[General Review Stream] 格式化数据前500字符: {formatted_data[:500]}")
         
+        # 8.1 保存参数到文件（用于数据减枝分析）
+        try:
+            # 创建保存目录
+            save_dir = os.path.join(project_root, "logs", "general_review_params")
+            os.makedirs(save_dir, exist_ok=True)
+            
+            # 生成文件名（使用时间戳避免冲突）
+            timestamp_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+            safe_date = final_solar_date.replace("-", "")
+            safe_time = final_solar_time.replace(":", "-")
+            filename = f"general_review_{safe_date}_{safe_time}_{gender}_{timestamp_str}.json"
+            filepath = os.path.join(save_dir, filename)
+            
+            # 计算数据统计
+            def calculate_module_size(module_data):
+                """计算模块数据大小（JSON序列化后的字节数）"""
+                try:
+                    return len(json.dumps(module_data, ensure_ascii=False))
+                except:
+                    return 0
+            
+            modules_size = {}
+            for key, value in input_data.items():
+                if key != '_debug':  # 跳过调试信息
+                    modules_size[key] = calculate_module_size(value)
+            
+            # 构建保存数据
+            save_data = {
+                "request_params": {
+                    "solar_date": final_solar_date,
+                    "solar_time": final_solar_time,
+                    "gender": gender,
+                    "calendar_type": calendar_type,
+                    "location": location,
+                    "latitude": latitude,
+                    "longitude": longitude
+                },
+                "formatted_data": formatted_data,
+                "statistics": {
+                    "formatted_data_length": len(formatted_data),
+                    "formatted_data_size_kb": round(len(formatted_data) / 1024, 2),
+                    "input_data_keys": list(input_data.keys()),
+                    "modules_size": modules_size,
+                    "modules_size_total_kb": round(sum(modules_size.values()) / 1024, 2),
+                    "dayun_count": len(dayun_sequence),
+                    "liunian_count": len(liunian_sequence),
+                    "special_liunian_count": len(special_liunians)
+                },
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            # 保存到文件
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(save_data, f, ensure_ascii=False, indent=2)
+            
+            logger.info(f"[General Review Stream] ✅ 参数已保存到: {filepath}")
+            logger.info(f"[General Review Stream] 数据统计: 总大小 {save_data['statistics']['formatted_data_size_kb']} KB, "
+                       f"模块总大小 {save_data['statistics']['modules_size_total_kb']} KB")
+        except Exception as e:
+            # 保存失败不影响主流程
+            logger.warning(f"[General Review Stream] 保存参数文件失败: {e}", exc_info=True)
+        
         # 9. 调用Coze API（阶段5：Coze API调用）
         print(f"🔍 [步骤5-Coze调用] 开始调用 Coze API，Bot ID: {used_bot_id}")
         logger.info(f"[步骤5-Coze调用] 开始调用 Coze API，Bot ID: {used_bot_id}")
