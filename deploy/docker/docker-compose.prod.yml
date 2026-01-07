@@ -75,6 +75,7 @@ services:
       - /opt/HiFate-bazi/src:/app/src:ro  # 挂载 src 目录，支持热更新
       - /opt/HiFate-bazi/services:/app/services:ro  # 挂载 services 目录，支持热更新
       - /opt/HiFate-bazi/proto:/app/proto:ro  # 挂载 proto 目录，支持热更新（修复 gRPC 代码）
+      - /opt/HiFate-bazi/local_frontend:/app/local_frontend:ro  # 挂载前端目录，支持静态文件访问
     restart: always
     networks:
       - hifate-network
