@@ -12,7 +12,7 @@ Pillow>=10.0.0
 numpy>=1.26.0,<2  # 与主依赖保持一致
 
 # YOLO for object detection（依赖 torch，约900MB）
-ultralytics>=8.0.0  # YOLOv8
+# ultralytics>=8.0.0  # YOLOv8 - 暂时禁用，Docker 环境兼容性问题
 
 # Database
 PyMySQL>=1.1.0
