@@ -7,7 +7,7 @@ grpcio-tools>=1.60.0
 protobuf>=4.25.3,<5  # 与主依赖保持一致
 
 # Image processing
-opencv-python>=4.8.0
+opencv-python-headless>=4.8.0  # headless 版本适用于 Docker 环境（无 GUI）
 Pillow>=10.0.0
 numpy>=1.26.0,<2  # 与主依赖保持一致
 
