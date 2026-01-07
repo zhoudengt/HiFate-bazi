@@ -254,8 +254,8 @@ async def xishen_jishen_stream_generator(
             'data': data
         }
         
-        # 填充数据：2KB 空格，强制刷新网络缓冲区
-        PADDING = ' ' * 2048
+        # 填充数据：16KB 空格，强制刷新网络缓冲区（需要超过网络设备的缓冲阈值）
+        PADDING = ' ' * 16384
         
         # 3. 先发送完整的喜神忌神数据（type: "data"，带填充）
         data_msg = {
