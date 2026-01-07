@@ -47,8 +47,8 @@ function displayUserInfo(userInfo) {
 // 加载喜神忌神数据
 async function loadXishenJishen(userInfo) {
     try {
-        // 访问生产 FastAPI 接口（已部署心跳包代码）
-        const PRODUCTION_API = 'http://8.210.52.217:8001';
+        // 使用相对路径（同域访问，避免跨域和公网缓冲问题）
+        const PRODUCTION_API = '';
         const response = await fetch(`${PRODUCTION_API}/api/v1/bazi/xishen-jishen`, {
             method: 'POST',
             headers: {
@@ -137,8 +137,8 @@ async function generateLLMAnalysis(userInfo) {
     const llmContent = document.getElementById('llmContent');
     if (!llmContent) return;
     
-    // 访问生产 FastAPI 接口（已部署心跳包 + 2KB填充数据）
-    const PRODUCTION_API = 'http://8.210.52.217:8001';
+    // 使用相对路径（同域访问，避免跨域和公网缓冲问题）
+    const PRODUCTION_API = '';
     let fullContent = '';
     let hasReceivedContent = false;
     
