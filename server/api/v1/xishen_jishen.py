@@ -431,8 +431,7 @@ async def xishen_jishen_stream(
     calendar_type: Optional[str] = Query(None, description="历法类型：solar(阳历) 或 lunar(农历)"),
     location: Optional[str] = Query(None, description="出生地点"),
     latitude: Optional[float] = Query(None, description="纬度"),
-    longitude: Optional[float] = Query(None, description="经度"),
-    req_body: Optional[XishenJishenRequest] = None
+    longitude: Optional[float] = Query(None, description="经度")
 ):
     """
     流式生成喜神忌神大模型分析
@@ -467,11 +466,19 @@ async def xishen_jishen_stream(
     ```
     """
     try:
-        # 优先使用 POST body，否则使用 GET 参数
-        if req_body:
-            params = req_body
+        # 根据请求方法处理参数
+        if request.method == "POST":
+            # POST 请求：从请求体读取 JSON
+            try:
+                body_data = await request.json()
+                params = XishenJishenRequest(**body_data)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"POST 请求体解析失败: {str(e)}"
+                )
         else:
-            # 从 GET 参数构建请求对象
+            # GET 请求：从 URL 参数读取
             if not solar_date or not solar_time or not gender:
                 raise HTTPException(
                     status_code=400,
