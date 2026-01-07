@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI问答 - HiFate</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-layout.css">
+    <script src="js/sidebar.js?v=20250115"></script>
+    <style>
+        /* AI问答页面专用样式 */
+        .ai-qa-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* 生辰输入表单 */
+        .birth-form-section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .birth-form-section.hidden {
+            display: none;
+        }
+
+        /* 提示文字和二级菜单区域 */
+        .category-section {
+            display: none;
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .category-section.active {
+            display: block;
+        }
+
+        .category-prompt {
+            font-size: 18px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .category-menu {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .category-item {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .category-item:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        /* 聊天窗口 */
+        .chat-section {
+            display: none;
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            min-height: 300px;
+        }
+
+        .chat-section.active {
+            display: block;
+        }
+
+        .chat-messages {
+            max-height: 400px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 12px 15px;
+            border-radius: 8px;
+            line-height: 1.6;
+        }
+
+        .message.user {
+            background: #e3f2fd;
+            text-align: right;
+        }
+
+        .message.ai {
+            background: #f5f5f5;
+        }
+
+        .message.streaming {
+            border-left: 3px solid #4caf50;
+        }
+
+        .streaming-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1.2em;
+            background: #4caf50;
+            animation: blink 1s infinite;
+            margin-left: 2px;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        /* 预设问题框 */
+        .preset-questions-section {
+            display: none;
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .preset-questions-section.active {
+            display: block;
+        }
+
+        .preset-questions-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .preset-questions-list {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .preset-question-item {
+            background: #f0f4ff;
+            padding: 12px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 1px solid #e0e0e0;
+            font-size: 14px;
+        }
+
+        .preset-question-item:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        /* 相关问题框 */
+        .related-questions-section {
+            display: none;
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .related-questions-section.active {
+            display: block;
+        }
+
+        .related-questions-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .related-questions-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .related-question-item {
+            background: #fff3e0;
+            padding: 12px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 1px solid #ffcc80;
+            font-size: 14px;
+        }
+
+        .related-question-item:hover {
+            background: #ff9800;
+            color: white;
+            border-color: #ff9800;
+        }
+
+        /* 输入框 */
+        .input-section {
+            display: none;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .input-section.active {
+            display: block;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-group input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .input-group button {
+            padding: 12px 25px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        .input-group button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .input-group button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 加载状态 */
+        .loading {
+            text-align: center;
+            color: #999;
+            padding: 20px;
+        }
+
+        .loading-dots span {
+            animation: blink 1.4s infinite;
+            animation-fill-mode: both;
+        }
+
+        .loading-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .loading-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="main-content">
+            <div class="content-header">
+                <div class="header-left">
+                    <button class="back-btn" onclick="history.back()">←</button>
+                    <h1 class="header-title">AI问答</h1>
+                </div>
+            </div>
+
+            <div class="content-body">
+                <div class="ai-qa-container">
+                    <!-- 生辰输入表单 -->
+                    <div class="birth-form-section" id="birthFormSection">
+                        <h2 style="margin-bottom: 20px;">请输入您的生辰信息</h2>
+                        <form id="birthForm" class="form-card">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>出生年份</label>
+                                    <input type="number" id="year" placeholder="1990" min="1900" max="2100" value="1990" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>出生月份</label>
+                                    <input type="number" id="month" placeholder="1-12" min="1" max="12" value="5" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>出生日期</label>
+                                    <input type="number" id="day" placeholder="1-31" min="1" max="31" value="15" required>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>出生时辰</label>
+                                    <input type="number" id="hour" placeholder="0-23点" min="0" max="23" value="14">
+                                </div>
+                                <div class="form-group">
+                                    <label>性别</label>
+                                    <select id="gender" required>
+                                        <option value="male">男</option>
+                                        <option value="female">女</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary">确认</button>
+                        </form>
+                    </div>
+
+                    <!-- 提示文字和二级菜单 -->
+                    <div class="category-section" id="categorySection">
+                        <div class="category-prompt">看了命盘解读，你是最关注哪一方面呢</div>
+                        <div class="category-menu">
+                            <div class="category-item" data-category="事业财富">事业财富</div>
+                            <div class="category-item" data-category="婚姻">婚姻</div>
+                            <div class="category-item" data-category="健康">健康</div>
+                            <div class="category-item" data-category="子女">子女</div>
+                            <div class="category-item" data-category="流年运势">流年运势</div>
+                            <div class="category-item" data-category="年运报告">年运报告</div>
+                        </div>
+                    </div>
+
+                    <!-- 聊天窗口 -->
+                    <div class="chat-section" id="chatSection">
+                        <h3 style="margin-bottom: 15px;">对话</h3>
+                        <div class="chat-messages" id="chatMessages"></div>
+                    </div>
+
+                    <!-- 预设问题框 -->
+                    <div class="preset-questions-section" id="presetQuestionsSection">
+                        <div class="preset-questions-title">💡 预设问题</div>
+                        <div class="preset-questions-list" id="presetQuestionsList"></div>
+                    </div>
+
+                    <!-- 相关问题框 -->
+                    <div class="related-questions-section" id="relatedQuestionsSection">
+                        <div class="related-questions-title">💡 相关问题</div>
+                        <div class="related-questions-list" id="relatedQuestionsList"></div>
+                    </div>
+
+                    <!-- 输入框 -->
+                    <div class="input-section" id="inputSection">
+                        <div class="input-group">
+                            <input type="text" id="questionInput" placeholder="输入您的问题..." />
+                            <button id="sendBtn" onclick="sendQuestion()">发送</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/ai-qa.js"></script>
+</body>
+</html>
+

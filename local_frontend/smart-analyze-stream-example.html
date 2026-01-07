@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>智能运势流式接口测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .result { border: 1px solid #ddd; padding: 15px; margin-top: 20px; min-height: 200px; }
+        .status { color: #666; margin: 10px 0; }
+        .content { margin: 10px 0; line-height: 1.6; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>智能运势流式接口测试</h1>
+    <button id="testBtn">测试接口</button>
+    <div id="result" class="result"></div>
+
+    <script>
+        document.getElementById('testBtn').addEventListener('click', function() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<div class="status">开始请求...</div>';
+
+            const url = `http://8.210.52.217:8001/api/v1/smart-fortune/smart-analyze-stream?` +
+                `question=${encodeURIComponent("事业财富")}` +
+                `&year=1990&month=1&day=15&hour=12&gender=male&user_id=test_user_001`;
+            
+            console.log('开始请求:', url);
+
+            const eventSource = new EventSource(url);
+
+            eventSource.addEventListener('status', function(e) {
+                const data = JSON.parse(e.data);
+                resultDiv.innerHTML += `<div class="status">状态: ${data.message}</div>`;
+            });
+
+            eventSource.addEventListener('llm_chunk', function(e) {
+                const data = JSON.parse(e.data);
+                resultDiv.innerHTML += `<span class="content">${data.content}</span>`;
+            });
+
+            eventSource.addEventListener('error', function(e) {
+                const data = JSON.parse(e.data);
+                resultDiv.innerHTML += `<div class="error">错误: ${data.message}</div>`;
+                eventSource.close();
+            });
+
+            eventSource.addEventListener('end', function() {
+                resultDiv.innerHTML += '<div class="status">完成</div>';
+                eventSource.close();
+            });
+
+            eventSource.onerror = function(error) {
+                resultDiv.innerHTML += '<div class="error">连接错误</div>';
+                eventSource.close();
+            };
+        });
+    </script>
+</body>
+</html>
+

@@ -71,7 +71,7 @@ yolov8n.pt
 
 # Frontend directories and files (前端团队独立部署，禁止同步)
 # 注意：前端团队已独立部署前端，后端部署脚本必须排除所有前端相关文件
-local_frontend/
+# local_frontend/  # 临时允许提交，用于流式输出测试
 frontend/
 frontend-config/
 nginx/

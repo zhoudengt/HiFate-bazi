@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>八字命理-AI问答 - HiFate</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-layout.css">
+    <link rel="stylesheet" href="css/qa-conversation.css">
+    <script src="js/sidebar.js?v=20250115"></script>
+</head>
+<body>
+    <div class="app-container">
+        <div class="main-content">
+            <div class="content-header">
+                <div class="header-left">
+                    <button class="back-btn" onclick="history.back()">←</button>
+                    <h1 class="header-title">八字命理-AI问答</h1>
+                </div>
+            </div>
+
+            <div class="content-body">
+                <div class="qa-conversation-container">
+                    <!-- 生辰信息输入卡片（首次进入时显示） -->
+                    <div id="userInputCard" class="form-card">
+                        <h2>输入生辰信息</h2>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>出生日期：</label>
+                                <input type="date" id="solarDate" required>
+                            </div>
+                            <div class="form-group">
+                                <label>出生时间：</label>
+                                <input type="time" id="solarTime" required>
+                            </div>
+                            <div class="form-group">
+                                <label>性别：</label>
+                                <select id="gender" required>
+                                    <option value="">请选择</option>
+                                    <option value="male">男</option>
+                                    <option value="female">女</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button class="analyze-btn" onclick="startConversation()">🚀 开始对话</button>
+                    </div>
+
+                    <!-- 对话区域（开始对话后显示） -->
+                    <div id="conversationArea" class="conversation-area" style="display: none;">
+                        <!-- 初始问题和分类选择 -->
+                        <div id="initialQuestionCard" class="form-card" style="display: none;">
+                            <div class="initial-question">
+                                <p id="initialQuestionText" class="question-text"></p>
+                            </div>
+                            <div class="categories">
+                                <h3>请选择您关注的方面：</h3>
+                                <div id="categoryButtons" class="category-buttons"></div>
+                            </div>
+                        </div>
+
+                        <!-- 主对话界面：左侧预设问题 + 右侧对话 -->
+                        <div class="conversation-layout">
+                            <!-- 左侧：预设问题列表 -->
+                            <div class="preset-questions-panel">
+                                <div class="panel-header">
+                                    <h3>预设问题</h3>
+                                    <button class="btn-clear" onclick="clearConversation()">清空对话</button>
+                                </div>
+                                <div id="presetQuestionsList" class="preset-questions-list">
+                                    <!-- 预设问题将动态加载到这里 -->
+                                </div>
+                            </div>
+
+                            <!-- 右侧：对话界面 -->
+                            <div class="conversation-panel">
+                                <!-- 对话历史 -->
+                                <div id="conversationHistory" class="conversation-history"></div>
+
+                                <!-- 输入区域 -->
+                                <div class="input-area">
+                                    <div class="input-wrapper">
+                                        <input 
+                                            type="text" 
+                                            id="questionInput" 
+                                            placeholder="输入您的问题..." 
+                                            onkeypress="handleQuestionKeyPress(event)"
+                                        >
+                                        <button class="btn-send" onclick="askQuestion()" id="sendBtn">
+                                            <span>发送</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="js/qa-conversation.js"></script>
+</body>
+</html>
