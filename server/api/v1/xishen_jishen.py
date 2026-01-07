@@ -375,6 +375,12 @@ async def xishen_jishen_stream_generator(
                 result = await data_queue.get()
                 
                 if result.get('type') == '_done':
+                    # 发送完成消息
+                    msg = {
+                        'type': 'complete',
+                        'content': '分析完成'
+                    }
+                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
                     break
                 elif result.get('type') == 'heartbeat':
                     yield f"data: {json.dumps(result, ensure_ascii=False)}\n\n"
