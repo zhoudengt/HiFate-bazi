@@ -146,31 +146,13 @@ async function generateLLMAnalysis(userInfo) {
         llmContent.innerHTML = '<div class="loading">🔄 正在连接AI服务...</div>';
         console.log('📡 开始连接生产接口:', `${PRODUCTION_API}/api/v1/bazi/xishen-jishen/stream`);
         
-        const response = await fetch(`${PRODUCTION_API}/api/v1/bazi/xishen-jishen/stream`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                solar_date: userInfo.solar_date,
-                solar_time: userInfo.solar_time,
-                gender: userInfo.gender
-            })
-        });
+        // 使用 XMLHttpRequest 来处理流式响应，更稳定
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${PRODUCTION_API}/api/v1/bazi/xishen-jishen/stream`, true);
+        xhr.setRequestHeader('Content-Type', 'application/json');
         
-        console.log('📡 收到响应:', response.status, response.headers.get('content-type'));
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        llmContent.innerHTML = '<div class="loading">⏳ 等待AI分析中（大模型生成需要约1-2分钟）...</div>';
-        
-        // 处理SSE流式响应
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
         let buffer = '';
-        let lastUpdateTime = Date.now();
+        let lastProcessedIndex = 0;
         
         // 处理单行SSE数据
         const processLine = async (line) => {
@@ -178,22 +160,19 @@ async function generateLLMAnalysis(userInfo) {
             
             try {
                 const data = JSON.parse(line.substring(6));
-                console.log('📨 收到数据:', data.type, data.content ? `(${data.content.length}字符)` : '');
+                console.log('📨 收到数据:', data.type, data.content ? `(${typeof data.content === 'string' ? data.content.length : 'object'}字符)` : '');
                 
                 if (data.type === 'progress') {
                     const newContent = data.content || '';
                     if (newContent) {
                         hasReceivedContent = true;
-                        // 逐个字符显示
-                        for (let i = 0; i < newContent.length; i++) {
-                            fullContent += newContent[i];
-                            llmContent.textContent = fullContent;
-                            // 每5个字符等待一次，平衡效果和性能
-                            if (i % 5 === 0) {
-                                await new Promise(resolve => setTimeout(resolve, 10));
-                            }
+                        // 直接追加内容，不逐字符显示（提高性能）
+                        fullContent += newContent;
+                        llmContent.textContent = fullContent;
+                        // 滚动到底部
+                        if (llmContent.scrollHeight > llmContent.clientHeight) {
+                            llmContent.scrollTop = llmContent.scrollHeight;
                         }
-                        lastUpdateTime = Date.now();
                     }
                 } else if (data.type === 'complete') {
                     if (data.content) {
@@ -215,48 +194,110 @@ async function generateLLMAnalysis(userInfo) {
             }
         };
         
-        // 循环读取流
-        while (true) {
-            let result;
-            try {
-                result = await reader.read();
-            } catch (readError) {
-                console.warn('读取流出错:', readError);
-                // 如果已有内容，不显示错误
-                if (fullContent) {
-                    break;
-                }
-                throw readError;
-            }
+        // 处理接收到的数据
+        xhr.onprogress = function() {
+            // 获取新增的数据
+            const newData = xhr.responseText.substring(lastProcessedIndex);
+            lastProcessedIndex = xhr.responseText.length;
             
-            const { done, value } = result;
-            
-            if (done) {
-                console.log('📭 流结束');
-                break;
-            }
-            
-            buffer += decoder.decode(value, { stream: true });
+            buffer += newData;
             const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
+            buffer = lines.pop() || ''; // 保留最后一个不完整的行
             
             for (const line of lines) {
-                await processLine(line);
+                processLine(line);
             }
-        }
+        };
         
-        // 处理缓冲区中剩余的数据
-        if (buffer.trim()) {
-            await processLine(buffer);
-        }
+        // 请求完成
+        xhr.onload = function() {
+            console.log('📭 请求完成，状态:', xhr.status);
+            
+            // 处理缓冲区中剩余的数据
+            if (buffer.trim()) {
+                processLine(buffer);
+            }
+            
+            // 确保显示内容
+            if (fullContent) {
+                llmContent.textContent = fullContent;
+                console.log('✅ 最终内容长度:', fullContent.length);
+            } else if (!hasReceivedContent) {
+                llmContent.innerHTML = '<div class="error">⚠️ 未收到AI分析内容，请稍后重试</div>';
+            }
+        };
         
-        // 流结束，确保显示内容
-        if (fullContent) {
-            llmContent.textContent = fullContent;
-            console.log('✅ 最终内容长度:', fullContent.length);
-        } else {
-            llmContent.innerHTML = '<div class="error">⚠️ 未收到AI分析内容，请稍后重试</div>';
-        }
+        // 处理错误
+        xhr.onerror = function() {
+            console.error('❌ 网络错误');
+            if (fullContent) {
+                // 如果已有内容，显示已收到的内容
+                llmContent.textContent = fullContent;
+            } else {
+                llmContent.innerHTML = '<div class="error">⚠️ 网络错误，请稍后重试</div>';
+            }
+        };
+        
+        // 处理超时
+        xhr.ontimeout = function() {
+            console.error('❌ 请求超时');
+            if (fullContent) {
+                llmContent.textContent = fullContent;
+            } else {
+                llmContent.innerHTML = '<div class="error">⚠️ 请求超时，请稍后重试</div>';
+            }
+        };
+        
+        // 设置超时时间（5分钟）
+        xhr.timeout = 300000;
+        
+        // 发送请求
+        xhr.send(JSON.stringify({
+            solar_date: userInfo.solar_date,
+            solar_time: userInfo.solar_time,
+            gender: userInfo.gender
+        }));
+        
+        console.log('📡 请求已发送');
+        
+        // 等待请求完成
+        await new Promise((resolve, reject) => {
+            xhr.onload = function() {
+                // 处理缓冲区中剩余的数据
+                if (buffer.trim()) {
+                    processLine(buffer);
+                }
+                
+                // 确保显示内容
+                if (fullContent) {
+                    llmContent.textContent = fullContent;
+                    console.log('✅ 最终内容长度:', fullContent.length);
+                } else if (!hasReceivedContent) {
+                    llmContent.innerHTML = '<div class="error">⚠️ 未收到AI分析内容，请稍后重试</div>';
+                }
+                resolve();
+            };
+            
+            xhr.onerror = function() {
+                console.error('❌ 网络错误');
+                if (fullContent) {
+                    llmContent.textContent = fullContent;
+                    resolve();
+                } else {
+                    reject(new Error('网络错误'));
+                }
+            };
+            
+            xhr.ontimeout = function() {
+                console.error('❌ 请求超时');
+                if (fullContent) {
+                    llmContent.textContent = fullContent;
+                    resolve();
+                } else {
+                    reject(new Error('请求超时'));
+                }
+            };
+        });
         
     } catch (error) {
         console.error('生成分析失败:', error);
