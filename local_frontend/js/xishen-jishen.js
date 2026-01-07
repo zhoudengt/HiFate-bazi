@@ -151,10 +151,20 @@ async function generateLLMAnalysis(userInfo) {
         let buffer = '';
         let fullContent = '';
         
-        while (true) {
+        // 使用递归方式处理，确保每次更新都能立即渲染
+        const processChunk = async () => {
             const { done, value } = await reader.read();
             
-            if (done) break;
+            if (done) {
+                // 流结束，显示最终内容
+                if (fullContent) {
+                    llmContent.textContent = fullContent;
+                    llmContent.scrollTop = llmContent.scrollHeight;
+                } else {
+                    llmContent.innerHTML = '<div class="error">未收到分析内容</div>';
+                }
+                return;
+            }
             
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
@@ -167,10 +177,24 @@ async function generateLLMAnalysis(userInfo) {
                         
                         if (data.type === 'progress') {
                             fullContent += data.content || '';
+                            // 立即更新页面显示 - 使用 innerHTML 确保立即渲染
                             llmContent.textContent = fullContent;
+                            // 强制浏览器立即重绘
+                            void llmContent.offsetHeight; // 触发重排
+                            // 滚动到底部，让用户看到最新内容
+                            if (llmContent.scrollHeight > llmContent.clientHeight) {
+                                llmContent.scrollTop = llmContent.scrollHeight;
+                            }
+                            // 使用微任务确保DOM更新立即生效
+                            await new Promise(resolve => {
+                                requestAnimationFrame(() => {
+                                    requestAnimationFrame(resolve);
+                                });
+                            });
                         } else if (data.type === 'complete') {
                             fullContent += data.content || '';
                             llmContent.textContent = fullContent;
+                            llmContent.scrollTop = llmContent.scrollHeight;
                             return; // 完成
                         } else if (data.type === 'error') {
                             throw new Error(data.content || '生成失败');
@@ -180,7 +204,12 @@ async function generateLLMAnalysis(userInfo) {
                     }
                 }
             }
-        }
+            
+            // 继续处理下一个chunk
+            await processChunk();
+        };
+        
+        await processChunk();
         
         // 如果流结束但没有complete消息，显示已收集的内容
         if (fullContent) {
