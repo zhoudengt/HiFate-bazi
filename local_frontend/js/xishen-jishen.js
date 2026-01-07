@@ -137,11 +137,15 @@ async function generateLLMAnalysis(userInfo) {
     const llmContent = document.getElementById('llmContent');
     if (!llmContent) return;
     
+    // 硬编码生产接口地址
+    const PRODUCTION_API = 'http://8.210.52.217:8001';
+    let fullContent = '';
+    let hasReceivedContent = false;
+    
     try {
-        llmContent.innerHTML = '<div class="loading">正在生成分析...</div>';
+        llmContent.innerHTML = '<div class="loading">🔄 正在连接AI服务...</div>';
+        console.log('📡 开始连接生产接口:', `${PRODUCTION_API}/api/v1/bazi/xishen-jishen/stream`);
         
-        // 硬编码生产接口地址
-        const PRODUCTION_API = 'http://8.210.52.217:8001';
         const response = await fetch(`${PRODUCTION_API}/api/v1/bazi/xishen-jishen/stream`, {
             method: 'POST',
             headers: {
@@ -154,84 +158,104 @@ async function generateLLMAnalysis(userInfo) {
             })
         });
         
+        console.log('📡 收到响应:', response.status, response.headers.get('content-type'));
+        
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
+        
+        llmContent.innerHTML = '<div class="loading">⏳ 等待AI分析中（大模型生成需要约1-2分钟）...</div>';
         
         // 处理SSE流式响应
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        let fullContent = '';
+        let lastUpdateTime = Date.now();
         
-        // 使用递归方式处理，确保每次更新都能立即渲染
-        const processChunk = async () => {
-            const { done, value } = await reader.read();
+        // 处理单行SSE数据
+        const processLine = async (line) => {
+            if (!line.startsWith('data: ')) return;
+            
+            try {
+                const data = JSON.parse(line.substring(6));
+                console.log('📨 收到数据:', data.type, data.content ? `(${data.content.length}字符)` : '');
+                
+                if (data.type === 'progress') {
+                    const newContent = data.content || '';
+                    if (newContent) {
+                        hasReceivedContent = true;
+                        // 逐个字符显示
+                        for (let i = 0; i < newContent.length; i++) {
+                            fullContent += newContent[i];
+                            llmContent.textContent = fullContent;
+                            // 每5个字符等待一次，平衡效果和性能
+                            if (i % 5 === 0) {
+                                await new Promise(resolve => setTimeout(resolve, 10));
+                            }
+                        }
+                        lastUpdateTime = Date.now();
+                    }
+                } else if (data.type === 'complete') {
+                    if (data.content) {
+                        fullContent += data.content;
+                        llmContent.textContent = fullContent;
+                    }
+                    console.log('✅ 流式传输完成');
+                } else if (data.type === 'data') {
+                    // 收到基础数据，显示等待状态
+                    console.log('📊 收到基础数据，等待AI分析...');
+                    if (!hasReceivedContent) {
+                        llmContent.innerHTML = '<div class="loading">⏳ 正在生成AI分析（大模型生成需要约1-2分钟）...</div>';
+                    }
+                } else if (data.type === 'error') {
+                    throw new Error(data.content || '生成失败');
+                }
+            } catch (e) {
+                console.warn('解析SSE数据失败:', e, line);
+            }
+        };
+        
+        // 循环读取流
+        while (true) {
+            let result;
+            try {
+                result = await reader.read();
+            } catch (readError) {
+                console.warn('读取流出错:', readError);
+                // 如果已有内容，不显示错误
+                if (fullContent) {
+                    break;
+                }
+                throw readError;
+            }
+            
+            const { done, value } = result;
             
             if (done) {
-                // 流结束，显示最终内容
-                if (fullContent) {
-                    llmContent.textContent = fullContent;
-                    llmContent.scrollTop = llmContent.scrollHeight;
-                } else {
-                    llmContent.innerHTML = '<div class="error">未收到分析内容</div>';
-                }
-                return;
+                console.log('📭 流结束');
+                break;
             }
             
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // 保留最后一个不完整的行
+            buffer = lines.pop() || '';
             
             for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    try {
-                        const data = JSON.parse(line.substring(6));
-                        
-                        if (data.type === 'progress') {
-                            const newContent = data.content || '';
-                            if (newContent) {
-                                // 逐个字符显示，确保用户能看到流式效果
-                                for (let i = 0; i < newContent.length; i++) {
-                                    fullContent += newContent[i];
-                                    llmContent.textContent = fullContent;
-                                    
-                                    // 每显示一个字符后，等待让浏览器渲染（每个字符20ms延迟，确保用户能看到）
-                                    if (i < newContent.length - 1) {
-                                        await new Promise(resolve => setTimeout(resolve, 20));
-                                    }
-                                    
-                                    // 滚动到底部
-                                    if (llmContent.scrollHeight > llmContent.clientHeight) {
-                                        llmContent.scrollTop = llmContent.scrollHeight;
-                                    }
-                                }
-                            }
-                        } else if (data.type === 'complete') {
-                            fullContent += data.content || '';
-                            llmContent.textContent = fullContent;
-                            llmContent.scrollTop = llmContent.scrollHeight;
-                            return; // 完成
-                        } else if (data.type === 'error') {
-                            throw new Error(data.content || '生成失败');
-                        }
-                    } catch (e) {
-                        console.warn('解析SSE数据失败:', e, line);
-                    }
-                }
+                await processLine(line);
             }
-            
-            // 继续处理下一个chunk
-            await processChunk();
-        };
+        }
         
-        await processChunk();
+        // 处理缓冲区中剩余的数据
+        if (buffer.trim()) {
+            await processLine(buffer);
+        }
         
-        // 如果流结束但没有complete消息，显示已收集的内容
+        // 流结束，确保显示内容
         if (fullContent) {
             llmContent.textContent = fullContent;
+            console.log('✅ 最终内容长度:', fullContent.length);
         } else {
-            llmContent.innerHTML = '<div class="error">未收到分析内容</div>';
+            llmContent.innerHTML = '<div class="error">⚠️ 未收到AI分析内容，请稍后重试</div>';
         }
         
     } catch (error) {
