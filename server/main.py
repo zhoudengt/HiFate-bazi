@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 FastAPI 应用主入口
+# 2026-01-07: 触发 Docker 镜像重新构建（包含 pytz 依赖）
 """
 
 import sys
