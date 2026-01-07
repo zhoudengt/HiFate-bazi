@@ -310,12 +310,46 @@ async def xishen_jishen_stream_generator(
             return
         
         # 7. 流式生成大模型分析（带心跳包保持连接）
-        # 心跳间隔（秒）- 每10秒发送一次心跳
-        HEARTBEAT_INTERVAL = 10
-        last_heartbeat_time = asyncio.get_event_loop().time()
-        heartbeat_count = 0
+        # 使用异步队列来实现心跳与数据的交错发送
+        import asyncio
+        from asyncio import Queue
         
-        # 发送初始心跳，通知前端开始等待
+        HEARTBEAT_INTERVAL = 10  # 心跳间隔（秒）
+        data_queue = Queue()
+        stop_heartbeat = asyncio.Event()
+        
+        # 心跳任务：定期发送心跳包
+        async def heartbeat_task():
+            heartbeat_count = 0
+            while not stop_heartbeat.is_set():
+                try:
+                    await asyncio.wait_for(stop_heartbeat.wait(), timeout=HEARTBEAT_INTERVAL)
+                    break  # 如果收到停止信号，退出
+                except asyncio.TimeoutError:
+                    # 超时，发送心跳
+                    heartbeat_count += 1
+                    heartbeat_msg = {
+                        'type': 'heartbeat',
+                        'content': f'正在生成AI分析... ({heartbeat_count * HEARTBEAT_INTERVAL}秒)'
+                    }
+                    await data_queue.put(heartbeat_msg)
+                    logger.info(f"[喜神忌神流式] 发送心跳包 #{heartbeat_count}")
+        
+        # 数据任务：从 Coze API 读取数据
+        async def data_task():
+            try:
+                async for result in coze_service.stream_custom_analysis(prompt, actual_bot_id):
+                    await data_queue.put(result)
+                # 发送完成标记
+                await data_queue.put({'type': '_done'})
+            except Exception as e:
+                logger.error(f"[喜神忌神流式] Coze API 错误: {e}")
+                await data_queue.put({'type': 'error', 'content': str(e)})
+                await data_queue.put({'type': '_done'})
+            finally:
+                stop_heartbeat.set()
+        
+        # 发送初始心跳
         heartbeat_msg = {
             'type': 'heartbeat',
             'content': '正在生成AI分析，请稍候...'
@@ -323,42 +357,48 @@ async def xishen_jishen_stream_generator(
         yield f"data: {json.dumps(heartbeat_msg, ensure_ascii=False)}\n\n"
         logger.info("[喜神忌神流式] 发送初始心跳")
         
-        async for result in coze_service.stream_custom_analysis(prompt, actual_bot_id):
-            current_time = asyncio.get_event_loop().time()
-            
-            # 检查是否需要发送心跳包（如果距离上次心跳超过间隔时间）
-            if current_time - last_heartbeat_time >= HEARTBEAT_INTERVAL:
-                heartbeat_count += 1
-                heartbeat_msg = {
-                    'type': 'heartbeat',
-                    'content': f'正在生成AI分析... ({heartbeat_count * HEARTBEAT_INTERVAL}秒)'
-                }
-                yield f"data: {json.dumps(heartbeat_msg, ensure_ascii=False)}\n\n"
-                last_heartbeat_time = current_time
-                logger.info(f"[喜神忌神流式] 发送心跳包 #{heartbeat_count}")
-            
-            if result.get('type') == 'progress':
-                msg = {
-                    'type': 'progress',
-                    'content': result.get('content', '')
-                }
-                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                last_heartbeat_time = current_time  # 收到数据时重置心跳计时
-                await asyncio.sleep(0.05)
-            elif result.get('type') == 'complete':
-                msg = {
-                    'type': 'complete',
-                    'content': result.get('content', '')
-                }
-                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                return
-            elif result.get('type') == 'error':
-                msg = {
-                    'type': 'error',
-                    'content': result.get('content', '生成失败')
-                }
-                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                return
+        # 启动心跳和数据任务
+        heartbeat_coro = asyncio.create_task(heartbeat_task())
+        data_coro = asyncio.create_task(data_task())
+        
+        try:
+            # 从队列中读取数据并发送
+            while True:
+                result = await data_queue.get()
+                
+                if result.get('type') == '_done':
+                    break
+                elif result.get('type') == 'heartbeat':
+                    yield f"data: {json.dumps(result, ensure_ascii=False)}\n\n"
+                elif result.get('type') == 'progress':
+                    msg = {
+                        'type': 'progress',
+                        'content': result.get('content', '')
+                    }
+                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                    await asyncio.sleep(0.05)
+                elif result.get('type') == 'complete':
+                    msg = {
+                        'type': 'complete',
+                        'content': result.get('content', '')
+                    }
+                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                    break
+                elif result.get('type') == 'error':
+                    msg = {
+                        'type': 'error',
+                        'content': result.get('content', '生成失败')
+                    }
+                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                    break
+        finally:
+            # 清理任务
+            stop_heartbeat.set()
+            heartbeat_coro.cancel()
+            try:
+                await heartbeat_coro
+            except asyncio.CancelledError:
+                pass
                 
     except Exception as e:
         error_msg = {
