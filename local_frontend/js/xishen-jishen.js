@@ -178,19 +178,36 @@ async function generateLLMAnalysis(userInfo) {
                         if (data.type === 'progress') {
                             const newContent = data.content || '';
                             if (newContent) {
-                                // 逐个字符显示，确保用户能看到流式效果
-                                for (let i = 0; i < newContent.length; i++) {
-                                    fullContent += newContent[i];
-                                    llmContent.textContent = fullContent;
-                                    // 每显示一个字符后，等待一小段时间让浏览器渲染
-                                    if (i % 3 === 0) { // 每3个字符等待一次，平衡流畅度和性能
-                                        await new Promise(resolve => {
-                                            requestAnimationFrame(() => {
-                                                requestAnimationFrame(resolve);
-                                            });
-                                        });
+                                // 将新内容追加到完整内容
+                                fullContent += newContent;
+                                
+                                // 如果内容块较小（<=5字符），逐个字符显示
+                                // 如果内容块较大，分段显示（每5个字符显示一次）
+                                if (newContent.length <= 5) {
+                                    // 小内容块：逐个字符显示
+                                    for (let i = 0; i < newContent.length; i++) {
+                                        const currentLength = fullContent.length - newContent.length + i + 1;
+                                        llmContent.textContent = fullContent.substring(0, currentLength);
+                                        // 每2个字符等待一次渲染
+                                        if (i % 2 === 0 && i > 0) {
+                                            await new Promise(resolve => requestAnimationFrame(resolve));
+                                        }
+                                    }
+                                } else {
+                                    // 大内容块：分段显示（每5个字符显示一次）
+                                    const displayLength = fullContent.length;
+                                    const previousLength = displayLength - newContent.length;
+                                    for (let i = previousLength; i < displayLength; i += 5) {
+                                        const endIndex = Math.min(i + 5, displayLength);
+                                        llmContent.textContent = fullContent.substring(0, endIndex);
+                                        // 每段之间等待一次渲染
+                                        await new Promise(resolve => requestAnimationFrame(resolve));
                                     }
                                 }
+                                
+                                // 确保显示完整内容
+                                llmContent.textContent = fullContent;
+                                
                                 // 滚动到底部
                                 if (llmContent.scrollHeight > llmContent.clientHeight) {
                                     llmContent.scrollTop = llmContent.scrollHeight;
