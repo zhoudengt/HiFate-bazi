@@ -186,6 +186,12 @@ async function generateLLMAnalysis(userInfo) {
                     if (!hasReceivedContent) {
                         llmContent.innerHTML = '<div class="loading">⏳ 正在生成AI分析（大模型生成需要约1-2分钟）...</div>';
                     }
+                } else if (data.type === 'heartbeat') {
+                    // 心跳包 - 保持连接活跃，更新等待状态
+                    console.log('💓 收到心跳:', data.content);
+                    if (!hasReceivedContent) {
+                        llmContent.innerHTML = `<div class="loading">⏳ ${data.content || '正在生成AI分析...'}</div>`;
+                    }
                 } else if (data.type === 'error') {
                     throw new Error(data.content || '生成失败');
                 }

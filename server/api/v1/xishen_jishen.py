@@ -309,14 +309,41 @@ async def xishen_jishen_stream_generator(
             yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 7. 流式生成大模型分析
+        # 7. 流式生成大模型分析（带心跳包保持连接）
+        # 心跳间隔（秒）- 每10秒发送一次心跳
+        HEARTBEAT_INTERVAL = 10
+        last_heartbeat_time = asyncio.get_event_loop().time()
+        heartbeat_count = 0
+        
+        # 发送初始心跳，通知前端开始等待
+        heartbeat_msg = {
+            'type': 'heartbeat',
+            'content': '正在生成AI分析，请稍候...'
+        }
+        yield f"data: {json.dumps(heartbeat_msg, ensure_ascii=False)}\n\n"
+        logger.info("[喜神忌神流式] 发送初始心跳")
+        
         async for result in coze_service.stream_custom_analysis(prompt, actual_bot_id):
+            current_time = asyncio.get_event_loop().time()
+            
+            # 检查是否需要发送心跳包（如果距离上次心跳超过间隔时间）
+            if current_time - last_heartbeat_time >= HEARTBEAT_INTERVAL:
+                heartbeat_count += 1
+                heartbeat_msg = {
+                    'type': 'heartbeat',
+                    'content': f'正在生成AI分析... ({heartbeat_count * HEARTBEAT_INTERVAL}秒)'
+                }
+                yield f"data: {json.dumps(heartbeat_msg, ensure_ascii=False)}\n\n"
+                last_heartbeat_time = current_time
+                logger.info(f"[喜神忌神流式] 发送心跳包 #{heartbeat_count}")
+            
             if result.get('type') == 'progress':
                 msg = {
                     'type': 'progress',
                     'content': result.get('content', '')
                 }
                 yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                last_heartbeat_time = current_time  # 收到数据时重置心跳计时
                 await asyncio.sleep(0.05)
             elif result.get('type') == 'complete':
                 msg = {
