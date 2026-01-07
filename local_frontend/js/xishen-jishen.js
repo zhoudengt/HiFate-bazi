@@ -47,19 +47,32 @@ function displayUserInfo(userInfo) {
 // 加载喜神忌神数据
 async function loadXishenJishen(userInfo) {
     try {
-        // 调用API获取基础数据
-        const response = await api.post('/bazi/xishen-jishen', {
-            solar_date: userInfo.solar_date,
-            solar_time: userInfo.solar_time,
-            gender: userInfo.gender
+        // 硬编码生产接口地址
+        const PRODUCTION_API = 'http://8.210.52.217:8001';
+        const response = await fetch(`${PRODUCTION_API}/api/v1/bazi/xishen-jishen`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                solar_date: userInfo.solar_date,
+                solar_time: userInfo.solar_time,
+                gender: userInfo.gender
+            })
         });
         
-        if (!response.success) {
-            showError(response.error || '获取数据失败');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            showError(result.error || '获取数据失败');
             return;
         }
         
-        const data = response.data;
+        const data = result.data;
         
         // 显示喜神五行
         displayElements('xiShenElements', data.xi_shen_elements || [], 'xi');
