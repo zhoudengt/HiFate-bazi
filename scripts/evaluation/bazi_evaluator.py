@@ -384,24 +384,45 @@ class BaziEvaluator:
         start_time = time.time()
         
         try:
-            # ==================== 阶段1：并行调用 Coze API ====================
-            coze_results = [None] * 10  # Coze 结果占位
+            # ==================== 阶段0：调用基础数据接口（独立于平台，始终调用）====================
+            self._log_progress("  调用基础数据接口...")
+            basic_data_start = time.time()
+            
+            try:
+                unified_data = await self.api_client.call_bazi_data(solar_date, solar_time, gender)
+                if isinstance(unified_data, Exception):
+                    self._log(f"  统一数据接口异常: {unified_data}", "WARN")
+                    results['basic'] = self._format_basic_data_from_unified({})
+                else:
+                    results['basic'] = self._format_basic_data_from_unified(unified_data)
+            except Exception as e:
+                self._log(f"  统一数据接口异常: {e}", "WARN")
+                results['basic'] = self._format_basic_data_from_unified({})
+            
+            # 如果从八字列解析出了日柱，使用八字列的日柱（优先级更高）
+            if test_case.day_pillar:
+                results['basic']['day_stem'] = test_case.day_pillar
+            
+            basic_data_time = time.time() - basic_data_start
+            self._log_progress(f"  基础数据接口完成，耗时: {basic_data_time:.1f}秒")
+            
+            # ==================== 阶段1：并行调用 Coze API（大模型接口）====================
+            coze_results = [None] * 9  # Coze 结果占位（基础数据已独立，现在是9个）
             
             if self.config.use_coze:
                 self._log_progress("  并行调用 Coze API 接口...")
                 
-                # 定义 Coze API 调用任务
+                # 定义 Coze API 调用任务（基础数据已独立，不再包含）
                 coze_tasks = [
-                    self.api_client.call_bazi_data(solar_date, solar_time, gender),           # 0: 统一数据接口
-                    self.api_client.call_rizhu_liujiazi(solar_date, solar_time, gender),      # 1: 日元-六十甲子
-                    self.api_client.call_wuxing_proportion_stream(solar_date, solar_time, gender),  # 2: 五行占比
-                    self.api_client.call_xishen_jishen_stream(solar_date, solar_time, gender),      # 3: 喜神忌神
-                    self.api_client.call_career_wealth_stream(solar_date, solar_time, gender),      # 4: 事业财富
-                    self.api_client.call_marriage_analysis_stream(solar_date, solar_time, gender),  # 5: 感情婚姻
-                    self.api_client.call_health_stream(solar_date, solar_time, gender),             # 6: 身体健康
-                    self.api_client.call_children_study_stream(solar_date, solar_time, gender),     # 7: 子女学习
-                    self.api_client.call_general_review_stream(solar_date, solar_time, gender),     # 8: 总评
-                    self.api_client.call_daily_fortune_calendar_stream(solar_date, solar_time, gender),  # 9: 每日运势
+                    self.api_client.call_rizhu_liujiazi(solar_date, solar_time, gender),      # 0: 日元-六十甲子（原索引1）
+                    self.api_client.call_wuxing_proportion_stream(solar_date, solar_time, gender),  # 1: 五行占比（原索引2）
+                    self.api_client.call_xishen_jishen_stream(solar_date, solar_time, gender),      # 2: 喜神忌神（原索引3）
+                    self.api_client.call_career_wealth_stream(solar_date, solar_time, gender),      # 3: 事业财富（原索引4）
+                    self.api_client.call_marriage_analysis_stream(solar_date, solar_time, gender),  # 4: 感情婚姻（原索引5）
+                    self.api_client.call_health_stream(solar_date, solar_time, gender),             # 5: 身体健康（原索引6）
+                    self.api_client.call_children_study_stream(solar_date, solar_time, gender),     # 6: 子女学习（原索引7）
+                    self.api_client.call_general_review_stream(solar_date, solar_time, gender),     # 7: 总评（原索引8）
+                    self.api_client.call_daily_fortune_calendar_stream(solar_date, solar_time, gender),  # 8: 每日运势（原索引9）
                 ]
                 
                 coze_results = await asyncio.gather(*coze_tasks, return_exceptions=True)
@@ -410,21 +431,9 @@ class BaziEvaluator:
             
             # ==================== 阶段2：处理 Coze API 返回结果 ====================
             
-            # 处理统一数据接口 (index 0)
-            unified_data = coze_results[0] if coze_results[0] else {}
-            if isinstance(unified_data, Exception):
-                self._log(f"  统一数据接口异常: {unified_data}", "WARN")
-                results['basic'] = self._format_basic_data_from_unified({})
-            else:
-                results['basic'] = self._format_basic_data_from_unified(unified_data)
-            
-            # 如果从八字列解析出了日柱，使用八字列的日柱（优先级更高）
-            if test_case.day_pillar:
-                results['basic']['day_stem'] = test_case.day_pillar
-            
             if self.config.use_coze:
-                # 处理日元-六十甲子 (index 1)
-                rizhu_data = coze_results[1]
+                # 处理日元-六十甲子 (index 0，原索引1)
+                rizhu_data = coze_results[0]
                 if isinstance(rizhu_data, Exception):
                     results['rizhu_liujiazi'] = f"[异常] {rizhu_data}"
                 elif rizhu_data and rizhu_data.get('success'):
@@ -434,16 +443,16 @@ class BaziEvaluator:
                 else:
                     results['rizhu_liujiazi'] = rizhu_data.get('error', '') if rizhu_data else ''
                 
-                # 处理流式分析接口结果
+                # 处理流式分析接口结果（索引全部 -1）
                 stream_mapping = [
-                    (2, 'wuxing_analysis', '五行占比'),
-                    (3, 'xishen_jishen', '喜神忌神'),
-                    (4, 'career_wealth', '事业财富'),
-                    (5, 'marriage', '感情婚姻'),
-                    (6, 'health', '身体健康'),
-                    (7, 'children_study', '子女学习'),
-                    (8, 'general_review', '总评'),
-                    (9, 'daily_fortune', '每日运势'),
+                    (1, 'wuxing_analysis', '五行占比'),      # 原索引2，现在是1
+                    (2, 'xishen_jishen', '喜神忌神'),        # 原索引3，现在是2
+                    (3, 'career_wealth', '事业财富'),        # 原索引4，现在是3
+                    (4, 'marriage', '感情婚姻'),             # 原索引5，现在是4
+                    (5, 'health', '身体健康'),                # 原索引6，现在是5
+                    (6, 'children_study', '子女学习'),        # 原索引7，现在是6
+                    (7, 'general_review', '总评'),            # 原索引8，现在是7
+                    (8, 'daily_fortune', '每日运势'),         # 原索引9，现在是8
                 ]
                 
                 for idx, key, name in stream_mapping:
@@ -452,9 +461,17 @@ class BaziEvaluator:
                         results[key] = f"[异常] {resp}"
                         self._log(f"  {name}接口异常: {resp}", "WARN")
                     elif resp:
-                        results[key] = resp.content or resp.error or ''
+                        # 优先使用内容，如果有错误也保留错误信息
+                        if resp.content:
+                            results[key] = resp.content
+                        elif resp.error:
+                            results[key] = f"[错误] {resp.error}"
+                            self._log(f"  {name}接口错误: {resp.error}", "WARN")
+                        else:
+                            results[key] = "[空内容]"
+                            self._log(f"  {name}接口返回空内容", "WARN")
                     else:
-                        results[key] = ''
+                        results[key] = "[未调用]"
             
             # ==================== 阶段3：并行调用百炼 API ====================
             
