@@ -3,18 +3,29 @@
 """
 Coze 流式服务
 用于调用 Coze API 生成流式响应（SSE格式）
+
+优化特性:
+- 重试机制：支持指数退避重试（最多3次，间隔2s->4s->8s）
+- 备用Token：支持自动切换备用Token
+- 结构化日志：支持 trace_id 追踪请求
 """
 
 import os
 import sys
 import json
 import requests
-from typing import Dict, Any, Optional, AsyncGenerator
+import uuid
+import time
+import logging
+from typing import Dict, Any, Optional, AsyncGenerator, Tuple
 import asyncio
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 # 导入配置加载器（从数据库读取配置）
 try:
@@ -23,6 +34,84 @@ except ImportError:
     # 如果导入失败，抛出错误（不允许降级）
     def get_config_from_db_only(key: str) -> Optional[str]:
         raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
+
+
+# ==================== 重试配置 ====================
+class RetryConfig:
+    """重试配置"""
+    MAX_RETRIES = 3  # 最大重试次数
+    BASE_DELAY = 2.0  # 基础延迟（秒）
+    MAX_DELAY = 16.0  # 最大延迟（秒）
+    EXPONENTIAL_BASE = 2  # 指数基数
+    
+    # 可重试的错误类型
+    RETRYABLE_EXCEPTIONS = (
+        requests.exceptions.Timeout,
+        requests.exceptions.ConnectionError,
+        requests.exceptions.ChunkedEncodingError,
+    )
+    
+    # 可重试的 HTTP 状态码
+    RETRYABLE_STATUS_CODES = {500, 502, 503, 504, 429}
+    
+    # 可重试的 Coze 错误码（临时性错误）
+    RETRYABLE_COZE_CODES = {
+        700012,  # 服务繁忙
+        700013,  # 服务不可用
+        700014,  # 限流
+    }
+    
+    # 不可重试的 Coze 错误码
+    NON_RETRYABLE_COZE_CODES = {
+        4101,  # Token 错误
+        4028,  # 配额用尽（需要切换备用Token）
+    }
+
+
+def calculate_retry_delay(attempt: int, config: RetryConfig = RetryConfig) -> float:
+    """
+    计算重试延迟（指数退避）
+    
+    Args:
+        attempt: 当前尝试次数（从0开始）
+        config: 重试配置
+        
+    Returns:
+        float: 延迟秒数
+    """
+    delay = config.BASE_DELAY * (config.EXPONENTIAL_BASE ** attempt)
+    return min(delay, config.MAX_DELAY)
+
+
+def is_retryable_error(error: Exception, response: Optional[requests.Response] = None,
+                       coze_error_code: Optional[int] = None) -> bool:
+    """
+    判断错误是否可重试
+    
+    Args:
+        error: 异常对象
+        response: HTTP响应对象
+        coze_error_code: Coze API 错误码
+        
+    Returns:
+        bool: 是否可重试
+    """
+    # 检查异常类型
+    if isinstance(error, RetryConfig.RETRYABLE_EXCEPTIONS):
+        return True
+    
+    # 检查 HTTP 状态码
+    if response is not None and response.status_code in RetryConfig.RETRYABLE_STATUS_CODES:
+        return True
+    
+    # 检查 Coze 错误码
+    if coze_error_code is not None:
+        if coze_error_code in RetryConfig.NON_RETRYABLE_COZE_CODES:
+            return False
+        if coze_error_code in RetryConfig.RETRYABLE_COZE_CODES:
+            return True
+    
+    return False
 
 
 class CozeStreamService:
@@ -532,68 +621,63 @@ class CozeStreamService:
     async def stream_custom_analysis(
         self,
         prompt: str,
-        bot_id: Optional[str] = None
+        bot_id: Optional[str] = None,
+        trace_id: Optional[str] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         流式生成自定义分析（通用方法）
         
+        优化特性:
+        - 支持重试机制（指数退避，最多3次）
+        - 支持备用Token自动切换
+        - 支持trace_id请求追踪
+        
         Args:
             prompt: 提示词
             bot_id: Bot ID（可选，默认使用初始化时的bot_id）
+            trace_id: 请求追踪ID（可选，用于日志关联）
             
         Yields:
             dict: 包含 type 和 content 的字典
                 - type: 'progress' 或 'complete' 或 'error'
                 - content: 内容文本
         """
+        # 生成或使用 trace_id
+        trace_id = trace_id or str(uuid.uuid4())[:8]
+        request_start_time = time.time()
+        
         # ⚠️ 关键修复：每次调用时重新从数据库读取配置（支持热更新）
         # 优先级：参数传入 > 数据库配置 > 实例变量（只从数据库读取，不降级到环境变量）
         current_access_token = get_config_from_db_only("COZE_ACCESS_TOKEN") or self.access_token
+        backup_access_token = None
+        try:
+            backup_access_token = get_config_from_db_only("COZE_ACCESS_TOKEN_BACKUP")
+        except Exception:
+            pass
+        
         if not current_access_token:
+            logger.error(f"[{trace_id}] ❌ 配置缺失: COZE_ACCESS_TOKEN")
             yield {
                 'type': 'error',
                 'content': '数据库配置缺失: COZE_ACCESS_TOKEN，请在 service_configs 表中配置'
             }
             return
         
-        # 更新 headers（使用最新的 Token）
-        if current_access_token.startswith("pat_"):
-            headers_to_use = {
-                "Authorization": f"Bearer {current_access_token}",
-                "Content-Type": "application/json",
-                "Accept": "text/event-stream"
-            }
-        else:
-            headers_to_use = {
-                "Authorization": f"Bearer {current_access_token}",
-                "Content-Type": "application/json",
-                "Accept": "text/event-stream"
-            }
-        headers_pat_to_use = {
-            "Authorization": f"PAT {current_access_token}",
-            "Content-Type": "application/json",
-            "Accept": "text/event-stream"
-        }
-        
         # 优先级：参数传入 > 数据库配置 > 实例变量（只从数据库读取，不降级到环境变量）
         used_bot_id = bot_id or get_config_from_db_only("COZE_BOT_ID") or self.bot_id
         
         if not used_bot_id:
+            logger.error(f"[{trace_id}] ❌ 配置缺失: COZE_BOT_ID")
             yield {
                 'type': 'error',
                 'content': 'Coze Bot ID 未设置'
             }
             return
         
-        # Coze API 端点（流式）- 使用 v3 API（参考 fortune_llm_client.py）
-        possible_endpoints = [
-            "/v3/chat",  # Coze v3 标准端点
-        ]
+        # Coze API 端点（流式）- 使用 v3 API
+        url = f"{self.api_base}/v3/chat"
         
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        # 流式 payload 格式（使用 additional_messages 格式，参考 fortune_llm_client.py）
+        # 流式 payload 格式
         payload = {
             "bot_id": str(used_bot_id),
             "user_id": "system",
@@ -607,82 +691,130 @@ class CozeStreamService:
             "stream": True
         }
         
-        logger.info(f"🚀 准备调用 Coze API: Bot ID={used_bot_id}, Prompt长度={len(prompt)}")
-        logger.info(f"📝 Prompt前1000字符: {prompt[:1000]}...")
-        logger.info(f"📦 发送的 payload 结构: bot_id, user_id, additional_messages, stream")
+        logger.info(f"[{trace_id}] 🚀 准备调用 Coze API: Bot ID={used_bot_id}, Prompt长度={len(prompt)}")
+        logger.info(f"[{trace_id}] 📝 Prompt前500字符: {prompt[:500]}...")
+        
+        # ==================== 重试循环 ====================
+        tokens_to_try = [current_access_token]
+        if backup_access_token and backup_access_token != current_access_token:
+            tokens_to_try.append(backup_access_token)
         
         last_error = None
+        last_coze_error_code = None
         
-        # 尝试不同的端点
-        for endpoint in possible_endpoints:
-            url = f"{self.api_base}{endpoint}"
+        for token_index, access_token in enumerate(tokens_to_try):
+            is_backup_token = token_index > 0
+            token_label = "备用Token" if is_backup_token else "主Token"
             
-            # 尝试两种认证方式
-            for headers_to_use in [self.headers, self.headers_pat]:
-                try:
-                    # 发送流式请求（在线程池中运行，避免阻塞）
-                    loop = asyncio.get_event_loop()
-                    # 超时设置：(连接超时, 读取超时)
-                    # 大模型生成内容需要较长时间，读取超时设置为 180 秒
-                    response = await loop.run_in_executor(
-                        None,
-                        lambda: requests.post(
-                            url,
-                            headers=headers_to_use,
-                            json=payload,
-                            stream=True,
-                            timeout=(30, 180)  # 连接30秒，读取180秒
+            # 构建 headers
+            headers_bearer = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream"
+            }
+            headers_pat = {
+                "Authorization": f"PAT {access_token}",
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream"
+            }
+            
+            # 尝试两种认证方式，每种认证方式支持重试
+            for auth_index, headers_to_use in enumerate([headers_bearer, headers_pat]):
+                auth_label = "Bearer" if auth_index == 0 else "PAT"
+                
+                # ==================== 带重试的请求 ====================
+                for attempt in range(RetryConfig.MAX_RETRIES):
+                    attempt_start_time = time.time()
+                    should_retry = False
+                    
+                    try:
+                        if attempt > 0:
+                            delay = calculate_retry_delay(attempt - 1)
+                            logger.info(f"[{trace_id}] 🔄 第{attempt + 1}次重试 ({token_label}/{auth_label})，等待 {delay:.1f}s...")
+                            await asyncio.sleep(delay)
+                        
+                        logger.info(f"[{trace_id}] 📤 发送请求 (尝试 {attempt + 1}/{RetryConfig.MAX_RETRIES}, {token_label}/{auth_label})")
+                        
+                        # 发送流式请求（在线程池中运行，避免阻塞）
+                        loop = asyncio.get_event_loop()
+                        # 超时设置：(连接超时, 读取超时)
+                        # 大模型生成内容需要较长时间，读取超时设置为 180 秒
+                        response = await loop.run_in_executor(
+                            None,
+                            lambda: requests.post(
+                                url,
+                                headers=headers_to_use,
+                                json=payload,
+                                stream=True,
+                                timeout=(30, 180)  # 连接30秒，读取180秒
+                            )
                         )
-                    )
-                    
-                    # ⚠️ 检查响应 Content-Type
-                    content_type = response.headers.get('Content-Type', '')
-                    
-                    # 如果响应是 JSON 格式（可能是错误响应），先检查
-                    if 'application/json' in content_type:
-                        try:
-                            error_data = response.json()
-                            error_code = error_data.get('code', 0)
-                            error_msg = error_data.get('msg', '未知错误')
-                            
-                            # Token 错误（code: 4101）
-                            if error_code == 4101:
-                                logger.error(f"❌ Coze API Token 错误 (code: {error_code}): {error_msg}")
+                        
+                        request_duration = time.time() - attempt_start_time
+                        logger.info(f"[{trace_id}] 📥 收到响应: status={response.status_code}, 耗时={request_duration:.2f}s")
+                        
+                        # ⚠️ 检查响应 Content-Type
+                        content_type = response.headers.get('Content-Type', '')
+                        
+                        # 如果响应是 JSON 格式（可能是错误响应），先检查
+                        if 'application/json' in content_type:
+                            try:
+                                error_data = response.json()
+                                error_code = error_data.get('code', 0)
+                                error_msg = error_data.get('msg', '未知错误')
+                                last_coze_error_code = error_code
+                                
+                                # Token 错误（code: 4101）- 不重试，尝试下一个认证方式或Token
+                                if error_code == 4101:
+                                    logger.error(f"[{trace_id}] ❌ Token 错误 (code: {error_code}): {error_msg}")
+                                    last_error = f"Token错误: {error_msg}"
+                                    break  # 跳出重试循环，尝试下一种认证方式
+                                
+                                # 配额用尽（code: 4028）- 不重试当前Token，尝试备用Token
+                                if error_code == 4028:
+                                    logger.warning(f"[{trace_id}] ⚠️ 配额用尽 (code: {error_code}): {error_msg}, 将尝试备用Token")
+                                    last_error = f"配额用尽: {error_msg}"
+                                    break  # 跳出重试循环和认证方式循环，尝试备用Token
+                                
+                                # 检查是否为可重试的 Coze 错误码
+                                if error_code in RetryConfig.RETRYABLE_COZE_CODES:
+                                    logger.warning(f"[{trace_id}] ⚠️ 可重试错误 (code: {error_code}): {error_msg}")
+                                    last_error = f"Coze错误({error_code}): {error_msg}"
+                                    should_retry = True
+                                    continue  # 继续重试
+                                
+                                # 其他错误 - 不重试
+                                logger.error(f"[{trace_id}] ❌ Coze API 返回错误 (code: {error_code}): {error_msg}")
                                 yield {
                                     'type': 'error',
-                                    'content': f'Coze API Token 配置错误（错误码: {error_code}）。请检查环境变量 COZE_ACCESS_TOKEN 是否正确配置。错误信息: {error_msg}'
+                                    'content': f'Coze API 错误（错误码: {error_code}）: {error_msg}'
                                 }
                                 return
+                            except json.JSONDecodeError:
+                                # JSON 解析失败，继续处理为 SSE 流
+                                pass
+                        
+                        # 检查是否为可重试的 HTTP 状态码
+                        if response.status_code in RetryConfig.RETRYABLE_STATUS_CODES:
+                            logger.warning(f"[{trace_id}] ⚠️ 可重试状态码: {response.status_code}")
+                            last_error = f"HTTP {response.status_code}"
+                            should_retry = True
+                            continue  # 继续重试
+                        
+                        if response.status_code == 200:
+                            # 处理流式响应
+                            buffer = ""
+                            sent_length = 0  # 跟踪已发送的内容长度
+                            has_content = False
+                            current_event = None  # 保存当前事件类型
+                            stream_ended = False
+                            line_count = 0  # 记录行数
+                            is_thinking = False  # 标志位：是否处于思考过程中
+                            thinking_buffer = ""  # 累积思考过程内容，用于检测
                             
-                            # 其他错误
-                            logger.error(f"❌ Coze API 返回错误 (code: {error_code}): {error_msg}")
-                            yield {
-                                'type': 'error',
-                                'content': f'Coze API 错误（错误码: {error_code}）: {error_msg}'
-                            }
-                            return
-                        except:
-                            # JSON 解析失败，继续处理为 SSE 流
-                            pass
-                    
-                    if response.status_code == 200:
-                        # 处理流式响应（重构：参考fortune_llm_client.py的实现）
-                        import logging
-                        logger = logging.getLogger(__name__)
-                        
-                        buffer = ""
-                        sent_length = 0  # 跟踪已发送的内容长度（优化方案2.2）
-                        has_content = False
-                        current_event = None  # 保存当前事件类型
-                        stream_ended = False
-                        line_count = 0  # 记录行数
-                        is_thinking = False  # 标志位：是否处于思考过程中
-                        thinking_buffer = ""  # 累积思考过程内容，用于检测
-                        
-                        logger.info(f"📡 开始处理 Coze API 流式响应 (Bot ID: {used_bot_id})")
-                        logger.info(f"📋 请求URL: {url}")
-                        logger.info(f"📋 请求Headers: Authorization={headers_to_use.get('Authorization', '')[:20]}..., Accept={headers_to_use.get('Accept', '')}")
-                        logger.info(f"📋 请求Payload: bot_id={payload.get('bot_id')}, stream={payload.get('stream')}, prompt_length={len(prompt)}")
+                            logger.info(f"[{trace_id}] 📡 开始处理流式响应 (Bot ID: {used_bot_id})")
+                            logger.info(f"[{trace_id}] 📋 请求URL: {url}")
+                            logger.info(f"[{trace_id}] 📋 认证方式: {auth_label}, Token类型: {token_label}")
                         
                         # 按行处理SSE流（参考fortune_llm_client.py的行处理逻辑）
                         for line in response.iter_lines():
@@ -696,9 +828,9 @@ class CozeStreamService:
                                 continue
                             
                             line_count += 1
-                            # 记录前20行，帮助调试（增加行数）
-                            if line_count <= 20:
-                                logger.info(f"📨 SSE行 {line_count}: {line_str[:200]}")
+                            # 记录前10行，帮助调试
+                            if line_count <= 10:
+                                logger.debug(f"[{trace_id}] 📨 SSE行 {line_count}: {line_str[:200]}")
                             
                             # 处理 event: 行（新增：Coze API的事件在event行中）
                             if line_str.startswith('event:'):
@@ -745,7 +877,7 @@ class CozeStreamService:
                                     msg_type = data.get('type', '')
                                     status = data.get('status', '')
                                     
-                                    logger.debug(f"📨 处理SSE数据: event={event_type}, type={msg_type}, status={status}, keys={list(data.keys())[:10]}")
+                                    logger.debug(f"[{trace_id}] 📨 处理SSE数据: event={event_type}, type={msg_type}, status={status}")
                                     
                                     # 优先检查status字段
                                     if status == 'failed':
@@ -1020,67 +1152,100 @@ class CozeStreamService:
                             if stream_ended:
                                 break
                         
-                        # 流结束处理
-                        if not stream_ended:
-                            if has_content and buffer.strip():
-                                # 检查 buffer 中是否包含错误消息
-                                if self._is_error_response(buffer.strip()):
-                                    logger.error(f"Coze Bot 返回错误响应 (Bot ID: {used_bot_id}): {buffer.strip()[:200]}")
-                                    yield {
-                                        'type': 'error',
-                                        'content': 'Coze Bot 无法处理当前请求。可能原因：1) Bot 配置问题，2) 输入数据格式不符合 Bot 期望，3) Bot Prompt 需要调整。请检查 Bot ID 和 Bot 配置。'
-                                    }
+                            # 流结束处理
+                            total_duration = time.time() - request_start_time
+                            if not stream_ended:
+                                if has_content and buffer.strip():
+                                    # 检查 buffer 中是否包含错误消息
+                                    if self._is_error_response(buffer.strip()):
+                                        logger.error(f"[{trace_id}] ❌ Bot 返回错误响应: {buffer.strip()[:200]}")
+                                        yield {
+                                            'type': 'error',
+                                            'content': 'Coze Bot 无法处理当前请求。可能原因：1) Bot 配置问题，2) 输入数据格式不符合 Bot 期望，3) Bot Prompt 需要调整。请检查 Bot ID 和 Bot 配置。'
+                                        }
+                                    else:
+                                        logger.info(f"[{trace_id}] ✅ 流式生成成功: buffer长度={len(buffer)}, 总耗时={total_duration:.2f}s")
+                                        yield {
+                                            'type': 'complete',
+                                            'content': buffer.strip()
+                                        }
                                 else:
-                                    logger.info(f"✅ 流式生成完成 (Bot ID: {used_bot_id}), buffer长度: {len(buffer)}, has_content: {has_content}")
-                                    yield {
-                                        'type': 'complete',
-                                        'content': buffer.strip()
-                                    }
+                                    # 增强错误信息：记录更多调试信息
+                                    logger.warning(f"[{trace_id}] ⚠️ Coze API 返回空内容")
+                                    logger.warning(f"[{trace_id}]    has_content: {has_content}, buffer长度: {len(buffer)}, 行数: {line_count}")
+                                    
+                                    # 空内容可能是暂时性问题，尝试重试
+                                    last_error = "Coze API 返回空内容"
+                                    should_retry = True
+                                    continue  # 继续重试
                             else:
-                                # 增强错误信息：记录更多调试信息
-                                logger.warning(f"⚠️ Coze API 返回空内容 (Bot ID: {used_bot_id})")
-                                logger.warning(f"   响应状态: {response.status_code}")
-                                logger.warning(f"   has_content: {has_content}")
-                                logger.warning(f"   buffer长度: {len(buffer)}")
-                                logger.warning(f"   buffer内容预览: {buffer[:500]}")
-                                logger.warning(f"   已处理行数: {line_count}")
-                                
-                                # 提供更详细的错误信息
-                                error_details = []
-                                error_details.append(f"响应状态: {response.status_code}")
-                                error_details.append(f"Bot ID: {used_bot_id}")
-                                
-                                if not has_content:
-                                    error_details.append("未收到任何内容增量（delta事件）")
-                                if not buffer.strip():
-                                    error_details.append("Buffer为空或只包含空白字符")
-                                
-                                error_msg = f"Coze API 返回空内容。{'; '.join(error_details)}。请检查：1) Bot配置是否正确，2) Prompt格式是否符合Bot期望，3) Bot是否已启用并配置了正确的提示词。"
-                                
-                                yield {
-                                    'type': 'error',
-                                    'content': error_msg
-                                }
-                        return
-                    
-                    elif response.status_code in [401, 403]:
-                        last_error = f"认证失败: {response.text[:200]}"
-                        continue
-                    elif response.status_code == 404:
-                        # 端点不存在，尝试下一个
-                        break
-                    else:
-                        last_error = f"HTTP {response.status_code}: {response.text[:200]}"
-                        continue
+                                logger.info(f"[{trace_id}] ✅ 流式传输完成: 总耗时={total_duration:.2f}s")
+                            return  # 成功完成，退出函数
                         
-                except Exception as e:
-                    last_error = str(e)
-                    continue
+                        elif response.status_code in [401, 403]:
+                            logger.warning(f"[{trace_id}] ⚠️ 认证失败: {response.status_code}")
+                            last_error = f"认证失败: {response.text[:200]}"
+                            break  # 跳出重试循环，尝试下一种认证方式
+                        elif response.status_code == 404:
+                            logger.warning(f"[{trace_id}] ⚠️ 端点不存在: {url}")
+                            last_error = f"端点不存在: {url}"
+                            break  # 跳出重试循环，尝试下一种认证方式
+                        else:
+                            logger.warning(f"[{trace_id}] ⚠️ HTTP {response.status_code}: {response.text[:200]}")
+                            last_error = f"HTTP {response.status_code}: {response.text[:200]}"
+                            # 检查是否可重试
+                            if response.status_code in RetryConfig.RETRYABLE_STATUS_CODES:
+                                should_retry = True
+                                continue  # 继续重试
+                            else:
+                                break  # 不可重试，尝试下一种认证方式
+                            
+                    except requests.exceptions.Timeout as e:
+                        logger.warning(f"[{trace_id}] ⚠️ 请求超时 (尝试 {attempt + 1}/{RetryConfig.MAX_RETRIES}): {e}")
+                        last_error = f"请求超时: {e}"
+                        should_retry = True
+                        continue  # 继续重试
+                        
+                    except requests.exceptions.ConnectionError as e:
+                        logger.warning(f"[{trace_id}] ⚠️ 连接错误 (尝试 {attempt + 1}/{RetryConfig.MAX_RETRIES}): {e}")
+                        last_error = f"连接错误: {e}"
+                        should_retry = True
+                        continue  # 继续重试
+                        
+                    except requests.exceptions.ChunkedEncodingError as e:
+                        logger.warning(f"[{trace_id}] ⚠️ 流式传输中断 (尝试 {attempt + 1}/{RetryConfig.MAX_RETRIES}): {e}")
+                        last_error = f"流式传输中断: {e}"
+                        should_retry = True
+                        continue  # 继续重试
+                        
+                    except Exception as e:
+                        logger.error(f"[{trace_id}] ❌ 未知异常 (尝试 {attempt + 1}/{RetryConfig.MAX_RETRIES}): {e}")
+                        last_error = str(e)
+                        # 检查是否是可重试的异常
+                        if is_retryable_error(e):
+                            should_retry = True
+                            continue  # 继续重试
+                        else:
+                            break  # 不可重试，尝试下一种认证方式
+                
+                # 重试循环结束后检查
+                if not should_retry:
+                    # 如果不需要重试（例如认证失败），跳出认证方式循环
+                    # 但如果是配额问题，需要继续尝试备用Token
+                    if last_coze_error_code == 4028:
+                        break  # 跳出认证方式循环，尝试备用Token
+            
+            # 如果是配额问题且还有备用Token，继续下一轮Token循环
+            if last_coze_error_code == 4028 and token_index < len(tokens_to_try) - 1:
+                logger.info(f"[{trace_id}] 🔄 配额用尽，切换到备用Token...")
+                continue
         
         # 所有尝试都失败
+        total_duration = time.time() - request_start_time
+        logger.error(f"[{trace_id}] ❌ 所有尝试都失败: {last_error}, 总耗时={total_duration:.2f}s")
         yield {
             'type': 'error',
-            'content': f"Coze API 调用失败: {last_error or '未知错误'}"
+            'content': f"Coze API 调用失败（已重试{RetryConfig.MAX_RETRIES}次）: {last_error or '未知错误'}"
         }
     
     def _extract_content_from_response(self, data: Dict[str, Any]) -> str:

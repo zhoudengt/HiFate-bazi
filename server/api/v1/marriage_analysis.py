@@ -3,11 +3,17 @@
 """
 八字命理-感情婚姻API
 基于用户生辰数据，使用 Coze Bot 流式生成感情婚姻分析
+
+优化特性:
+- 支持请求级别的 trace_id 追踪
+- 支持重试机制（通过 CozeStreamService）
+- 支持备用 Token 自动切换
 """
 
 import logging
 import os
 import sys
+import uuid
 from typing import Dict, Any, Optional, List
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -445,7 +451,8 @@ async def marriage_analysis_stream_generator(
     location: Optional[str] = None,
     latitude: Optional[float] = None,
     longitude: Optional[float] = None,
-    bot_id: Optional[str] = None
+    bot_id: Optional[str] = None,
+    trace_id: Optional[str] = None
 ):
     """
     流式生成感情婚姻分析
@@ -459,7 +466,11 @@ async def marriage_analysis_stream_generator(
         latitude: 纬度（用于时区转换，优先级2）
         longitude: 经度（用于时区转换和真太阳时计算，优先级2）
         bot_id: Coze Bot ID（可选，优先级：参数 > MARRIAGE_ANALYSIS_BOT_ID 环境变量）
+        trace_id: 请求追踪ID（可选，用于日志关联）
     """
+    # 生成或使用 trace_id
+    trace_id = trace_id or str(uuid.uuid4())[:8]
+    
     # 记录开始时间和前端输入
     api_start_time = time.time()
     frontend_input = {
@@ -473,6 +484,8 @@ async def marriage_analysis_stream_generator(
     }
     llm_first_token_time = None
     llm_output_chunks = []
+    
+    logger.info(f"[{trace_id}] 🚀 开始婚姻分析: solar_date={solar_date}, solar_time={solar_time}, gender={gender}")
     
     try:
         # 确定使用的 bot_id（优先级：参数 > 数据库配置 > 环境变量）
@@ -497,12 +510,13 @@ async def marriage_analysis_stream_generator(
             longitude
         )
         
-        # 2. 并行获取基础数据
+        # 2. 并行获取基础数据（带容错处理）
         loop = asyncio.get_event_loop()
         executor = None
+        data_start_time = time.time()
         
         try:
-            # 并行获取基础数据
+            # 并行获取基础数据，使用 return_exceptions=True 实现容错
             bazi_task = loop.run_in_executor(
                 executor,
                 lambda: BaziService.calculate_bazi_full(
@@ -528,7 +542,20 @@ async def marriage_analysis_stream_generator(
                 )
             )
             
-            bazi_result, wangshuai_result, detail_result = await asyncio.gather(bazi_task, wangshuai_task, detail_task)
+            # 使用 return_exceptions=True，即使某个任务失败也不会影响其他任务
+            results = await asyncio.gather(
+                bazi_task, wangshuai_task, detail_task,
+                return_exceptions=True
+            )
+            bazi_result, wangshuai_result, detail_result = results
+            
+            data_duration = time.time() - data_start_time
+            logger.info(f"[{trace_id}] 📊 并行数据获取完成: 耗时={data_duration:.2f}s")
+            
+            # 处理八字数据（核心数据，必须成功）
+            if isinstance(bazi_result, Exception):
+                logger.error(f"[{trace_id}] ❌ 八字计算失败: {bazi_result}")
+                raise ValueError(f"八字计算失败: {bazi_result}")
             
             # 提取八字数据（BaziService.calculate_bazi_full 返回的结构是 {bazi: {...}, rizhu: {...}, matched_rules: [...]}）
             if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
@@ -541,12 +568,20 @@ async def marriage_analysis_stream_generator(
             if not bazi_data:
                 raise ValueError("八字计算失败，返回数据为空")
             
-            # 处理旺衰数据
-            if not wangshuai_result.get('success'):
-                logger.warning(f"旺衰分析失败: {wangshuai_result.get('error')}")
+            # 处理旺衰数据（非核心数据，失败时使用默认值）
+            if isinstance(wangshuai_result, Exception):
+                logger.warning(f"[{trace_id}] ⚠️ 旺衰分析异常（使用默认值）: {wangshuai_result}")
+                wangshuai_data = {}
+            elif not wangshuai_result.get('success'):
+                logger.warning(f"[{trace_id}] ⚠️ 旺衰分析失败（使用默认值）: {wangshuai_result.get('error')}")
                 wangshuai_data = {}
             else:
                 wangshuai_data = wangshuai_result.get('data', {})
+            
+            # 处理详情数据（非核心数据，失败时使用默认值）
+            if isinstance(detail_result, Exception):
+                logger.warning(f"[{trace_id}] ⚠️ 详情计算异常（使用默认值）: {detail_result}")
+                detail_result = {'success': False, 'data': {}}
             
             # ✅ 使用统一数据服务获取大运流年、特殊流年数据（确保数据一致性）
             from server.services.bazi_data_service import BaziDataService
@@ -775,7 +810,9 @@ async def marriage_analysis_stream_generator(
             chunk_count = 0
             has_content = False
             
-            async for result in coze_service.stream_custom_analysis(formatted_data, bot_id=actual_bot_id):
+            logger.info(f"[{trace_id}] 📤 开始调用 Coze API: bot_id={actual_bot_id}, data_length={len(formatted_data)}")
+
+            async for result in coze_service.stream_custom_analysis(formatted_data, bot_id=actual_bot_id, trace_id=trace_id):
                 chunk_count += 1
                 
                 # 转换为SSE格式
@@ -801,11 +838,12 @@ async def marriage_analysis_stream_generator(
                         'content': result.get('content', '')
                     }
                     yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                    logger.info(f"流式生成完成，共 {chunk_count} 个chunk")
+                    total_duration = time.time() - api_start_time
+                    logger.info(f"[{trace_id}] ✅ 流式生成完成: chunks={chunk_count}, 耗时={total_duration:.2f}s")
                     return
                 elif result.get('type') == 'error':
                     error_content = result.get('content', '未知错误')
-                    logger.error(f"Coze API 返回错误 (Bot ID: {actual_bot_id}): {error_content}")
+                    logger.error(f"[{trace_id}] ❌ Coze API 返回错误: {error_content}")
                     msg = {
                         'type': 'error',
                         'content': error_content
@@ -815,7 +853,7 @@ async def marriage_analysis_stream_generator(
             
             # 如果没有收到任何内容，返回提示
             if not has_content:
-                logger.warning(f"未收到任何内容，chunk_count: {chunk_count}, Bot ID: {actual_bot_id}")
+                logger.warning(f"[{trace_id}] ⚠️ 未收到任何内容: chunks={chunk_count}")
                 error_msg = {
                     'type': 'error',
                     'content': f'Coze Bot 未返回内容（Bot ID: {actual_bot_id}），请检查 Bot 配置和提示词'
@@ -824,7 +862,7 @@ async def marriage_analysis_stream_generator(
                 
         except Exception as e:
             import traceback
-            logger.error(f"流式生成异常: {e}\n{traceback.format_exc()}")
+            logger.error(f"[{trace_id}] ❌ 流式生成异常: {e}\n{traceback.format_exc()}")
             error_msg = {
                 'type': 'error',
                 'content': f"流式生成失败: {str(e)}"
@@ -855,7 +893,7 @@ async def marriage_analysis_stream_generator(
     
     except Exception as e:
         import traceback
-        logger.error(f"流式生成器异常: {e}\n{traceback.format_exc()}")
+        logger.error(f"[{trace_id}] ❌ 流式生成器异常: {e}\n{traceback.format_exc()}")
         error_msg = {
             'type': 'error',
             'content': f"流式生成失败: {str(e)}"
@@ -1331,6 +1369,10 @@ async def marriage_analysis_stream(request: MarriageAnalysisRequest):
     SSE流式响应，每行格式：`data: {"type": "progress|complete|error", "content": "..."}`
     """
     try:
+        # 生成 trace_id 用于请求追踪
+        trace_id = str(uuid.uuid4())[:8]
+        logger.info(f"[{trace_id}] 📥 收到婚姻分析请求: solar_date={request.solar_date}, gender={request.gender}")
+        
         return StreamingResponse(
             marriage_analysis_stream_generator(
                 request.solar_date,
@@ -1340,13 +1382,15 @@ async def marriage_analysis_stream(request: MarriageAnalysisRequest):
                 request.location,
                 request.latitude,
                 request.longitude,
-                request.bot_id
+                request.bot_id,
+                trace_id=trace_id
             ),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"
+                "X-Accel-Buffering": "no",
+                "X-Trace-ID": trace_id  # 添加 trace_id 到响应头
             }
         )
     except Exception as e:

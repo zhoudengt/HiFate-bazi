@@ -15,6 +15,7 @@ import json
 from json import JSONDecodeError
 import logging
 import os
+import uuid
 from typing import Any, Callable, Dict, Tuple
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -514,6 +515,9 @@ async def _handle_xishen_jishen_stream(payload: Dict[str, Any]):
 async def _handle_marriage_analysis_stream(payload: Dict[str, Any]):
     """处理感情婚姻流式分析请求（gRPC-Web 转发）"""
     request_model = MarriageAnalysisRequest(**payload)
+    # 生成 trace_id 用于请求追踪
+    trace_id = str(uuid.uuid4())[:8]
+    logger.info(f"[{trace_id}] 📥 收到婚姻分析请求: solar_date={request_model.solar_date}, gender={request_model.gender}")
     generator = marriage_analysis_stream_generator(
         request_model.solar_date,
         request_model.solar_time,
@@ -522,7 +526,8 @@ async def _handle_marriage_analysis_stream(payload: Dict[str, Any]):
         request_model.location,
         request_model.latitude,
         request_model.longitude,
-        request_model.bot_id
+        request_model.bot_id,
+        trace_id=trace_id
     )
     return await _collect_sse_stream(generator)
 
