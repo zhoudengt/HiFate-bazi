@@ -794,14 +794,21 @@ class CozeStreamService:
                                 # JSON 解析失败，继续处理为 SSE 流
                                 pass
                         
-                        # 检查是否为可重试的 HTTP 状态码
-                        if response.status_code in RetryConfig.RETRYABLE_STATUS_CODES:
+                        # 检查 HTTP 状态码并处理（先处理非200状态码）
+                        if response.status_code in [401, 403]:
+                            logger.warning(f"[{trace_id}] ⚠️ 认证失败: {response.status_code}")
+                            last_error = f"认证失败: {response.text[:200]}"
+                            break  # 跳出重试循环，尝试下一种认证方式
+                        elif response.status_code == 404:
+                            logger.warning(f"[{trace_id}] ⚠️ 端点不存在: {url}")
+                            last_error = f"端点不存在: {url}"
+                            break  # 跳出重试循环，尝试下一种认证方式
+                        elif response.status_code in RetryConfig.RETRYABLE_STATUS_CODES:
                             logger.warning(f"[{trace_id}] ⚠️ 可重试状态码: {response.status_code}")
                             last_error = f"HTTP {response.status_code}"
                             should_retry = True
                             continue  # 继续重试
-                        
-                        if response.status_code == 200:
+                        elif response.status_code == 200:
                             # 处理流式响应
                             buffer = ""
                             sent_length = 0  # 跟踪已发送的内容长度
@@ -1152,53 +1159,40 @@ class CozeStreamService:
                             if stream_ended:
                                 break
                         
-                            # 流结束处理
-                            total_duration = time.time() - request_start_time
-                            if not stream_ended:
-                                if has_content and buffer.strip():
-                                    # 检查 buffer 中是否包含错误消息
-                                    if self._is_error_response(buffer.strip()):
-                                        logger.error(f"[{trace_id}] ❌ Bot 返回错误响应: {buffer.strip()[:200]}")
-                                        yield {
-                                            'type': 'error',
-                                            'content': 'Coze Bot 无法处理当前请求。可能原因：1) Bot 配置问题，2) 输入数据格式不符合 Bot 期望，3) Bot Prompt 需要调整。请检查 Bot ID 和 Bot 配置。'
-                                        }
-                                    else:
-                                        logger.info(f"[{trace_id}] ✅ 流式生成成功: buffer长度={len(buffer)}, 总耗时={total_duration:.2f}s")
-                                        yield {
-                                            'type': 'complete',
-                                            'content': buffer.strip()
-                                        }
+                        # 流结束处理（在 for line 循环之后）
+                        total_duration = time.time() - request_start_time
+                        if not stream_ended:
+                            if has_content and buffer.strip():
+                                # 检查 buffer 中是否包含错误消息
+                                if self._is_error_response(buffer.strip()):
+                                    logger.error(f"[{trace_id}] ❌ Bot 返回错误响应: {buffer.strip()[:200]}")
+                                    yield {
+                                        'type': 'error',
+                                        'content': 'Coze Bot 无法处理当前请求。可能原因：1) Bot 配置问题，2) 输入数据格式不符合 Bot 期望，3) Bot Prompt 需要调整。请检查 Bot ID 和 Bot 配置。'
+                                    }
                                 else:
-                                    # 增强错误信息：记录更多调试信息
-                                    logger.warning(f"[{trace_id}] ⚠️ Coze API 返回空内容")
-                                    logger.warning(f"[{trace_id}]    has_content: {has_content}, buffer长度: {len(buffer)}, 行数: {line_count}")
-                                    
-                                    # 空内容可能是暂时性问题，尝试重试
-                                    last_error = "Coze API 返回空内容"
-                                    should_retry = True
-                                    continue  # 继续重试
+                                    logger.info(f"[{trace_id}] ✅ 流式生成成功: buffer长度={len(buffer)}, 总耗时={total_duration:.2f}s")
+                                    yield {
+                                        'type': 'complete',
+                                        'content': buffer.strip()
+                                    }
                             else:
-                                logger.info(f"[{trace_id}] ✅ 流式传输完成: 总耗时={total_duration:.2f}s")
-                            return  # 成功完成，退出函数
-                        
-                        elif response.status_code in [401, 403]:
-                            logger.warning(f"[{trace_id}] ⚠️ 认证失败: {response.status_code}")
-                            last_error = f"认证失败: {response.text[:200]}"
-                            break  # 跳出重试循环，尝试下一种认证方式
-                        elif response.status_code == 404:
-                            logger.warning(f"[{trace_id}] ⚠️ 端点不存在: {url}")
-                            last_error = f"端点不存在: {url}"
-                            break  # 跳出重试循环，尝试下一种认证方式
-                        else:
-                            logger.warning(f"[{trace_id}] ⚠️ HTTP {response.status_code}: {response.text[:200]}")
-                            last_error = f"HTTP {response.status_code}: {response.text[:200]}"
-                            # 检查是否可重试
-                            if response.status_code in RetryConfig.RETRYABLE_STATUS_CODES:
+                                # 增强错误信息：记录更多调试信息
+                                logger.warning(f"[{trace_id}] ⚠️ Coze API 返回空内容")
+                                logger.warning(f"[{trace_id}]    has_content: {has_content}, buffer长度: {len(buffer)}, 行数: {line_count}")
+                                
+                                # 空内容可能是暂时性问题，尝试重试
+                                last_error = "Coze API 返回空内容"
                                 should_retry = True
                                 continue  # 继续重试
-                            else:
-                                break  # 不可重试，尝试下一种认证方式
+                        else:
+                            logger.info(f"[{trace_id}] ✅ 流式传输完成: 总耗时={total_duration:.2f}s")
+                        return  # 成功完成，退出函数
+                    
+                        # 其他非200状态码（如果执行到这里，说明状态码不是200、401、403、404或可重试状态码）
+                        logger.warning(f"[{trace_id}] ⚠️ HTTP {response.status_code}: {response.text[:200]}")
+                        last_error = f"HTTP {response.status_code}: {response.text[:200]}"
+                        break  # 不可重试，尝试下一种认证方式
                             
                     except requests.exceptions.Timeout as e:
                         logger.warning(f"[{trace_id}] ⚠️ 请求超时 (尝试 {attempt + 1}/{RetryConfig.MAX_RETRIES}): {e}")
