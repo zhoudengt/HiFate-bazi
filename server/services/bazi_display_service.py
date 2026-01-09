@@ -764,6 +764,11 @@ class BaziDisplayService:
             "kongwang": dayun.get('kongwang', ''),
             "deities": dayun.get('deities', []),
             "liunian_sequence": dayun.get('liunian_sequence', []),  # ✅ 保留流年序列
+            "liunian_simple": dayun.get('liunian_simple', []),  # ✅ 新增：简化流年列表（只含year和ganzhi）
+            # ✅ 新增字段：十神简称
+            "stem_shishen": dayun.get('stem_shishen', ''),
+            "branch_shishen": dayun.get('branch_shishen', ''),
+            "shishen_combined": dayun.get('shishen_combined', ''),
             "is_current": False  # 由调用方设置
         }
     
@@ -801,6 +806,14 @@ class BaziDisplayService:
             "kongwang": liunian.get('kongwang', ''),
             "deities": liunian.get('deities', []),
             "relations": liunian.get('relations', []),  # 新增：关系列表
+            # ✅ 新增字段：十神简称
+            "stem_shishen": liunian.get('stem_shishen', ''),
+            "branch_shishen": liunian.get('branch_shishen', ''),
+            "shishen_combined": liunian.get('shishen_combined', ''),
+            # ✅ 新增字段：小运
+            "xiaoyun_ganzhi": liunian.get('xiaoyun_ganzhi', ''),
+            "xiaoyun_stem": liunian.get('xiaoyun_stem', ''),
+            "xiaoyun_branch": liunian.get('xiaoyun_branch', ''),
             "is_current": False  # 由调用方设置
         }
     
@@ -829,6 +842,10 @@ class BaziDisplayService:
                 "wuxing": BRANCH_ELEMENTS.get(branch, '')  # ✅ 后端提供五行属性
             },
             "nayin": liuyue.get('nayin', ''),
+            # ✅ 新增字段：十神简称
+            "stem_shishen": liuyue.get('stem_shishen', ''),
+            "branch_shishen": liuyue.get('branch_shishen', ''),
+            "shishen_combined": liuyue.get('shishen_combined', ''),
             "is_current": False  # 由调用方设置
         }
     

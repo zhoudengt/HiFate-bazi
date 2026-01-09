@@ -318,6 +318,15 @@ except ImportError as e:
     general_review_analysis_router = None
     GENERAL_REVIEW_ANALYSIS_ROUTER_AVAILABLE = False
 
+# 年运报告路由（条件可用）
+try:
+    from server.api.v1.annual_report_analysis import router as annual_report_analysis_router
+    ANNUAL_REPORT_ANALYSIS_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"年运报告路由导入失败（可选功能）: {e}")
+    annual_report_analysis_router = None
+    ANNUAL_REPORT_ANALYSIS_ROUTER_AVAILABLE = False
+
 # 统一数据获取路由（新增，增量开发）
 try:
     from server.api.v1.bazi_data import router as bazi_data_router
@@ -893,6 +902,15 @@ def _register_all_routers_to_manager():
         prefix="/api/v1",
         tags=["八字命理"],
         enabled_getter=lambda: GENERAL_REVIEW_ANALYSIS_ROUTER_AVAILABLE and general_review_analysis_router is not None
+    )
+    
+    # 年运报告路由（条件可用）
+    router_manager.register_router(
+        "annual_report_analysis",
+        lambda: annual_report_analysis_router,
+        prefix="/api/v1",
+        tags=["八字命理"],
+        enabled_getter=lambda: ANNUAL_REPORT_ANALYSIS_ROUTER_AVAILABLE and annual_report_analysis_router is not None
     )
     
     # 用户反馈路由（条件可用）

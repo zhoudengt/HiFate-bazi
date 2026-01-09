@@ -40,9 +40,10 @@ class Sidebar {
                         <a href="marriage-analysis.html" class="nav-submenu-item" data-page="marriage-analysis">八字命理-感情婚姻</a>
                         <a href="career-wealth-analysis.html" class="nav-submenu-item" data-page="career-wealth-analysis">八字命理-事业财富</a>
                         <a href="children-study-analysis.html" class="nav-submenu-item" data-page="children-study-analysis">八字命理-子女学习</a>
-                        <a href="health-analysis.html" class="nav-submenu-item" data-page="health-analysis">八字命理-身体健康</a>
-                        <a href="general-review-analysis.html" class="nav-submenu-item" data-page="general-review-analysis">八字命理-总评</a>
-                        <a href="ai-qa.html" class="nav-submenu-item" data-page="ai-qa">AI问答</a>
+                    <a href="health-analysis.html" class="nav-submenu-item" data-page="health-analysis">八字命理-身体健康</a>
+                    <a href="general-review-analysis.html" class="nav-submenu-item" data-page="general-review-analysis">八字命理-总评</a>
+                    <a href="annual-report-analysis.html" class="nav-submenu-item" data-page="annual-report-analysis">八字命理-年月报告</a>
+                    <a href="ai-qa.html" class="nav-submenu-item" data-page="ai-qa">AI问答</a>
                     </div>
                     <a href="basic-info.html" class="nav-item" data-page="basic-info">
                         <span class="nav-item-icon">📋</span>

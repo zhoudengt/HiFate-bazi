@@ -159,6 +159,15 @@ function renderDayunTimeline(dayunData) {
     });
     html += '</tr>';
     
+    // ✅ 新增：十神简称行
+    html += '<tr>';
+    html += '<th>十神</th>';
+    validList.forEach(item => {
+        const shishenCombined = item.shishen_combined || '';
+        html += `<td class="timeline-term" style="color: #dc3545; font-weight: bold;">${shishenCombined || '-'}</td>`;
+    });
+    html += '</tr>';
+    
     html += '</tbody>';
     table.innerHTML = html;
 }
@@ -253,12 +262,30 @@ function renderLiunianTimeline(liunianData) {
     });
     html += '</tr>';
     
-    // 十神行
+    // 十神行（全称）
     html += '<tr>';
     html += '<th></th>';
     validList.forEach(item => {
         const tenGods = item.ten_gods || '';
         html += `<td class="timeline-term">${tenGods}</td>`;
+    });
+    html += '</tr>';
+    
+    // ✅ 新增：十神简称行（红色字）
+    html += '<tr>';
+    html += '<th>十神</th>';
+    validList.forEach(item => {
+        const shishenCombined = item.shishen_combined || '';
+        html += `<td class="timeline-term" style="color: #dc3545; font-weight: bold;">${shishenCombined || '-'}</td>`;
+    });
+    html += '</tr>';
+    
+    // ✅ 新增：小运行
+    html += '<tr>';
+    html += '<th>小运</th>';
+    validList.forEach(item => {
+        const xiaoyunGanzhi = item.xiaoyun_ganzhi || '';
+        html += `<td class="timeline-term">${xiaoyunGanzhi || '-'}</td>`;
     });
     html += '</tr>';
     
@@ -439,12 +466,21 @@ function renderLiuyueTimeline(liuyueData) {
     });
     html += '</tr>';
     
-    // 十神行
+    // 十神行（全称）
     html += '<tr>';
     html += '<th></th>';
     validList.forEach(item => {
         const tenGods = item.ten_gods || '';
         html += `<td class="timeline-term">${tenGods}</td>`;
+    });
+    html += '</tr>';
+    
+    // ✅ 新增：十神简称行（红色字）
+    html += '<tr>';
+    html += '<th>十神</th>';
+    validList.forEach(item => {
+        const shishenCombined = item.shishen_combined || '';
+        html += `<td class="timeline-term" style="color: #dc3545; font-weight: bold;">${shishenCombined || '-'}</td>`;
     });
     html += '</tr>';
     
@@ -509,7 +545,8 @@ function renderXipanTable(data) {
         { name: '自坐', key: 'self_sitting' },
         { name: '空亡', key: 'kongwang' },
         { name: '纳音', key: 'nayin' },
-        { name: '神煞', key: 'deities' }
+        { name: '神煞', key: 'deities' },
+        { name: '十神', key: 'shishen_combined' }  // ✅ 新增：十神简称行
     ];
     
     // 获取流年数据
@@ -591,6 +628,10 @@ function getRowValue(item, key, stem, branch) {
             if (isXiaoyun) return '-';
             const deities = item.deities || [];
             return deities.length > 0 ? deities.join(' ') : '-';
+        case 'shishen_combined':
+            // ✅ 新增：十神简称（红色字显示）
+            const shishenCombined = item.shishen_combined || '';
+            return shishenCombined ? `<span style="color: #dc3545; font-weight: bold;">${shishenCombined}</span>` : '-';
         default:
             return '-';
     }

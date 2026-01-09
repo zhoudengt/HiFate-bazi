@@ -610,4 +610,213 @@ class MonthlyFortuneService:
         # 这里可以集成 Coze AI 或其他 LLM
         # 暂时返回规则生成结果
         return MonthlyFortuneService._generate_with_rules(bazi_data, liuyue_info, [], target_date)
+    
+    @staticmethod
+    def get_wuyun_liuqi(year: int, month: int) -> Dict[str, Any]:
+        """
+        获取五运六气信息（扩展方法）
+        
+        Args:
+            year: 年份（如：2026）
+            month: 月份（1-12）
+            
+        Returns:
+            dict: 五运六气信息
+            {
+                'year': 2026,
+                'month': 1,
+                'wuyun': '木运',  # 五运
+                'liuqi': '初之气',  # 六气
+                'description': '五运六气描述'
+            }
+        """
+        try:
+            from src.tool.LunarConverter import LunarConverter
+            
+            # 计算该月的五运六气
+            # 五运：根据年份天干计算
+            year_ganzhi = LunarConverter.get_year_ganzhi(year)
+            year_stem = year_ganzhi.get('stem', '')
+            
+            # 五运映射（根据年份天干）
+            wuyun_map = {
+                '甲': '土运', '己': '土运',
+                '乙': '金运', '庚': '金运',
+                '丙': '水运', '辛': '水运',
+                '丁': '木运', '壬': '木运',
+                '戊': '火运', '癸': '火运',
+            }
+            wuyun = wuyun_map.get(year_stem, '')
+            
+            # 六气：根据月份和节气计算
+            # 初之气：大寒-春分（1-3月）
+            # 二之气：春分-小满（3-5月）
+            # 三之气：小满-大暑（5-7月）
+            # 四之气：大暑-秋分（7-9月）
+            # 五之气：秋分-小雪（9-11月）
+            # 终之气：小雪-大寒（11-1月）
+            if month in [1, 2, 3]:
+                liuqi = '初之气'
+            elif month in [3, 4, 5]:
+                liuqi = '二之气'
+            elif month in [5, 6, 7]:
+                liuqi = '三之气'
+            elif month in [7, 8, 9]:
+                liuqi = '四之气'
+            elif month in [9, 10, 11]:
+                liuqi = '五之气'
+            else:  # 11, 12
+                liuqi = '终之气'
+            
+            description = f"{wuyun}，{liuqi}"
+            
+            return {
+                'year': year,
+                'month': month,
+                'wuyun': wuyun,
+                'liuqi': liuqi,
+                'description': description
+            }
+        except Exception as e:
+            logger.error(f"获取五运六气信息失败: {e}", exc_info=True)
+            return {
+                'year': year,
+                'month': month,
+                'wuyun': '',
+                'liuqi': '',
+                'description': ''
+            }
+    
+    @staticmethod
+    def get_jieqi_info(year: int, month: int) -> Dict[str, Any]:
+        """
+        获取节气信息（扩展方法）
+        
+        Args:
+            year: 年份（如：2026）
+            month: 月份（1-12）
+            
+        Returns:
+            dict: 节气信息
+            {
+                'year': 2026,
+                'month': 1,
+                'jieqi_list': ['小寒', '大寒'],  # 该月的节气列表
+                'current_jieqi': '小寒',  # 当前节气
+                'next_jieqi': '立春'  # 下一个节气
+            }
+        """
+        try:
+            
+            # 该月的节气列表
+            jieqi_by_month = {
+                1: ['小寒', '大寒'],
+                2: ['立春', '雨水'],
+                3: ['惊蛰', '春分'],
+                4: ['清明', '谷雨'],
+                5: ['立夏', '小满'],
+                6: ['芒种', '夏至'],
+                7: ['小暑', '大暑'],
+                8: ['立秋', '处暑'],
+                9: ['白露', '秋分'],
+                10: ['寒露', '霜降'],
+                11: ['立冬', '小雪'],
+                12: ['大雪', '冬至'],
+            }
+            
+            jieqi_list = jieqi_by_month.get(month, [])
+            current_jieqi = jieqi_list[0] if len(jieqi_list) > 0 else ''
+            next_jieqi = jieqi_list[1] if len(jieqi_list) > 1 else ''
+            
+            # 如果下一个节气不存在，获取下个月的第一个节气
+            if not next_jieqi:
+                next_month = month + 1 if month < 12 else 1
+                next_month_jieqi = jieqi_by_month.get(next_month, [])
+                next_jieqi = next_month_jieqi[0] if len(next_month_jieqi) > 0 else ''
+            
+            return {
+                'year': year,
+                'month': month,
+                'jieqi_list': jieqi_list,
+                'current_jieqi': current_jieqi,
+                'next_jieqi': next_jieqi
+            }
+        except Exception as e:
+            logger.error(f"获取节气信息失败: {e}", exc_info=True)
+            return {
+                'year': year,
+                'month': month,
+                'jieqi_list': [],
+                'current_jieqi': '',
+                'next_jieqi': ''
+            }
+    
+    @staticmethod
+    def analyze_monthly_impact(
+        year: int,
+        month: int,
+        bazi_data: Optional[Dict[str, Any]] = None,
+        liuyue_info: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        分析流月对命主的影响（扩展方法）
+        
+        Args:
+            year: 年份（如：2026）
+            month: 月份（1-12）
+            bazi_data: 八字数据（可选）
+            liuyue_info: 流月信息（可选）
+            
+        Returns:
+            dict: 流月影响分析
+            {
+                'year': 2026,
+                'month': 1,
+                'yingxiang': '对命主产生的影响',
+                'fengxian': '规避风险',
+                'yangsheng_jianyi': '养生建议'
+            }
+        """
+        try:
+            # 获取五运六气信息
+            wuyun_liuqi = MonthlyFortuneService.get_wuyun_liuqi(year, month)
+            wuyun = wuyun_liuqi.get('wuyun', '')
+            liuqi = wuyun_liuqi.get('liuqi', '')
+            
+            # 获取节气信息
+            jieqi_info = MonthlyFortuneService.get_jieqi_info(year, month)
+            jieqi_list = jieqi_info.get('jieqi_list', [])
+            jieqi_str = '、'.join(jieqi_list) if jieqi_list else ''
+            
+            # 基础影响分析
+            yingxiang = f"{wuyun}当令，{liuqi}主事，对命主的影响需要结合命局分析。"
+            fengxian = f"注意{liuqi}带来的变化，避免冲动决策。"
+            yangsheng_jianyi = f"根据{wuyun}特点，调整饮食和作息。"
+            
+            # 如果提供了八字数据，可以结合命局进行更详细的分析
+            if bazi_data:
+                # 可以根据命局的五行喜忌，结合五运六气给出更具体的建议
+                # 这里简化处理，实际可以扩展
+                pass
+            
+            return {
+                'year': year,
+                'month': month,
+                'jieqi': jieqi_str,
+                'wuyun_liuqi': wuyun_liuqi.get('description', ''),
+                'yingxiang': yingxiang,
+                'fengxian': fengxian,
+                'yangsheng_jianyi': yangsheng_jianyi
+            }
+        except Exception as e:
+            logger.error(f"分析流月影响失败: {e}", exc_info=True)
+            return {
+                'year': year,
+                'month': month,
+                'jieqi': '',
+                'wuyun_liuqi': '',
+                'yingxiang': '',
+                'fengxian': '',
+                'yangsheng_jianyi': ''
+            }
 

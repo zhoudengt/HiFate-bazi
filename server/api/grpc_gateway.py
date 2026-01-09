@@ -129,6 +129,10 @@ from server.api.v1.general_review_analysis import (
     GeneralReviewRequest,
     general_review_analysis_stream_generator,
 )
+from server.api.v1.annual_report_analysis import (
+    AnnualReportRequest,
+    annual_report_stream_generator,
+)
 
 # 文件上传相关
 import base64
@@ -595,6 +599,19 @@ async def _handle_general_review_stream(payload: Dict[str, Any]):
         request_model.location,
         request_model.latitude,
         request_model.longitude,
+        request_model.bot_id
+    )
+    return await _collect_sse_stream(generator)
+
+
+@_register("/annual-report/stream")
+async def _handle_annual_report_stream(payload: Dict[str, Any]):
+    """处理年运报告流式请求（gRPC-Web 转发）"""
+    request_model = AnnualReportRequest(**payload)
+    generator = annual_report_stream_generator(
+        request_model.solar_date,
+        request_model.solar_time,
+        request_model.gender,
         request_model.bot_id
     )
     return await _collect_sse_stream(generator)

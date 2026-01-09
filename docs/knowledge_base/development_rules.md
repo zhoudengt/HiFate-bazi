@@ -244,18 +244,12 @@ SSH 配置已保存在 `~/.ssh/config` 中：
 Host node1
     HostName 8.210.52.217
     User root
-    Port 22
-
-# HiFate-bazi 生产环境 Node2
+    Port 22# HiFate-bazi 生产环境 Node2
 Host node2
     HostName 47.243.160.43
     User root
     Port 22
-```
-
-### 连接命令
-
-| 服务器 | 命令 | IP 地址 |
+```### 连接命令| 服务器 | 命令 | IP 地址 |
 |--------|------|---------|
 | Node1 | `ssh node1` | 8.210.52.217 |
 | Node2 | `ssh node2` | 47.243.160.43 |
@@ -273,4 +267,3 @@ Host node2
 1. 直接执行 `ssh node1` 或 `ssh node2`
 2. 输入密码 `Yuanqizhan@163`
 3. 等待连接完成后执行操作
-

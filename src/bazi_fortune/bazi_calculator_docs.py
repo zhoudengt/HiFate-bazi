@@ -22,6 +22,7 @@ from src.data.constants import *  # noqa: F401,F403
 from src.data.stems_branches import *  # noqa: F401,F403
 from src.bazi_config.deities_config import DeitiesCalculator
 from src.bazi_config.star_fortune_config import StarFortuneCalculator
+from src.bazi_config.shishen_short_config import SHISHEN_SHORT_MAP, BRANCH_MAIN_QI, TIANGAN_SHISHEN_MAP, DIZHI_SHISHEN_MAP
 from src.tool.LunarConverter import LunarConverter
 
 
@@ -653,6 +654,59 @@ class BaziCalculator:
         
         return xiaoyun_stem, xiaoyun_branch
 
+    def _get_shishen_short(self, shishen_full: str) -> str:
+        """
+        获取十神简称
+        
+        Args:
+            shishen_full: 十神全称（如"正印"、"七杀"）
+            
+        Returns:
+            str: 十神简称（如"印"、"杀"），如果找不到则返回原值
+        """
+        return SHISHEN_SHORT_MAP.get(shishen_full, shishen_full)
+
+    def _calculate_xiaoyun_for_age(self, age: int) -> Tuple[str, str]:
+        """
+        计算指定年龄（虚岁）的小运干支
+        
+        规则：
+        - 从时柱的下一个干支开始
+        - 阳年生男、阴年生女 → 顺推
+        - 阴年生男、阳年生女 → 逆推
+        - 每岁推进一个干支
+        
+        Args:
+            age: 虚岁年龄（1岁开始）
+            
+        Returns:
+            Tuple[str, str]: (小运天干, 小运地支)
+        """
+        hour_stem = self.bazi_pillars['hour']['stem']
+        hour_branch = self.bazi_pillars['hour']['branch']
+        year_stem = self.bazi_pillars['year']['stem']
+        
+        year_yinyang = STEM_YINYANG.get(year_stem, '阳')
+        is_male = self.gender == 'male'
+        
+        # 阳年生男、阴年生女 → 顺推；阴年生男、阳年生女 → 逆推
+        if (year_yinyang == '阳' and is_male) or (year_yinyang == '阴' and not is_male):
+            direction = 1  # 顺推
+        else:
+            direction = -1  # 逆推
+        
+        stem_index = HEAVENLY_STEMS.index(hour_stem)
+        branch_index = EARTHLY_BRANCHES.index(hour_branch)
+        
+        # 从时柱的下一个干支开始，每岁推进一个干支
+        # age=1 对应时柱的下一个干支
+        offset = age  # age=1时，offset=1，即下一个干支
+        
+        xiaoyun_stem = HEAVENLY_STEMS[(stem_index + direction * offset) % 10]
+        xiaoyun_branch = EARTHLY_BRANCHES[(branch_index + direction * offset) % 12]
+        
+        return xiaoyun_stem, xiaoyun_branch
+
     def _calculate_dayun_sequence(self):
         """计算大运序列 - 基于起运时间动态计算"""
 
@@ -740,6 +794,16 @@ class BaziCalculator:
         # ✅ 计算小运的详细信息（按真正的干支计算）
         xiaoyun_detail = self._build_pillar_detail(xiaoyun_stem, xiaoyun_branch, star_calc, deities_calc, level='dayun')
         
+        # 生成小运期间的简化流年列表
+        xiaoyun_liunian_simple = []
+        for y in range(year_start, year_end + 1):
+            y_stem = _get_year_stem(y)
+            y_branch = EARTHLY_BRANCHES[(y - 1984) % 12]
+            xiaoyun_liunian_simple.append({
+                'year': y,
+                'ganzhi': y_stem + y_branch
+            })
+        
         dayun_sequence.append({
             'step': step,
             'stem': xiaoyun_stem,  # ✅ 使用真正的干支
@@ -753,10 +817,15 @@ class BaziCalculator:
             'kongwang': xiaoyun_detail.get('kongwang', ''),
             'nayin': xiaoyun_detail.get('nayin', ''),
             'deities': xiaoyun_detail.get('deities', []),
+            # ✅ 新增：十神简称字段
+            'stem_shishen': xiaoyun_detail.get('stem_shishen', ''),
+            'branch_shishen': xiaoyun_detail.get('branch_shishen', ''),
+            'shishen_combined': xiaoyun_detail.get('shishen_combined', ''),
             'age_display': age_display,
             'age_range': {"start": age_start, "end": age_end},  # 便于前端使用
             'year_start': year_start,
-            'year_end': year_end
+            'year_end': year_end,
+            'liunian_simple': xiaoyun_liunian_simple  # ✅ 新增：简化流年列表
         })
 
         # 第二段：第一个大运（从小运结束年龄开始，虚岁）
@@ -787,6 +856,16 @@ class BaziCalculator:
             # ✅ 添加大运详细信息（用于细盘表格）
             dayun_detail = self._build_pillar_detail(stem, branch, star_calc, deities_calc, level='dayun')
 
+            # 生成该大运的简化流年列表
+            dayun_liunian_simple = []
+            for y in range(year_start, year_end + 1):
+                y_stem = _get_year_stem(y)
+                y_branch = EARTHLY_BRANCHES[(y - 1984) % 12]
+                dayun_liunian_simple.append({
+                    'year': y,
+                    'ganzhi': y_stem + y_branch
+                })
+            
             step += 1
             dayun_sequence.append({
                 'step': step,
@@ -800,10 +879,15 @@ class BaziCalculator:
                 'kongwang': dayun_detail.get('kongwang', ''),
                 'nayin': dayun_detail.get('nayin', ''),
                 'deities': dayun_detail.get('deities', []),
+                # ✅ 新增：十神简称字段
+                'stem_shishen': dayun_detail.get('stem_shishen', ''),
+                'branch_shishen': dayun_detail.get('branch_shishen', ''),
+                'shishen_combined': dayun_detail.get('shishen_combined', ''),
                 'age_display': f"{age_start}岁",  # 大运只显示起始年龄
                 'age_range': {"start": age_start, "end": age_end},  # 新增：便于前端使用
                 'year_start': year_start,
-                'year_end': year_end
+                'year_end': year_end,
+                'liunian_simple': dayun_liunian_simple  # ✅ 新增：简化流年列表
             })
 
             age_start = age_end + 1
@@ -1079,15 +1163,23 @@ class BaziCalculator:
                 else:
                     relations = []
 
+            # ✅ 新增：计算该流年的小运干支
+            xiaoyun_stem, xiaoyun_branch = self._calculate_xiaoyun_for_age(age)
+            xiaoyun_ganzhi = xiaoyun_stem + xiaoyun_branch
+            
             liunians.append({
                 'year': year,
                 'age': age,  # 年龄（整数）
                 'age_display': age_display,  # 年龄显示格式
                 'stem': year_stem,
                 'branch': year_branch,
-                **detail,  # 详细信息（十神、藏干、星运、神煞等）
+                **detail,  # 详细信息（十神、藏干、星运、神煞等，已包含十神简称字段）
                 'liuyue_sequence': liuyue_sequence,
-                'relations': relations  # 关系列表
+                'relations': relations,  # 关系列表
+                # ✅ 新增字段：小运
+                'xiaoyun_ganzhi': xiaoyun_ganzhi,
+                'xiaoyun_stem': xiaoyun_stem,
+                'xiaoyun_branch': xiaoyun_branch,
             })
         return liunians
 
@@ -1147,15 +1239,38 @@ class BaziCalculator:
         liuyue_sequence = []
         # ✅ 性能优化：排盘页面不需要流月的详细信息（十神、藏干、星运、神煞等）
         # 详细信息可在需要时通过专门的接口获取
+        # ✅ 但需要添加十神简称字段（用于显示）
+        day_stem = self.bazi_pillars['day']['stem']
         for i in range(12):
             stem = HEAVENLY_STEMS[(start_index + i) % 10]
             branch = EARTHLY_BRANCHES[(month_branch_index + i) % 12]
+            
+            # ✅ 新增：计算流月十神简称（使用新映射表）
+            # 天干十神简称 - 直接使用映射表
+            stem_shishen = TIANGAN_SHISHEN_MAP.get(day_stem, {}).get(stem, '')
+            
+            # 地支十神简称 - 直接使用映射表
+            branch_shishen = DIZHI_SHISHEN_MAP.get(day_stem, {}).get(branch, '')
+            
+            # 合并显示
+            shishen_combined = ''
+            if stem_shishen and branch_shishen:
+                shishen_combined = stem_shishen + branch_shishen
+            elif stem_shishen:
+                shishen_combined = stem_shishen
+            elif branch_shishen:
+                shishen_combined = branch_shishen
+            
             liuyue_sequence.append({
                 'month': i + 1,
                 'solar_term': solar_terms[i],
                 'term_date': term_dates[i],  # 使用实际年份的节气日期
                 'stem': stem,
-                'branch': branch
+                'branch': branch,
+                # ✅ 新增字段：十神简称
+                'stem_shishen': stem_shishen,
+                'branch_shishen': branch_shishen,
+                'shishen_combined': shishen_combined,
             })
         return liuyue_sequence
 
@@ -1188,6 +1303,22 @@ class BaziCalculator:
         except Exception:
             deities = []
 
+        # ✅ 新增：计算十神简称（使用新映射表）
+        # 天干十神简称 - 直接使用映射表
+        stem_shishen = TIANGAN_SHISHEN_MAP.get(day_stem, {}).get(stem, '')
+        
+        # 地支十神简称 - 直接使用映射表
+        branch_shishen = DIZHI_SHISHEN_MAP.get(day_stem, {}).get(branch, '')
+        
+        # 合并显示
+        shishen_combined = ''
+        if stem_shishen and branch_shishen:
+            shishen_combined = stem_shishen + branch_shishen
+        elif stem_shishen:
+            shishen_combined = stem_shishen
+        elif branch_shishen:
+            shishen_combined = branch_shishen
+
         return {
             'main_star': main_star,
             'hidden_stems': hidden_stems,
@@ -1197,6 +1328,10 @@ class BaziCalculator:
             'kongwang': kongwang,
             'nayin': nayin,
             'deities': deities,
+            # ✅ 新增字段
+            'stem_shishen': stem_shishen,
+            'branch_shishen': branch_shishen,
+            'shishen_combined': shishen_combined,
         }
 
     # 节气表缓存（类级别，避免重复计算）

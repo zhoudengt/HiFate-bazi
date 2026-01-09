@@ -2,7 +2,7 @@
 
 > **目的**：记录开发过程中遇到的问题及其解决方案，预防类似问题再次发生
 > **维护原则**：遇到新问题时主动更新，形成持续改进的知识积累
-> **最后更新**：2026-01-06
+> **最后更新**：2026-01-06（新增 ERR-COZE-001）
 
 ---
 
@@ -12,6 +12,7 @@
 |------|------|----------|
 | [API 注册](#api-注册问题) | API 端点注册、路由配置相关 | 1 |
 | [gRPC 网关](#grpc-网关问题) | gRPC-Web 网关、端点映射相关 | 1 |
+| [Coze API 问题](#coze-api-问题) | Coze API 调用、Bot 配置相关 | 1 |
 | [部署问题](#部署问题) | 增量部署、热更新相关 | 0 |
 | [环境问题](#环境问题) | SSH、网络、容器相关 | 0 |
 | [数据库问题](#数据库问题) | MySQL、Redis 相关 | 0 |
@@ -70,6 +71,227 @@ grpc-message: Unsupported endpoint: /bazi/wuxing-proportion/stream
 - `server/api/v1/*.py` - API 实现
 
 **提交记录**：`68fb76e` - feat(grpc): 注册所有流式端点到 gRPC 网关
+
+---
+
+## 🔴 Coze API 问题
+
+### ERR-COZE-001：Coze API 返回空内容（感情婚姻接口）
+
+**问题发生日期**：2026-01-06
+
+**问题描述**：
+调用感情婚姻接口（`/bazi/marriage-analysis/stream`）时，Coze API 返回空内容，重试 3 次后仍然失败。
+
+**现象**：
+```
+[WARN]   感情婚姻接口错误: 接口调用失败（已重试 3 次）: Coze API 返回空内容
+```
+
+**根因分析**：
+1. Coze API 返回了 HTTP 200 响应，但响应中**没有有效内容**
+2. 可能原因：
+   - **Bot System Prompt 配置问题**：Bot 的 System Prompt 未正确配置，或未包含 `{{input}}` 占位符
+   - **输入数据格式问题**：输入数据格式不符合 Bot 期望
+   - **过滤逻辑过于严格**：内容被过滤逻辑误过滤（如思考过程过滤）
+   - **Bot ID 配置错误**：使用了错误的 Bot ID
+   - **Coze API 服务端问题**：暂时性问题（较少见）
+
+**影响范围**：
+- `/bazi/marriage-analysis/stream` - 感情婚姻流式分析接口
+- 其他使用 `CozeStreamService.stream_custom_analysis()` 的接口（如果遇到相同问题）
+
+**解决方案**：
+
+### 快速诊断（推荐）
+
+1. **运行配置验证工具**：
+   ```bash
+   python3 scripts/verify_coze_config.py
+   ```
+   该工具会：
+   - 检查数据库配置是否存在
+   - 验证 Token 有效性
+   - 验证 Bot ID 是否存在
+   - 生成详细的验证报告
+   - 提供修复建议
+
+2. **运行完整诊断脚本**：
+   ```bash
+   python3 scripts/diagnose_marriage_api.py
+   ```
+   该脚本会：
+   - 检查配置（Token、Bot ID）
+   - 验证 Token 有效性
+   - 验证 Bot 配置
+   - 获取测试数据
+   - 直接测试 Bot API
+   - 提供详细的诊断信息和修复建议
+
+3. **使用交互式修复向导**（如果配置有问题）：
+   ```bash
+   python3 scripts/fix_marriage_bot_config.py
+   ```
+   该脚本会：
+   - 自动检查配置问题
+   - 提供交互式修复向导
+   - 引导修复 Token、Bot ID 配置
+   - 提供 Bot System Prompt 检查指南
+
+### 详细修复步骤
+
+#### 步骤 1: 检查配置
+
+**如果 Token 未配置或无效**：
+
+1. 登录 Coze 平台：https://www.coze.cn
+2. 进入个人设置 → API 密钥
+3. 创建新的 Token（格式：`pat_xxxxxxxxxxxxx`）
+4. 更新数据库配置：
+   ```sql
+   UPDATE service_configs 
+   SET config_value='新Token', updated_at=NOW() 
+   WHERE config_key='COZE_ACCESS_TOKEN';
+   ```
+   或者如果配置不存在：
+   ```sql
+   INSERT INTO service_configs (config_key, config_value, config_type, description, created_at, updated_at) 
+   VALUES ('COZE_ACCESS_TOKEN', '新Token', 'coze', 'Coze API Access Token', NOW(), NOW());
+   ```
+
+**如果 Bot ID 未配置或错误**：
+
+1. 登录 Coze 平台：https://www.coze.cn
+2. 找到"感情婚姻分析" Bot
+3. 复制 Bot ID（数字格式，如：`7587253915310096384`）
+4. 更新数据库配置：
+   ```sql
+   UPDATE service_configs 
+   SET config_value='BotID', updated_at=NOW() 
+   WHERE config_key='MARRIAGE_ANALYSIS_BOT_ID';
+   ```
+   或者如果配置不存在：
+   ```sql
+   INSERT INTO service_configs (config_key, config_value, config_type, description, created_at, updated_at) 
+   VALUES ('MARRIAGE_ANALYSIS_BOT_ID', 'BotID', 'coze', '感情婚姻分析 Bot ID', NOW(), NOW());
+   ```
+
+#### 步骤 2: 检查 Bot System Prompt
+
+**这是最常见的问题原因**：
+
+1. 登录 Coze 平台：https://www.coze.cn
+2. 找到对应的 Bot（通过 Bot ID）
+3. 进入 Bot 设置 → System Prompt
+4. **关键检查**：确认 System Prompt 包含 `{{input}}` 占位符
+5. 如果未配置或配置错误：
+   - 打开文档：`docs/需求/Coze_Bot_System_Prompt_感情婚姻分析.md`
+   - 复制完整的 System Prompt 内容
+   - 粘贴到 Bot 的 System Prompt 设置中
+   - **确保包含 `{{input}}` 占位符**
+   - 保存设置
+6. 验证 Bot 已启用（状态应为"启用"）
+
+#### 步骤 3: 验证输入数据格式
+
+使用测试接口验证数据格式：
+
+```bash
+curl -X POST "http://localhost:8001/api/v1/marriage-analysis/test" \
+  -H "Content-Type: application/json" \
+  -d '{"solar_date": "1990-01-01", "solar_time": "12:00", "gender": "male", "calendar_type": "solar"}'
+```
+
+检查返回的 `formatted_data` 格式是否正确，应该是 JSON 字符串格式。
+
+#### 步骤 4: 验证修复
+
+1. **重新运行配置验证**：
+   ```bash
+   python3 scripts/verify_coze_config.py
+   ```
+   应该显示所有配置检查通过
+
+2. **运行完整诊断**：
+   ```bash
+   python3 scripts/diagnose_marriage_api.py
+   ```
+   应该显示 Bot API 测试通过
+
+3. **测试实际接口**：
+   ```bash
+   curl -X POST "http://localhost:8001/api/v1/bazi/marriage-analysis/stream" \
+     -H "Content-Type: application/json" \
+     -d '{"solar_date": "1990-01-01", "solar_time": "12:00", "gender": "male"}'
+   ```
+   应该能正常返回流式内容
+
+#### 步骤 5: 检查服务日志
+
+如果问题仍然存在，查看服务日志，寻找以下关键信息：
+- `⚠️ Coze API 返回空内容`
+- `诊断信息: has_content=...`
+- `Bot ID=...`
+- `Prompt长度: ...`
+- `收到 X 行数据，但未提取到有效内容`
+
+查看增强的错误信息，会根据错误类型提供具体的解决方案。
+
+**预防措施**：
+1. ✅ 新增 Bot 时，必须配置正确的 System Prompt（包含 `{{input}}` 占位符）
+2. ✅ 定期运行诊断脚本验证 Bot 配置
+3. ✅ 增强错误日志，记录更多调试信息（已实现）
+4. ✅ 在开发环境测试 Bot 配置后再部署到生产环境
+
+**快速排查清单**：
+
+按优先级检查：
+
+1. **配置验证**（最优先）：
+   - [ ] 运行 `python3 scripts/verify_coze_config.py` 检查配置
+   - [ ] Token 是否存在且有效？
+   - [ ] Bot ID 是否存在且有效？
+
+2. **Bot System Prompt**（最常见问题）：
+   - [ ] Bot System Prompt 是否包含 `{{input}}` 占位符？（**必须！**）
+   - [ ] Bot System Prompt 是否完整（参考文档）？
+   - [ ] Bot 是否已启用？
+
+3. **数据格式验证**：
+   - [ ] 运行测试接口验证数据格式：`/api/v1/marriage-analysis/test`
+   - [ ] 输入数据格式是否符合 Bot 期望？
+
+4. **完整诊断**：
+   - [ ] 运行 `python3 scripts/diagnose_marriage_api.py` 完整诊断
+   - [ ] 诊断脚本是否通过所有检查？
+
+5. **服务日志检查**：
+   - [ ] 查看服务日志中的错误信息
+   - [ ] 查看增强的错误提示（提供具体解决方案）
+
+**相关工具和脚本**：
+
+- `scripts/verify_coze_config.py` - **配置验证工具**（快速检查配置）
+- `scripts/diagnose_marriage_api.py` - **完整诊断脚本**（详细诊断）
+- `scripts/fix_marriage_bot_config.py` - **配置修复向导**（交互式修复）
+
+**相关文件**：
+- `server/services/coze_stream_service.py` - Coze 流式服务（已增强错误处理）
+- `server/api/v1/marriage_analysis.py` - 感情婚姻分析接口
+- `docs/需求/Coze_Bot_System_Prompt_感情婚姻分析.md` - Bot System Prompt 文档
+
+**常见错误码说明**：
+
+| 错误码 | 含义 | 解决方法 |
+|--------|------|----------|
+| 4101 | Token 错误 | 检查并更新 Token 配置 |
+| 4004 | Bot 不存在 | 检查 Bot ID 是否正确 |
+| 4028 | 配额用尽 | 等待重置或升级付费计划 |
+| 空内容 | Bot System Prompt 问题 | 检查 System Prompt 是否包含 `{{input}}` |
+
+**提交记录**：
+- `feat: 增强 Coze API 空内容错误处理和诊断工具`
+- `feat: 添加配置验证和修复工具`
 
 ---
 

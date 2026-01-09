@@ -768,7 +768,23 @@ class CozeStreamService:
                                 if error_code == 4101:
                                     logger.error(f"[{trace_id}] ❌ Token 错误 (code: {error_code}): {error_msg}")
                                     last_error = f"Token错误: {error_msg}"
-                                    break  # 跳出重试循环，尝试下一种认证方式
+                                    error_content = (
+                                        f"Coze API Token 配置错误（错误码: {error_code}）。\n\n"
+                                        f"可能原因：\n"
+                                        f"1. Token 已过期或无效\n"
+                                        f"2. Token 格式错误（应为 pat_xxxxxxxxxxxxx 格式）\n"
+                                        f"3. Token 已被撤销\n\n"
+                                        f"解决方法：\n"
+                                        f"1. 登录 Coze 平台：https://www.coze.cn\n"
+                                        f"2. 进入个人设置 → API 密钥\n"
+                                        f"3. 创建新的 Token\n"
+                                        f"4. 更新数据库配置：UPDATE service_configs SET config_value='新Token' WHERE config_key='COZE_ACCESS_TOKEN';"
+                                    )
+                                    yield {
+                                        'type': 'error',
+                                        'content': error_content
+                                    }
+                                    return
                                 
                                 # 配额用尽（code: 4028）- 不重试当前Token，尝试备用Token
                                 if error_code == 4028:
@@ -783,11 +799,52 @@ class CozeStreamService:
                                     should_retry = True
                                     continue  # 继续重试
                                 
+                                # Bot 不存在（code: 4004）
+                                if error_code == 4004:
+                                    logger.error(f"[{trace_id}] ❌ Bot 不存在 (code: {error_code}): {error_msg}")
+                                    error_content = (
+                                        f"Coze Bot 不存在（错误码: {error_code}）- Bot ID: {used_bot_id}\n\n"
+                                        f"可能原因：\n"
+                                        f"1. Bot ID 配置错误\n"
+                                        f"2. Bot 已被删除\n"
+                                        f"3. Bot ID 不属于当前账号\n\n"
+                                        f"解决方法：\n"
+                                        f"1. 登录 Coze 平台：https://www.coze.cn\n"
+                                        f"2. 确认 Bot ID {used_bot_id} 是否正确\n"
+                                        f"3. 确认 Bot 是否存在且属于当前账号\n"
+                                        f"4. 更新数据库配置：UPDATE service_configs SET config_value='正确BotID' WHERE config_key='MARRIAGE_ANALYSIS_BOT_ID';"
+                                    )
+                                    yield {
+                                        'type': 'error',
+                                        'content': error_content
+                                    }
+                                    return
+                                
                                 # 其他错误 - 不重试
                                 logger.error(f"[{trace_id}] ❌ Coze API 返回错误 (code: {error_code}): {error_msg}")
+                                
+                                # 根据错误码提供更具体的错误信息
+                                error_content = f'Coze API 错误（错误码: {error_code}）: {error_msg}'
+                                if error_code == 4001:
+                                    error_content = (
+                                        f"Coze API 请求参数错误（错误码: {error_code}）\n\n"
+                                        f"可能原因：\n"
+                                        f"1. 请求参数格式不正确\n"
+                                        f"2. Bot ID 或 user_id 格式错误\n\n"
+                                        f"错误详情: {error_msg}"
+                                    )
+                                elif error_code == 4028:
+                                    error_content = (
+                                        f"Coze API 配额用尽（错误码: {error_code}）\n\n"
+                                        f"解决方法：\n"
+                                        f"1. 等待配额重置\n"
+                                        f"2. 升级到付费计划\n"
+                                        f"3. 使用备用 Token（如果已配置 COZE_ACCESS_TOKEN_BACKUP）"
+                                    )
+                                
                                 yield {
                                     'type': 'error',
-                                    'content': f'Coze API 错误（错误码: {error_code}）: {error_msg}'
+                                    'content': error_content
                                 }
                                 return
                             except json.JSONDecodeError:
@@ -1179,10 +1236,15 @@ class CozeStreamService:
                             else:
                                 # 增强错误信息：记录更多调试信息
                                 logger.warning(f"[{trace_id}] ⚠️ Coze API 返回空内容")
-                                logger.warning(f"[{trace_id}]    has_content: {has_content}, buffer长度: {len(buffer)}, 行数: {line_count}")
+                                logger.warning(f"[{trace_id}]    诊断信息: has_content={has_content}, buffer长度={len(buffer)}, 行数={line_count}, Bot ID={used_bot_id}")
+                                logger.warning(f"[{trace_id}]    Prompt长度: {len(prompt)}, Prompt前500字符: {prompt[:500]}")
+                                
+                                # 记录更多调试信息：检查是否有事件但没有内容
+                                if line_count > 0:
+                                    logger.warning(f"[{trace_id}]    ⚠️ 收到 {line_count} 行数据，但未提取到有效内容。可能原因：1) Bot Prompt配置问题，2) 输入格式不符合Bot期望，3) 过滤逻辑过于严格")
                                 
                                 # 空内容可能是暂时性问题，尝试重试
-                                last_error = "Coze API 返回空内容"
+                                last_error = "Coze API 返回空内容（已收到响应但无有效内容）"
                                 should_retry = True
                                 continue  # 继续重试
                         else:
@@ -1237,9 +1299,80 @@ class CozeStreamService:
         # 所有尝试都失败
         total_duration = time.time() - request_start_time
         logger.error(f"[{trace_id}] ❌ 所有尝试都失败: {last_error}, 总耗时={total_duration:.2f}s")
+        logger.error(f"[{trace_id}]    诊断信息: Bot ID={used_bot_id}, Prompt长度={len(prompt)}")
+        logger.error(f"[{trace_id}]    建议检查: 1) Bot System Prompt是否正确配置，2) 输入数据格式是否符合Bot期望，3) Bot ID是否正确")
+        
+        # 提供更详细的错误信息
+        error_content = f"Coze API 调用失败（已重试{RetryConfig.MAX_RETRIES}次）: {last_error or '未知错误'}"
+        
+        # 根据错误类型提供具体的解决方案
+        if "返回空内容" in (last_error or ""):
+            error_content = (
+                f"Coze API 返回空内容（已重试 {RetryConfig.MAX_RETRIES} 次）\n\n"
+                f"可能原因：\n"
+                f"1. Bot System Prompt 配置问题：Bot 的 System Prompt 未正确配置或未包含 {{input}} 占位符\n"
+                f"2. 输入数据格式问题：输入数据格式不符合 Bot 期望\n"
+                f"3. Bot ID 配置错误：Bot ID 不正确或 Bot 不存在\n"
+                f"4. 过滤逻辑问题：内容被过滤逻辑误过滤（如思考过程过滤）\n\n"
+                f"解决方法：\n"
+                f"1. 检查 Bot System Prompt：\n"
+                f"   - 登录 Coze 平台：https://www.coze.cn\n"
+                f"   - 找到 Bot ID {used_bot_id} 对应的 Bot\n"
+                f"   - 进入 Bot 设置 → System Prompt\n"
+                f"   - 确认 System Prompt 包含 {{input}} 占位符\n"
+                f"   - 参考文档：docs/需求/Coze_Bot_System_Prompt_感情婚姻分析.md\n"
+                f"2. 验证输入数据格式：\n"
+                f"   - 使用测试接口：/api/v1/marriage-analysis/test\n"
+                f"   - 确认数据格式是否符合 Bot 期望\n"
+                f"3. 验证 Bot 配置：\n"
+                f"   - 运行诊断脚本：python3 scripts/diagnose_marriage_api.py\n"
+                f"   - 运行配置验证：python3 scripts/verify_coze_config.py\n"
+                f"4. 检查服务日志：\n"
+                f"   - 查看详细诊断信息：Bot ID={used_bot_id}, Prompt长度={len(prompt)}\n"
+                f"   - 查看是否收到响应但无有效内容"
+            )
+        elif "Token错误" in (last_error or "") or "认证失败" in (last_error or ""):
+            error_content = (
+                f"Coze API Token 配置错误\n\n"
+                f"可能原因：\n"
+                f"1. Token 已过期或无效\n"
+                f"2. Token 格式错误（应为 pat_xxxxxxxxxxxxx 格式）\n"
+                f"3. Token 已被撤销\n\n"
+                f"解决方法：\n"
+                f"1. 登录 Coze 平台：https://www.coze.cn\n"
+                f"2. 进入个人设置 → API 密钥\n"
+                f"3. 创建新的 Token（格式：pat_xxxxxxxxxxxxx）\n"
+                f"4. 更新数据库配置：\n"
+                f"   UPDATE service_configs SET config_value='新Token' WHERE config_key='COZE_ACCESS_TOKEN';\n"
+                f"   或使用配置验证工具：python3 scripts/verify_coze_config.py"
+            )
+        elif "Bot 不存在" in (last_error or "") or "4004" in (last_error or ""):
+            error_content = (
+                f"Coze Bot 不存在（Bot ID: {used_bot_id}）\n\n"
+                f"可能原因：\n"
+                f"1. Bot ID 配置错误\n"
+                f"2. Bot 已被删除\n"
+                f"3. Bot ID 不属于当前账号\n\n"
+                f"解决方法：\n"
+                f"1. 登录 Coze 平台：https://www.coze.cn\n"
+                f"2. 确认 Bot ID {used_bot_id} 是否正确\n"
+                f"3. 确认 Bot 是否存在且属于当前账号\n"
+                f"4. 更新数据库配置：\n"
+                f"   UPDATE service_configs SET config_value='正确BotID' WHERE config_key='MARRIAGE_ANALYSIS_BOT_ID';\n"
+                f"   或使用配置验证工具：python3 scripts/verify_coze_config.py"
+            )
+        elif "配额用尽" in (last_error or "") or "4028" in (last_error or ""):
+            error_content = (
+                f"Coze API 配额用尽\n\n"
+                f"解决方法：\n"
+                f"1. 等待配额重置（通常为每日重置）\n"
+                f"2. 升级到付费计划\n"
+                f"3. 使用备用 Token（如果已配置 COZE_ACCESS_TOKEN_BACKUP）"
+            )
+        
         yield {
             'type': 'error',
-            'content': f"Coze API 调用失败（已重试{RetryConfig.MAX_RETRIES}次）: {last_error or '未知错误'}"
+            'content': error_content
         }
     
     def _extract_content_from_response(self, data: Dict[str, Any]) -> str:
