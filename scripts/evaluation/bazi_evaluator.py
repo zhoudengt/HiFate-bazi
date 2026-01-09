@@ -476,6 +476,23 @@ class BaziEvaluator:
             # ==================== 阶段3：并行调用百炼 API ====================
             
             if self.config.use_bailian and self.bailian_client:
+                # 如果 platform='bailian'（非 both）且没有 rizhu_liujiazi，单独调用一次（规则生成，结果相同）
+                if self.config.platform == 'bailian' and 'rizhu_liujiazi' not in results:
+                    self._log_progress("  调用日元-六十甲子接口（规则生成）...")
+                    try:
+                        rizhu_data = await self.api_client.call_rizhu_liujiazi(solar_date, solar_time, gender)
+                        if isinstance(rizhu_data, Exception):
+                            results['rizhu_liujiazi'] = f"[异常] {rizhu_data}"
+                        elif rizhu_data and rizhu_data.get('success'):
+                            analysis = rizhu_data.get('data', {}).get('analysis', '')
+                            rizhu = rizhu_data.get('data', {}).get('rizhu', '')
+                            results['rizhu_liujiazi'] = f"{rizhu}日: {analysis}" if analysis else rizhu
+                        else:
+                            results['rizhu_liujiazi'] = rizhu_data.get('error', '') if rizhu_data else ''
+                    except Exception as e:
+                        self._log(f"  日元-六十甲子接口异常: {e}", "WARN")
+                        results['rizhu_liujiazi'] = f"[异常] {e}"
+                
                 self._log_progress("  并行调用百炼 API 接口...")
                 bailian_start = time.time()
                 
@@ -521,17 +538,37 @@ class BaziEvaluator:
                     else:
                         results[result_key] = resp or ''
                 
+                # 如果 platform='bailian'（非 both），将 bailian_* 键名映射为对应的 coze 键名，以便写入到相同的列
+                if self.config.platform == 'bailian':
+                    # 定义键名映射：bailian_* -> coze 键名
+                    key_mapping = {
+                        'bailian_wuxing_analysis': 'wuxing_analysis',
+                        'bailian_xishen_jishen': 'xishen_jishen',
+                        'bailian_career_wealth': 'career_wealth',
+                        'bailian_marriage': 'marriage',
+                        'bailian_health': 'health',
+                        'bailian_children_study': 'children_study',
+                        'bailian_general_review': 'general_review',
+                        'bailian_daily_fortune': 'daily_fortune',
+                    }
+                    
+                    # 执行键名映射并删除原来的 bailian_* 键名
+                    for bailian_key, coze_key in key_mapping.items():
+                        if bailian_key in results:
+                            results[coze_key] = results[bailian_key]
+                            del results[bailian_key]
+                
                 bailian_time = time.time() - bailian_start
                 self._log_progress(f"  百炼 API 调用完成，耗时: {bailian_time:.1f}秒")
             
-            # ==================== 阶段4：AI多轮问答（仅 Coze，需要串行） ====================
-            if self.config.use_coze:
-                self._log_progress("  开始AI多轮问答...")
-                ai_qa_start = time.time()
-                ai_qa_result = await self._evaluate_ai_qa(test_case)
-                results['ai_qa'] = ai_qa_result
-                ai_qa_time = time.time() - ai_qa_start
-                self._log_progress(f"  AI问答完成，耗时: {ai_qa_time:.1f}秒")
+            # ==================== 阶段4：AI多轮问答（需要串行） ====================
+            # AI问答始终执行，因为它是评测的一部分（通过 Coze API，与平台选择无关）
+            self._log_progress("  开始AI多轮问答...")
+            ai_qa_start = time.time()
+            ai_qa_result = await self._evaluate_ai_qa(test_case)
+            results['ai_qa'] = ai_qa_result
+            ai_qa_time = time.time() - ai_qa_start
+            self._log_progress(f"  AI问答完成，耗时: {ai_qa_time:.1f}秒")
             
             total_time = time.time() - start_time
             self._log(f"完成评测: {test_case.user_name} (总耗时: {total_time:.1f}秒)")
