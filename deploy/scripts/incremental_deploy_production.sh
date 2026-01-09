@@ -45,13 +45,33 @@ SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
 # 设置为 true 时，自动生成并执行数据库同步脚本，无需用户确认
 AUTO_SYNC_DB=${AUTO_SYNC_DB:-false}
 
-# SSH 执行函数（支持密码登录）
+# SSH 执行函数（优先使用密钥认证，降级到密码认证）
 ssh_exec() {
     local host=$1
     shift
     local cmd="$@"
     
-    # 检查是否有 sshpass
+    # 优先使用 SSH 密钥认证（通过 SSH config 配置的别名）
+    local ssh_alias=""
+    if [ "$host" = "$NODE1_PUBLIC_IP" ]; then
+        ssh_alias="hifate-node1"
+    elif [ "$host" = "$NODE2_PUBLIC_IP" ]; then
+        ssh_alias="hifate-node2"
+    fi
+    
+    # 如果配置了别名，优先使用密钥认证
+    if [ -n "$ssh_alias" ]; then
+        # 尝试使用密钥认证（静默失败，不显示错误）
+        if ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no $ssh_alias "$cmd" 2>/dev/null; then
+            return 0
+        fi
+        # 如果密钥认证失败，尝试使用IP地址和密钥
+        if ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa_hifate root@$host "$cmd" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    
+    # 降级到密码认证（如果密钥认证失败）
     if command -v sshpass &> /dev/null; then
         sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$host "$cmd"
     else
