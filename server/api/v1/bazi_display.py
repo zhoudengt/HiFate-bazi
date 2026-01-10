@@ -302,23 +302,8 @@ async def get_liuyue_display(request: LiuyueDisplayRequest):
         raise HTTPException(status_code=500, detail=f"计算异常: {str(e)}\n{traceback.format_exc()}")
 
 
-# ✅ 依赖函数：预处理请求数据，处理 "今" 参数
-async def preprocess_fortune_request(body: Dict[str, Any] = Body(...)) -> FortuneDisplayRequest:
-    """预处理请求数据，支持 '今' 参数（在 Pydantic 验证前处理）"""
-    # 检查 current_time 是否为 "今"，如果是则转换为当前时间字符串
-    if isinstance(body, dict) and body.get('current_time') == "今":
-        body['current_time'] = datetime.now().strftime("%Y-%m-%d %H:%M")
-        logger.info(f"[Dependency] 检测到 '今' 参数，已转换为: {body['current_time']}")
-    
-    # 创建请求模型对象（此时 current_time 已经是时间字符串，不会触发验证错误）
-    try:
-        return FortuneDisplayRequest(**body)
-    except Exception as e:
-        logger.error(f"[Dependency] 创建请求模型失败: {e}", exc_info=True)
-        raise HTTPException(status_code=400, detail=f"请求参数错误: {str(e)}")
-
 @router.post("/bazi/fortune/display", summary="大运流年流月统一接口（性能优化）")
-async def get_fortune_display(request: FortuneDisplayRequest = Depends(preprocess_fortune_request)):
+async def get_fortune_display(http_request: Request):
     """
     获取大运流年流月数据（统一接口，一次返回所有数据）
     
@@ -344,6 +329,23 @@ async def get_fortune_display(request: FortuneDisplayRequest = Depends(preproces
     - conversion_info: 转换信息（如果进行了农历转换或时区转换）
     """
     try:
+        # ✅ 特殊处理：直接解析 JSON，支持 "今" 参数（完全绕过 Pydantic 自动验证）
+        body_bytes = await http_request.body()
+        request_data = json.loads(body_bytes.decode('utf-8'))
+        
+        # 检查 current_time 是否为 "今"，如果是则转换为当前时间字符串（避免后续验证失败）
+        use_jin_mode = False
+        if request_data.get('current_time') == "今":
+            use_jin_mode = True
+            request_data['current_time'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            logger.info(f"[今参数] 在请求解析前检测到 '今'，已转换为: {request_data['current_time']}")
+        
+        # 创建请求模型对象（此时 current_time 已经是时间字符串，不会触发验证错误）
+        try:
+            request = FortuneDisplayRequest(**request_data)
+        except Exception as e:
+            logger.error(f"[今参数] 创建请求模型失败: {e}", exc_info=True)
+            raise HTTPException(status_code=400, detail=f"请求参数错误: {str(e)}")
         
         # 处理农历输入和时区转换
         final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
@@ -355,28 +357,21 @@ async def get_fortune_display(request: FortuneDisplayRequest = Depends(preproces
             request.longitude
         )
         
-        # ✅ 解析 current_time（支持"今"参数，使用 try-except 处理）
+        # ✅ 解析 current_time（如果使用"今"模式，使用当前时间的 datetime 对象）
         current_time = None
         if request.current_time:
-            current_time_str = str(request.current_time).strip()
-            
-            # 首先检查是否为 "今" 字符串
-            if current_time_str == "今":
+            if use_jin_mode:
+                # "今"模式：直接使用当前时间
                 current_time = datetime.now()
-                logger.info(f"[今参数] 检测到 '今' 参数，使用当前时间: {current_time}")
+                logger.info(f"[今参数] 使用'今'模式，current_time = {current_time}")
             else:
-                # 尝试解析时间字符串
+                # 正常模式：解析时间字符串
                 try:
-                    current_time = datetime.strptime(current_time_str, "%Y-%m-%d %H:%M")
-                    logger.info(f"[今参数] 解析时间字符串: {current_time_str} -> {current_time}")
+                    current_time = datetime.strptime(str(request.current_time), "%Y-%m-%d %H:%M")
+                    logger.info(f"[今参数] 解析时间字符串: {request.current_time} -> {current_time}")
                 except ValueError as e:
-                    # 如果解析失败，检查是否是 "今"（防止 validator 已经转换的情况）
-                    if current_time_str == "今":
-                        current_time = datetime.now()
-                        logger.info(f"[今参数] 在异常处理中检测到 '今'，使用当前时间: {current_time}")
-                    else:
-                        logger.error(f"[今参数] 时间解析失败: {current_time_str}, 错误: {e}")
-                        raise ValueError(f"current_time 参数格式错误，应为 '今' 或 'YYYY-MM-DD HH:MM' 格式，但收到: {request.current_time}")
+                    logger.error(f"[今参数] 时间解析失败: {request.current_time}, 错误: {e}")
+                    raise ValueError(f"current_time 参数格式错误，应为 '今' 或 'YYYY-MM-DD HH:MM' 格式，但收到: {request.current_time}")
         
         # ✅ 使用统一数据服务（内部适配，接口层完全不动）
         from server.services.bazi_data_service import BaziDataService
