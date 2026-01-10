@@ -875,6 +875,7 @@ class CozeStreamService:
                             line_count = 0  # 记录行数
                             is_thinking = False  # 标志位：是否处于思考过程中
                             thinking_buffer = ""  # 累积思考过程内容，用于检测
+                            error_message_detected = ""  # 标志位：检测到的错误消息（如果 Bot 返回错误消息）
                             
                             logger.info(f"[{trace_id}] 📡 开始处理流式响应 (Bot ID: {used_bot_id})")
                             logger.info(f"[{trace_id}] 📋 请求URL: {url}")
@@ -990,6 +991,8 @@ class CozeStreamService:
                                             # 检测是否为错误消息
                                             if self._is_error_response(content):
                                                 logger.warning(f"⚠️ Coze Bot 返回错误消息: {content[:100]}... (Bot ID: {used_bot_id})")
+                                                # 保存错误消息，用于在对话完成时返回更明确的错误提示
+                                                error_message_detected = content[:200]  # 保存前200字符
                                                 continue
                                             
                                             # 累积内容用于检测思考过程
@@ -1096,6 +1099,8 @@ class CozeStreamService:
                                                 # 检测是否为错误消息
                                                 if self._is_error_response(content):
                                                     logger.warning(f"⚠️ Coze Bot 返回错误消息: {content[:100]}... (Bot ID: {used_bot_id})")
+                                                    # 保存错误消息，用于在对话完成时返回更明确的错误提示
+                                                    error_message_detected = content[:200]  # 保存前200字符
                                                     continue
                                                 
                                                 # 过滤掉提示词和指令文本
@@ -1145,10 +1150,32 @@ class CozeStreamService:
                                                 'content': ''
                                             }
                                         else:
-                                            yield {
-                                                'type': 'error',
-                                                'content': 'Coze API 返回空内容'
-                                            }
+                                            # 如果检测到错误消息，返回更明确的错误提示
+                                            if error_message_detected:
+                                                logger.error(f"[{trace_id}] ❌ Bot 返回错误消息: {error_message_detected}")
+                                                error_content = (
+                                                    f"Coze Bot 配置问题：\n\n"
+                                                    f"Bot 返回错误消息: {error_message_detected}\n\n"
+                                                    f"可能原因：\n"
+                                                    f"1. Bot System Prompt 未正确配置（缺少 {{input}} 占位符）\n"
+                                                    f"2. 输入数据格式不符合 Bot 期望\n"
+                                                    f"3. Bot Prompt 设置不正确\n\n"
+                                                    f"解决方法：\n"
+                                                    f"1. 登录 Coze 平台：https://www.coze.cn\n"
+                                                    f"2. 找到 Bot ID {used_bot_id} 对应的 Bot\n"
+                                                    f"3. 进入 Bot 设置 → System Prompt\n"
+                                                    f"4. 确认 System Prompt 包含 {{input}} 占位符\n"
+                                                    f"5. 参考文档：docs/需求/Coze_Bot_System_Prompt_感情婚姻分析.md"
+                                                )
+                                                yield {
+                                                    'type': 'error',
+                                                    'content': error_content
+                                                }
+                                            else:
+                                                yield {
+                                                    'type': 'error',
+                                                    'content': 'Coze API 返回空内容，请检查 Bot 配置和提示词'
+                                                }
                                         stream_ended = True
                                         break
                                     
