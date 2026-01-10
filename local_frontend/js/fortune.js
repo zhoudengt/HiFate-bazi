@@ -13,13 +13,52 @@ let currentData = {
     selectedLiunian: null
 };
 
+// ✅ 新增：当前时间模式（'auto' 或 'jin'）
+let currentTimeMode = 'auto'; // 默认使用自动（当前时间）
+
 // 暴露到全局，供 fortune-timeline.js 使用
 window.currentData = currentData;
+
+// ✅ 新增：设置当前时间模式
+function setCurrentTimeMode(mode) {
+    currentTimeMode = mode; // 'auto' 或 'jin'
+    
+    const btnCurrentTime = document.getElementById('btnCurrentTime');
+    const btnJin = document.getElementById('btnJin');
+    const hint = document.getElementById('timeModeHint');
+    
+    // 更新按钮样式
+    if (btnCurrentTime && btnJin) {
+        if (mode === 'jin') {
+            btnCurrentTime.classList.remove('active');
+            btnJin.classList.add('active');
+            if (hint) {
+                hint.innerHTML = '<strong>✓ 已启用"今"模式</strong>：将以今天为基准计算，并自动标记当前的流年、流月（is_current=true）。';
+                hint.style.borderLeftColor = '#28a745';
+                hint.style.background = '#f0fff4';
+                hint.style.color = '#155724';
+            }
+        } else {
+            btnCurrentTime.classList.add('active');
+            btnJin.classList.remove('active');
+            if (hint) {
+                hint.innerHTML = '默认使用当前时间。点击"<strong>今</strong>"可自动以今天为基准，并标记当前的流年、流月。';
+                hint.style.borderLeftColor = '#007bff';
+                hint.style.background = '#e7f3ff';
+                hint.style.color = '#0056b3';
+            }
+        }
+    }
+    
+    console.log('当前时间模式已切换为:', mode);
+}
 
 // 页面加载时填充用户信息
 document.addEventListener('DOMContentLoaded', () => {
     UserInfo.fillForm();
     checkSavedInfo();
+    // 初始化按钮状态
+    setCurrentTimeMode('auto');
 });
 
 // 检查是否有保存的用户信息
@@ -118,9 +157,17 @@ async function loadFortuneData(dayunIndex = null) {
     resultDiv.innerHTML = '<div class="loading">正在计算大运流年流月，请稍候...</div>';
     
     try {
-        // 获取当前时间
-        const now = new Date();
-        const current_time = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        // ✅ 新增：根据模式决定使用"今"还是当前时间
+        let current_time;
+        if (currentTimeMode === 'jin') {
+            current_time = '今';  // 使用"今"参数
+            console.log('使用"今"参数模式');
+        } else {
+            // 默认：使用当前时间
+            const now = new Date();
+            current_time = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            console.log('使用当前时间模式:', current_time);
+        }
         
         // 构建请求参数
         const requestData = {
@@ -539,9 +586,15 @@ async function selectDayun(dayunIndex) {
     // ✅ 检查是否是小运
     const isXiaoyun = selectedDayun.stem?.char === '小运' || selectedDayun.stem === '小运';
     
-    // 重新加载数据，只获取该大运范围内的流年（性能优化）
-    const now = new Date();
-    const current_time = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    // ✅ 修复：根据模式决定使用"今"还是当前时间
+    let current_time;
+    if (currentTimeMode === 'jin') {
+        current_time = '今';  // 使用"今"参数
+    } else {
+        // 默认：使用当前时间
+        const now = new Date();
+        current_time = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    }
     
     // 获取大运的起始年份（用于默认加载流月）
     const startYear = selectedDayun.year_range?.start;
@@ -621,7 +674,9 @@ async function selectDayun(dayunIndex) {
 // 暴露到全局（确保在任何情况下都可以访问）
 // ✅ 修复：立即暴露到全局，确保可以被 fortune-timeline.js 调用
 window.selectDayun = selectDayun;
+window.setCurrentTimeMode = setCurrentTimeMode;  // ✅ 新增：暴露设置时间模式函数
 console.log('fortune.js selectDayun 已暴露到全局:', typeof window.selectDayun);
+console.log('fortune.js setCurrentTimeMode 已暴露到全局:', typeof window.setCurrentTimeMode);
 
 // 选择流年
 async function selectLiunian(year) {
@@ -651,15 +706,22 @@ async function selectLiunian(year) {
     // 重新渲染流年（更新active状态）
     renderLiunian();
     
+    // ✅ 修复：根据模式决定使用"今"还是当前时间
+    let current_time;
+    if (currentTimeMode === 'jin') {
+        current_time = '今';  // 使用"今"参数
+    } else {
+        // 默认：使用当前时间
+        const now = new Date();
+        current_time = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    }
+    
     // 加载并显示该流年的流月（只加载该年份的12个月，性能优化）
     try {
-        const now = new Date();
-        const current_time = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-        
         // 获取当前大运索引（如果已选中）
         const dayunIndex = currentData.selectedDayun?.index;
         
-        console.log('请求流月数据，target_year:', year, 'dayun_index:', dayunIndex);
+        console.log('请求流月数据，target_year:', year, 'dayun_index:', dayunIndex, 'current_time:', current_time);
         const response = await api.post('/bazi/fortune/display', {
             solar_date: currentData.solar_date,
             solar_time: currentData.solar_time,

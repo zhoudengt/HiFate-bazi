@@ -6,12 +6,15 @@
 
 import sys
 import os
+import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Dict
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
+
+logger = logging.getLogger(__name__)
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
@@ -59,21 +62,25 @@ class FortuneDisplayRequest(BaziDisplayRequest):
     quick_mode: Optional[bool] = Field(True, description="快速模式，只计算当前大运，其他大运异步预热（默认True）")
     async_warmup: Optional[bool] = Field(True, description="是否触发异步预热（默认True）")
     
-    @field_validator('current_time')
+    @field_validator('current_time', mode='before')
     @classmethod
     def validate_current_time(cls, v):
-        """验证当前时间格式 - 支持 '今' 或 YYYY-MM-DD HH:MM 格式"""
+        """验证当前时间格式 - 支持 '今' 或 YYYY-MM-DD HH:MM 格式（mode='before' 确保在类型转换前处理）"""
         if v is None:
             return v
-        # ✅ 新增：支持 "今" 参数
+        # ✅ 新增：支持 "今" 参数（在类型转换前检查）
         if isinstance(v, str) and v.strip() == "今":
+            logger.info(f"[Validator] 检测到 '今' 参数，允许通过验证")
             return v  # 允许 "今" 通过验证
         # 保留原有验证逻辑（不修改）
-        try:
-            from datetime import datetime
-            datetime.strptime(v, '%Y-%m-%d %H:%M')
-        except ValueError:
-            raise ValueError("current_time 参数格式错误，应为 '今' 或 'YYYY-MM-DD HH:MM' 格式")
+        if isinstance(v, str):
+            try:
+                from datetime import datetime
+                datetime.strptime(v, '%Y-%m-%d %H:%M')
+                logger.debug(f"[Validator] 时间格式验证通过: {v}")
+            except ValueError:
+                logger.warning(f"[Validator] 时间格式验证失败: {v}")
+                raise ValueError("current_time 参数格式错误，应为 '今' 或 'YYYY-MM-DD HH:MM' 格式")
         return v
 
 
@@ -351,15 +358,21 @@ async def get_fortune_display(request: FortuneDisplayRequest):
         
         current_time = None
         if request.current_time:
-            # ✅ 新增：支持 "今" 参数（在现有解析逻辑之前）
-            if isinstance(request.current_time, str) and request.current_time.strip() == "今":
+            # ✅ 新增：支持 "今" 参数（在现有解析逻辑之前，直接处理，不依赖 validator）
+            current_time_str = str(request.current_time).strip()
+            
+            # 检查是否为 "今" 字符串
+            if current_time_str == "今":
                 current_time = datetime.now()
+                logger.info(f"[今参数] 检测到 '今' 参数，使用当前时间: {current_time}")
             else:
                 # 保留原有解析逻辑（不修改）
                 try:
-                    current_time = datetime.strptime(request.current_time, "%Y-%m-%d %H:%M")
-                except ValueError:
+                    current_time = datetime.strptime(current_time_str, "%Y-%m-%d %H:%M")
+                    logger.info(f"[今参数] 解析时间字符串: {current_time_str} -> {current_time}")
+                except ValueError as e:
                     # 如果解析失败，抛出更明确的错误
+                    logger.error(f"[今参数] 时间解析失败: {current_time_str}, 错误: {e}")
                     raise ValueError(f"current_time 参数格式错误，应为 '今' 或 'YYYY-MM-DD HH:MM' 格式，但收到: {request.current_time}")
         
         # ✅ 使用统一数据服务（内部适配，接口层完全不动）

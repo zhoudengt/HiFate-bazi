@@ -211,6 +211,55 @@
         .user-info-item strong {
             color: #666;
         }
+        
+        .time-mode-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .time-mode-button {
+            flex: 1;
+            padding: 10px 15px;
+            border: 2px solid #007bff;
+            border-radius: 6px;
+            background: white;
+            color: #007bff;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+        
+        .time-mode-button:hover {
+            background: #f0f7ff;
+            transform: translateY(-2px);
+        }
+        
+        .time-mode-button.active {
+            background: #007bff;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .time-mode-button.btn-jin {
+            border-color: #28a745;
+            color: #28a745;
+        }
+        
+        .time-mode-button.btn-jin.active {
+            background: #28a745;
+            color: white;
+        }
+        
+        .time-mode-hint {
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: #e7f3ff;
+            border-left: 3px solid #007bff;
+            border-radius: 4px;
+            font-size: 0.85em;
+            color: #0056b3;
+        }
     </style>
 </head>
 <body>
@@ -263,6 +312,20 @@
                         <option value="male">男</option>
                         <option value="female">女</option>
                     </select>
+                </div>
+                <div class="form-group">
+                    <label>查询时间基准：</label>
+                    <div class="time-mode-buttons">
+                        <button type="button" id="btnCurrentTime" class="time-mode-button active" onclick="setCurrentTimeMode('auto')">
+                            自动（当前时间）
+                        </button>
+                        <button type="button" id="btnJin" class="time-mode-button btn-jin" onclick="setCurrentTimeMode('jin')">
+                            <strong>今</strong>（测试功能）
+                        </button>
+                    </div>
+                    <div class="time-mode-hint" id="timeModeHint">
+                        默认使用当前时间。点击"今"可自动以今天为基准，并标记当前的流年、流月。
+                    </div>
                 </div>
                 <button type="submit" class="btn btn-primary">查询</button>
             </form>

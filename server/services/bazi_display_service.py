@@ -1212,6 +1212,8 @@ class BaziDisplayService:
         commander = ''
         try:
             from server.services.bazi_interface_service import BaziInterfaceService
+            logger.info(f"[司令字段] 开始获取司令字段，参数: solar_date={solar_date}, solar_time={solar_time}, gender={gender}")
+            
             interface_result = BaziInterfaceService.generate_interface_full(
                 solar_date=solar_date,
                 solar_time=solar_time,
@@ -1221,16 +1223,38 @@ class BaziDisplayService:
                 latitude=39.00,  # 使用默认值
                 longitude=120.00  # 使用默认值
             )
-            commander_element = interface_result.get('other_info', {}).get('commander_element', '')
+            
+            logger.info(f"[司令字段] BaziInterfaceService.generate_interface_full() 返回结果类型: {type(interface_result)}")
+            logger.info(f"[司令字段] 返回结果是否为字典: {isinstance(interface_result, dict)}")
+            
+            if interface_result:
+                logger.info(f"[司令字段] 返回结果的顶级键: {list(interface_result.keys())[:10] if isinstance(interface_result, dict) else 'N/A'}")
+                
+                other_info = interface_result.get('other_info', {})
+                logger.info(f"[司令字段] other_info 类型: {type(other_info)}, 是否为字典: {isinstance(other_info, dict)}")
+                
+                if isinstance(other_info, dict):
+                    logger.info(f"[司令字段] other_info 的键: {list(other_info.keys())}")
+                    commander_element = other_info.get('commander_element', '')
+                    logger.info(f"[司令字段] commander_element 值: {repr(commander_element)}, 类型: {type(commander_element)}, 长度: {len(commander_element) if isinstance(commander_element, str) else 0}")
+                else:
+                    logger.warning(f"[司令字段] other_info 不是字典类型: {type(other_info)}, 值: {other_info}")
+                    commander_element = ''
+            else:
+                logger.warning(f"[司令字段] interface_result 为空或 None")
+                commander_element = ''
             
             # ✅ 简化：从 "癸水用事" 格式中提取天干部分 "癸"（只取第一个字符）
             if commander_element:
                 # 提取第一个字符作为天干
                 commander = commander_element[0] if len(commander_element) > 0 else ''
+                logger.info(f"[司令字段] 提取成功: '{commander_element}' -> '{commander}'")
             else:
+                logger.warning(f"[司令字段] commander_element 为空，无法提取")
                 commander = ''
+                
         except Exception as e:
-            logger.warning(f"获取司令字段失败: {e}")
+            logger.warning(f"[司令字段] 获取司令字段失败: {e}", exc_info=True)
             commander = ''  # 失败时返回空字符串，不影响现有逻辑
         
         result = {
