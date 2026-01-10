@@ -304,14 +304,18 @@ async def get_liuyue_display(request: LiuyueDisplayRequest):
 
 # ✅ 依赖函数：预处理请求数据，处理 "今" 参数
 async def preprocess_fortune_request(body: Dict[str, Any] = Body(...)) -> FortuneDisplayRequest:
-    """预处理请求数据，支持 '今' 参数"""
+    """预处理请求数据，支持 '今' 参数（在 Pydantic 验证前处理）"""
     # 检查 current_time 是否为 "今"，如果是则转换为当前时间字符串
     if isinstance(body, dict) and body.get('current_time') == "今":
         body['current_time'] = datetime.now().strftime("%Y-%m-%d %H:%M")
         logger.info(f"[Dependency] 检测到 '今' 参数，已转换为: {body['current_time']}")
     
-    # 创建请求模型对象
-    return FortuneDisplayRequest(**body)
+    # 创建请求模型对象（此时 current_time 已经是时间字符串，不会触发验证错误）
+    try:
+        return FortuneDisplayRequest(**body)
+    except Exception as e:
+        logger.error(f"[Dependency] 创建请求模型失败: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"请求参数错误: {str(e)}")
 
 @router.post("/bazi/fortune/display", summary="大运流年流月统一接口（性能优化）")
 async def get_fortune_display(request: FortuneDisplayRequest = Depends(preprocess_fortune_request)):
