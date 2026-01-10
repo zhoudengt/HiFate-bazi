@@ -126,8 +126,59 @@ def build_marriage_input_data(
         
         return {}
     
-    # 提取基础数据
-    bazi_pillars = bazi_data.get('bazi_pillars', {})
+    # ⚠️ 关键修复：提取 bazi_pillars，处理可能为空或格式不正确的情况
+    bazi_pillars_raw = bazi_data.get('bazi_pillars', {})
+    bazi_pillars = {}
+    
+    # 如果 bazi_pillars 为空或格式不正确，尝试从 details 中提取
+    if not bazi_pillars_raw or not isinstance(bazi_pillars_raw, dict) or len(bazi_pillars_raw) == 0:
+        logger.warning(f"⚠️ bazi_pillars 为空或格式不正确，尝试从 details 中提取")
+        # 尝试从 details 中提取四柱信息
+        details = bazi_data.get('details', {})
+        for pillar_name in ['year', 'month', 'day', 'hour']:
+            pillar_detail = details.get(pillar_name, {})
+            if isinstance(pillar_detail, dict):
+                # 如果 details 中有完整信息，从中提取
+                # 注意：details 中可能没有 stem 和 branch，需要从其他地方提取
+                pass
+    else:
+        # 处理 bazi_pillars 可能是字符串格式的情况（如 {"year": "乙酉"}）
+        for pillar_name in ['year', 'month', 'day', 'hour']:
+            pillar_value = bazi_pillars_raw.get(pillar_name)
+            if isinstance(pillar_value, str) and len(pillar_value) == 2:
+                # 字符串格式（如 "乙酉"），解析为字典格式
+                stem = pillar_value[0]
+                branch = pillar_value[1]
+                bazi_pillars[pillar_name] = {'stem': stem, 'branch': branch}
+            elif isinstance(pillar_value, dict) and 'stem' in pillar_value and 'branch' in pillar_value:
+                # 字典格式，直接使用
+                bazi_pillars[pillar_name] = pillar_value
+            else:
+                # 其他格式或为空，使用空字典
+                bazi_pillars[pillar_name] = {}
+    
+    # 如果 bazi_pillars 仍然为空，尝试从 BaziService 重新计算
+    if not bazi_pillars or all(not p.get('stem') or not p.get('branch') for p in bazi_pillars.values()):
+        logger.warning(f"⚠️ bazi_pillars 提取失败，尝试重新计算")
+        try:
+            # 从 basic_info 中获取日期和时间，重新计算
+            basic_info = bazi_data.get('basic_info', {})
+            solar_date = basic_info.get('solar_date', '')
+            solar_time = basic_info.get('solar_time', '')
+            gender = basic_info.get('gender', 'male')
+            
+            if solar_date and solar_time:
+                # 重新计算八字（仅在本地，避免递归调用）
+                from src.tool.BaziCalculator import BaziCalculator
+                calculator = BaziCalculator(solar_date, solar_time, gender)
+                recalc_result = calculator.calculate()
+                if recalc_result and 'bazi_pillars' in recalc_result:
+                    recalc_pillars = recalc_result['bazi_pillars']
+                    if isinstance(recalc_pillars, dict) and len(recalc_pillars) > 0:
+                        bazi_pillars = recalc_pillars
+                        logger.info(f"✅ 重新计算 bazi_pillars 成功")
+        except Exception as e:
+            logger.error(f"❌ 重新计算 bazi_pillars 失败: {e}")
     
     # ⚠️ 修复：从 wangshuai_result 中正确提取旺衰数据
     wangshuai_data = extract_wangshuai_data(wangshuai_result)
@@ -155,8 +206,23 @@ def build_marriage_input_data(
     except Exception as e:
         logger.warning(f"提取地支刑冲破害数据失败（不影响业务）: {e}")
     
-    # 提取日柱数据
-    day_pillar = bazi_pillars.get('day', {})
+    # 提取日柱数据（确保格式正确）
+    day_pillar_raw = bazi_pillars.get('day', {})
+    if isinstance(day_pillar_raw, dict) and 'stem' in day_pillar_raw and 'branch' in day_pillar_raw:
+        day_pillar = day_pillar_raw
+    else:
+        # 如果格式不正确，尝试从 bazi_data 的 details 中提取
+        day_pillar = {}
+        try:
+            details = bazi_data.get('details', {})
+            day_detail = details.get('day', {})
+            # details 中没有 stem 和 branch，需要从 bazi_pillars 中获取
+            # 如果 bazi_pillars 为空，使用空字典
+            if day_pillar_raw and isinstance(day_pillar_raw, dict):
+                day_pillar = day_pillar_raw
+        except Exception as e:
+            logger.warning(f"提取日柱数据失败（不影响业务）: {e}")
+            day_pillar = {}
     
     # ⚠️ 修复：从 wangshuai_data 中提取旺衰字符串
     wangshuai = wangshuai_data.get('wangshuai', '')
@@ -990,12 +1056,28 @@ async def extract_marriage_analysis_data(
             )
         )
         
-        bazi_data, wangshuai_data, detail_result = await asyncio.gather(bazi_task, wangshuai_task, detail_task)
+        bazi_result, wangshuai_result, detail_result = await asyncio.gather(bazi_task, wangshuai_task, detail_task)
         
-        # 验证八字数据
+        # ⚠️ 关键修复：提取八字数据（BaziService.calculate_bazi_full 返回的结构是 {bazi: {...}, rizhu: {...}, matched_rules: [...]}）
+        if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
+            bazi_data = bazi_result['bazi']
+        else:
+            bazi_data = bazi_result
+        
+        # 验证数据类型
         bazi_data = validate_bazi_data(bazi_data)
         if not bazi_data:
             raise ValueError("八字计算失败，返回数据为空")
+        
+        # ⚠️ 修复：从 wangshuai_result 中提取旺衰数据
+        if isinstance(wangshuai_result, Exception):
+            logger.warning(f"⚠️ 旺衰分析异常（使用默认值）: {wangshuai_result}")
+            wangshuai_data = {}
+        elif not wangshuai_result.get('success'):
+            logger.warning(f"⚠️ 旺衰分析失败（使用默认值）: {wangshuai_result.get('error')}")
+            wangshuai_data = {}
+        else:
+            wangshuai_data = wangshuai_result.get('data', {})
         
         # 3. 获取规则匹配数据
         marriage_judgments = []

@@ -144,6 +144,30 @@ class DataValidator:
             if field in bazi_data:
                 bazi_data[field] = DataValidator.ensure_list(bazi_data[field])
         
+        # ⚠️ 关键修复：递归验证 bazi_pillars 的嵌套结构
+        # bazi_pillars 应该是 {'year': {'stem': 'X', 'branch': 'X'}, ...} 格式
+        # 但有时可能是 {'year': 'XX', ...} 字符串格式，需要转换
+        if 'bazi_pillars' in bazi_data:
+            bazi_pillars = bazi_data['bazi_pillars']
+            if isinstance(bazi_pillars, dict):
+                # 检查每个柱是否是字典格式，如果不是，尝试转换
+                for pillar_name in ['year', 'month', 'day', 'hour']:
+                    pillar_value = bazi_pillars.get(pillar_name)
+                    if isinstance(pillar_value, str) and len(pillar_value) == 2:
+                        # 字符串格式（如 "乙酉"），转换为字典格式
+                        bazi_pillars[pillar_name] = {
+                            'stem': pillar_value[0],
+                            'branch': pillar_value[1]
+                        }
+                    elif not isinstance(pillar_value, dict):
+                        # 其他格式或为空，确保是字典格式
+                        bazi_pillars[pillar_name] = DataValidator.ensure_dict(pillar_value, default={})
+                    elif isinstance(pillar_value, dict):
+                        # 已经是字典格式，但确保包含 stem 和 branch
+                        if 'stem' not in pillar_value or 'branch' not in pillar_value:
+                            # 如果缺少字段，保持原样（可能是其他格式的字典）
+                            pass
+        
         # 递归验证嵌套结构
         if 'relationships' in bazi_data:
             relationships = bazi_data['relationships']
