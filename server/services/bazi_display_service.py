@@ -827,8 +827,8 @@ class BaziDisplayService:
         branch = liuyue.get('branch', '')
         ganzhi = stem + branch if stem and branch else ''
         
-        # ✅ 添加五行属性（由后端计算，前端只负责展示）
-        return {
+        # 保留所有现有字段
+        result = {
             "month": liuyue.get('month', 0),
             "solar_term": liuyue.get('solar_term', ''),
             "term_date": liuyue.get('term_date', ''),
@@ -842,12 +842,45 @@ class BaziDisplayService:
                 "wuxing": BRANCH_ELEMENTS.get(branch, '')  # ✅ 后端提供五行属性
             },
             "nayin": liuyue.get('nayin', ''),
-            # ✅ 新增字段：十神简称
+            # ✅ 保留原有字段：十神简称
             "stem_shishen": liuyue.get('stem_shishen', ''),
             "branch_shishen": liuyue.get('branch_shishen', ''),
             "shishen_combined": liuyue.get('shishen_combined', ''),
             "is_current": False  # 由调用方设置
         }
+        
+        # ✅ 新增：在 stem 字典中新增 ten_god 字段（如果主星存在）
+        if 'main_star' in liuyue and liuyue.get('main_star'):
+            result['stem']['ten_god'] = liuyue.get('main_star', '')
+        
+        # ✅ 新增：在 branch 字典中新增 hidden_stems 字段（如果藏干存在）
+        if 'hidden_stems' in liuyue and liuyue.get('hidden_stems'):
+            result['branch']['hidden_stems'] = [
+                {
+                    "char": h if isinstance(h, str) else (h.get('char', '') if isinstance(h, dict) else ''),
+                    "wuxing": STEM_ELEMENTS.get(h[0] if isinstance(h, str) and len(h) > 0 else '', ''),
+                    "ten_god": (liuyue.get('hidden_stars', [])[idx] if idx < len(liuyue.get('hidden_stars', [])) else '')
+                }
+                for idx, h in enumerate(liuyue.get('hidden_stems', []))
+            ]
+        
+        # ✅ 新增字段（在现有字段之后添加，不影响现有字段）
+        if 'main_star' in liuyue:
+            result['main_star'] = liuyue.get('main_star', '')
+        if 'hidden_stars' in liuyue:
+            result['hidden_stars'] = liuyue.get('hidden_stars', [])
+        if 'hidden_stems' in liuyue:
+            result['hidden_stems'] = liuyue.get('hidden_stems', [])
+        if 'star_fortune' in liuyue:
+            result['star_fortune'] = liuyue.get('star_fortune', '')
+        if 'self_sitting' in liuyue:
+            result['self_sitting'] = liuyue.get('self_sitting', '')
+        if 'kongwang' in liuyue:
+            result['kongwang'] = liuyue.get('kongwang', '')
+        if 'deities' in liuyue:
+            result['deities'] = liuyue.get('deities', [])
+        
+        return result
     
     # Redis缓存TTL（30天，大运流年流月数据不随时间变化）
     CACHE_TTL = 2592000  # 30天
@@ -1175,9 +1208,35 @@ class BaziDisplayService:
                 "deities": pillar_details.get('deities', [])
             }
         
+        # ✅ 新增：获取司令字段（复用 /bazi/interface 接口的逻辑，不重复计算）
+        commander = ''
+        try:
+            from server.services.bazi_interface_service import BaziInterfaceService
+            interface_result = BaziInterfaceService.generate_interface_full(
+                solar_date=solar_date,
+                solar_time=solar_time,
+                gender=gender,
+                name="",  # 不需要姓名
+                location="未知地",  # 使用默认值
+                latitude=39.00,  # 使用默认值
+                longitude=120.00  # 使用默认值
+            )
+            commander_element = interface_result.get('other_info', {}).get('commander_element', '')
+            
+            # ✅ 简化：从 "癸水用事" 格式中提取天干部分 "癸"（只取第一个字符）
+            if commander_element:
+                # 提取第一个字符作为天干
+                commander = commander_element[0] if len(commander_element) > 0 else ''
+            else:
+                commander = ''
+        except Exception as e:
+            logger.warning(f"获取司令字段失败: {e}")
+            commander = ''  # 失败时返回空字符串，不影响现有逻辑
+        
         result = {
             "success": True,
             "pillars": formatted_pillars,  # ✅ 添加四柱信息
+            "commander": commander,  # ✅ 新增：司令字段（简化后，如 "癸"，顶层，不影响现有字段）
             "dayun": {
                 "current": BaziDisplayService._format_dayun_item(current_dayun or dayun_info),
                 "list": formatted_dayun_list,

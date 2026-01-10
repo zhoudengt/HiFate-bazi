@@ -1241,11 +1241,19 @@ class BaziCalculator:
         # 详细信息可在需要时通过专门的接口获取
         # ✅ 但需要添加十神简称字段（用于显示）
         day_stem = self.bazi_pillars['day']['stem']
+        
+        # ✅ 新增：初始化计算器（用于计算流月完整详细信息）
+        star_calc = StarFortuneCalculator()
+        deities_calc = DeitiesCalculator()
+        
         for i in range(12):
             stem = HEAVENLY_STEMS[(start_index + i) % 10]
             branch = EARTHLY_BRANCHES[(month_branch_index + i) % 12]
             
-            # ✅ 新增：计算流月十神简称（使用新映射表）
+            # ✅ 新增：计算流月完整详细信息
+            detail = self._build_pillar_detail(stem, branch, star_calc, deities_calc, level='month')
+            
+            # ✅ 保留原有：计算流月十神简称（使用新映射表）
             # 天干十神简称 - 直接使用映射表
             stem_shishen = TIANGAN_SHISHEN_MAP.get(day_stem, {}).get(stem, '')
             
@@ -1261,17 +1269,27 @@ class BaziCalculator:
             elif branch_shishen:
                 shishen_combined = branch_shishen
             
-            liuyue_sequence.append({
+            liuyue_item = {
                 'month': i + 1,
                 'solar_term': solar_terms[i],
                 'term_date': term_dates[i],  # 使用实际年份的节气日期
                 'stem': stem,
                 'branch': branch,
-                # ✅ 新增字段：十神简称
+                # ✅ 保留原有字段：十神简称
                 'stem_shishen': stem_shishen,
                 'branch_shishen': branch_shishen,
                 'shishen_combined': shishen_combined,
-            })
+                # ✅ 新增字段：完整详细信息（主星、藏干、星运、自坐、空亡、神煞等）
+                'main_star': detail.get('main_star', ''),
+                'hidden_stems': detail.get('hidden_stems', []),
+                'hidden_stars': detail.get('hidden_stars', []),
+                'star_fortune': detail.get('star_fortune', ''),
+                'self_sitting': detail.get('self_sitting', ''),
+                'kongwang': detail.get('kongwang', ''),
+                'nayin': detail.get('nayin', ''),
+                'deities': detail.get('deities', []),
+            }
+            liuyue_sequence.append(liuyue_item)
         return liuyue_sequence
 
     def _build_pillar_detail(

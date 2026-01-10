@@ -334,7 +334,16 @@ async def get_fortune_display(request: FortuneDisplayRequest):
         
         current_time = None
         if request.current_time:
-            current_time = datetime.strptime(request.current_time, "%Y-%m-%d %H:%M")
+            # ✅ 新增：支持 "今" 参数（在现有解析逻辑之前）
+            if isinstance(request.current_time, str) and request.current_time.strip() == "今":
+                current_time = datetime.now()
+            else:
+                # 保留原有解析逻辑（不修改）
+                try:
+                    current_time = datetime.strptime(request.current_time, "%Y-%m-%d %H:%M")
+                except ValueError:
+                    # 如果解析失败，抛出更明确的错误
+                    raise ValueError(f"current_time 参数格式错误，应为 '今' 或 'YYYY-MM-DD HH:MM' 格式，但收到: {request.current_time}")
         
         # ✅ 使用统一数据服务（内部适配，接口层完全不动）
         from server.services.bazi_data_service import BaziDataService
