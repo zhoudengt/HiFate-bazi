@@ -8,8 +8,7 @@ import sys
 import os
 import logging
 import json
-from fastapi import APIRouter, HTTPException
-from fastapi import Request
+from fastapi import APIRouter, HTTPException, Request, Body, Depends
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, Dict, Any
 from datetime import datetime
@@ -303,8 +302,19 @@ async def get_liuyue_display(request: LiuyueDisplayRequest):
         raise HTTPException(status_code=500, detail=f"计算异常: {str(e)}\n{traceback.format_exc()}")
 
 
+# ✅ 依赖函数：预处理请求数据，处理 "今" 参数
+async def preprocess_fortune_request(body: Dict[str, Any] = Body(...)) -> FortuneDisplayRequest:
+    """预处理请求数据，支持 '今' 参数"""
+    # 检查 current_time 是否为 "今"，如果是则转换为当前时间字符串
+    if isinstance(body, dict) and body.get('current_time') == "今":
+        body['current_time'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        logger.info(f"[Dependency] 检测到 '今' 参数，已转换为: {body['current_time']}")
+    
+    # 创建请求模型对象
+    return FortuneDisplayRequest(**body)
+
 @router.post("/bazi/fortune/display", summary="大运流年流月统一接口（性能优化）")
-async def get_fortune_display(request: FortuneDisplayRequest):
+async def get_fortune_display(request: FortuneDisplayRequest = Depends(preprocess_fortune_request)):
     """
     获取大运流年流月数据（统一接口，一次返回所有数据）
     
