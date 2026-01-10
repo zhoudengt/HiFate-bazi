@@ -305,8 +305,70 @@ async def _handle_pan(payload: Dict[str, Any]):
 
 @_register("/bazi/fortune/display")
 async def _handle_fortune(payload: Dict[str, Any]):
+    """处理大运流年流月展示请求（gRPC-Web 转发）"""
+    # ✅ 特殊处理：在创建 Pydantic 模型前处理 "今" 参数
+    use_jin_mode = False
+    if payload.get('current_time') == "今":
+        from datetime import datetime
+        use_jin_mode = True
+        payload['current_time'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        logger.info(f"[gRPC Gateway] 检测到 '今' 参数，已转换为: {payload['current_time']}")
+    
+    # 创建请求模型对象（此时 current_time 已经是时间字符串，不会触发验证错误）
     request_model = FortuneDisplayRequest(**payload)
-    return await get_fortune_display(request_model)
+    
+    # ✅ 调用内部处理函数（复用 get_fortune_display 的逻辑）
+    from server.services.bazi_display_service import BaziDisplayService
+    from server.utils.bazi_input_processor import BaziInputProcessor
+    from datetime import datetime
+    
+    # 处理农历输入和时区转换
+    final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+        request_model.solar_date,
+        request_model.solar_time,
+        request_model.calendar_type or "solar",
+        request_model.location,
+        request_model.latitude,
+        request_model.longitude
+    )
+    
+    # 解析 current_time（如果使用"今"模式，使用当前时间；否则解析时间字符串）
+    current_time = None
+    if request_model.current_time:
+        if use_jin_mode:
+            current_time = datetime.now()
+            logger.info(f"[gRPC Gateway] 使用'今'模式，current_time = {current_time}")
+        else:
+            try:
+                current_time = datetime.strptime(request_model.current_time, "%Y-%m-%d %H:%M")
+            except ValueError:
+                raise ValueError(f"current_time 参数格式错误: {request_model.current_time}")
+    
+    # 调用服务层
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    executor = ThreadPoolExecutor(max_workers=100)
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        executor,
+        BaziDisplayService.get_fortune_display,
+        final_solar_date,
+        final_solar_time,
+        request_model.gender,
+        current_time,
+        request_model.dayun_index,
+        request_model.dayun_year_start,
+        request_model.dayun_year_end,
+        request_model.target_year,
+        request_model.quick_mode if request_model.quick_mode is not None else True,
+        request_model.async_warmup if request_model.async_warmup is not None else True
+    )
+    
+    # 添加转换信息
+    if result.get('success') and (conversion_info.get('converted') or conversion_info.get('timezone_info')):
+        result['conversion_info'] = conversion_info
+    
+    return result
 
 
 @_register("/bazi/dayun/display")
