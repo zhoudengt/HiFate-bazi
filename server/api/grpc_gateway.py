@@ -1041,67 +1041,99 @@ async def _collect_sse_stream(generator) -> Dict[str, Any]:
                     try:
                         msg = json.loads(json_str)
                         
+                        # ⭐ 关键修复：如果消息中包含 type 字段（如 marriage_analysis_stream_generator 的格式），则从 JSON 数据中提取类型
+                        # 这样既支持原有的 event: 行格式，也支持新的 data: {"type": "xxx"} 格式
+                        msg_type = msg.get('type')
+                        if msg_type:
+                            # 使用消息中的 type 字段作为事件类型（优先级更高）
+                            event_type_to_use = msg_type
+                            logger.debug(f"[_collect_sse_stream] 从消息中提取类型: {event_type_to_use}")
+                        else:
+                            # 回退到使用 event: 行设置的类型（向后兼容）
+                            event_type_to_use = current_event_type
+                            logger.debug(f"[_collect_sse_stream] 使用 event 行类型: {event_type_to_use}")
+                        
                         # 根据事件类型处理数据
-                        if current_event_type in ('brief_response_chunk', 'llm_chunk'):
-                            # 流式内容块（场景1用brief_response_chunk，场景2用llm_chunk）
+                        # 支持 marriage_analysis_stream_generator 的格式：progress, complete, error
+                        # 支持 wuxing_proportion_stream_generator 的格式：data, progress, complete, error
+                        if event_type_to_use == 'data':
+                            # 数据消息（如 wuxing_proportion 的完整数据）
+                            content = msg.get('content', {})
+                            if content:
+                                data_content['data'] = content
+                                logger.debug(f"[_collect_sse_stream] 保存数据消息: {type(content)}")
+                        
+                        elif event_type_to_use == 'progress' or event_type_to_use in ('brief_response_chunk', 'llm_chunk'):
+                            # 流式内容块（progress 或场景1的 brief_response_chunk，场景2的 llm_chunk）
                             content = msg.get('content', '')
                             if content:
                                 stream_contents.append(content)
                                 logger.debug(f"[_collect_sse_stream] 收集到流式内容块: {len(content)} 字符")
                         
-                        elif current_event_type == 'brief_response_end':
-                            # 简短答复结束，保存完整内容
-                            content = msg.get('content', '')
-                            if content:
-                                data_content['brief_response'] = content
-                                logger.debug(f"[_collect_sse_stream] 保存简短答复: {len(content)} 字符")
+                        elif event_type_to_use == 'complete' or event_type_to_use == 'brief_response_end':
+                            # 完成标记（marriage_analysis 的 complete 或场景1的 brief_response_end）
+                            if event_type_to_use == 'complete':
+                                # marriage_analysis 格式：complete 消息可能包含剩余的未发送内容
+                                content = msg.get('content', '')
+                                if content:
+                                    stream_contents.append(content)
+                                    logger.debug(f"[_collect_sse_stream] 收集到完成时的剩余内容: {len(content)} 字符")
+                                # 标记流式传输完成
+                                data_content['llm_completed'] = True
+                                logger.debug(f"[_collect_sse_stream] 流式传输完成标记")
+                            else:
+                                # 简短答复结束，保存完整内容
+                                content = msg.get('content', '')
+                                if content:
+                                    data_content['brief_response'] = content
+                                    logger.debug(f"[_collect_sse_stream] 保存简短答复: {len(content)} 字符")
                         
-                        elif current_event_type == 'llm_end':
+                        elif event_type_to_use == 'llm_end':
                             # LLM结束（场景2），如果有完整响应可以保存
                             # 注意：完整响应在stream_content中，这里只标记结束
                             data_content['llm_completed'] = True
                             logger.debug(f"[_collect_sse_stream] LLM完成标记")
                         
-                        elif current_event_type == 'preset_questions':
+                        elif event_type_to_use == 'preset_questions':
                             # 预设问题列表（场景1）
                             questions = msg.get('questions', [])
                             if questions:
                                 data_content['preset_questions'] = questions
                                 logger.debug(f"[_collect_sse_stream] 保存预设问题: {len(questions)} 个")
                         
-                        elif current_event_type == 'related_questions':
+                        elif event_type_to_use == 'related_questions':
                             # 相关问题列表（场景2）
                             questions = msg.get('questions', [])
                             if questions:
                                 data_content['related_questions'] = questions
                                 logger.debug(f"[_collect_sse_stream] 保存相关问题: {len(questions)} 个")
                         
-                        elif current_event_type == 'basic_analysis':
+                        elif event_type_to_use == 'basic_analysis':
                             # 基础分析结果（场景2）
                             data_content['basic_analysis'] = msg
                             logger.debug(f"[_collect_sse_stream] 保存基础分析结果")
                         
-                        elif current_event_type == 'performance':
+                        elif event_type_to_use == 'performance':
                             # 性能数据
                             data_content['performance'] = msg
                             logger.debug(f"[_collect_sse_stream] 保存性能数据")
                         
-                        elif current_event_type == 'status':
+                        elif event_type_to_use == 'status':
                             # 状态信息，保存最后一个状态
                             data_content['last_status'] = msg
                             logger.debug(f"[_collect_sse_stream] 更新状态: {msg.get('stage', 'unknown')}")
                         
-                        elif current_event_type == 'error':
-                            # 错误信息
-                            error_content = msg.get('message', str(msg))
+                        elif event_type_to_use == 'error':
+                            # 错误信息（支持 marriage_analysis 的 error 格式）
+                            error_content = msg.get('content') or msg.get('message') or str(msg)
                             logger.warning(f"[_collect_sse_stream] 收到错误: {error_content}")
                         
-                        elif current_event_type == 'end':
+                        elif event_type_to_use == 'end':
                             # 结束标记，忽略
                             logger.debug(f"[_collect_sse_stream] 收到结束标记")
                             pass
                         else:
-                            logger.debug(f"[_collect_sse_stream] 未处理的事件类型: {current_event_type}")
+                            logger.debug(f"[_collect_sse_stream] 未处理的事件类型: {event_type_to_use} (原始: {current_event_type}, 消息type: {msg_type})")
                         
                     except json.JSONDecodeError:
                         # 非 JSON 格式，可能是普通文本
