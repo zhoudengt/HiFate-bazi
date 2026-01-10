@@ -7,7 +7,7 @@
 import sys
 import os
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Dict
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
@@ -59,7 +59,8 @@ class FortuneDisplayRequest(BaziDisplayRequest):
     quick_mode: Optional[bool] = Field(True, description="快速模式，只计算当前大运，其他大运异步预热（默认True）")
     async_warmup: Optional[bool] = Field(True, description="是否触发异步预热（默认True）")
     
-    @validator('current_time')
+    @field_validator('current_time')
+    @classmethod
     def validate_current_time(cls, v):
         """验证当前时间格式 - 支持 '今' 或 YYYY-MM-DD HH:MM 格式"""
         if v is None:
