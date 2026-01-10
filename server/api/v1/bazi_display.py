@@ -7,9 +7,11 @@
 import sys
 import os
 import logging
+import json
 from fastapi import APIRouter, HTTPException
+from fastapi import Request
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
@@ -62,26 +64,8 @@ class FortuneDisplayRequest(BaziDisplayRequest):
     quick_mode: Optional[bool] = Field(True, description="快速模式，只计算当前大运，其他大运异步预热（默认True）")
     async_warmup: Optional[bool] = Field(True, description="是否触发异步预热（默认True）")
     
-    @field_validator('current_time', mode='before')
-    @classmethod
-    def validate_current_time(cls, v):
-        """验证当前时间格式 - 支持 '今' 或 YYYY-MM-DD HH:MM 格式（mode='before' 确保在类型转换前处理）"""
-        if v is None:
-            return v
-        # ✅ 新增：支持 "今" 参数（在类型转换前检查）
-        if isinstance(v, str) and v.strip() == "今":
-            logger.info(f"[Validator] 检测到 '今' 参数，允许通过验证")
-            return v  # 允许 "今" 通过验证
-        # 保留原有验证逻辑（不修改）
-        if isinstance(v, str):
-            try:
-                from datetime import datetime
-                datetime.strptime(v, '%Y-%m-%d %H:%M')
-                logger.debug(f"[Validator] 时间格式验证通过: {v}")
-            except ValueError:
-                logger.warning(f"[Validator] 时间格式验证失败: {v}")
-                raise ValueError("current_time 参数格式错误，应为 '今' 或 'YYYY-MM-DD HH:MM' 格式")
-        return v
+    # ✅ 移除 validator，改为在路由函数内部直接处理（避免 FastAPI 验证拦截）
+    # 注释：不在这里验证，改为在路由函数中直接处理 current_time 参数
 
 
 @router.post("/bazi/pan/display", summary="排盘展示（前端优化）")
@@ -320,7 +304,7 @@ async def get_liuyue_display(request: LiuyueDisplayRequest):
 
 
 @router.post("/bazi/fortune/display", summary="大运流年流月统一接口（性能优化）")
-async def get_fortune_display(request: FortuneDisplayRequest):
+async def get_fortune_display(http_request: Request):
     """
     获取大运流年流月数据（统一接口，一次返回所有数据）
     
@@ -333,7 +317,7 @@ async def get_fortune_display(request: FortuneDisplayRequest):
     - **location**: 出生地点（可选，用于时区转换）
     - **latitude**: 纬度（可选，用于时区转换）
     - **longitude**: 经度（可选，用于时区转换和真太阳时计算）
-    - **current_time**: 当前时间（可选）(YYYY-MM-DD HH:MM)
+    - **current_time**: 当前时间（可选）(YYYY-MM-DD HH:MM) 或 '今'
     - **dayun_index**: 大运索引（可选），指定要显示的大运，只返回该大运范围内的流年（性能优化）
     - **dayun_year_start**: 大运起始年份（可选）
     - **dayun_year_end**: 大运结束年份（可选）
@@ -346,6 +330,20 @@ async def get_fortune_display(request: FortuneDisplayRequest):
     - conversion_info: 转换信息（如果进行了农历转换或时区转换）
     """
     try:
+        # ✅ 特殊处理：直接解析 JSON，支持 "今" 参数（绕过 Pydantic validator 验证）
+        body = await http_request.body()
+        request_data = json.loads(body.decode('utf-8'))
+        
+        # 检查 current_time 是否为 "今"，如果是则转换为当前时间字符串（避免后续验证失败）
+        use_jin_mode = False
+        if request_data.get('current_time') == "今":
+            use_jin_mode = True
+            request_data['current_time'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            logger.info(f"[今参数] 检测到 '今' 参数，已转换为当前时间: {request_data['current_time']}")
+        
+        # 创建请求模型对象（此时 current_time 已经是时间字符串，不会触发验证错误）
+        request = FortuneDisplayRequest(**request_data)
+        
         # 处理农历输入和时区转换
         final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
             request.solar_date,
@@ -356,23 +354,20 @@ async def get_fortune_display(request: FortuneDisplayRequest):
             request.longitude
         )
         
+        # 解析 current_time（如果使用"今"模式，使用当前时间的 datetime 对象）
         current_time = None
         if request.current_time:
-            # ✅ 新增：支持 "今" 参数（在现有解析逻辑之前，直接处理，不依赖 validator）
-            current_time_str = str(request.current_time).strip()
-            
-            # 检查是否为 "今" 字符串
-            if current_time_str == "今":
+            if use_jin_mode:
+                # "今"模式：直接使用当前时间
                 current_time = datetime.now()
-                logger.info(f"[今参数] 检测到 '今' 参数，使用当前时间: {current_time}")
+                logger.info(f"[今参数] 使用'今'模式，current_time = {current_time}")
             else:
-                # 保留原有解析逻辑（不修改）
+                # 正常模式：解析时间字符串
                 try:
-                    current_time = datetime.strptime(current_time_str, "%Y-%m-%d %H:%M")
-                    logger.info(f"[今参数] 解析时间字符串: {current_time_str} -> {current_time}")
+                    current_time = datetime.strptime(request.current_time, "%Y-%m-%d %H:%M")
+                    logger.info(f"[今参数] 解析时间字符串: {request.current_time} -> {current_time}")
                 except ValueError as e:
-                    # 如果解析失败，抛出更明确的错误
-                    logger.error(f"[今参数] 时间解析失败: {current_time_str}, 错误: {e}")
+                    logger.error(f"[今参数] 时间解析失败: {request.current_time}, 错误: {e}")
                     raise ValueError(f"current_time 参数格式错误，应为 '今' 或 'YYYY-MM-DD HH:MM' 格式，但收到: {request.current_time}")
         
         # ✅ 使用统一数据服务（内部适配，接口层完全不动）
