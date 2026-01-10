@@ -1189,7 +1189,57 @@ async def extract_marriage_analysis_data(
         # 10. ⚠️ 优化：使用新的 build_marriage_input_data 函数构建 input_data
         # 需要获取大运序列和特殊流年
         dayun_sequence = detail_result.get('dayun_sequence', [])
-        special_liunians = []  # extract_marriage_analysis_data 不获取特殊流年，使用空列表
+        
+        # ✅ 修复：从 BaziDataService 获取特殊流年数据（与 stream 接口保持一致）
+        special_liunians = []
+        try:
+            from server.services.bazi_data_service import BaziDataService
+            
+            # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
+            # 注意：extract_marriage_analysis_data 函数只接受基本参数，使用默认值
+            fortune_data = await BaziDataService.get_fortune_data(
+                solar_date=final_solar_date,
+                solar_time=final_solar_time,
+                gender=gender,
+                calendar_type="solar",  # 使用默认值，与 BaziInputProcessor.process_input 一致
+                location=None,  # 使用默认值
+                latitude=None,  # 使用默认值
+                longitude=None,  # 使用默认值
+                include_dayun=True,
+                include_liunian=True,
+                include_special_liunian=True,
+                dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,
+                target_years=BaziDataService.DEFAULT_TARGET_YEARS,
+                current_time=None
+            )
+            
+            # 转换为字典格式（兼容现有代码）
+            for special_liunian in fortune_data.special_liunians:
+                special_liunians.append({
+                    'year': special_liunian.year,
+                    'stem': special_liunian.stem,
+                    'branch': special_liunian.branch,
+                    'ganzhi': special_liunian.ganzhi,
+                    'age': special_liunian.age,
+                    'age_display': special_liunian.age_display,
+                    'nayin': special_liunian.nayin,
+                    'main_star': special_liunian.main_star,
+                    'hidden_stems': special_liunian.hidden_stems or [],
+                    'hidden_stars': special_liunian.hidden_stars or [],
+                    'star_fortune': special_liunian.star_fortune,
+                    'self_sitting': special_liunian.self_sitting,
+                    'kongwang': special_liunian.kongwang,
+                    'deities': special_liunian.deities or [],
+                    'relations': special_liunian.relations or [],
+                    'dayun_step': special_liunian.dayun_step,
+                    'dayun_ganzhi': special_liunian.dayun_ganzhi,
+                    'details': special_liunian.details or {}
+                })
+            
+            logger.info(f"[extract_marriage_analysis_data] 获取到特殊流年数量: {len(special_liunians)}")
+        except Exception as e:
+            logger.warning(f"获取特殊流年数据失败（使用空列表）: {e}")
+            special_liunians = []
         
         input_data = build_marriage_input_data(
             bazi_data,

@@ -385,24 +385,71 @@ def organize_liunians_by_dayun_with_priority(
             dayun_step: [流年列表（按优先级排序）]
         }
     """
-    # 创建大运step到优先级的映射
+    # 添加日志用于诊断
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"[organize_liunians_by_dayun_with_priority] special_liunians 数量: {len(special_liunians) if special_liunians else 0}")
+    logger.info(f"[organize_liunians_by_dayun_with_priority] selected_dayuns 数量: {len(selected_dayuns) if selected_dayuns else 0}")
+    
+    # 创建大运step到优先级的映射（统一转换为整数类型，确保类型一致性）
     dayun_priority_map = {}
+    dayun_step_normalized_map = {}  # 用于类型标准化映射
     for dayun in selected_dayuns:
         step = dayun.get('step')
         priority = dayun.get('priority', 999)
         if step is not None:
-            dayun_priority_map[step] = priority
+            # 统一转换为整数类型
+            try:
+                step_int = int(step) if not isinstance(step, int) else step
+                dayun_priority_map[step_int] = priority
+                # 同时保留原始值的映射（处理字符串 "5" 和整数 5 的情况）
+                if step != step_int:
+                    dayun_step_normalized_map[step] = step_int
+            except (ValueError, TypeError):
+                # 如果无法转换为整数，使用原始值
+                dayun_priority_map[step] = priority
+    
+    logger.debug(f"[organize_liunians_by_dayun_with_priority] dayun_priority_map keys: {list(dayun_priority_map.keys())}")
+    if dayun_step_normalized_map:
+        logger.debug(f"[organize_liunians_by_dayun_with_priority] dayun_step_normalized_map: {dayun_step_normalized_map}")
     
     # 按关系类型分类流年（复用现有逻辑）
     from server.api.v1.general_review_analysis import classify_special_liunians
     classified = classify_special_liunians(special_liunians)
     
+    logger.info(f"[organize_liunians_by_dayun_with_priority] 分类结果: tiankedi_chong={len(classified['tiankedi_chong'])}, tianhedi_he={len(classified['tianhedi_he'])}, suiyun_binglin={len(classified['suiyun_binglin'])}, other={len(classified['other'])}")
+    
     # 按大运分组，并添加元数据
     result = {}
     
+    # 辅助函数：标准化 step 值（确保类型一致）
+    def normalize_step(step_value):
+        """标准化 step 值，统一转换为整数类型"""
+        if step_value is None:
+            return None
+        try:
+            # 先尝试转换为整数
+            step_int = int(step_value) if not isinstance(step_value, int) else step_value
+            # 检查标准化后的值是否在映射中
+            if step_int in dayun_priority_map:
+                return step_int
+            # 如果不在，检查原始值是否在映射中
+            if step_value in dayun_step_normalized_map:
+                return dayun_step_normalized_map[step_value]
+            # 如果原始值在映射中，使用原始值
+            if step_value in dayun_priority_map:
+                return step_value
+            return None
+        except (ValueError, TypeError):
+            # 如果无法转换，检查原始值是否在映射中
+            if step_value in dayun_priority_map:
+                return step_value
+            return None
+    
     # 处理天克地冲
     for liunian in classified['tiankedi_chong']:
-        step = liunian.get('dayun_step')
+        step = normalize_step(liunian.get('dayun_step'))
         if step is not None and step in dayun_priority_map:
             dayun_priority = dayun_priority_map[step]
             liunian_with_metadata = add_liunian_metadata(liunian, dayun_priority, 'tiankedi_chong', birth_year)
@@ -412,7 +459,7 @@ def organize_liunians_by_dayun_with_priority(
     
     # 处理天合地合
     for liunian in classified['tianhedi_he']:
-        step = liunian.get('dayun_step')
+        step = normalize_step(liunian.get('dayun_step'))
         if step is not None and step in dayun_priority_map:
             dayun_priority = dayun_priority_map[step]
             liunian_with_metadata = add_liunian_metadata(liunian, dayun_priority, 'tianhedi_he', birth_year)
@@ -422,7 +469,7 @@ def organize_liunians_by_dayun_with_priority(
     
     # 处理岁运并临
     for liunian in classified['suiyun_binglin']:
-        step = liunian.get('dayun_step')
+        step = normalize_step(liunian.get('dayun_step'))
         if step is not None and step in dayun_priority_map:
             dayun_priority = dayun_priority_map[step]
             liunian_with_metadata = add_liunian_metadata(liunian, dayun_priority, 'suiyun_binglin', birth_year)
@@ -432,7 +479,7 @@ def organize_liunians_by_dayun_with_priority(
     
     # 处理其他
     for liunian in classified['other']:
-        step = liunian.get('dayun_step')
+        step = normalize_step(liunian.get('dayun_step'))
         if step is not None and step in dayun_priority_map:
             dayun_priority = dayun_priority_map[step]
             liunian_with_metadata = add_liunian_metadata(liunian, dayun_priority, 'other', birth_year)
@@ -486,11 +533,30 @@ def build_enhanced_dayun_structure(
         enhanced_dayuns.append(enhanced_dayun)
     
     # 4. 组织流年（确保归属正确）
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"[build_enhanced_dayun_structure] special_liunians 数量: {len(special_liunians) if special_liunians else 0}")
+    if special_liunians:
+        # 诊断：检查前5个流年的 dayun_step 类型和值
+        for i, liunian in enumerate(special_liunians[:5]):
+            dayun_step = liunian.get('dayun_step')
+            logger.debug(f"[build_enhanced_dayun_structure] special_liunians[{i}] dayun_step={dayun_step} (type: {type(dayun_step)})")
+    
+    # 诊断：检查 selected_dayuns 的 step 类型和值
+    for i, dayun in enumerate(enhanced_dayuns[:5]):
+        step = dayun.get('step')
+        logger.debug(f"[build_enhanced_dayun_structure] enhanced_dayuns[{i}] step={step} (type: {type(step)})")
+    
     liunians_by_dayun = organize_liunians_by_dayun_with_priority(
         special_liunians, 
         enhanced_dayuns,
         birth_year=birth_year
     )
+    
+    logger.info(f"[build_enhanced_dayun_structure] liunians_by_dayun keys: {list(liunians_by_dayun.keys())}")
+    for step, liunians in liunians_by_dayun.items():
+        logger.debug(f"[build_enhanced_dayun_structure] step={step} (type: {type(step)}), liunians 数量: {len(liunians)}")
     
     # 5. 分离当前大运和关键大运
     current_dayun_enhanced = None
@@ -500,8 +566,20 @@ def build_enhanced_dayun_structure(
         priority = dayun.get('priority', 999)
         step = dayun.get('step')
         
-        # 获取该大运下的流年
-        liunians = liunians_by_dayun.get(step, [])
+        # 标准化 step 值（统一转换为整数类型，确保与 organize_liunians_by_dayun_with_priority 返回的 key 类型一致）
+        try:
+            step_normalized = int(step) if step is not None and not isinstance(step, int) else step
+        except (ValueError, TypeError):
+            step_normalized = step
+        
+        # 获取该大运下的流年（尝试使用标准化后的值和原始值）
+        liunians = liunians_by_dayun.get(step_normalized, [])
+        if not liunians and step_normalized != step:
+            # 如果标准化后的值没有找到，尝试使用原始值
+            liunians = liunians_by_dayun.get(step, [])
+        
+        logger.debug(f"[build_enhanced_dayun_structure] dayun step={step} (normalized: {step_normalized}), 获取到 liunians 数量: {len(liunians)}")
+        
         dayun['liunians'] = liunians
         
         if priority == 1:
