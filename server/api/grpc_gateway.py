@@ -312,7 +312,6 @@ async def _handle_fortune(payload: Dict[str, Any]):
         from datetime import datetime
         use_jin_mode = True
         payload['current_time'] = datetime.now().strftime("%Y-%m-%d %H:%M")
-        logger.info(f"[gRPC Gateway] 检测到 '今' 参数，已转换为: {payload['current_time']}")
     
     # 创建请求模型对象（此时 current_time 已经是时间字符串，不会触发验证错误）
     request_model = FortuneDisplayRequest(**payload)
@@ -337,7 +336,6 @@ async def _handle_fortune(payload: Dict[str, Any]):
     if request_model.current_time:
         if use_jin_mode:
             current_time = datetime.now()
-            logger.info(f"[gRPC Gateway] 使用'今'模式，current_time = {current_time}")
         else:
             try:
                 current_time = datetime.strptime(request_model.current_time, "%Y-%m-%d %H:%M")

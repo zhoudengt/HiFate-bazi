@@ -9,8 +9,9 @@ import os
 import logging
 import json
 from fastapi import APIRouter, HTTPException, Request, Body, Depends
-from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional, Dict, Any
+from pydantic import BaseModel, Field, field_validator, model_validator, ValidationError
+from typing import Optional, Dict, Any, Union, Tuple
+from dataclasses import dataclass
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
@@ -63,8 +64,33 @@ class FortuneDisplayRequest(BaziDisplayRequest):
     quick_mode: Optional[bool] = Field(True, description="快速模式，只计算当前大运，其他大运异步预热（默认True）")
     async_warmup: Optional[bool] = Field(True, description="是否触发异步预热（默认True）")
     
-    # ✅ 不在模型级别验证，改为在路由函数内部直接处理（更灵活）
-    # 注释：使用 try-except 在路由函数中处理 "今" 参数，避免 validator 拦截
+    @field_validator('current_time', mode='before')
+    @classmethod
+    def validate_current_time(cls, v):
+        """验证当前时间格式 - 支持 '今' 参数（mode='before' 确保在类型转换前处理）"""
+        if v is None:
+            return v
+        # ✅ 支持 "今" 参数（在类型转换前检查）
+        if isinstance(v, str) and v.strip() == "今":
+            # 转换为当前时间字符串，避免后续验证失败
+            from datetime import datetime
+            converted = datetime.now().strftime("%Y-%m-%d %H:%M")
+            return converted  # 返回转换后的时间字符串
+        # 保留原有验证逻辑
+        if isinstance(v, str):
+            try:
+                from datetime import datetime
+                datetime.strptime(v, '%Y-%m-%d %H:%M')
+            except ValueError:
+                raise ValueError("current_time 参数格式错误，应为 '今' 或 'YYYY-MM-DD HH:MM' 格式")
+        return v
+
+
+@dataclass
+class FortuneDisplayRequestWithMode:
+    """包装类：包含请求模型和是否为'今'模式"""
+    request: FortuneDisplayRequest
+    use_jin_mode: bool = False
 
 
 @router.post("/bazi/pan/display", summary="排盘展示（前端优化）")
@@ -302,8 +328,74 @@ async def get_liuyue_display(request: LiuyueDisplayRequest):
         raise HTTPException(status_code=500, detail=f"计算异常: {str(e)}\n{traceback.format_exc()}")
 
 
+# ✅ 依赖函数：预处理请求体，处理 "今" 参数
+async def parse_fortune_request(request: Request) -> FortuneDisplayRequestWithMode:
+    """
+    解析请求体，支持 '今' 参数（从 request.state 获取 body，避免重复读取）
+    
+    Returns:
+        FortuneDisplayRequestWithMode: 包含请求模型和是否为"今"模式的包装对象
+    """
+    # 尝试从 request.state 获取已解析的 JSON（SecurityMiddleware 已解析）
+    if hasattr(request.state, 'body_json') and request.state.body_json is not None:
+        request_data = request.state.body_json.copy()  # 复制，避免修改原始数据
+    elif hasattr(request.state, 'body') and request.state.body:
+        # 如果 state 中有 body 但未解析，则解析
+        try:
+            if isinstance(request.state.body, bytes):
+                request_data = json.loads(request.state.body.decode('utf-8'))
+            else:
+                request_data = json.loads(request.state.body)
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.error(f"请求体 JSON 解析失败: {e}")
+            raise HTTPException(status_code=400, detail=f"请求体格式错误: {str(e)}")
+    else:
+        # 如果 state 中没有，尝试直接读取（可能失败，因为中间件已读取）
+        try:
+            body_bytes = await request.body()
+            request_data = json.loads(body_bytes.decode('utf-8'))
+        except (RuntimeError, AttributeError) as e:
+            logger.error(f"无法读取请求体: {e}")
+            raise HTTPException(status_code=400, detail="无法读取请求体，请检查中间件配置")
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.error(f"请求体 JSON 解析失败: {e}")
+            raise HTTPException(status_code=400, detail=f"请求体格式错误: {str(e)}")
+    
+    # ✅ 检查是否为"今"模式（SecurityMiddleware 或 validator 已处理）
+    use_jin_mode = getattr(request.state, 'use_jin_mode', False)
+    # 如果 SecurityMiddleware 已处理，use_jin_mode 已在 request.state 中设置
+    # 如果 validator 已处理，current_time 已是时间字符串，通过时间差判断
+    if not use_jin_mode and isinstance(request_data, dict) and request_data.get('current_time'):
+        current_time_str = request_data.get('current_time')
+        if isinstance(current_time_str, str) and len(current_time_str) == 16:  # YYYY-MM-DD HH:MM 格式
+            try:
+                parsed_time = datetime.strptime(current_time_str, "%Y-%m-%d %H:%M")
+                now = datetime.now()
+                # 如果时间差在1分钟内，认为是"今"模式
+                if abs((parsed_time - now).total_seconds()) < 60:
+                    use_jin_mode = True
+                    request.state.use_jin_mode = True
+            except ValueError:
+                pass
+    
+    # 创建请求模型对象（此时 current_time 已经是时间字符串，不会触发验证错误）
+    try:
+        request_model = FortuneDisplayRequest(**request_data)
+        return FortuneDisplayRequestWithMode(request=request_model, use_jin_mode=use_jin_mode)
+    except ValidationError as e:
+        logger.error(f"创建请求模型失败: {e}", exc_info=True)
+        # 提取更友好的错误信息
+        errors = []
+        for error in e.errors():
+            errors.append(f"{'.'.join(str(x) for x in error.get('loc', []))}: {error.get('msg', '')}")
+        raise HTTPException(status_code=400, detail=f"请求参数验证失败: {', '.join(errors)}")
+    except Exception as e:
+        logger.error(f"创建请求模型异常: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"请求参数错误: {str(e)}")
+
+
 @router.post("/bazi/fortune/display", summary="大运流年流月统一接口（性能优化）")
-async def get_fortune_display(http_request: Request):
+async def get_fortune_display(request_wrapper: FortuneDisplayRequestWithMode = Depends(parse_fortune_request)):
     """
     获取大运流年流月数据（统一接口，一次返回所有数据）
     
@@ -329,23 +421,9 @@ async def get_fortune_display(http_request: Request):
     - conversion_info: 转换信息（如果进行了农历转换或时区转换）
     """
     try:
-        # ✅ 特殊处理：直接解析 JSON，支持 "今" 参数（完全绕过 Pydantic 自动验证）
-        body_bytes = await http_request.body()
-        request_data = json.loads(body_bytes.decode('utf-8'))
-        
-        # 检查 current_time 是否为 "今"，如果是则转换为当前时间字符串（避免后续验证失败）
-        use_jin_mode = False
-        if request_data.get('current_time') == "今":
-            use_jin_mode = True
-            request_data['current_time'] = datetime.now().strftime("%Y-%m-%d %H:%M")
-            logger.info(f"[今参数] 在请求解析前检测到 '今'，已转换为: {request_data['current_time']}")
-        
-        # 创建请求模型对象（此时 current_time 已经是时间字符串，不会触发验证错误）
-        try:
-            request = FortuneDisplayRequest(**request_data)
-        except Exception as e:
-            logger.error(f"[今参数] 创建请求模型失败: {e}", exc_info=True)
-            raise HTTPException(status_code=400, detail=f"请求参数错误: {str(e)}")
+        # 从依赖函数获取 request 和 use_jin_mode
+        request = request_wrapper.request
+        use_jin_mode = request_wrapper.use_jin_mode
         
         # 处理农历输入和时区转换
         final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
@@ -363,14 +441,12 @@ async def get_fortune_display(http_request: Request):
             if use_jin_mode:
                 # "今"模式：直接使用当前时间
                 current_time = datetime.now()
-                logger.info(f"[今参数] 使用'今'模式，current_time = {current_time}")
             else:
                 # 正常模式：解析时间字符串
                 try:
                     current_time = datetime.strptime(str(request.current_time), "%Y-%m-%d %H:%M")
-                    logger.info(f"[今参数] 解析时间字符串: {request.current_time} -> {current_time}")
                 except ValueError as e:
-                    logger.error(f"[今参数] 时间解析失败: {request.current_time}, 错误: {e}")
+                    logger.error(f"时间解析失败: {request.current_time}, 错误: {e}")
                     raise ValueError(f"current_time 参数格式错误，应为 '今' 或 'YYYY-MM-DD HH:MM' 格式，但收到: {request.current_time}")
         
         # ✅ 使用统一数据服务（内部适配，接口层完全不动）

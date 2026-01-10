@@ -14,13 +14,33 @@
 
 import time
 import json
+import logging
 from typing import Callable, Optional
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.datastructures import UploadFile
+from io import BytesIO
 
 from server.observability.security_monitor import get_security_monitor, SecurityEventType
 from server.core.rate_limiter import RateLimiter
+
+logger = logging.getLogger(__name__)
+
+
+class ModifiedRequest(StarletteRequest):
+    """包装的 Request 对象，用于修改请求体"""
+    def __init__(self, scope, receive, modified_body: bytes):
+        super().__init__(scope, receive)
+        self._modified_body = modified_body
+        self._body_consumed = False
+    
+    async def body(self):
+        if not self._body_consumed:
+            self._body_consumed = True
+            return self._modified_body
+        return b''
 
 
 class SecurityMiddleware(BaseHTTPMiddleware):
@@ -38,6 +58,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             '/docs',
             '/openapi.json',
             '/favicon.ico',
+            # 注意：'/bazi/fortune/display' 不在白名单中，需要安全检查
         ]
     
     async def dispatch(self, request: Request, call_next: Callable):
@@ -81,38 +102,57 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             # 获取请求体（如果是 POST/PUT）
             if request.method in ['POST', 'PUT', 'PATCH']:
                 body = await request.body()
+                
+                # 解析 body
+                body_json = None
                 if body:
                     try:
                         body_json = json.loads(body.decode('utf-8'))
-                        body_str = json.dumps(body_json, ensure_ascii=False)
-                        
-                        # 检测 SQL 注入
-                        event = self.security_monitor.detect_sql_injection(
-                            payload=body_str,
-                            source_ip=client_ip,
-                            endpoint=request.url.path
-                        )
-                        
-                        if event:
-                            return JSONResponse(
-                                status_code=status.HTTP_400_BAD_REQUEST,
-                                content={"error": "请求参数无效"}
-                            )
-                        
-                        # 检测 XSS
-                        event = self.security_monitor.detect_xss_attack(
-                            payload=body_str,
-                            source_ip=client_ip,
-                            endpoint=request.url.path
-                        )
-                        
-                        if event:
-                            return JSONResponse(
-                                status_code=status.HTTP_400_BAD_REQUEST,
-                                content={"error": "请求参数无效"}
-                            )
                     except (json.JSONDecodeError, UnicodeDecodeError):
-                        pass
+                        body_json = None
+                
+                # ✅ 特殊处理：针对 fortune/display 接口，在 SecurityMiddleware 中处理 "今" 参数
+                if body_json and '/bazi/fortune/display' in str(request.url.path):
+                    if isinstance(body_json, dict) and body_json.get('current_time') == "今":
+                        from datetime import datetime
+                        body_json['current_time'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                        request.state.use_jin_mode = True
+                        # ✅ 重要：更新 body，确保后续 FastAPI 使用修改后的值
+                        body = json.dumps(body_json, ensure_ascii=False).encode('utf-8')
+                
+                # ✅ 保存 body 到 request.state，供后续路由使用（Request.body() 只能读取一次）
+                # 注意：保存的是可能已经修改过的 body
+                request.state.body = body
+                request.state.body_json = body_json  # 保存解析后的 JSON（可能已经修改过）
+                
+                if body_json:
+                    body_str = json.dumps(body_json, ensure_ascii=False)
+                    
+                    # 检测 SQL 注入
+                    event = self.security_monitor.detect_sql_injection(
+                        payload=body_str,
+                        source_ip=client_ip,
+                        endpoint=request.url.path
+                    )
+                    
+                    if event:
+                        return JSONResponse(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            content={"error": "请求参数无效"}
+                        )
+                    
+                    # 检测 XSS
+                    event = self.security_monitor.detect_xss_attack(
+                        payload=body_str,
+                        source_ip=client_ip,
+                        endpoint=request.url.path
+                    )
+                    
+                    if event:
+                        return JSONResponse(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            content={"error": "请求参数无效"}
+                        )
             
             # 检测 URL 参数中的 SQL 注入和 XSS
             query_string = str(request.url.query)
@@ -131,6 +171,10 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             # 安全检查失败不应影响正常请求
             pass
+        
+        # ✅ 6. 特殊处理：如果修改了 body，需要替换 Request 对象以确保 FastAPI 使用修改后的 body
+        # 注意：这需要修改 request 的内部状态，但 FastAPI 可能已经在路由绑定阶段解析了 body
+        # 所以我们只能通过 request.state 传递修改后的值，依赖函数中需要使用它
         
         # 6. 处理请求
         try:
