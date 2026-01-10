@@ -51,13 +51,29 @@ class LiuyueDisplayRequest(BaziDisplayRequest):
 
 class FortuneDisplayRequest(BaziDisplayRequest):
     """大运流年流月统一请求模型"""
-    current_time: Optional[str] = Field(None, description="当前时间（可选），格式：YYYY-MM-DD HH:MM")
+    current_time: Optional[str] = Field(None, description="当前时间（可选），格式：YYYY-MM-DD HH:MM 或 '今'")
     dayun_index: Optional[int] = Field(None, description="大运索引（可选，已废弃，优先使用dayun_year_start和dayun_year_end）")
     dayun_year_start: Optional[int] = Field(None, description="大运起始年份（可选），指定要显示的大运的起始年份")
     dayun_year_end: Optional[int] = Field(None, description="大运结束年份（可选），指定要显示的大运的结束年份")
     target_year: Optional[int] = Field(None, description="目标年份（可选），用于计算该年份的流月")
     quick_mode: Optional[bool] = Field(True, description="快速模式，只计算当前大运，其他大运异步预热（默认True）")
     async_warmup: Optional[bool] = Field(True, description="是否触发异步预热（默认True）")
+    
+    @validator('current_time')
+    def validate_current_time(cls, v):
+        """验证当前时间格式 - 支持 '今' 或 YYYY-MM-DD HH:MM 格式"""
+        if v is None:
+            return v
+        # ✅ 新增：支持 "今" 参数
+        if isinstance(v, str) and v.strip() == "今":
+            return v  # 允许 "今" 通过验证
+        # 保留原有验证逻辑（不修改）
+        try:
+            from datetime import datetime
+            datetime.strptime(v, '%Y-%m-%d %H:%M')
+        except ValueError:
+            raise ValueError("current_time 参数格式错误，应为 '今' 或 'YYYY-MM-DD HH:MM' 格式")
+        return v
 
 
 @router.post("/bazi/pan/display", summary="排盘展示（前端优化）")
