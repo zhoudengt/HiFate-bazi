@@ -37,10 +37,22 @@ class BaziInterfacePrinter:
         Returns:
             dict: 格式化后的 JSON 结构
         """
+        # 获取命造类型，如果没有则根据性别计算
+        mingzao_type = interface_data.get("mingzao_type", "")
+        if not mingzao_type:
+            gender = interface_data.get("gender", "")
+            if gender in ["male", "男"]:
+                mingzao_type = "阳 乾造"
+            elif gender in ["female", "女"]:
+                mingzao_type = "阴 坤造"
+            else:
+                mingzao_type = "未知"
+        
         return {
             "basic_info": {
                 "name": interface_data.get("name", ""),
                 "gender": interface_data.get("gender", ""),
+                "mingzao_type": mingzao_type,
                 "solar_date": interface_data.get("solar_date", ""),
                 "solar_time": interface_data.get("solar_time", ""),
                 "lunar_date": interface_data.get("lunar_date", ""),

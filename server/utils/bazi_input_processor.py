@@ -84,6 +84,11 @@ class BaziInputProcessor:
                 raise ValueError(f"农历转阳历失败: {e}")
         
         # 步骤2：时区转换和真太阳时计算
+        # ⚠️ 夏令时处理说明：
+        # convert_local_to_solar_time() 内部会调用 convert_to_utc()
+        # convert_to_utc() 使用 pytz 自动识别和处理夏令时
+        # 如果用户输入的时间是夏令时期间的本地时间，系统会自动转换为标准时间
+        # 这对于历史日期（如中国1986-1991年）尤其重要
         if location or (latitude is not None and longitude is not None):
             try:
                 true_solar_time, timezone_info = convert_local_to_solar_time(

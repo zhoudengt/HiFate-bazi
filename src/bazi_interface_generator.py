@@ -69,11 +69,20 @@ class BaziInterfaceGenerator:
         if gender in ["male", "男"]:
             gender_normalized = "male"
             gender_chinese = "男"
+            yin_yang = "阳"
+            gender_type = "乾造"
         elif gender in ["female", "女"]:
             gender_normalized = "female"
             gender_chinese = "女"
+            yin_yang = "阴"
+            gender_type = "坤造"
         else:
             gender_chinese = gender  # 如果已经是中文或其他格式，保持原样
+            yin_yang = "未知"
+            gender_type = "未知"
+        
+        # 计算命造类型：格式为 "阴 乾造" 或 "阳 坤造"
+        mingzao_type = f"{yin_yang} {gender_type}"
         
         core_result = self._fetch_bazi_core(birth_date_str, birth_time_str, gender_normalized)
         if core_result:
@@ -222,6 +231,9 @@ class BaziInterfaceGenerator:
         interface_data = {
             "name": name,
             "gender": gender_chinese,
+            "yin_yang": yin_yang,
+            "gender_type": gender_type,
+            "mingzao_type": mingzao_type,
             "solar_date": birth_date_str,
             "solar_time": birth_time_str,
             "lunar_date": f"{lunar_year}年{lunar_month_name}{lunar_day_name}",

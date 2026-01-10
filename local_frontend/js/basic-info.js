@@ -204,6 +204,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const basicCard = createInfoCard('基本信息', [
             { label: '姓名', value: data.name || '未填写' },
             { label: '性别', value: data.gender || '未知' },
+            { label: '命造类型', value: data.mingzao_type || '未知' },
             { label: '阳历日期', value: data.solar_date || '未知' },
             { label: '阳历时间', value: data.solar_time || '未知' },
             { label: '农历日期', value: data.lunar_date || '未知' },

@@ -101,6 +101,17 @@ def convert_to_utc(local_time_str: str,
     """
     将本地时间转换为UTC（自动处理夏令时）
     
+    夏令时处理机制：
+    - pytz.timezone() 获取的时区对象包含夏令时规则（基于IANA时区数据库）
+    - tz.localize() 会自动判断该日期是否在夏令时期间
+    - 如果在夏令时期间，会自动添加夏令时偏移量（通常+1小时）
+    - 然后转换为UTC，保证了时间的准确性
+    
+    示例：
+    - 输入：1989-07-15 14:00 (夏令时期间的北京时间)
+    - pytz识别：该日期在夏令时期间，自动减去1小时
+    - 转换：14:00 (DST) → 13:00 (标准时间) → UTC时间
+    
     Args:
         local_time_str: 本地时间字符串，格式 "HH:MM"
         timezone_str: 时区字符串（如 "Europe/Berlin"）
@@ -123,10 +134,12 @@ def convert_to_utc(local_time_str: str,
         # 创建本地时间对象（naive datetime）
         local_dt = datetime(year, month, day, hour, minute, 0)
         
-        # 获取时区对象
+        # 获取时区对象（包含夏令时规则）
         tz = pytz.timezone(timezone_str)
         
         # 本地化（自动处理夏令时）
+        # ⚠️ 关键：pytz.localize() 会自动识别该日期是否在夏令时期间
+        # 如果在夏令时期间，会自动应用夏令时偏移量
         localized_dt = tz.localize(local_dt)
         
         # 转换为UTC
@@ -180,6 +193,17 @@ def convert_local_to_solar_time(local_time_str: str,
     """
     将本地时间转换为真太阳时（完整流程）
     
+    夏令时处理说明：
+    - 本函数会调用 convert_to_utc() 进行时区转换
+    - convert_to_utc() 会自动处理夏令时，确保UTC时间准确
+    - 真太阳时计算基于UTC时间，因此夏令时处理是关键步骤
+    - 如果不正确处理夏令时，会导致：
+      * UTC时间错误 → 真太阳时错误 → 时柱干支错误 → 八字计算错误
+    
+    处理流程：
+    1. 本地时间（可能包含夏令时） → UTC时间（自动处理夏令时）
+    2. UTC时间 → 真太阳时（基于经度差计算）
+    
     Args:
         local_time_str: 本地时间字符串，格式 "HH:MM"
         date_str: 日期字符串，格式 "YYYY-MM-DD"
@@ -193,7 +217,9 @@ def convert_local_to_solar_time(local_time_str: str,
     # 1. 获取时区
     timezone_str = get_timezone(location, latitude, longitude)
     
-    # 2. 转换为UTC（处理夏令时）
+    # 2. 转换为UTC（自动处理夏令时）
+    # ⚠️ 重要：convert_to_utc() 会使用 pytz 自动识别和处理夏令时
+    # 如果用户输入的时间是夏令时期间的本地时间，这里会自动转换
     utc_time, timezone_info = convert_to_utc(local_time_str, timezone_str, date_str)
     
     # 3. 计算真太阳时（如果有经度）
