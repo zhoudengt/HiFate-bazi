@@ -851,8 +851,22 @@ async def marriage_analysis_stream_generator(
                     yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
                     return
             
-            # 如果没有收到任何内容，返回提示
-            if not has_content:
+            # 如果收到内容但没有收到 complete 消息，说明流式响应异常结束
+            # 在这种情况下，发送一个 complete 消息，确保前端能够正常处理
+            if has_content:
+                # 收到了 progress 消息，但循环已结束（没有收到 complete）
+                # 这可能是因为流式响应超时或被中断，但至少收到了一些内容
+                logger.warning(f"[{trace_id}] ⚠️ 流式响应异常结束: 收到 {chunk_count} 个 chunks，但未收到 complete 消息")
+                # 发送一个空的 complete 消息，让前端知道可以处理已收到的内容
+                complete_msg = {
+                    'type': 'complete',
+                    'content': ''
+                }
+                yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
+                total_duration = time.time() - api_start_time
+                logger.info(f"[{trace_id}] ⚠️ 流式生成异常完成: chunks={chunk_count}, 耗时={total_duration:.2f}s（未收到 complete 消息）")
+            elif not has_content:
+                # 完全没有收到任何内容
                 logger.warning(f"[{trace_id}] ⚠️ 未收到任何内容: chunks={chunk_count}")
                 error_msg = {
                     'type': 'error',
