@@ -993,8 +993,22 @@ def _calculate_shengong_minggong_details(
             "target_year": None  # ✅ 添加目标年份字段
         }
     
-    # 13. 格式化返回数据
+    # 13. 获取司令字段（复用 /bazi/interface 接口的逻辑，不重复计算）
+    commander = ''
+    try:
+        other_info = ensure_dict(interface_data.get('other_info', {}), default={})
+        if isinstance(other_info, dict):
+            commander_element = other_info.get('commander_element', '')
+            # ✅ 简化：从 "癸水用事" 格式中提取天干部分 "癸"（只取第一个字符）
+            if commander_element:
+                commander = commander_element[0] if len(commander_element) > 0 else ''
+    except Exception as e:
+        logger.warning(f"获取司令字段失败: {e}", exc_info=True)
+        commander = ''  # 失败时返回空字符串，不影响现有逻辑
+    
+    # 14. 格式化返回数据
     return {
+        "commander": commander,  # ✅ 新增：司令字段（简化后，如 "癸"，顶层）
         "shengong": {
             "stem": {"char": shengong_stem},
             "branch": {"char": shengong_branch},
