@@ -14,6 +14,7 @@ import logging
 import os
 import sys
 import uuid
+import copy
 from typing import Dict, Any, Optional, List
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -367,6 +368,31 @@ def build_marriage_input_data(
     return input_data
 
 
+def _filter_empty_deities(data: Any) -> Any:
+    """
+    递归过滤数据结构中所有 deities 数组的空字符串
+    
+    Args:
+        data: 要清理的数据（可以是 dict、list 或其他类型）
+        
+    Returns:
+        清理后的数据
+    """
+    if isinstance(data, dict):
+        result = {}
+        for key, value in data.items():
+            if key == 'deities' and isinstance(value, list):
+                # 过滤掉空字符串
+                result[key] = [item for item in value if item != '']
+            else:
+                result[key] = _filter_empty_deities(value)
+        return result
+    elif isinstance(data, list):
+        return [_filter_empty_deities(item) for item in data]
+    else:
+        return data
+
+
 def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
     """
     将结构化数据格式化为 JSON 字符串（用于 Coze Bot System Prompt 的 {{input}} 占位符）
@@ -425,8 +451,11 @@ def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
         }
     }
     
+    # ⚠️ 新增：过滤掉所有 deities 数组中的空字符串
+    cleaned_data = _filter_empty_deities(copy.deepcopy(optimized_data))
+    
     # 格式化为 JSON 字符串（美化格式，便于 Bot 理解）
-    return json.dumps(optimized_data, ensure_ascii=False, indent=2)
+    return json.dumps(cleaned_data, ensure_ascii=False, indent=2)
 
 # ⚠️ 已移除：build_natural_language_prompt 函数（方案1已废弃，使用方案2：format_input_data_for_coze）
 
