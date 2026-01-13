@@ -293,10 +293,10 @@ async def xishen_jishen_stream_generator(
                 yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
                 return
         
-        # 6. 创建Coze流式服务
+        # 6. 创建 LLM 流式服务（支持 Coze 和百炼平台）
         try:
-            from server.services.coze_stream_service import CozeStreamService
-            coze_service = CozeStreamService(bot_id=actual_bot_id)
+            from server.services.llm_service_factory import LLMServiceFactory
+            llm_service = LLMServiceFactory.get_service(scene="xishen_jishen", bot_id=actual_bot_id)
         except ValueError as e:
             # 配置缺失，跳过大模型分析
             complete_msg = {
@@ -342,10 +342,10 @@ async def xishen_jishen_stream_generator(
                     await data_queue.put(heartbeat_msg)
                     logger.info(f"[喜神忌神流式] 发送心跳包 #{heartbeat_count} (带16KB填充)")
         
-        # 数据任务：从 Coze API 读取数据
+        # 数据任务：从 LLM API 读取数据
         async def data_task():
             try:
-                async for result in coze_service.stream_custom_analysis(prompt, actual_bot_id):
+                async for result in llm_service.stream_analysis(prompt, bot_id=actual_bot_id):
                     await data_queue.put(result)
                 # 发送完成标记
                 await data_queue.put({'type': '_done'})

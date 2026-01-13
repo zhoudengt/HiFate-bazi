@@ -169,9 +169,10 @@ async def wuxing_proportion_stream_generator(
         # 7. 确定使用的 bot_id
         actual_bot_id = bot_id or WUXING_PROPORTION_BOT_ID
         
-        # 8. 创建Coze流式服务
+        # 8. 创建 LLM 流式服务（支持 Coze 和百炼平台）
         try:
-            coze_service = CozeStreamService(bot_id=actual_bot_id)
+            from server.services.llm_service_factory import LLMServiceFactory
+            llm_service = LLMServiceFactory.get_service(scene="wuxing_proportion", bot_id=actual_bot_id)
         except ValueError as e:
             # 配置缺失，跳过大模型分析
             complete_msg = {
@@ -189,7 +190,7 @@ async def wuxing_proportion_stream_generator(
             return
         
         # 9. 流式生成大模型分析
-        async for chunk in coze_service.stream_custom_analysis(prompt):
+        async for chunk in llm_service.stream_analysis(prompt):
             chunk_type = chunk.get('type', 'progress')
             
             if chunk_type == 'progress':

@@ -20,7 +20,6 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.daily_fortune_calendar_service import DailyFortuneCalendarService
-from server.services.coze_stream_service import CozeStreamService
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 
@@ -300,27 +299,28 @@ async def action_suggestions_stream_generator(
                 yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
                 return
         
-        # 创建Coze流式服务（捕获初始化错误）
+        # 创建 LLM 流式服务（捕获初始化错误，支持 Coze 和百炼平台）
         try:
-            coze_service = CozeStreamService(bot_id=bot_id)
+            from server.services.llm_service_factory import LLMServiceFactory
+            llm_service = LLMServiceFactory.get_service(scene="daily_fortune", bot_id=bot_id)
         except ValueError as e:
             # 数据库配置缺失
             error_msg = {
                 'type': 'error',
-                'content': f"Coze API 配置缺失: {str(e)}。请在 service_configs 表中配置 COZE_ACCESS_TOKEN 和 COZE_BOT_ID。"
+                'content': f"LLM 服务配置缺失: {str(e)}。请在 service_configs 表中配置 COZE_ACCESS_TOKEN 和 COZE_BOT_ID，或 BAILIAN_API_KEY 和 BAILIAN_DAILY_FORTUNE_APP_ID。"
             }
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         except Exception as e:
             error_msg = {
                 'type': 'error',
-                'content': f"初始化 Coze 服务失败: {str(e)}"
+                'content': f"初始化 LLM 服务失败: {str(e)}"
             }
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
         # 流式生成
-        async for result in coze_service.stream_action_suggestions(yi_list, ji_list, bot_id):
+        async for result in llm_service.stream_action_suggestions(yi_list, ji_list, bot_id=bot_id):
             # 转换为SSE格式
             if result.get('type') == 'progress':
                 # 进度消息
@@ -533,9 +533,10 @@ async def daily_fortune_stream_generator(
                 yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
                 return
         
-        # 9. 创建Coze流式服务
+        # 9. 创建 LLM 流式服务（支持 Coze 和百炼平台）
         try:
-            coze_service = CozeStreamService(bot_id=actual_bot_id)
+            from server.services.llm_service_factory import LLMServiceFactory
+            llm_service = LLMServiceFactory.get_service(scene="daily_fortune", bot_id=actual_bot_id)
         except ValueError as e:
             # 配置缺失，跳过行动建议
             complete_msg = {
@@ -553,7 +554,7 @@ async def daily_fortune_stream_generator(
             return
         
         # 10. 流式生成行动建议
-        async for stream_result in coze_service.stream_action_suggestions(yi_list, ji_list, actual_bot_id):
+        async for stream_result in llm_service.stream_action_suggestions(yi_list, ji_list, bot_id=actual_bot_id):
             if stream_result.get('type') == 'progress':
                 msg = {
                     'type': 'progress',

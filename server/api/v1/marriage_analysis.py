@@ -863,9 +863,9 @@ async def marriage_analysis_stream_generator(
         logger.info(f"格式化数据长度: {len(formatted_data)} 字符")
         logger.debug(f"格式化数据前500字符: {formatted_data[:500]}")
         
-        # 8. 创建Coze流式服务
+        # 8. 创建 LLM 流式服务（支持 Coze 和百炼平台）
         try:
-            from server.services.coze_stream_service import CozeStreamService
+            from server.services.llm_service_factory import LLMServiceFactory
             
             # 确保 bot_id 已设置（优先级：参数 > 数据库配置）
             if not bot_id:
@@ -873,41 +873,48 @@ async def marriage_analysis_stream_generator(
             
             logger.info(f"使用 Bot ID: {bot_id}")
             
-            # 创建服务（bot_id 作为参数传入，如果为None则从环境变量获取）
-            coze_service = CozeStreamService(bot_id=bot_id)
+            # 使用工厂获取 LLM 服务（根据配置自动选择 Coze 或百炼）
+            llm_service = LLMServiceFactory.get_service(scene="marriage", bot_id=bot_id)
             
-            # 如果传入的 bot_id 与服务的 bot_id 不同，使用传入的
-            actual_bot_id = bot_id or coze_service.bot_id
-            logger.info(f"实际使用的 Bot ID: {actual_bot_id}")
-            
+            # 如果是 Coze 服务，获取实际的 bot_id
+            if hasattr(llm_service, 'bot_id'):
+                actual_bot_id = bot_id or llm_service.bot_id
+                logger.info(f"实际使用的 Bot ID: {actual_bot_id}")
+            else:
+                actual_bot_id = bot_id
+                logger.info(f"使用百炼平台，场景: marriage")
+
         except ValueError as e:
-            logger.error(f"Coze API 配置错误: {e}")
+            logger.error(f"LLM 服务配置错误: {e}")
             error_msg = {
                 'type': 'error',
-                'content': f"Coze API 配置缺失: {str(e)}。请设置环境变量 COZE_ACCESS_TOKEN 和 MARRIAGE_ANALYSIS_BOT_ID（或 COZE_BOT_ID）。"
+                'content': f"LLM 服务配置缺失: {str(e)}。请检查数据库配置 COZE_ACCESS_TOKEN 和 MARRIAGE_ANALYSIS_BOT_ID（或 COZE_BOT_ID），或 BAILIAN_API_KEY 和 BAILIAN_MARRIAGE_APP_ID。"
             }
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         except Exception as e:
-            logger.error(f"初始化 Coze 服务失败: {e}", exc_info=True)
+            logger.error(f"初始化 LLM 服务失败: {e}", exc_info=True)
             error_msg = {
                 'type': 'error',
-                'content': f"初始化 Coze 服务失败: {str(e)}"
+                'content': f"初始化 LLM 服务失败: {str(e)}"
             }
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
         # 9. ⚠️ 方案2：流式生成（直接发送格式化后的数据）
-        actual_bot_id = bot_id or coze_service.bot_id
+        if hasattr(llm_service, 'bot_id'):
+            actual_bot_id = bot_id or llm_service.bot_id
+        else:
+            actual_bot_id = bot_id
         logger.info(f"开始流式生成，Bot ID: {actual_bot_id}, 数据长度: {len(formatted_data)}")
         
         try:
             chunk_count = 0
             has_content = False
             
-            logger.info(f"[{trace_id}] 📤 开始调用 Coze API: bot_id={actual_bot_id}, data_length={len(formatted_data)}")
+            logger.info(f"[{trace_id}] 📤 开始调用 LLM API: bot_id={actual_bot_id}, data_length={len(formatted_data)}")
 
-            async for result in coze_service.stream_custom_analysis(formatted_data, bot_id=actual_bot_id, trace_id=trace_id):
+            async for result in llm_service.stream_analysis(formatted_data, trace_id=trace_id, bot_id=actual_bot_id):
                 chunk_count += 1
                 
                 # 转换为SSE格式

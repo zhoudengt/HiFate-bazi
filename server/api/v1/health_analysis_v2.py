@@ -28,7 +28,6 @@ from server.services.health_analysis_service import HealthAnalysisService
 from server.services.special_liunian_service import SpecialLiunianService
 from server.utils.data_validator import validate_bazi_data
 from server.utils.bazi_input_processor import BaziInputProcessor
-from server.services.coze_stream_service import CozeStreamService
 from server.services.bazi_data_orchestrator import BaziDataOrchestrator
 
 # 导入配置加载器（从数据库读取配置）
@@ -358,10 +357,11 @@ async def health_analysis_v2_stream_generator(
         logger.info(f"[Health Analysis V2 Stream] 格式化数据长度: {len(formatted_data)} 字符")
         logger.debug(f"[Health Analysis V2 Stream] 格式化数据前500字符: {formatted_data[:500]}")
         
-        # 8. 调用 Coze API（阶段5：Coze API调用）
+        # 8. 调用 LLM API（阶段5：LLM API调用，支持 Coze 和百炼平台）
         try:
-            coze_service = CozeStreamService(bot_id=used_bot_id)
-            async for chunk in coze_service.stream_custom_analysis(formatted_data, bot_id=used_bot_id):
+            from server.services.llm_service_factory import LLMServiceFactory
+            llm_service = LLMServiceFactory.get_service(scene="health", bot_id=used_bot_id)
+            async for chunk in llm_service.stream_analysis(formatted_data, bot_id=used_bot_id):
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
                 if chunk.get('type') in ['complete', 'error']:
                     break

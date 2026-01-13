@@ -1334,25 +1334,28 @@ async def career_wealth_stream_generator(
         logger.info(f"格式化数据长度: {len(formatted_data)} 字符")
         logger.debug(f"格式化数据前500字符: {formatted_data[:500]}")
         
-        # 9. 创建Coze流式服务
+        # 9. 创建 LLM 流式服务（支持 Coze 和百炼平台）
         try:
-            from server.services.coze_stream_service import CozeStreamService
+            from server.services.llm_service_factory import LLMServiceFactory
             
             logger.info(f"使用 Bot ID: {bot_id}")
-            coze_service = CozeStreamService(bot_id=bot_id)
-            actual_bot_id = bot_id or coze_service.bot_id
+            llm_service = LLMServiceFactory.get_service(scene="career_wealth", bot_id=bot_id)
+            if hasattr(llm_service, 'bot_id'):
+                actual_bot_id = bot_id or llm_service.bot_id
+            else:
+                actual_bot_id = bot_id
             
         except ValueError as e:
-            logger.error(f"Coze API 配置错误: {e}")
+            logger.error(f"LLM 服务配置错误: {e}")
             error_msg = {
                 'type': 'error',
-                'content': f"Coze API 配置缺失: {str(e)}。请设置环境变量 COZE_ACCESS_TOKEN 和 CAREER_WEALTH_BOT_ID。"
+                'content': f"LLM 服务配置缺失: {str(e)}。请检查数据库配置 COZE_ACCESS_TOKEN 和 CAREER_WEALTH_BOT_ID（或 COZE_BOT_ID），或 BAILIAN_API_KEY 和 BAILIAN_CAREER_WEALTH_APP_ID。"
             }
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         except Exception as e:
-            logger.error(f"初始化 Coze 服务失败: {e}", exc_info=True)
-            error_msg = {'type': 'error', 'content': f"初始化 Coze 服务失败: {str(e)}"}
+            logger.error(f"初始化 LLM 服务失败: {e}", exc_info=True)
+            error_msg = {'type': 'error', 'content': f"初始化 LLM 服务失败: {str(e)}"}
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
@@ -1364,7 +1367,7 @@ async def career_wealth_stream_generator(
             has_content = False
             llm_start_time = time.time()
             
-            async for result in coze_service.stream_custom_analysis(formatted_data, bot_id=actual_bot_id):
+            async for result in llm_service.stream_analysis(formatted_data, bot_id=actual_bot_id):
                 chunk_count += 1
                 
                 # 记录第一个token时间

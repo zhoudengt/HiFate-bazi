@@ -35,6 +35,9 @@ except ImportError:
     def get_config_from_db_only(key: str) -> Optional[str]:
         raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
 
+# 导入基类
+from server.services.base_llm_stream_service import BaseLLMStreamService
+
 
 # ==================== 重试配置 ====================
 class RetryConfig:
@@ -114,7 +117,7 @@ def is_retryable_error(error: Exception, response: Optional[requests.Response] =
     return False
 
 
-class CozeStreamService:
+class CozeStreamService(BaseLLMStreamService):
     """Coze 流式服务"""
     
     # 思考过程开头特征（需过滤）
@@ -1655,4 +1658,30 @@ class CozeStreamService:
                 return True
         
         return False
+    
+    async def stream_analysis(
+        self,
+        prompt: str,
+        trace_id: Optional[str] = None,
+        **kwargs
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        流式生成分析结果（统一接口）
+        
+        这是 BaseLLMStreamService 接口要求的统一方法。
+        内部调用 stream_custom_analysis 方法。
+        
+        Args:
+            prompt: 提示词
+            trace_id: 请求追踪ID（可选，用于日志关联）
+            **kwargs: 其他参数（如 bot_id 等）
+            
+        Yields:
+            dict: 包含 type 和 content 的字典
+                - type: 'progress' 或 'complete' 或 'error'
+                - content: 内容文本
+        """
+        bot_id = kwargs.get('bot_id')
+        async for chunk in self.stream_custom_analysis(prompt, bot_id=bot_id, trace_id=trace_id):
+            yield chunk
 

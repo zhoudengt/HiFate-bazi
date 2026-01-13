@@ -26,7 +26,6 @@ from server.services.bazi_detail_service import BaziDetailService
 from server.services.rule_service import RuleService
 from server.utils.data_validator import validate_bazi_data
 from server.utils.bazi_input_processor import BaziInputProcessor
-from server.services.coze_stream_service import CozeStreamService
 
 # 导入配置加载器（从数据库读取配置）
 try:
@@ -695,15 +694,16 @@ async def children_study_analysis_stream_generator(
         logger.info(f"格式化数据长度: {len(formatted_data)} 字符")
         logger.debug(f"格式化数据前500字符: {formatted_data[:500]}")
         
-        # 10. 调用Coze API（阶段5：Coze API调用）
+        # 10. 调用 LLM API（阶段5：LLM API调用，支持 Coze 和百炼平台）
         # ⚠️ 方案2：直接发送格式化后的数据，Bot 会自动使用 System Prompt 中的模板
-        coze_service = CozeStreamService(bot_id=used_bot_id)
-        
+        from server.services.llm_service_factory import LLMServiceFactory
+        llm_service = LLMServiceFactory.get_service(scene="children_study", bot_id=used_bot_id)
+
         # 11. 流式处理（阶段6：流式处理）
         llm_start_time = time.time()
         has_content = False
         
-        async for chunk in coze_service.stream_custom_analysis(formatted_data, bot_id=used_bot_id):
+        async for chunk in llm_service.stream_analysis(formatted_data, bot_id=used_bot_id):
             # 记录第一个token时间
             if llm_first_token_time is None and chunk.get('type') == 'progress':
                 llm_first_token_time = time.time()

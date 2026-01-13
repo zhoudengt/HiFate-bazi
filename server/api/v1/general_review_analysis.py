@@ -31,7 +31,6 @@ from src.analyzers.fortune_relation_analyzer import FortuneRelationAnalyzer
 from server.utils.data_validator import validate_bazi_data
 from server.api.v1.xishen_jishen import get_xishen_jishen, XishenJishenRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
-from server.services.coze_stream_service import CozeStreamService
 
 # 导入配置加载器（从数据库读取配置）
 try:
@@ -832,18 +831,19 @@ async def general_review_analysis_stream_generator(
             # 保存失败不影响主流程
             logger.warning(f"[General Review Stream] 保存参数文件失败: {e}", exc_info=True)
         
-        # 9. 调用Coze API（阶段5：Coze API调用）
-        print(f"🔍 [步骤5-Coze调用] 开始调用 Coze API，Bot ID: {used_bot_id}")
-        logger.info(f"[步骤5-Coze调用] 开始调用 Coze API，Bot ID: {used_bot_id}")
-        coze_service = CozeStreamService(bot_id=used_bot_id)
-        
+        # 9. 调用 LLM API（阶段5：LLM API调用，支持 Coze 和百炼平台）
+        print(f"🔍 [步骤5-LLM调用] 开始调用 LLM API，Bot ID: {used_bot_id}")
+        logger.info(f"[步骤5-LLM调用] 开始调用 LLM API，Bot ID: {used_bot_id}")
+        from server.services.llm_service_factory import LLMServiceFactory
+        llm_service = LLMServiceFactory.get_service(scene="general_review", bot_id=used_bot_id)
+
         # 10. 流式处理（阶段6：流式处理）
         llm_start_time = time.time()
         chunk_count = 0
         total_content_length = 0
         has_content = False
         
-        async for chunk in coze_service.stream_custom_analysis(formatted_data, bot_id=used_bot_id):
+        async for chunk in llm_service.stream_analysis(formatted_data, bot_id=used_bot_id):
             chunk_type = chunk.get('type', 'unknown')
             
             # 记录第一个token时间

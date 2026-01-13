@@ -466,14 +466,15 @@ async def health_analysis_stream_generator(
         logger.info(f"Prompt长度: {len(prompt)} 字符")
         logger.debug(f"Prompt前500字符: {prompt[:500]}")
         
-        # 11. 调用Coze API（阶段5：Coze API调用）
-        coze_service = CozeStreamService(bot_id=used_bot_id)
-        
+        # 11. 调用 LLM API（阶段5：LLM API调用，支持 Coze 和百炼平台）
+        from server.services.llm_service_factory import LLMServiceFactory
+        llm_service = LLMServiceFactory.get_service(scene="health", bot_id=used_bot_id)
+
         # 12. 流式处理（阶段6：流式处理）
         llm_start_time = time.time()
         has_content = False
         
-        async for chunk in coze_service.stream_custom_analysis(prompt, bot_id=used_bot_id):
+        async for chunk in llm_service.stream_analysis(prompt, bot_id=used_bot_id):
             # 记录第一个token时间
             if llm_first_token_time is None and chunk.get('type') == 'progress':
                 llm_first_token_time = time.time()
