@@ -770,9 +770,9 @@ async def smart_analyze_stream(request: Request):
             
             # ==================== 场景判断 ====================
             # 场景1：点击选择项（category有值，question为空或为选择项名称）
-            # 场景2：点击预设问题/输入问题（category有值，question有值）
+            # 场景2：点击预设问题/输入问题（有question，category可选）
             is_scenario_1 = category and (not question or question == category)
-            is_scenario_2 = category and question and question != category
+            is_scenario_2 = question and question != category  # 只要有question就走场景2，category可选
             
             # 场景1：需要生辰信息
             if is_scenario_1:
@@ -1091,11 +1091,11 @@ async def _generate_questions_async(
 
 
 async def _scenario_2_generator(
-    question: str, category: str, user_id: str,
+    question: str, category: Optional[str], user_id: str,
     year: Optional[int], month: Optional[int], day: Optional[int],
     hour: int, gender: Optional[str], monitor: PerformanceMonitor
 ):
-    """场景2：点击预设问题/输入问题 → 生成详细流式回答 + 2个相关问题"""
+    """场景2：点击预设问题/输入问题 → 生成详细流式回答 + 2个相关问题（category可选）"""
     from server.services.bazi_session_service import BaziSessionService
     from server.services.fortune_llm_client import get_fortune_llm_client
     from server.services.conversation_history_service import ConversationHistoryService
