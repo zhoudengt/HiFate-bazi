@@ -7,41 +7,6 @@ version: '3.8'
 
 services:
   # ============================================
-  # Nginx 负载均衡
-  # ============================================
-  nginx:
-    image: nginx:alpine
-    container_name: hifate-nginx
-    ports:
-      - "8080:80"  # 改为 8080 端口，避免与前端 Nginx（80 端口）冲突
-      - "443:443"
-    volumes:
-      - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ../nginx/conf.d:/etc/nginx/conf.d:ro
-      - /opt/HiFate-bazi/local_frontend:/usr/share/nginx/html/local_frontend:ro
-      - nginx_logs:/var/log/nginx
-    environment:
-      TZ: Asia/Shanghai
-    restart: always
-    networks:
-      - hifate-network
-    deploy:
-      resources:
-        limits:
-          cpus: '0.2'
-          memory: 100M
-        reservations:
-          memory: 50M
-    healthcheck:
-      test: ["CMD", "nginx", "-t"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    depends_on:
-      web:
-        condition: service_healthy
-
-  # ============================================
   # 主 Web 服务
   # ============================================
   web:
@@ -433,7 +398,6 @@ services:
         condition: service_healthy
 
 volumes:
-  nginx_logs:
   web_logs:
   mysql_data:
   redis_data:
