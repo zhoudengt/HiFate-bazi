@@ -926,6 +926,10 @@ async def _scenario_1_generator(
     """场景1：点击选择项 → 生成简短答复 + 预设问题列表"""
     from server.services.bazi_session_service import BaziSessionService
     from server.services.fortune_llm_client import get_fortune_llm_client
+    from server.services.conversation_history_service import ConversationHistoryService
+    import time
+    
+    start_time = time.time()  # 记录开始时间，用于计算响应时间
     
     try:
         # ==================== 计算完整八字数据 ====================
@@ -1008,6 +1012,34 @@ async def _scenario_1_generator(
                     break
             
             yield _sse_message("preset_questions", {"questions": preset_questions})
+        
+        # ==================== 异步保存对话记录到MySQL ====================
+        response_time_ms = int((time.time() - start_time) * 1000)
+        
+        # 获取八字摘要
+        bazi_result = complete_bazi_data.get('bazi_result', {})
+        bazi_pillars = bazi_result.get('bazi', {}).get('bazi_pillars', {})
+        bazi_summary = ""
+        if bazi_pillars:
+            bazi_summary = f"{bazi_pillars.get('year', {}).get('stem', '')}{bazi_pillars.get('year', {}).get('branch', '')}、{bazi_pillars.get('month', {}).get('stem', '')}{bazi_pillars.get('month', {}).get('branch', '')}、{bazi_pillars.get('day', {}).get('stem', '')}{bazi_pillars.get('day', {}).get('branch', '')}、{bazi_pillars.get('hour', {}).get('stem', '')}{bazi_pillars.get('hour', {}).get('branch', '')}"
+        
+        # 异步保存到MySQL（场景1）
+        asyncio.create_task(
+            ConversationHistoryService.save_conversation_async(
+                user_id=user_id,
+                session_id=user_id,
+                category=category,
+                question=f"[选择项] {category}",  # 场景1没有问题，用分类作为标识
+                answer=full_brief_response,
+                intent="category_selection",
+                bazi_summary=bazi_summary,
+                round_number=1,
+                response_time_ms=response_time_ms,
+                conversation_id=new_conversation_id or "",
+                scenario_type="scenario1"
+            )
+        )
+        logger.info(f"✅ 场景1：对话记录已提交异步保存: user_id={user_id}, category={category}")
         
         # 发送性能摘要
         performance_summary = monitor.get_summary()
@@ -1229,7 +1261,7 @@ async def _scenario_2_generator(
                     if bazi_pillars:
                         bazi_summary = f"{bazi_pillars.get('year', {}).get('stem', '')}{bazi_pillars.get('year', {}).get('branch', '')}、{bazi_pillars.get('month', {}).get('stem', '')}{bazi_pillars.get('month', {}).get('branch', '')}、{bazi_pillars.get('day', {}).get('stem', '')}{bazi_pillars.get('day', {}).get('branch', '')}、{bazi_pillars.get('hour', {}).get('stem', '')}{bazi_pillars.get('hour', {}).get('branch', '')}"
                     
-                    # 异步保存到MySQL
+                    # 异步保存到MySQL（场景2）
                     asyncio.create_task(
                         ConversationHistoryService.save_conversation_async(
                             user_id=user_id,
@@ -1241,7 +1273,8 @@ async def _scenario_2_generator(
                             bazi_summary=bazi_summary,
                             round_number=current_round,
                             response_time_ms=response_time_ms,
-                            conversation_id=new_conversation_id or conversation_id or ""
+                            conversation_id=new_conversation_id or conversation_id or "",
+                            scenario_type="scenario2"
                         )
                     )
                     

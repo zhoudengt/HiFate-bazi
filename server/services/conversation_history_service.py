@@ -172,7 +172,8 @@ class ConversationHistoryService:
         bazi_summary: str = "",
         round_number: int = 1,
         response_time_ms: int = 0,
-        conversation_id: str = ""
+        conversation_id: str = "",
+        scenario_type: str = "scenario2"
     ) -> bool:
         """
         异步保存对话记录到 MySQL
@@ -188,6 +189,7 @@ class ConversationHistoryService:
             round_number: 对话轮次
             response_time_ms: 响应时间
             conversation_id: Coze对话ID
+            scenario_type: 场景类型（scenario1=选择项, scenario2=问答）
             
         Returns:
             是否保存成功
@@ -203,7 +205,8 @@ class ConversationHistoryService:
                 None,
                 ConversationHistoryService._save_to_mysql,
                 user_id, session_id, category, question, answer, intent,
-                keywords, summary, bazi_summary, round_number, response_time_ms, conversation_id
+                keywords, summary, bazi_summary, round_number, response_time_ms, conversation_id,
+                scenario_type
             )
             
             return result
@@ -225,10 +228,14 @@ class ConversationHistoryService:
         bazi_summary: str,
         round_number: int,
         response_time_ms: int,
-        conversation_id: str
+        conversation_id: str,
+        scenario_type: str = "scenario2"
     ) -> bool:
         """
         同步保存到 MySQL（供异步调用）
+        
+        Args:
+            scenario_type: 场景类型（scenario1=选择项, scenario2=问答）
         """
         try:
             from server.config.mysql_config import get_mysql_pool
@@ -247,17 +254,17 @@ class ConversationHistoryService:
                 with conn.cursor() as cursor:
                     sql = """
                         INSERT INTO ai_conversation_history 
-                        (user_id, session_id, category, question, answer, intent, 
+                        (user_id, session_id, category, scenario_type, question, answer, intent, 
                          keywords, summary, bazi_summary, round_number, response_time_ms, conversation_id)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """
                     cursor.execute(sql, (
-                        user_id, session_id, category, question, answer, intent,
+                        user_id, session_id, category, scenario_type, question, answer, intent,
                         json.dumps(keywords, ensure_ascii=False),
                         summary, bazi_summary, round_number, response_time_ms, conversation_id
                     ))
                 conn.commit()
-                logger.info(f"✅ 保存对话记录成功: user_id={user_id}, round={round_number}, keywords={keywords}")
+                logger.info(f"✅ 保存对话记录成功: user_id={user_id}, scenario={scenario_type}, round={round_number}, keywords={keywords}")
                 return True
             finally:
                 pool.return_connection(conn)
