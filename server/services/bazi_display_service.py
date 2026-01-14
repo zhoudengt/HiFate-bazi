@@ -16,6 +16,7 @@ sys.path.insert(0, project_root)
 
 from server.services.bazi_service import BaziService
 from server.services.bazi_detail_service import BaziDetailService
+from server.services.shensha_sort_service import sort_shensha
 
 # 导入常量
 from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS, HEAVENLY_STEMS
@@ -550,7 +551,7 @@ class BaziDisplayService:
                 "self_sitting": pillar_detail.get('self_sitting', ''),  # ✅ 添加自坐
                 "kongwang": pillar_detail.get('kongwang', ''),  # ✅ 添加空亡
                 "nayin": pillar_detail.get('nayin', ''),
-                "deities": pillar_detail.get('deities', [])
+                "deities": sort_shensha(pillar_detail.get('deities', []))  # ✅ 神煞按配置排序
             })
         
         return pillars
@@ -762,7 +763,7 @@ class BaziDisplayService:
             "star_fortune": dayun.get('star_fortune', ''),
             "self_sitting": dayun.get('self_sitting', ''),
             "kongwang": dayun.get('kongwang', ''),
-            "deities": dayun.get('deities', []),
+            "deities": sort_shensha(dayun.get('deities', [])),  # ✅ 神煞按配置排序
             "liunian_sequence": dayun.get('liunian_sequence', []),  # ✅ 保留流年序列
             "liunian_simple": dayun.get('liunian_simple', []),  # ✅ 新增：简化流年列表（只含year和ganzhi）
             # ✅ 新增字段：十神简称
@@ -804,7 +805,7 @@ class BaziDisplayService:
             "star_fortune": liunian.get('star_fortune', ''),
             "self_sitting": liunian.get('self_sitting', ''),
             "kongwang": liunian.get('kongwang', ''),
-            "deities": liunian.get('deities', []),
+            "deities": sort_shensha(liunian.get('deities', [])),  # ✅ 神煞按配置排序
             "relations": liunian.get('relations', []),  # 新增：关系列表
             # ✅ 新增字段：十神简称
             "stem_shishen": liunian.get('stem_shishen', ''),
@@ -878,7 +879,7 @@ class BaziDisplayService:
         if 'kongwang' in liuyue:
             result['kongwang'] = liuyue.get('kongwang', '')
         if 'deities' in liuyue:
-            result['deities'] = liuyue.get('deities', [])
+            result['deities'] = sort_shensha(liuyue.get('deities', []))  # ✅ 神煞按配置排序
         
         return result
     

@@ -18,6 +18,9 @@ from server.services.wuxing_proportion_service import WuxingProportionService
 from server.services.coze_stream_service import CozeStreamService
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
+from server.utils.api_cache_helper import (
+    generate_cache_key, get_cached_result, set_cached_result, L2_TTL
+)
 
 router = APIRouter()
 
@@ -66,6 +69,15 @@ async def get_wuxing_proportion(request: WuxingProportionRequest):
             request.longitude
         )
         
+        # >>> 缓存检查（五行占比固定，不随时间变化）<<<
+        cache_key = generate_cache_key("wuxing", final_solar_date, final_solar_time, request.gender)
+        cached = get_cached_result(cache_key, "wuxing-proportion")
+        if cached:
+            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+                cached['conversion_info'] = conversion_info
+            return WuxingProportionResponse(success=True, data=cached)
+        # >>> 缓存检查结束 <<<
+        
         result = WuxingProportionService.calculate_proportion(
             final_solar_date,
             final_solar_time,
@@ -77,6 +89,10 @@ async def get_wuxing_proportion(request: WuxingProportionRequest):
                 success=False,
                 error=result.get('error', '计算失败')
             )
+        
+        # >>> 缓存写入 <<<
+        set_cached_result(cache_key, result, L2_TTL)
+        # >>> 缓存写入结束 <<<
         
         # 添加转换信息到结果
         if result and isinstance(result, dict) and (conversion_info.get('converted') or conversion_info.get('timezone_info')):

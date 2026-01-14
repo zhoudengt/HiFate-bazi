@@ -19,6 +19,9 @@ sys.path.insert(0, project_root)
 from server.services.daily_fortune_service import DailyFortuneService
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
+from server.utils.api_cache_helper import (
+    generate_cache_key, get_cached_result, set_cached_result, L2_TTL, get_current_date_str
+)
 
 router = APIRouter()
 
@@ -98,6 +101,27 @@ async def get_daily_fortune(request: DailyFortuneRequest):
             request.longitude
         )
         
+        # >>> 缓存检查（日运按目标日期缓存，不使用 LLM 时缓存）<<<
+        target_date = request.target_date or get_current_date_str()
+        if not request.use_llm:
+            cache_key = generate_cache_key("dailyfortune", final_solar_date, final_solar_time, request.gender, target_date)
+            cached = get_cached_result(cache_key, "daily-fortune")
+            if cached:
+                if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+                    if 'fortune' in cached:
+                        cached['fortune']['conversion_info'] = conversion_info
+                    else:
+                        cached['conversion_info'] = conversion_info
+                return DailyFortuneResponse(
+                    success=True,
+                    target_date=cached.get('target_date'),
+                    fortune=cached.get('fortune'),
+                    liuri_info=cached.get('liuri_info'),
+                    bazi_data=cached.get('bazi_data'),
+                    matched_rules_count=cached.get('matched_rules_count')
+                )
+        # >>> 缓存检查结束 <<<
+        
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             executor,
@@ -110,6 +134,11 @@ async def get_daily_fortune(request: DailyFortuneRequest):
             request.access_token,
             request.bot_id
         )
+        
+        # >>> 缓存写入（仅非 LLM 模式）<<<
+        if result.get('success') and not request.use_llm:
+            set_cached_result(cache_key, result, L2_TTL)
+        # >>> 缓存写入结束 <<<
         
         # 添加转换信息到结果
         if result and isinstance(result, dict) and result.get('success') and (conversion_info.get('converted') or conversion_info.get('timezone_info')):

@@ -17,6 +17,9 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.calendar_api_service import CalendarAPIService
+from server.utils.api_cache_helper import (
+    generate_cache_key, get_cached_result, set_cached_result, L2_TTL, get_current_date_str
+)
 
 router = APIRouter()
 
@@ -75,17 +78,9 @@ async def query_calendar(request: CalendarRequest):
     - 天聚数行 (tianapi) - 需要配置 TIANAPI_KEY
     - 六派数据 (6api) - 需要配置 API6API_KEY
     
-    **环境变量配置：**
-    ```bash
-    # 选择其中一个配置即可
-    export JISUAPI_KEY="your_api_key"
-    # 或
-    export TIANAPI_KEY="your_api_key"
-    # 或
-    export API6API_KEY="your_api_key"
-    ```
+    **环境变量配置**：请在环境变量中配置对应的 API 密钥（JISUAPI_KEY / TIANAPI_KEY / API6API_KEY）
     
-    **注意**：如果未配置API密钥，将使用本地计算模式（仅提供农历和干支信息）
+    **注意**：如果未配置 API 密钥，将使用本地计算模式（仅提供农历和干支信息）
     
     - **date**: 日期（可选），默认为今天，格式：YYYY-MM-DD
     - **provider**: API提供商（可选），默认自动选择已配置的提供商
@@ -93,25 +88,40 @@ async def query_calendar(request: CalendarRequest):
     返回万年历信息
     """
     try:
+        # >>> 缓存检查（万年历按日期缓存，高复用）<<<
+        query_date = request.date or get_current_date_str()
+        provider = request.provider or "default"
+        cache_key = generate_cache_key("wannianli", query_date, provider)
+        cached = get_cached_result(cache_key, "calendar")
+        if cached:
+            return CalendarResponse(**cached)
+        # >>> 缓存检查结束 <<<
+        
         service = CalendarAPIService(provider=request.provider)
         result = service.get_calendar(date=request.date)
         
         if result.get('success'):
-            return CalendarResponse(
-                success=True,
-                provider=result.get('provider'),
-                date=result.get('date'),
-                solar_date=result.get('solar_date'),
-                weekday=result.get('weekday'),
-                weekday_en=result.get('weekday_en'),
-                lunar_date=result.get('lunar_date'),
-                ganzhi=result.get('ganzhi'),
-                yi=result.get('yi', []),
-                ji=result.get('ji', []),
-                luck_level=result.get('luck_level'),
-                deities=result.get('deities'),
-                chong_he_sha=result.get('chong_he_sha')
-            )
+            response_dict = {
+                'success': True,
+                'provider': result.get('provider'),
+                'date': result.get('date'),
+                'solar_date': result.get('solar_date'),
+                'weekday': result.get('weekday'),
+                'weekday_en': result.get('weekday_en'),
+                'lunar_date': result.get('lunar_date'),
+                'ganzhi': result.get('ganzhi'),
+                'yi': result.get('yi', []),
+                'ji': result.get('ji', []),
+                'luck_level': result.get('luck_level'),
+                'deities': result.get('deities'),
+                'chong_he_sha': result.get('chong_he_sha')
+            }
+            
+            # >>> 缓存写入 <<<
+            set_cached_result(cache_key, response_dict, L2_TTL)
+            # >>> 缓存写入结束 <<<
+            
+            return CalendarResponse(**response_dict)
         else:
             return CalendarResponse(
                 success=False,

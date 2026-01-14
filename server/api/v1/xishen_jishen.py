@@ -28,6 +28,9 @@ from server.utils.data_validator import validate_bazi_data
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.config.config_loader import get_config_from_db_only
+from server.utils.api_cache_helper import (
+    generate_cache_key, get_cached_result, set_cached_result, L2_TTL
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +76,14 @@ async def get_xishen_jishen(request: XishenJishenRequest):
             request.latitude,
             request.longitude
         )
+        
+        # >>> 缓存检查（喜神忌神固定，不随时间变化）<<<
+        cache_key = generate_cache_key("xishen", final_solar_date, final_solar_time, request.gender)
+        cached = get_cached_result(cache_key, "xishen-jishen")
+        if cached:
+            logger.info(f"✅ 喜神忌神缓存命中")
+            return XishenJishenResponse(success=True, data=cached)
+        # >>> 缓存检查结束 <<<
         
         # 1. 获取旺衰分析结果（包含喜神五行和忌神五行）
         # ✅ 修复：改为异步执行，避免阻塞事件循环
@@ -208,6 +219,10 @@ async def get_xishen_jishen(request: XishenJishenRequest):
             'wangshuai': wangshuai_data.get('wangshuai'),  # 旺衰状态
             'total_score': wangshuai_data.get('total_score'),  # 总分
         }
+        
+        # >>> 缓存写入 <<<
+        set_cached_result(cache_key, response_data, L2_TTL)
+        # >>> 缓存写入结束 <<<
         
         logger.info(f"✅ 喜神忌神获取成功")
         return XishenJishenResponse(success=True, data=response_data)

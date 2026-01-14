@@ -25,6 +25,10 @@ sys.path.insert(0, project_root)
 from server.services.bazi_display_service import BaziDisplayService
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
+from server.utils.api_cache_helper import (
+    generate_cache_key, get_cached_result, set_cached_result,
+    L2_TTL, get_current_date_str
+)
 
 router = APIRouter()
 
@@ -125,6 +129,15 @@ async def get_pan_display(request: BaziDisplayRequest):
             request.longitude
         )
         
+        # >>> 缓存检查 <<<
+        cache_key = generate_cache_key("pan", final_solar_date, final_solar_time, request.gender)
+        cached = get_cached_result(cache_key, "pan/display")
+        if cached:
+            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+                cached['conversion_info'] = conversion_info
+            return cached
+        # >>> 缓存检查结束 <<<
+        
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             executor,
@@ -135,6 +148,9 @@ async def get_pan_display(request: BaziDisplayRequest):
         )
         
         if result.get('success'):
+            # >>> 缓存写入 <<<
+            set_cached_result(cache_key, result, L2_TTL)
+            # >>> 缓存写入结束 <<<
             # 添加转换信息到结果
             if conversion_info.get('converted') or conversion_info.get('timezone_info'):
                 result['conversion_info'] = conversion_info
@@ -187,6 +203,16 @@ async def get_dayun_display(request: DayunDisplayRequest):
         if request.current_time:
             current_time = datetime.strptime(request.current_time, "%Y-%m-%d %H:%M")
         
+        # >>> 缓存检查（大运按天缓存）<<<
+        current_date = get_current_date_str()
+        cache_key = generate_cache_key("dayun", final_solar_date, final_solar_time, request.gender, current_date)
+        cached = get_cached_result(cache_key, "dayun/display")
+        if cached:
+            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+                cached['conversion_info'] = conversion_info
+            return cached
+        # >>> 缓存检查结束 <<<
+        
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             executor,
@@ -198,6 +224,9 @@ async def get_dayun_display(request: DayunDisplayRequest):
         )
         
         if result.get('success'):
+            # >>> 缓存写入 <<<
+            set_cached_result(cache_key, result, L2_TTL)
+            # >>> 缓存写入结束 <<<
             # 添加转换信息到结果
             if conversion_info.get('converted') or conversion_info.get('timezone_info'):
                 result['conversion_info'] = conversion_info
@@ -245,6 +274,18 @@ async def get_liunian_display(request: LiunianDisplayRequest):
             request.longitude
         )
         
+        # >>> 缓存检查（流年按年份范围缓存）<<<
+        year_range_str = ""
+        if request.year_range:
+            year_range_str = f"{request.year_range.get('start', '')}_{request.year_range.get('end', '')}"
+        cache_key = generate_cache_key("liunian", final_solar_date, final_solar_time, request.gender, year_range_str)
+        cached = get_cached_result(cache_key, "liunian/display")
+        if cached:
+            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+                cached['conversion_info'] = conversion_info
+            return cached
+        # >>> 缓存检查结束 <<<
+        
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             executor,
@@ -256,6 +297,9 @@ async def get_liunian_display(request: LiunianDisplayRequest):
         )
         
         if result.get('success'):
+            # >>> 缓存写入 <<<
+            set_cached_result(cache_key, result, L2_TTL)
+            # >>> 缓存写入结束 <<<
             # 添加转换信息到结果
             if conversion_info.get('converted') or conversion_info.get('timezone_info'):
                 result['conversion_info'] = conversion_info
@@ -303,6 +347,16 @@ async def get_liuyue_display(request: LiuyueDisplayRequest):
             request.longitude
         )
         
+        # >>> 缓存检查（流月按目标年份缓存）<<<
+        target_year = request.target_year or datetime.now().year
+        cache_key = generate_cache_key("liuyue", final_solar_date, final_solar_time, request.gender, str(target_year))
+        cached = get_cached_result(cache_key, "liuyue/display")
+        if cached:
+            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+                cached['conversion_info'] = conversion_info
+            return cached
+        # >>> 缓存检查结束 <<<
+        
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             executor,
@@ -314,6 +368,9 @@ async def get_liuyue_display(request: LiuyueDisplayRequest):
         )
         
         if result.get('success'):
+            # >>> 缓存写入 <<<
+            set_cached_result(cache_key, result, L2_TTL)
+            # >>> 缓存写入结束 <<<
             # 添加转换信息到结果
             if conversion_info.get('converted') or conversion_info.get('timezone_info'):
                 result['conversion_info'] = conversion_info
@@ -449,6 +506,22 @@ async def get_fortune_display(request_wrapper: FortuneDisplayRequestWithMode = D
                     logger.error(f"时间解析失败: {request.current_time}, 错误: {e}")
                     raise ValueError(f"current_time 参数格式错误，应为 '今' 或 'YYYY-MM-DD HH:MM' 格式，但收到: {request.current_time}")
         
+        # >>> 缓存检查（fortune 按天+参数缓存）<<<
+        current_date = get_current_date_str()
+        cache_key = generate_cache_key(
+            "fortune", final_solar_date, final_solar_time, request.gender, current_date,
+            dayun_index=request.dayun_index,
+            dayun_year_start=request.dayun_year_start,
+            dayun_year_end=request.dayun_year_end,
+            target_year=request.target_year
+        )
+        cached = get_cached_result(cache_key, "fortune/display")
+        if cached:
+            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+                cached['conversion_info'] = conversion_info
+            return cached
+        # >>> 缓存检查结束 <<<
+        
         # ✅ 使用统一数据服务（内部适配，接口层完全不动）
         from server.services.bazi_data_service import BaziDataService
         
@@ -470,6 +543,9 @@ async def get_fortune_display(request_wrapper: FortuneDisplayRequestWithMode = D
         )
         
         if result.get('success'):
+            # >>> 缓存写入 <<<
+            set_cached_result(cache_key, result, L2_TTL)
+            # >>> 缓存写入结束 <<<
             # 添加转换信息到结果
             if conversion_info.get('converted') or conversion_info.get('timezone_info'):
                 result['conversion_info'] = conversion_info

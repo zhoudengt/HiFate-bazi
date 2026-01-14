@@ -21,6 +21,9 @@ from server.services.bazi_service import BaziService
 from server.utils.data_validator import validate_bazi_data
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
+from server.utils.api_cache_helper import (
+    generate_cache_key, get_cached_result, set_cached_result, L2_TTL
+)
 
 router = APIRouter()
 
@@ -72,6 +75,15 @@ async def get_rizhu_liujiazi(request: RizhuLiujiaziRequest):
             request.latitude,
             request.longitude
         )
+        
+        # >>> 缓存检查（日柱固定，不随时间变化）<<<
+        cache_key = generate_cache_key("rizhu", final_solar_date, final_solar_time, request.gender)
+        cached = get_cached_result(cache_key, "rizhu-liujiazi")
+        if cached:
+            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+                cached['conversion_info'] = conversion_info
+            return RizhuLiujiaziResponse(success=True, data=cached)
+        # >>> 缓存检查结束 <<<
         
         # 1. 获取八字排盘结果
         bazi_result = await loop.run_in_executor(
@@ -133,6 +145,11 @@ async def get_rizhu_liujiazi(request: RizhuLiujiaziRequest):
                 success=False,
                 error=f"未找到日柱 {rizhu} 的解析内容。请检查数据库中是否有该日柱的数据。"
             )
+        
+        # >>> 缓存写入 <<<
+        if analysis_data and isinstance(analysis_data, dict):
+            set_cached_result(cache_key, analysis_data, L2_TTL)
+        # >>> 缓存写入结束 <<<
         
         # 添加转换信息到结果（如果有转换）
         if analysis_data and isinstance(analysis_data, dict) and conversion_info and (conversion_info.get('converted') or conversion_info.get('timezone_info')):

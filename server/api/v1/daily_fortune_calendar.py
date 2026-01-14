@@ -22,6 +22,9 @@ sys.path.insert(0, project_root)
 from server.services.daily_fortune_calendar_service import DailyFortuneCalendarService
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
+from server.utils.api_cache_helper import (
+    generate_cache_key, get_cached_result, set_cached_result, L2_TTL, get_current_date_str
+)
 
 # 导入配置加载器（从数据库读取配置）
 try:
@@ -185,6 +188,15 @@ async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
                 logger = logging.getLogger(__name__)
                 logger.warning(f"用户生辰转换失败，使用原始值: {e}")
         
+        # >>> 缓存检查（按查询日期+用户生辰缓存）<<<
+        query_date = request.date or get_current_date_str()
+        user_hash = f"{user_final_solar_date or ''}_{user_final_solar_time or ''}_{request.gender or ''}"
+        cache_key = generate_cache_key("dailycalendar", query_date, user_hash)
+        cached = get_cached_result(cache_key, "daily-fortune-calendar")
+        if cached:
+            return DailyFortuneCalendarResponse(**cached)
+        # >>> 缓存检查结束 <<<
+        
         # 使用模块级别的导入（已在文件顶部导入）
         result = DailyFortuneCalendarService.get_daily_fortune_calendar(
             date_str=request.date,
@@ -248,6 +260,10 @@ async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
             # 添加转换信息到结果（如果进行了转换）
             if conversion_info and (conversion_info.get('converted') or conversion_info.get('timezone_info')):
                 response_dict['conversion_info'] = conversion_info
+            
+            # >>> 缓存写入 <<<
+            set_cached_result(cache_key, response_dict, L2_TTL)
+            # >>> 缓存写入结束 <<<
             
             return DailyFortuneCalendarResponse(**response_dict)
         else:

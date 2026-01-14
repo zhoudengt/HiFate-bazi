@@ -324,3 +324,38 @@ async def readiness_check():
     """
     # 这里可以添加依赖检查，如数据库连接等
     return {"status": "ok"}
+
+
+# ==================== 缓存统计 API ====================
+
+@router.get("/observability/cache-stats", response_model=ObservabilityResponse, summary="获取API缓存命中率统计")
+async def get_api_cache_stats():
+    """
+    获取 API 缓存命中率统计信息
+    
+    返回：
+    - 总体命中率
+    - 各接口的命中率
+    - 缓存配置（TTL 等）
+    """
+    try:
+        from server.utils.api_cache_helper import get_cache_stats
+        stats = get_cache_stats()
+        return ObservabilityResponse(success=True, data=stats)
+    except Exception as e:
+        logger.error(f"获取缓存统计失败: {e}", exc_info=True)
+        return ObservabilityResponse(success=False, error=str(e))
+
+
+@router.post("/observability/cache-stats/reset", response_model=ObservabilityResponse, summary="重置缓存统计")
+async def reset_api_cache_stats():
+    """
+    重置 API 缓存命中率统计（用于测试）
+    """
+    try:
+        from server.utils.api_cache_helper import reset_cache_stats
+        reset_cache_stats()
+        return ObservabilityResponse(success=True, data={"message": "缓存统计已重置"})
+    except Exception as e:
+        logger.error(f"重置缓存统计失败: {e}", exc_info=True)
+        return ObservabilityResponse(success=False, error=str(e))

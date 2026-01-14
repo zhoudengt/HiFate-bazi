@@ -22,6 +22,7 @@ from server.services.bazi_service import BaziService
 from server.utils.data_validator import validate_bazi_data
 from server.services.bazi_interface_service import BaziInterfaceService
 from server.services.bazi_detail_service import BaziDetailService
+from server.services.shensha_sort_service import sort_shensha
 from server.utils import bazi_cache
 from src.tool.LunarConverter import LunarConverter
 from server.utils.timezone_converter import convert_local_to_solar_time, format_datetime_for_bazi
@@ -906,7 +907,7 @@ def _calculate_shengong_minggong_details(
             "self_sitting": pillar_data.get('self_sitting', ''),
             "kongwang": pillar_data.get('kongwang', ''),
             "nayin": pillar_data.get('nayin', ''),
-            "deities": pillar_data.get('deities', [])
+            "deities": sort_shensha(pillar_data.get('deities', []))  # ✅ 神煞按配置排序
         }
     
     # 12. 获取大运流年流月数据（支持参数传递）
@@ -1018,7 +1019,7 @@ def _calculate_shengong_minggong_details(
             "self_sitting": shengong_self_sitting,
             "kongwang": shengong_kongwang,
             "nayin": shengong_nayin,
-            "deities": shengong_deities
+            "deities": sort_shensha(shengong_deities)  # ✅ 神煞按配置排序
         },
         "minggong": {
             "stem": {"char": minggong_stem},
@@ -1029,7 +1030,7 @@ def _calculate_shengong_minggong_details(
             "self_sitting": minggong_self_sitting,
             "kongwang": minggong_kongwang,
             "nayin": minggong_nayin,
-            "deities": minggong_deities
+            "deities": sort_shensha(minggong_deities)  # ✅ 神煞按配置排序
         },
         "taiyuan": {
             "stem": {"char": taiyuan_stem},
@@ -1040,7 +1041,7 @@ def _calculate_shengong_minggong_details(
             "self_sitting": taiyuan_self_sitting,
             "kongwang": taiyuan_kongwang,
             "nayin": taiyuan_nayin,
-            "deities": taiyuan_deities
+            "deities": sort_shensha(taiyuan_deities)  # ✅ 神煞按配置排序
         },
         "pillars": formatted_pillars,
         "dayun": dayun_data,

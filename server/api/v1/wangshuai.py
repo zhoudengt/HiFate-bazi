@@ -18,6 +18,9 @@ sys.path.insert(0, project_root)
 from server.services.wangshuai_service import WangShuaiService
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
+from server.utils.api_cache_helper import (
+    generate_cache_key, get_cached_result, set_cached_result, L2_TTL
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,11 +73,28 @@ async def calculate_wangshuai(request: WangShuaiRequest):
             request.longitude
         )
         
+        # >>> 缓存检查（旺衰固定，不随时间变化）<<<
+        cache_key = generate_cache_key("wangshuai", final_solar_date, final_solar_time, request.gender)
+        cached = get_cached_result(cache_key, "wangshuai")
+        if cached:
+            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+                if 'data' in cached:
+                    cached['data']['conversion_info'] = conversion_info
+                else:
+                    cached['conversion_info'] = conversion_info
+            return WangShuaiResponse(**cached)
+        # >>> 缓存检查结束 <<<
+        
         result = WangShuaiService.calculate_wangshuai(
             final_solar_date,
             final_solar_time,
             request.gender
         )
+        
+        # >>> 缓存写入 <<<
+        if result.get('success'):
+            set_cached_result(cache_key, result, L2_TTL)
+        # >>> 缓存写入结束 <<<
         
         # 添加转换信息到结果
         if result.get('success') and (conversion_info.get('converted') or conversion_info.get('timezone_info')):

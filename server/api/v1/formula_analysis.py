@@ -24,6 +24,9 @@ from server.services.bazi_detail_service import BaziDetailService
 from server.services.health_analysis_service import HealthAnalysisService
 from server.services.bazi_display_service import BaziDisplayService
 from src.analyzers.fortune_relation_analyzer import FortuneRelationAnalyzer
+from server.utils.api_cache_helper import (
+    generate_cache_key, get_cached_result, set_cached_result, L2_TTL
+)
 import asyncio
 # ⚠️ FormulaRuleService 已完全废弃，所有规则匹配统一使用 RuleService
 
@@ -72,9 +75,19 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
             request.longitude
         )
         
+        logger = logging.getLogger(__name__)
+        
+        # >>> 缓存检查（公式分析固定，按规则类型缓存）<<<
+        rule_types_str = "_".join(sorted(request.rule_types)) if request.rule_types else "all"
+        cache_key = generate_cache_key("formula", final_solar_date, final_solar_time, request.gender, rule_types_str)
+        cached = get_cached_result(cache_key, "formula-analysis")
+        if cached:
+            logger.info(f"✅ 公式分析缓存命中")
+            return FormulaAnalysisResponse(success=True, data=cached)
+        # >>> 缓存检查结束 <<<
+        
         # 1. 计算八字
         # ✅ 修复：改为异步执行，避免阻塞事件循环
-        logger = logging.getLogger(__name__)
         start_time = time.time()
         loop = asyncio.get_event_loop()
         from concurrent.futures import ThreadPoolExecutor
@@ -275,6 +288,10 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
         logger.info(f"[FormulaAnalysis DEBUG] Has dayun_sequence in response_data: {'dayun_sequence' in response_data}")
         logger.info(f"[FormulaAnalysis DEBUG] Has special_liunians in response_data: {'special_liunians' in response_data}")
         logger.info(f"[FormulaAnalysis DEBUG] Has health_analysis in response_data: {'health_analysis' in response_data}")
+        
+        # >>> 缓存写入 <<<
+        set_cached_result(cache_key, response_data, L2_TTL)
+        # >>> 缓存写入结束 <<<
         
         return FormulaAnalysisResponse(success=True, data=response_data)
     
