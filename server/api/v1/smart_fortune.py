@@ -1567,6 +1567,7 @@ async def _original_scenario_generator(
                 chunk_received = False
                 chunk_count = 0
                 total_content_length = 0
+                full_response = ""  # 累积完整内容
                 
                 logger.info(f"[smart_fortune_stream] 🔄 开始迭代生成器...")
                 
@@ -1582,6 +1583,7 @@ async def _original_scenario_generator(
                         content = chunk.get('content', '')
                         if content:
                             total_content_length += len(content)
+                            full_response += content  # 累积内容
                             yield _sse_message("llm_chunk", {"content": content})
                         else:
                             logger.warning(f"[smart_fortune_stream] ⚠️ chunk #{chunk_count} 类型为chunk但content为空")
@@ -1589,7 +1591,7 @@ async def _original_scenario_generator(
                         logger.info(f"[smart_fortune_stream] ✅ LLM流式输出完成: 共{chunk_count}个chunk, 总长度{total_content_length}字符")
                         monitor.add_metric("llm_analysis", "chunk_count", chunk_count)
                         monitor.add_metric("llm_analysis", "total_length", total_content_length)
-                        yield _sse_message("llm_end", {})
+                        yield _sse_message("llm_end", {"full_content": full_response})
                         break
                     elif chunk_type == 'error':
                         error_msg = chunk.get('error', '未知错误')
