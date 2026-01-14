@@ -21,6 +21,7 @@ from server.services.rule_service import RuleService
 from server.services import selector_service
 from server.services import nlg_service
 from server.utils.data_validator import validate_bazi_data
+from server.utils.bazi_input_processor import BaziInputProcessor
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 
 # 尝试导入限流器（可选功能）
@@ -124,6 +125,8 @@ class BaziRulesResponse(BaseModel):
 async def match_bazi_rules(request: BaziRulesRequest, http_request: Request):
     """
     匹配八字规则（新增接口，不影响现有功能）
+    
+    注意：此接口为后端评测脚本使用，不需要在 gRPC 网关中注册
     
     根据用户的生辰八字信息，匹配相应的规则并返回匹配结果。
     支持复杂的条件匹配，包括：

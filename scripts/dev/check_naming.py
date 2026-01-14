@@ -99,6 +99,13 @@ class NamingChecker:
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     name = target.id
+                    
+                    # 例外：如果赋值为 None 且名称是 PascalCase，视为类占位符（导入降级处理的常见模式）
+                    # 例如：Limiter = None 或 RateLimitExceeded = None
+                    if isinstance(node.value, ast.Constant) and node.value.value is None:
+                        if NAMING_PATTERNS['class'].match(name):
+                            continue  # 类占位符，跳过检查
+                    
                     # 判断是常量还是变量
                     if name.isupper() or '_' in name and name.isupper():
                         # 常量

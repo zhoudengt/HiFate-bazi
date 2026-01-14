@@ -64,6 +64,8 @@ class BaziApiClient:
             async with session.post(url, json=data) as response:
                 response.raise_for_status()
                 return await response.json()
+        except aiohttp.ClientResponseError as e:
+            raise RuntimeError(f"API请求失败: {url}, {e.status}, message='{e.message}'")
         except aiohttp.ClientError as e:
             raise RuntimeError(f"API请求失败: {url}, {e}")
     
@@ -589,6 +591,29 @@ class BaziApiClient:
             "user_id": user_id
         }
         return await self._get_stream(ApiEndpoints.SMART_ANALYZE_STREAM, params)
+    
+    async def call_bazi_rules_match(self, solar_date: str, solar_time: str,
+                                    gender: str, rule_types: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        调用八字规则匹配接口
+        
+        Args:
+            solar_date: 公历日期 YYYY-MM-DD
+            solar_time: 公历时间 HH:MM
+            gender: 性别 male/female
+            rule_types: 规则类型列表，如 ["wealth", "career"]
+            
+        Returns:
+            包含匹配规则的字典
+        """
+        data = {
+            "solar_date": solar_date,
+            "solar_time": solar_time,
+            "gender": gender,
+            "rule_types": rule_types,
+            "include_bazi": False  # 不需要完整八字数据，只匹配规则
+        }
+        return await self._post_json("/bazi/rules/match", data)
     
     @staticmethod
     def generate_user_id() -> str:

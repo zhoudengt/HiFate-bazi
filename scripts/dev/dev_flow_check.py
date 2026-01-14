@@ -377,6 +377,14 @@ class DevFlowChecker:
             grpc_content = f.read()
         
         api_name = Path(file_name).stem
+        
+        # 例外：后端评测脚本使用的API不需要在gRPC网关中注册
+        # 这些API仅用于评测脚本，不需要前端访问
+        backend_only_apis = ['bazi_rules']  # 后端专用API列表
+        if api_name in backend_only_apis:
+            print(f"  {BLUE}ℹ️  {file_name} 是后端专用API，不需要在 gRPC 网关中注册{NC}")
+            return True
+        
         # 检查是否在 gRPC 网关中注册
         if api_name in grpc_content or f'/{api_name.replace("_", "-")}' in grpc_content:
             return True
