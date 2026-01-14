@@ -1291,7 +1291,7 @@ async def _scenario_2_generator(
                     
                     logger.info(f"✅ 场景2：第{current_round}轮对话完成，关键词={keywords}，摘要={summary[:50]}...")
                     
-                    yield _sse_message("llm_end", {})
+                    yield _sse_message("llm_end", {"full_content": full_response})
                     break
                 elif chunk_type == 'error':
                     error_msg = chunk.get('error', '未知错误')
