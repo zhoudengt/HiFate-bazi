@@ -1106,6 +1106,62 @@ def organize_special_liunians_by_dayun(
     return result
 
 
+def _build_rizhu_xinming_node(
+    day_pillar: Dict[str, Any],
+    gender: str,
+    personality_result: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    构建日柱性命解析节点
+    
+    包含完整的日柱性格与命运分析数据（31条或更多），不省略任何内容。
+    数据来源：src/bazi_config/rizhu_gender_config.py -> RIZHU_GENDER_CONFIG
+    
+    Args:
+        day_pillar: 日柱数据，包含 stem（天干）和 branch（地支）
+        gender: 性别（male/female）
+        personality_result: 日主性格分析结果，包含 descriptions 列表
+    
+    Returns:
+        dict: 日柱性命解析节点
+            {
+                'rizhu': '甲子',              # 日柱（天干+地支）
+                'gender': 'female',           # 性别
+                'gender_display': '女',       # 性别显示
+                'descriptions': [...],        # 完整的性格命运描述列表
+                'descriptions_count': 31,     # 描述条目数量
+                'summary': '日柱甲子女命分析'  # 摘要标题
+            }
+    """
+    # 提取日柱
+    day_stem = day_pillar.get('stem', '') if day_pillar else ''
+    day_branch = day_pillar.get('branch', '') if day_pillar else ''
+    rizhu = f"{day_stem}{day_branch}"
+    
+    # 转换性别显示
+    gender_display = '男' if gender == 'male' else '女'
+    
+    # 提取完整的 descriptions 列表
+    descriptions = []
+    if personality_result and isinstance(personality_result, dict):
+        descriptions = personality_result.get('descriptions', [])
+    
+    # 构建摘要
+    summary = f"日柱{rizhu}{gender_display}命分析" if rizhu else f"{gender_display}命分析"
+    
+    # 记录日志
+    logger.info(f"[rizhu_xinming_jiexi] 构建日柱节点: rizhu={rizhu}, gender={gender}, descriptions_count={len(descriptions)}")
+    
+    return {
+        'rizhu': rizhu,
+        'gender': gender,
+        'gender_display': gender_display,
+        'descriptions': descriptions,  # 完整的31条（或更多）数据
+        'descriptions_count': len(descriptions),
+        'summary': summary
+    }
+
+
 def build_general_review_input_data(
     bazi_data: Dict[str, Any],
     wangshuai_result: Dict[str, Any],
@@ -1416,7 +1472,10 @@ def build_general_review_input_data(
             'hangye_xuanze': hangye_xuanze,
             'xiushen_jianyi': {},  # 修身建议可以基于格局和性格生成
             'fengshui_tiaojie': {}  # 风水调节可以基于五行平衡生成
-        }
+        },
+        
+        # 8. 日柱性命解析（新增：完整的日柱性格与命运分析数据）
+        'rizhu_xinming_jiexi': _build_rizhu_xinming_node(day_pillar, gender, personality_result)
     }
     
     # ⚠️ DEBUG: 添加调试信息（用于排查特殊流年问题）
@@ -1991,6 +2050,9 @@ def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
     ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
     提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
     
+    ⚠️ 注意：此函数名虽然包含 "for_coze"，但实际上数据格式与平台无关
+    相同的 formatted_data 可以同时给 Coze 和百炼使用，实现数据格式解耦
+    
     Args:
         input_data: 结构化输入数据
         
@@ -2007,6 +2069,7 @@ def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
     jiankang = input_data.get('jiankang_yaodian', {})
     guanjian = input_data.get('guanjian_dayun', {})
     zhongsheng = input_data.get('zhongsheng_tidian', {})
+    rizhu_xinming = input_data.get('rizhu_xinming_jiexi', {})  # 新增：日柱性命解析
     
     # ⚠️ 方案2：优化数据结构，使用引用避免重复
     optimized_data = {
@@ -2061,6 +2124,16 @@ def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
             'hangye_xuanze': zhongsheng.get('hangye_xuanze', {}),
             'xiushen_jianyi': zhongsheng.get('xiushen_jianyi', {}),
             'fengshui_tiaojie': zhongsheng.get('fengshui_tiaojie', {})
+        },
+        
+        # 8. 日柱性命解析（新增：完整的日柱性格与命运分析数据）
+        'rizhu_xinming_jiexi': {
+            'rizhu': rizhu_xinming.get('rizhu', ''),
+            'gender': rizhu_xinming.get('gender', ''),
+            'gender_display': rizhu_xinming.get('gender_display', ''),
+            'descriptions': rizhu_xinming.get('descriptions', []),  # 完整的31条数据
+            'descriptions_count': rizhu_xinming.get('descriptions_count', 0),
+            'summary': rizhu_xinming.get('summary', '')
         }
     }
     
