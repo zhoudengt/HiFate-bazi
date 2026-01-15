@@ -2018,9 +2018,18 @@ def _simplify_dayun(dayun: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]
     if not dayun:
         return None
     
+    # ⚠️ 修复：正确获取大运干支（兼容不同的字段名）
+    stem = dayun.get('stem', dayun.get('gan', ''))
+    branch = dayun.get('branch', dayun.get('zhi', ''))
+    ganzhi = dayun.get('ganzhi', f'{stem}{branch}')
+    
     # 只保留关键字段
     simplified = {
-        'ganzhi': dayun.get('ganzhi', ''),
+        'step': dayun.get('step', ''),  # ⚠️ 新增：大运步数（用于确定流年归属）
+        'ganzhi': ganzhi,
+        'stem': stem,
+        'branch': branch,
+        'age_display': dayun.get('age_display', ''),  # ⚠️ 新增：年龄显示
         'start_age': dayun.get('start_age'),
         'end_age': dayun.get('end_age'),
         'wuxing': dayun.get('wuxing', ''),
