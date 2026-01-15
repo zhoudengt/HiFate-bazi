@@ -1323,19 +1323,15 @@ def build_general_review_input_data(
             cleaned.pop(field, None)
         return cleaned
     
-    def limit_liunians_by_priority(liunians: List[Dict[str, Any]], max_count: int = 3) -> List[Dict[str, Any]]:
-        """限制流年数量：只保留优先级最高的N个（已按优先级排序）"""
-        if not liunians:
-            return []
-        return liunians[:max_count]
-    
+    # ⚠️ 修改：不再限制流年数量，优先级只用于排序，所有特殊流年都要显示
     # 提取当前大运数据（优先级1）
     current_dayun_enhanced = enhanced_dayun_structure.get('current_dayun')
     current_dayun_data = None
     if current_dayun_enhanced:
         raw_liunians = current_dayun_enhanced.get('liunians', [])
         cleaned_liunians = [clean_liunian_data(liunian) for liunian in raw_liunians]
-        limited_liunians = limit_liunians_by_priority(cleaned_liunians, max_count=3)
+        # ⚠️ 不再限制数量，所有流年都显示，按优先级排序
+        all_liunians = sorted(cleaned_liunians, key=lambda x: x.get('priority', 999999))
         
         current_dayun_data = {
             'step': str(current_dayun_enhanced.get('step', '')),
@@ -1347,7 +1343,7 @@ def build_general_review_input_data(
             'life_stage': current_dayun_enhanced.get('life_stage', ''),
             'description': current_dayun_enhanced.get('description', ''),
             'note': current_dayun_enhanced.get('note', ''),
-            'liunians': limited_liunians
+            'liunians': all_liunians  # ⚠️ 使用全部流年，不限制数量
         }
     
     # 提取关键大运数据（优先级2-10）
@@ -1356,7 +1352,8 @@ def build_general_review_input_data(
     for key_dayun in key_dayuns_enhanced:
         raw_liunians = key_dayun.get('liunians', [])
         cleaned_liunians = [clean_liunian_data(liunian) for liunian in raw_liunians]
-        limited_liunians = limit_liunians_by_priority(cleaned_liunians, max_count=3)
+        # ⚠️ 不再限制数量，所有流年都显示，按优先级排序
+        all_liunians_for_dayun = sorted(cleaned_liunians, key=lambda x: x.get('priority', 999999))
         
         key_dayuns_data.append({
             'step': str(key_dayun.get('step', '')),
@@ -1368,7 +1365,7 @@ def build_general_review_input_data(
             'life_stage': key_dayun.get('life_stage', ''),
             'description': key_dayun.get('description', ''),
             'note': key_dayun.get('note', ''),
-            'liunians': limited_liunians
+            'liunians': all_liunians_for_dayun  # ⚠️ 使用全部流年，不限制数量
         })
     
     # 分析大运流年冲合刑害
@@ -2037,8 +2034,8 @@ def _simplify_dayun(dayun: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]
         'analysis': dayun.get('analysis', '')[:200] if dayun.get('analysis') else '',  # 限制分析文本
     }
     
-    # 精简流年数据，只保留前3个关键流年
-    # ⚠️ 修复：保留 relations 字段（岁运并临、天克地冲、天合地合）
+    # ⚠️ 修改：不再限制流年数量，所有特殊流年都要显示
+    # 保留 relations 字段（岁运并临、天克地冲、天合地合）
     liunians = dayun.get('liunians', [])
     if liunians:
         simplified['key_liunians'] = [
@@ -2047,11 +2044,11 @@ def _simplify_dayun(dayun: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]
                 'ganzhi': l.get('ganzhi', ''),
                 'dayun_step': l.get('dayun_step'),  # 流年归属的大运步数
                 'dayun_ganzhi': l.get('dayun_ganzhi', ''),  # 流年归属的大运干支
-                'relations': l.get('relations', []),  # ⚠️ 新增：特殊关系（岁运并临、天克地冲、天合地合）
+                'relations': l.get('relations', []),  # 特殊关系（岁运并临、天克地冲、天合地合）
                 'type_display': l.get('type_display', ''),  # 关系类型显示
                 'brief': l.get('analysis', '')[:100] if l.get('analysis') else ''
             }
-            for l in liunians[:3]
+            for l in liunians  # ⚠️ 不再限制数量，显示所有流年
         ]
 
     return simplified

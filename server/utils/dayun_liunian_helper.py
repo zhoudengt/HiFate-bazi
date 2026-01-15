@@ -522,8 +522,32 @@ def build_enhanced_dayun_structure(
     if current_dayun is None:
         current_dayun = get_current_dayun(dayun_sequence, current_age)
     
-    # 2. 选择10个大运（按优先级）
-    selected_dayuns = select_dayuns_with_priority(dayun_sequence, current_dayun, count=10)
+    # ⚠️ 修改：确保所有包含特殊流年的大运都被选中
+    # 先找出所有特殊流年所属的大运 step
+    special_dayun_steps = set()
+    if special_liunians:
+        for liunian in special_liunians:
+            dayun_step = liunian.get('dayun_step')
+            if dayun_step is not None:
+                special_dayun_steps.add(int(dayun_step) if not isinstance(dayun_step, int) else dayun_step)
+    
+    # 2. 选择大运：包含所有特殊流年所属的大运，按优先级排序
+    # 先选择基础的10个大运（按优先级）
+    base_selected_dayuns = select_dayuns_with_priority(dayun_sequence, current_dayun, count=10)
+    base_steps = {d.get('step') for d in base_selected_dayuns}
+    
+    # 添加所有包含特殊流年但不在基础选择中的大运
+    additional_dayuns = []
+    for dayun in dayun_sequence:
+        step = dayun.get('step')
+        if step in special_dayun_steps and step not in base_steps:
+            dayun_copy = dayun.copy()
+            # 为额外添加的大运分配较低的优先级（但仍然显示）
+            dayun_copy['priority'] = 100 + len(additional_dayuns)
+            additional_dayuns.append(dayun_copy)
+    
+    # 合并所有选中的大运
+    selected_dayuns = base_selected_dayuns + additional_dayuns
     
     # 3. 为每个大运添加元数据
     enhanced_dayuns = []
