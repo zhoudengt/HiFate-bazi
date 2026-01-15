@@ -2029,17 +2029,22 @@ def _simplify_dayun(dayun: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]
     }
     
     # 精简流年数据，只保留前3个关键流年
+    # ⚠️ 修复：保留 relations 字段（岁运并临、天克地冲、天合地合）
     liunians = dayun.get('liunians', [])
     if liunians:
         simplified['key_liunians'] = [
             {
                 'year': l.get('year'),
                 'ganzhi': l.get('ganzhi', ''),
+                'dayun_step': l.get('dayun_step'),  # 流年归属的大运步数
+                'dayun_ganzhi': l.get('dayun_ganzhi', ''),  # 流年归属的大运干支
+                'relations': l.get('relations', []),  # ⚠️ 新增：特殊关系（岁运并临、天克地冲、天合地合）
+                'type_display': l.get('type_display', ''),  # 关系类型显示
                 'brief': l.get('analysis', '')[:100] if l.get('analysis') else ''
             }
             for l in liunians[:3]
         ]
-    
+
     return simplified
 
 
