@@ -970,7 +970,7 @@ class BaziCalculator:
             
             # 2.3 组合关系（优先级高，但如果有组合关系，不再添加单独的天干或地支关系，避免重复）
             has_combined_relation = False
-            if is_stem_ke and is_branch_chong:
+            if (is_stem_ke or is_stem_ke_reverse) and is_branch_chong:
                 relations.append({
                     "type": f"{pillar_name}-天克地冲",
                     "description": f"流年天干{liunian_stem}克制{pillar_name}天干{pillar_stem}，流年地支{liunian_branch}与{pillar_name}地支{pillar_branch}相冲"
