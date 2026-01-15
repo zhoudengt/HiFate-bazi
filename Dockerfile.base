@@ -50,9 +50,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# 配置 pip 使用国内源（加速下载）
+# 配置 pip 使用国内源（加速下载，失败时使用官方源）
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
-    pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
+    pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn || \
+    (pip config unset global.index-url && pip config unset global.trusted-host && echo "使用官方PyPI源")
 
 # 复制并安装所有依赖（这是最耗时的步骤，约5-10分钟）
 # 所有 Python 包和框架都在这里安装
@@ -61,9 +62,12 @@ COPY requirements.txt .
 # 注意：如果文件不存在，COPY 会失败，所以需要确保文件存在
 COPY services/desk_fengshui/requirements.txt /tmp/desk_fengshui_requirements.txt
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt && \
+    # 优先使用国内源，失败时自动回退到官方源
+    (pip install --no-cache-dir -r requirements.txt || \
+     pip install --no-cache-dir -i https://pypi.org/simple -r requirements.txt) && \
     # 安装微服务依赖（合并到主依赖，避免重复）
-    pip install --no-cache-dir -r /tmp/desk_fengshui_requirements.txt && \
+    (pip install --no-cache-dir -r /tmp/desk_fengshui_requirements.txt || \
+     pip install --no-cache-dir -i https://pypi.org/simple -r /tmp/desk_fengshui_requirements.txt) && \
     # 保存 requirements.txt 的哈希值用于后续检查
     (md5sum requirements.txt > /app/.requirements_hash 2>/dev/null || \
      md5 -q requirements.txt > /app/.requirements_hash 2>/dev/null || \
