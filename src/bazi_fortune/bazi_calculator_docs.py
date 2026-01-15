@@ -770,7 +770,9 @@ class BaziCalculator:
 
         dayun_sequence = []
 
-        max_age_limit = 120
+        # ✅ 修复：增加最大年龄限制，确保能计算到2110年（对应126岁虚岁）
+        # 将限制从120岁增加到150岁，以覆盖更远的年份
+        max_age_limit = 150
         # ✅ 虚岁计算：小运结束年龄 = 1 + 起运年数（使用qiyun_years，不考虑月份和天数）
         first_end_age_virtual = 1 + qiyun_years  # 小运结束年龄（虚岁）
 
@@ -913,7 +915,7 @@ class BaziCalculator:
         bazi_pillars: Dict[str, Dict[str, str]]
     ) -> list:
         """
-        计算流年关系（扩展版：包含更多关系类型）
+        计算流年关系（与问真八字一致，只返回三种关系类型）
         
         Args:
             liunian_stem: 流年天干
@@ -924,17 +926,13 @@ class BaziCalculator:
         
         Returns:
             List[Dict]: 关系列表，每个关系包含 type 和 description 字段
-            如 [
-                {"type": "岁运并临", "description": "流年与大运完全相同"},
-                {"type": "年柱-天克地冲", "description": "流年天干克制年柱天干，流年地支与年柱地支相冲"},
-                {"type": "月柱-天合地合", "description": "流年天干与月柱天干相合，流年地支与月柱地支相合"},
-                {"type": "日柱-地冲", "description": "流年地支与日柱地支相冲"},
-                {"type": "时柱-地刑", "description": "流年地支与时柱地支相刑"},
-            ]
+            只返回三种关系类型（与问真八字一致）：
+            - 岁运并临：流年与大运干支完全相同
+            - 天克地冲：天干相克（双向）且地支相冲
+            - 天合地合：天干相合且地支相合
         """
         from src.data.relations import (
-            STEM_HE, BRANCH_LIUHE, BRANCH_CHONG, STEM_KE,
-            BRANCH_XING, BRANCH_HAI, BRANCH_PO
+            STEM_HE, BRANCH_LIUHE, BRANCH_CHONG, STEM_KE
         )
         
         relations = []
@@ -947,7 +945,7 @@ class BaziCalculator:
                 "description": f"流年{liunian_stem}{liunian_branch}与大运{dayun_stem}{dayun_branch}完全相同"
             })
         
-        # 2. 流年与四柱的关系（扩展：包含更多关系类型）
+        # 2. 流年与四柱的关系（只检查天克地冲、天合地合）
         for pillar_type, pillar in bazi_pillars.items():
             pillar_stem = pillar.get('stem', '')
             pillar_branch = pillar.get('branch', '')
@@ -964,70 +962,19 @@ class BaziCalculator:
             # 2.2 地支关系
             is_branch_chong = BRANCH_CHONG.get(liunian_branch) == pillar_branch  # 地支相冲
             is_branch_he = BRANCH_LIUHE.get(liunian_branch) == pillar_branch  # 地支相合
-            is_branch_xing = pillar_branch in BRANCH_XING.get(liunian_branch, [])  # 地支相刑
-            is_branch_hai = pillar_branch in BRANCH_HAI.get(liunian_branch, [])  # 地支相害
-            is_branch_po = BRANCH_PO.get(liunian_branch) == pillar_branch  # 地支相破
             
-            # 2.3 组合关系（优先级高，但如果有组合关系，不再添加单独的天干或地支关系，避免重复）
-            has_combined_relation = False
+            # 2.3 天克地冲：天干相克（双向）且地支相冲
             if (is_stem_ke or is_stem_ke_reverse) and is_branch_chong:
                 relations.append({
                     "type": f"{pillar_name}-天克地冲",
-                    "description": f"流年天干{liunian_stem}克制{pillar_name}天干{pillar_stem}，流年地支{liunian_branch}与{pillar_name}地支{pillar_branch}相冲"
+                    "description": f"流年{liunian_stem}{liunian_branch}与{pillar_name}{pillar_stem}{pillar_branch}天克地冲"
                 })
-                has_combined_relation = True
+            # 2.4 天合地合：天干相合且地支相合
             elif is_stem_he and is_branch_he:
                 relations.append({
                     "type": f"{pillar_name}-天合地合",
-                    "description": f"流年天干{liunian_stem}与{pillar_name}天干{pillar_stem}相合，流年地支{liunian_branch}与{pillar_name}地支{pillar_branch}相合"
+                    "description": f"流年{liunian_stem}{liunian_branch}与{pillar_name}{pillar_stem}{pillar_branch}天合地合"
                 })
-                has_combined_relation = True
-            
-            # 2.4 单独的地支关系（如果没有组合关系，才检查单独的地支关系）
-            if not has_combined_relation:
-                if is_branch_chong:
-                    relations.append({
-                        "type": f"{pillar_name}-地冲",
-                        "description": f"流年地支{liunian_branch}与{pillar_name}地支{pillar_branch}相冲"
-                    })
-                elif is_branch_he:
-                    relations.append({
-                        "type": f"{pillar_name}-地合",
-                        "description": f"流年地支{liunian_branch}与{pillar_name}地支{pillar_branch}相合"
-                    })
-                elif is_branch_xing:
-                    relations.append({
-                        "type": f"{pillar_name}-地刑",
-                        "description": f"流年地支{liunian_branch}与{pillar_name}地支{pillar_branch}相刑"
-                    })
-                elif is_branch_hai:
-                    relations.append({
-                        "type": f"{pillar_name}-地害",
-                        "description": f"流年地支{liunian_branch}与{pillar_name}地支{pillar_branch}相害"
-                    })
-                elif is_branch_po:
-                    relations.append({
-                        "type": f"{pillar_name}-地破",
-                        "description": f"流年地支{liunian_branch}与{pillar_name}地支{pillar_branch}相破"
-                    })
-            
-            # 2.5 单独的天干关系（如果没有组合关系，才检查单独的天干关系）
-            if not has_combined_relation:
-                if is_stem_he:
-                    relations.append({
-                        "type": f"{pillar_name}-天合",
-                        "description": f"流年天干{liunian_stem}与{pillar_name}天干{pillar_stem}相合"
-                    })
-                elif is_stem_ke:
-                    relations.append({
-                        "type": f"{pillar_name}-天克",
-                        "description": f"流年天干{liunian_stem}克制{pillar_name}天干{pillar_stem}"
-                    })
-                elif is_stem_ke_reverse:
-                    relations.append({
-                        "type": f"{pillar_name}-被天克",
-                        "description": f"{pillar_name}天干{pillar_stem}克制流年天干{liunian_stem}"
-                    })
         
         return relations
 
@@ -1361,10 +1308,9 @@ class BaziCalculator:
         
         all_liunians = []
         for dayun in dayun_sequence:
-            # 跳过小运（小运没有流年）
-            if dayun.get('is_xiaoyun', False):
-                dayun['liunian_sequence'] = []
-                continue
+            # ✅ 修复：小运期间也需要生成流年序列并计算关系
+            # 问真八字显示小运期间的流年也有天克地冲等关系
+            # 原逻辑跳过小运导致1990年等小运期间的流年未被计算
             
             year_start = dayun.get('year_start', 0)
             year_end = dayun.get('year_end', 0)
