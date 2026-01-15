@@ -2117,10 +2117,10 @@ def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
         },
         
         # 6. 关键大运与人生节点（引用数据，不重复存储）
-        # ⚠️ 精简大运数据，避免超过 Coze API 输入限制
+        # ⚠️ 修改：不再限制大运数量，所有包含特殊流年的大运都要显示
         'guanjian_dayun': {
             'current_dayun': _simplify_dayun(guanjian.get('current_dayun')),
-            'key_dayuns': [_simplify_dayun(d) for d in guanjian.get('key_dayuns', [])[:5]],  # 限制5个关键大运
+            'key_dayuns': [_simplify_dayun(d) for d in guanjian.get('key_dayuns', [])],  # 不限制数量，显示所有关键大运
             # dayun_sequence 太大（可能超过400KB），不传给 Coze Bot
             'chonghe_xinghai': guanjian.get('chonghe_xinghai', {})
         },
