@@ -239,6 +239,83 @@ async def wuxing_proportion_stream_generator(
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
 
 
+@router.post("/bazi/wuxing-proportion/test", summary="测试接口：返回格式化后的数据（用于 Coze Bot）")
+async def wuxing_proportion_test(request: WuxingProportionRequest):
+    """
+    测试接口：返回格式化后的数据（用于 Coze Bot）
+    
+    返回与流式接口相同格式的 prompt，供评测脚本使用。
+    确保 Coze 和百炼平台使用相同的输入数据。
+    
+    **参数说明**：
+    - **solar_date**: 阳历日期，格式：YYYY-MM-DD
+    - **solar_time**: 出生时间，格式：HH:MM
+    - **gender**: 性别，male(男) 或 female(女)
+    
+    **返回格式**：
+    {
+        "success": true,
+        "formatted_data": "构建好的 prompt 字符串",
+        "formatted_data_length": 1234
+    }
+    """
+    try:
+        # 1. 处理农历输入和时区转换
+        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+            request.solar_date,
+            request.solar_time,
+            request.calendar_type or "solar",
+            request.location,
+            request.latitude,
+            request.longitude
+        )
+        
+        # 2. 获取五行占比数据（异步执行，避免阻塞事件循环）
+        loop = asyncio.get_event_loop()
+        proportion_data = await loop.run_in_executor(
+            None,  # 使用默认线程池
+            WuxingProportionService.calculate_proportion,
+            final_solar_date, final_solar_time, request.gender
+        )
+        
+        if not proportion_data.get('success'):
+            return {
+                "success": False,
+                "error": proportion_data.get('error', '计算失败')
+            }
+        
+        # 3. 添加转换信息到结果
+        if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+            proportion_data['conversion_info'] = conversion_info
+        
+        # 4. 构建大模型提示词（与流式接口相同）
+        prompt = WuxingProportionService.build_llm_prompt(proportion_data)
+        
+        if not prompt:
+            return {
+                "success": False,
+                "error": "无法构建 prompt"
+            }
+        
+        # 5. 返回格式化后的数据
+        return {
+            "success": True,
+            "formatted_data": prompt,
+            "formatted_data_length": len(prompt),
+            "usage": {
+                "description": "此接口返回的数据可以直接用于 Coze Bot 或百炼智能体的输入",
+                "test_command": f'curl -X POST "http://localhost:8001/api/v1/bazi/wuxing-proportion/test" -H "Content-Type: application/json" -d \'{{"solar_date": "{request.solar_date}", "solar_time": "{request.solar_time}", "gender": "{request.gender}", "calendar_type": "{request.calendar_type or "solar"}"}}\''
+            }
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
 @router.post("/bazi/wuxing-proportion/stream", summary="五行占比流式分析")
 async def stream_wuxing_proportion(request: WuxingProportionRequest):
     """

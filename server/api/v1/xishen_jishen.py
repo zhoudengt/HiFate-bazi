@@ -234,6 +234,73 @@ async def get_xishen_jishen(request: XishenJishenRequest):
         raise HTTPException(status_code=500, detail=f"获取失败: {str(e)}")
 
 
+@router.post("/bazi/xishen-jishen/test", summary="测试接口：返回格式化后的数据（用于 Coze Bot）")
+async def xishen_jishen_test(request: XishenJishenRequest):
+    """
+    测试接口：返回格式化后的数据（用于 Coze Bot）
+    
+    返回与流式接口相同格式的 prompt，供评测脚本使用。
+    确保 Coze 和百炼平台使用相同的输入数据。
+    
+    **参数说明**：
+    - **solar_date**: 阳历日期，格式：YYYY-MM-DD
+    - **solar_time**: 出生时间，格式：HH:MM
+    - **gender**: 性别，male(男) 或 female(女)
+    
+    **返回格式**：
+    {
+        "success": true,
+        "formatted_data": "构建好的 prompt 字符串",
+        "formatted_data_length": 1234
+    }
+    """
+    try:
+        # 1. 获取完整的喜神忌神数据（调用普通接口逻辑）
+        base_result = await get_xishen_jishen(request)
+        
+        if not base_result.success or not base_result.data:
+            return {
+                "success": False,
+                "error": base_result.error or "获取喜神忌神数据失败"
+            }
+        
+        data = base_result.data
+        
+        # 2. 构建提示词（与流式接口相同逻辑）
+        xi_elements_text = '、'.join([e['name'] for e in data.get('xi_shen_elements', [])]) or '无'
+        ji_elements_text = '、'.join([e['name'] for e in data.get('ji_shen_elements', [])]) or '无'
+        mingge_text = '、'.join([m['name'] for m in data.get('shishen_mingge', [])]) or '无'
+        
+        prompt = f"""请根据以下八字命理信息，生成详细的喜神忌神分析：
+
+十神命格：{mingge_text}
+喜神五行：{xi_elements_text}
+忌神五行：{ji_elements_text}
+旺衰状态：{data.get('wangshuai', '未知')}
+总分：{data.get('total_score', 0)}分
+
+请基于这些信息，生成详细的命理分析内容。"""
+        
+        # 3. 返回格式化后的数据
+        return {
+            "success": True,
+            "formatted_data": prompt,
+            "formatted_data_length": len(prompt),
+            "usage": {
+                "description": "此接口返回的数据可以直接用于 Coze Bot 或百炼智能体的输入",
+                "test_command": f'curl -X POST "http://localhost:8001/api/v1/bazi/xishen-jishen/test" -H "Content-Type: application/json" -d \'{{"solar_date": "{request.solar_date}", "solar_time": "{request.solar_time}", "gender": "{request.gender}", "calendar_type": "{request.calendar_type or "solar"}"}}\''
+            }
+        }
+    except Exception as e:
+        import traceback
+        logger.error(f"❌ 喜神忌神测试接口异常: {e}\n{traceback.format_exc()}")
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
 async def xishen_jishen_stream_generator(
     request: XishenJishenRequest,
     bot_id: Optional[str] = None

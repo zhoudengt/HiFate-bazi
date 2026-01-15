@@ -615,6 +615,154 @@ class BaziApiClient:
         }
         return await self._post_json("/bazi/rules/match", data)
     
+    # ==================== 测试接口调用（获取 formatted_data）====================
+    # 这些接口返回与 Coze 相同的结构化数据，用于百炼平台统一输入
+    
+    async def call_career_wealth_test(self, solar_date: str, solar_time: str,
+                                      gender: str) -> Dict[str, Any]:
+        """
+        调用事业财富测试接口，获取 formatted_data
+        
+        Returns:
+            包含 success, formatted_data 的字典
+        """
+        data = {
+            "solar_date": solar_date,
+            "solar_time": solar_time,
+            "gender": gender
+        }
+        return await self._post_json(ApiEndpoints.CAREER_WEALTH_TEST, data)
+    
+    async def call_general_review_test(self, solar_date: str, solar_time: str,
+                                       gender: str) -> Dict[str, Any]:
+        """
+        调用总评测试接口，获取 formatted_data
+        
+        Returns:
+            包含 success, formatted_data 的字典
+        """
+        data = {
+            "solar_date": solar_date,
+            "solar_time": solar_time,
+            "gender": gender
+        }
+        return await self._post_json(ApiEndpoints.GENERAL_REVIEW_TEST, data)
+    
+    async def call_marriage_analysis_test(self, solar_date: str, solar_time: str,
+                                          gender: str) -> Dict[str, Any]:
+        """
+        调用感情婚姻测试接口，获取 formatted_data
+        
+        Returns:
+            包含 success, formatted_data 的字典
+        """
+        data = {
+            "solar_date": solar_date,
+            "solar_time": solar_time,
+            "gender": gender
+        }
+        return await self._post_json(ApiEndpoints.MARRIAGE_ANALYSIS_TEST, data)
+    
+    async def call_health_analysis_test(self, solar_date: str, solar_time: str,
+                                        gender: str) -> Dict[str, Any]:
+        """
+        调用身体健康测试接口，获取 formatted_data
+        
+        Returns:
+            包含 success, formatted_data 的字典
+        """
+        data = {
+            "solar_date": solar_date,
+            "solar_time": solar_time,
+            "gender": gender
+        }
+        return await self._post_json(ApiEndpoints.HEALTH_ANALYSIS_TEST, data)
+    
+    async def call_children_study_test(self, solar_date: str, solar_time: str,
+                                       gender: str) -> Dict[str, Any]:
+        """
+        调用子女学习测试接口，获取 formatted_data
+        
+        Returns:
+            包含 success, formatted_data 的字典
+        """
+        data = {
+            "solar_date": solar_date,
+            "solar_time": solar_time,
+            "gender": gender
+        }
+        return await self._post_json(ApiEndpoints.CHILDREN_STUDY_TEST, data)
+    
+    async def call_annual_report_test(self, solar_date: str, solar_time: str,
+                                      gender: str) -> Dict[str, Any]:
+        """
+        调用年运报告测试接口，获取 formatted_data
+        
+        Returns:
+            包含 success, formatted_data 的字典
+        """
+        data = {
+            "solar_date": solar_date,
+            "solar_time": solar_time,
+            "gender": gender
+        }
+        return await self._post_json(ApiEndpoints.ANNUAL_REPORT_TEST, data)
+    
+    async def call_wuxing_proportion_test(self, solar_date: str, solar_time: str,
+                                           gender: str) -> Dict[str, Any]:
+        """
+        调用五行占比测试接口，获取 formatted_data
+        
+        Returns:
+            包含 success, formatted_data 的字典
+        """
+        data = {
+            "solar_date": solar_date,
+            "solar_time": solar_time,
+            "gender": gender
+        }
+        return await self._post_json(ApiEndpoints.WUXING_PROPORTION_TEST, data)
+    
+    async def call_xishen_jishen_test(self, solar_date: str, solar_time: str,
+                                       gender: str) -> Dict[str, Any]:
+        """
+        调用喜神忌神测试接口，获取 formatted_data
+        
+        Returns:
+            包含 success, formatted_data 的字典
+        """
+        data = {
+            "solar_date": solar_date,
+            "solar_time": solar_time,
+            "gender": gender
+        }
+        return await self._post_json(ApiEndpoints.XISHEN_JISHEN_TEST, data)
+    
+    async def call_daily_fortune_calendar_test(self, solar_date: str, solar_time: str,
+                                                gender: str, date: Optional[str] = None) -> Dict[str, Any]:
+        """
+        调用每日运势测试接口，获取 formatted_data
+        
+        Args:
+            solar_date: 用户生辰阳历日期（可选）
+            solar_time: 用户生辰时间（可选）
+            gender: 用户性别（可选）
+            date: 查询日期（可选，默认为今天）
+        
+        Returns:
+            包含 success, formatted_data 的字典
+        """
+        data = {}
+        if solar_date:
+            data["solar_date"] = solar_date
+        if solar_time:
+            data["solar_time"] = solar_time
+        if gender:
+            data["gender"] = gender
+        if date:
+            data["date"] = date
+        return await self._post_json(ApiEndpoints.DAILY_FORTUNE_CALENDAR_TEST, data)
+    
     @staticmethod
     def generate_user_id() -> str:
         """生成唯一的用户ID（用于评测会话）"""

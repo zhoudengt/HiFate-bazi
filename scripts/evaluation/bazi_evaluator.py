@@ -322,6 +322,58 @@ class BaziEvaluator:
         
         return "\n".join(prompt_parts)
     
+    async def _get_formatted_data_for_scene(
+        self, 
+        scene_key: str, 
+        solar_date: str, 
+        solar_time: str, 
+        gender: str
+    ) -> Optional[str]:
+        """
+        获取指定场景的 formatted_data（与 Coze 使用相同的结构化数据）
+        
+        调用后端测试接口获取 formatted_data，确保两个平台使用相同的输入数据。
+        
+        Args:
+            scene_key: 场景键名（如 career_wealth, general_review 等）
+            solar_date: 阳历日期
+            solar_time: 出生时间
+            gender: 性别
+            
+        Returns:
+            formatted_data 字符串，如果获取失败则返回 None
+        """
+        # 场景到测试接口的映射（所有场景都已统一使用测试接口）
+        scene_to_test_method = {
+            'career_wealth': self.api_client.call_career_wealth_test,
+            'general_review': self.api_client.call_general_review_test,
+            'marriage': self.api_client.call_marriage_analysis_test,
+            'health': self.api_client.call_health_analysis_test,
+            'children_study': self.api_client.call_children_study_test,
+            'wuxing_proportion': self.api_client.call_wuxing_proportion_test,
+            'xishen_jishen': self.api_client.call_xishen_jishen_test,
+            'daily_fortune': self.api_client.call_daily_fortune_calendar_test,
+        }
+        
+        test_method = scene_to_test_method.get(scene_key)
+        if not test_method:
+            return None
+        
+        try:
+            # 每日运势接口需要 date 参数（可选），其他接口使用相同的参数
+            if scene_key == 'daily_fortune':
+                result = await test_method(solar_date, solar_time, gender, date=None)
+            else:
+                result = await test_method(solar_date, solar_time, gender)
+            if result and result.get('success') and result.get('formatted_data'):
+                return result['formatted_data']
+            else:
+                self._log(f"  获取 {scene_key} formatted_data 失败: {result.get('error', '未知错误')}", "WARN")
+                return None
+        except Exception as e:
+            self._log(f"  获取 {scene_key} formatted_data 异常: {e}", "WARN")
+            return None
+    
     async def _call_bailian_stream_and_collect(self, app_id: str, prompt: str) -> str:
         """
         调用百炼流式接口并收集完整结果
@@ -496,7 +548,7 @@ class BaziEvaluator:
                 self._log_progress("  并行调用百炼 API 接口...")
                 bailian_start = time.time()
                 
-                # 获取基础数据用于构建 prompt
+                # 获取基础数据用于构建 prompt（容错降级方案，正常情况下不应使用）
                 basic_data = results.get('basic', {})
                 
                 # 定义百炼场景映射
@@ -511,7 +563,27 @@ class BaziEvaluator:
                     ("daily_fortune", "bailian_daily_fortune", "每日运势"),
                 ]
                 
-                # 构建百炼调用任务
+                # ==================== 新增：优先获取 formatted_data（与 Coze 使用相同数据）====================
+                # 先并行获取所有有测试接口的场景的 formatted_data
+                self._log_progress("    获取 formatted_data（与 Coze 统一输入）...")
+                formatted_data_tasks = []
+                for scene_key, result_key, scene_name in bailian_scenes:
+                    formatted_data_tasks.append(
+                        self._get_formatted_data_for_scene(scene_key, solar_date, solar_time, gender)
+                    )
+                formatted_data_results = await asyncio.gather(*formatted_data_tasks, return_exceptions=True)
+                
+                # 构建场景到 formatted_data 的映射
+                scene_formatted_data = {}
+                for i, (scene_key, result_key, scene_name) in enumerate(bailian_scenes):
+                    fd_result = formatted_data_results[i]
+                    if isinstance(fd_result, str) and fd_result:
+                        scene_formatted_data[scene_key] = fd_result
+                        self._log_progress(f"      {scene_name}: 使用 formatted_data（{len(fd_result)} 字符）")
+                    else:
+                        self._log_progress(f"      {scene_name}: 使用容错 prompt（测试接口获取失败）")
+                
+                # ==================== 构建百炼调用任务 ====================
                 async def return_not_configured(key):
                     return f"[未配置] {key} 智能体"
                 
@@ -519,7 +591,11 @@ class BaziEvaluator:
                 for scene_key, result_key, scene_name in bailian_scenes:
                     app_id = self.bailian_client.config.get_app_id(scene_key)
                     if app_id:
-                        prompt = self._build_bailian_prompt(test_case, scene_name, basic_data)
+                        # 优先使用 formatted_data（所有场景都应成功获取），如果失败则使用容错 prompt
+                        if scene_key in scene_formatted_data:
+                            prompt = scene_formatted_data[scene_key]
+                        else:
+                            prompt = self._build_bailian_prompt(test_case, scene_name, basic_data)
                         bailian_tasks.append(
                             self._call_bailian_stream_and_collect(app_id, prompt)
                         )
