@@ -367,6 +367,9 @@ class BaziDetailService:
                 "ganzhi": ganzhi,
                 "main_star": liunian.get('main_star', ''),
                 "nayin": liunian.get('nayin', ''),
+                "relations": liunian.get('relations', []),  # ⚠️ 新增：特殊关系（岁运并临、天克地冲、天合地合）
+                "dayun_step": liunian.get('dayun_step'),  # ⚠️ 新增：流年归属的大运步数
+                "dayun_ganzhi": liunian.get('dayun_ganzhi', ''),  # ⚠️ 新增：流年归属的大运干支
                 "details": liunian
             })
         

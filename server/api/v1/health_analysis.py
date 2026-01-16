@@ -1078,7 +1078,7 @@ def build_health_prompt(data: dict) -> str:
             
             if high_risk_liunians:
                 prompt_lines.append("- 挑战：[分析该运的健康风险，如")
-                for liunian in high_risk_liunians[:3]:  # 最多列出3个
+                for liunian in high_risk_liunians:  # 不限制数量，保留所有流年
                     year = liunian.get('year', '')
                     relations = liunian.get('relations', [])
                     relation_type_str = ''

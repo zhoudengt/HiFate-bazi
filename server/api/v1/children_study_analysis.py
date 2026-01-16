@@ -1082,22 +1082,18 @@ def build_children_study_input_data(
             cleaned.pop(field, None)
         return cleaned
     
-    def limit_liunians_by_priority(liunians: List[Dict[str, Any]], max_count: int = 3) -> List[Dict[str, Any]]:
-        """限制流年数量：只保留优先级最高的N个（已按优先级排序）"""
-        if not liunians:
-            return []
-        # 流年已经按优先级排序（priority越小优先级越高）
-        return liunians[:max_count]
+    # 注意：不再限制流年数量，只按优先级排序。优先级仅用于排序，不省略数据。
     
     # 提取当前大运数据（优先级1）
     current_dayun_enhanced = enhanced_dayun_structure.get('current_dayun')
     current_dayun_data = None
     if current_dayun_enhanced:
-        # 获取流年数据并应用清理和限制
+        # 获取流年数据并应用清理
         raw_liunians = current_dayun_enhanced.get('liunians', [])
-        # 先清理流月流日字段，再限制数量为3个
+        # 清理流月流日字段
         cleaned_liunians = [clean_liunian_data(liunian) for liunian in raw_liunians]
-        limited_liunians = limit_liunians_by_priority(cleaned_liunians, max_count=3)
+        # 按优先级排序，但不限制数量（保留所有流年）
+        all_liunians = sorted(cleaned_liunians, key=lambda x: x.get('priority', 999999))
         
         # 格式化当前大运数据
         current_dayun_data = {
@@ -1110,18 +1106,19 @@ def build_children_study_input_data(
             'life_stage': current_dayun_enhanced.get('life_stage', ''),
             'description': current_dayun_enhanced.get('description', ''),
             'note': current_dayun_enhanced.get('note', ''),
-            'liunians': limited_liunians  # ⚠️ 优化：已清理流月流日字段，且限制为3个
+            'liunians': all_liunians  # 不限制数量，保留所有流年（含 relations 字段）
         }
     
     # 提取关键大运数据（优先级2-10）
     key_dayuns_enhanced = enhanced_dayun_structure.get('key_dayuns', [])
     key_dayuns_data = []
     for key_dayun in key_dayuns_enhanced:
-        # 获取流年数据并应用清理和限制
+        # 获取流年数据并应用清理
         raw_liunians = key_dayun.get('liunians', [])
-        # 先清理流月流日字段，再限制数量为3个
+        # 清理流月流日字段
         cleaned_liunians = [clean_liunian_data(liunian) for liunian in raw_liunians]
-        limited_liunians = limit_liunians_by_priority(cleaned_liunians, max_count=3)
+        # 按优先级排序，但不限制数量（保留所有流年）
+        all_liunians_for_dayun = sorted(cleaned_liunians, key=lambda x: x.get('priority', 999999))
         
         key_dayuns_data.append({
             'step': str(key_dayun.get('step', '')),
@@ -1133,7 +1130,7 @@ def build_children_study_input_data(
             'life_stage': key_dayun.get('life_stage', ''),
             'description': key_dayun.get('description', ''),
             'note': key_dayun.get('note', ''),
-            'liunians': limited_liunians  # ⚠️ 优化：已清理流月流日字段，且限制为3个
+            'liunians': all_liunians_for_dayun  # 不限制数量，保留所有流年（含 relations 字段）
         })
     
     # 所有大运列表（用于参考）

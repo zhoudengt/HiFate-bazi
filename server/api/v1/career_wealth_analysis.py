@@ -245,11 +245,7 @@ def build_career_wealth_input_data(
             cleaned.pop(field, None)
         return cleaned
     
-    def limit_liunians_by_priority(liunians: List[Dict[str, Any]], max_count: int = 3) -> List[Dict[str, Any]]:
-        """限制流年数量：只保留优先级最高的N个（已按优先级排序）"""
-        if not liunians:
-            return []
-        return liunians[:max_count]
+    # 注意：不再限制流年数量，只按优先级排序。优先级仅用于排序，不省略数据。
     
     # 提取当前大运数据（优先级1）
     current_dayun_enhanced = enhanced_dayun_structure.get('current_dayun')
@@ -257,7 +253,8 @@ def build_career_wealth_input_data(
     if current_dayun_enhanced:
         raw_liunians = current_dayun_enhanced.get('liunians', [])
         cleaned_liunians = [clean_liunian_data(liunian) for liunian in raw_liunians]
-        limited_liunians = limit_liunians_by_priority(cleaned_liunians, max_count=3)
+        # 按优先级排序，但不限制数量（保留所有流年）
+        all_liunians = sorted(cleaned_liunians, key=lambda x: x.get('priority', 999999))
         
         current_dayun_data = {
             'step': str(current_dayun_enhanced.get('step', '')),
@@ -269,7 +266,7 @@ def build_career_wealth_input_data(
             'life_stage': current_dayun_enhanced.get('life_stage', ''),
             'description': current_dayun_enhanced.get('description', ''),
             'note': current_dayun_enhanced.get('note', ''),
-            'liunians': limited_liunians
+            'liunians': all_liunians  # 不限制数量，保留所有流年（含 relations 字段）
         }
     
     # 提取关键大运数据（优先级2-10）
@@ -278,7 +275,8 @@ def build_career_wealth_input_data(
     for key_dayun in key_dayuns_enhanced:
         raw_liunians = key_dayun.get('liunians', [])
         cleaned_liunians = [clean_liunian_data(liunian) for liunian in raw_liunians]
-        limited_liunians = limit_liunians_by_priority(cleaned_liunians, max_count=3)
+        # 按优先级排序，但不限制数量（保留所有流年）
+        all_liunians_for_dayun = sorted(cleaned_liunians, key=lambda x: x.get('priority', 999999))
         
         key_dayuns_data.append({
             'step': str(key_dayun.get('step', '')),
@@ -290,7 +288,7 @@ def build_career_wealth_input_data(
             'life_stage': key_dayun.get('life_stage', ''),
             'description': key_dayun.get('description', ''),
             'note': key_dayun.get('note', ''),
-            'liunians': limited_liunians
+            'liunians': all_liunians_for_dayun  # 不限制数量，保留所有流年（含 relations 字段）
         })
     
     # 提取事业星和财富星

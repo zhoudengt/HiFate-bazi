@@ -398,6 +398,17 @@ def _generate_response_with_fortune(
                         if element_str:
                             response += f"（{element_str}）"
                         
+                        # ⭐ 显示特殊关系（岁运并临、天克地冲、天合地合）
+                        relations = liunian.get('relations', [])
+                        if relations:
+                            relation_types = []
+                            for rel in relations:
+                                rel_type = rel.get('type', '') if isinstance(rel, dict) else str(rel)
+                                if rel_type:
+                                    relation_types.append(rel_type)
+                            if relation_types:
+                                response += f"\n    ⚠️ 特殊年份：{', '.join(relation_types)}"
+                        
                         # ⭐ 添加深度分析
                         balance_analysis = liunian.get('balance_analysis', {})
                         if balance_analysis:
@@ -418,6 +429,17 @@ def _generate_response_with_fortune(
                     liunian = liunian_list[0]
                     response += f"当年流年：{liunian.get('stem', '')}{liunian.get('branch', '')} "
                     response += f"（{liunian.get('year', '')}年）\n"
+                    
+                    # ⭐ 显示特殊关系（岁运并临、天克地冲、天合地合）
+                    relations = liunian.get('relations', [])
+                    if relations:
+                        relation_types = []
+                        for rel in relations:
+                            rel_type = rel.get('type', '') if isinstance(rel, dict) else str(rel)
+                            if rel_type:
+                                relation_types.append(rel_type)
+                        if relation_types:
+                            response += f"⚠️ 特殊年份：{', '.join(relation_types)}\n"
                     
                     # ⭐ 添加深度分析（单年）
                     balance_analysis = liunian.get('balance_analysis', {})

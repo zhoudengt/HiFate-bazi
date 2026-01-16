@@ -84,7 +84,7 @@ async def annual_report_test(request: AnnualReportRequest):
         
         logger.info(f"年运报告目标年份: {target_year}")
         
-        # 3. 使用统一接口获取数据
+        # 3. 使用统一接口获取数据（增加 special_liunians 获取）
         modules = {
             'bazi': True,
             'wangshuai': True,
@@ -92,6 +92,13 @@ async def annual_report_test(request: AnnualReportRequest):
             'dayun': {
                 'mode': 'count',
                 'count': 13  # 获取所有大运
+            },
+            'special_liunians': {
+                'dayun_config': {
+                    'mode': 'count',
+                    'count': 13  # 获取所有大运
+                },
+                'count': 200  # 获取足够多的特殊流年
             }
         }
         
@@ -121,12 +128,23 @@ async def annual_report_test(request: AnnualReportRequest):
         # 获取大运序列（从detail_result）
         dayun_sequence = detail_result.get('dayun_sequence', [])
         
-        # 5. 调用二级接口构建input_data
+        # 提取特殊流年（岁运并临、天克地冲、天合地合）
+        special_liunians_data = unified_data.get('special_liunians', {})
+        if isinstance(special_liunians_data, dict):
+            special_liunians = special_liunians_data.get('list', [])
+        elif isinstance(special_liunians_data, list):
+            special_liunians = special_liunians_data
+        else:
+            special_liunians = []
+        logger.info(f"年运报告获取到特殊流年数量: {len(special_liunians)}")
+        
+        # 5. 调用二级接口构建input_data（增加 special_liunians 参数）
         input_data = AnnualReportService.build_annual_report_input_data(
             bazi_data=bazi_data,
             wangshuai_result=wangshuai_result,
             detail_result=detail_result,
             dayun_sequence=dayun_sequence,
+            special_liunians=special_liunians,  # ⚠️ 新增：特殊流年（岁运并临、天克地冲、天合地合）
             gender=request.gender,
             solar_date=final_solar_date,
             solar_time=final_solar_time,
@@ -254,7 +272,7 @@ async def annual_report_stream_generator(
         
         logger.info(f"年运报告目标年份: {target_year}")
         
-        # 4. 使用统一接口获取数据
+        # 4. 使用统一接口获取数据（增加 special_liunians 获取）
         try:
             modules = {
                 'bazi': True,
@@ -263,6 +281,13 @@ async def annual_report_stream_generator(
                 'dayun': {
                     'mode': 'count',
                     'count': 13  # 获取所有大运
+                },
+                'special_liunians': {
+                    'dayun_config': {
+                        'mode': 'count',
+                        'count': 13  # 获取所有大运
+                    },
+                    'count': 200  # 获取足够多的特殊流年
                 }
             }
             
@@ -314,6 +339,16 @@ async def annual_report_stream_generator(
         
         logger.info(f"[Annual Report Stream] 获取到 dayun_sequence 数量: {len(dayun_sequence)}")
         
+        # 提取特殊流年（岁运并临、天克地冲、天合地合）
+        special_liunians_data = unified_data.get('special_liunians', {})
+        if isinstance(special_liunians_data, dict):
+            special_liunians = special_liunians_data.get('list', [])
+        elif isinstance(special_liunians_data, list):
+            special_liunians = special_liunians_data
+        else:
+            special_liunians = []
+        logger.info(f"[Annual Report Stream] 获取到特殊流年数量: {len(special_liunians)}")
+        
         # 构建 detail_result（用于二级接口）
         detail_result = detail_data if detail_data else {
             'details': {
@@ -321,12 +356,13 @@ async def annual_report_stream_generator(
             }
         }
         
-        # 6. 调用二级接口构建输入数据
+        # 6. 调用二级接口构建输入数据（增加 special_liunians 参数）
         input_data = AnnualReportService.build_annual_report_input_data(
             bazi_data=bazi_data,
             wangshuai_result=wangshuai_result,
             detail_result=detail_result,
             dayun_sequence=dayun_sequence,
+            special_liunians=special_liunians,  # ⚠️ 新增：特殊流年（岁运并临、天克地冲、天合地合）
             gender=gender,
             solar_date=final_solar_date,
             solar_time=final_solar_time,

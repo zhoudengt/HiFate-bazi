@@ -34,10 +34,11 @@ class AnnualReportService:
         wangshuai_result: Dict[str, Any],
         detail_result: Dict[str, Any],
         dayun_sequence: List[Dict[str, Any]],
-        gender: str,
-        solar_date: str,
-        solar_time: str,
-        target_year: int
+        special_liunians: List[Dict[str, Any]] = None,  # ⚠️ 新增：特殊流年（岁运并临、天克地冲、天合地合）
+        gender: str = None,
+        solar_date: str = None,
+        solar_time: str = None,
+        target_year: int = None
     ) -> Dict[str, Any]:
         """
         构建年运报告的输入数据
@@ -47,6 +48,7 @@ class AnnualReportService:
             wangshuai_result: 旺衰分析结果
             detail_result: 详细计算结果
             dayun_sequence: 大运序列
+            special_liunians: 特殊流年列表（岁运并临、天克地冲、天合地合）
             gender: 性别（male/female）
             solar_date: 出生日期
             solar_time: 出生时间
@@ -76,18 +78,121 @@ class AnnualReportService:
                 target_year
             )
             
-            # 5. 构建完整的input_data
+            # 5. 构建流年大运数据（包含 relations 字段）
+            dayun_liunian_data = AnnualReportService._build_dayun_liunian_data(
+                dayun_sequence=dayun_sequence,
+                special_liunians=special_liunians or [],
+                target_year=target_year
+            )
+            
+            # 6. 构建完整的input_data
             input_data = {
                 'mingpan_analysis': mingpan_analysis,
                 'monthly_analysis': monthly_analysis,
                 'taisui_info': taisui_info,
-                'fengshui_info': fengshui_info
+                'fengshui_info': fengshui_info,
+                'dayun_liunian': dayun_liunian_data  # ⚠️ 新增：流年大运数据（含 relations）
             }
             
             return input_data
         except Exception as e:
             logger.error(f"构建年运报告input_data失败: {e}", exc_info=True)
             raise
+    
+    @staticmethod
+    def _build_dayun_liunian_data(
+        dayun_sequence: List[Dict[str, Any]],
+        special_liunians: List[Dict[str, Any]],
+        target_year: int = None
+    ) -> Dict[str, Any]:
+        """
+        构建流年大运数据（包含 relations 字段）
+        
+        Args:
+            dayun_sequence: 大运序列
+            special_liunians: 特殊流年列表（岁运并临、天克地冲、天合地合）
+            target_year: 目标年份
+            
+        Returns:
+            dict: 流年大运数据（包含 relations）
+        """
+        try:
+            # 1. 按大运步数对特殊流年进行分组
+            special_by_dayun = {}
+            for liunian in special_liunians:
+                dayun_step = liunian.get('dayun_step')
+                if dayun_step is not None:
+                    if dayun_step not in special_by_dayun:
+                        special_by_dayun[dayun_step] = []
+                    special_by_dayun[dayun_step].append(liunian)
+            
+            # 2. 构建大运列表（每个大运包含其特殊流年）
+            dayuns_with_liunians = []
+            for dayun in dayun_sequence:
+                step = dayun.get('step')
+                stem = dayun.get('gan', dayun.get('stem', ''))
+                branch = dayun.get('zhi', dayun.get('branch', ''))
+                ganzhi = dayun.get('ganzhi', f'{stem}{branch}')
+                
+                # 获取该大运下的特殊流年
+                liunians_for_dayun = special_by_dayun.get(step, [])
+                
+                # 格式化流年数据（保留 relations 字段）
+                formatted_liunians = []
+                for liunian in liunians_for_dayun:
+                    formatted_liunians.append({
+                        'year': liunian.get('year'),
+                        'ganzhi': liunian.get('ganzhi', ''),
+                        'dayun_step': liunian.get('dayun_step'),
+                        'dayun_ganzhi': liunian.get('dayun_ganzhi', ''),
+                        'relations': liunian.get('relations', []),  # ⚠️ 保留 relations 字段
+                        'type_display': liunian.get('type_display', ''),
+                        'age': liunian.get('age'),
+                        'priority': liunian.get('priority', 999999)
+                    })
+                
+                # 按优先级排序（不限制数量）
+                formatted_liunians.sort(key=lambda x: x.get('priority', 999999))
+                
+                dayun_data = {
+                    'step': step,
+                    'ganzhi': ganzhi,
+                    'stem': stem,
+                    'branch': branch,
+                    'age_display': dayun.get('age_display', dayun.get('age_range', '')),
+                    'start_age': dayun.get('start_age'),
+                    'end_age': dayun.get('end_age'),
+                    'liunians': formatted_liunians  # ⚠️ 包含 relations 的流年列表
+                }
+                dayuns_with_liunians.append(dayun_data)
+            
+            # 3. 提取目标年份的流年（如果指定）
+            target_liunian = None
+            if target_year:
+                for liunian in special_liunians:
+                    if liunian.get('year') == target_year:
+                        target_liunian = {
+                            'year': liunian.get('year'),
+                            'ganzhi': liunian.get('ganzhi', ''),
+                            'relations': liunian.get('relations', []),
+                            'type_display': liunian.get('type_display', '')
+                        }
+                        break
+            
+            return {
+                'dayuns': dayuns_with_liunians,
+                'dayun_count': len(dayun_sequence),
+                'special_liunian_count': len(special_liunians),
+                'target_year_liunian': target_liunian
+            }
+        except Exception as e:
+            logger.error(f"构建流年大运数据失败: {e}", exc_info=True)
+            return {
+                'dayuns': [],
+                'dayun_count': 0,
+                'special_liunian_count': 0,
+                'target_year_liunian': None
+            }
     
     @staticmethod
     def _extract_mingpan_analysis(
