@@ -85,7 +85,8 @@ class BaziApiClient:
         import struct
         
         session = await self._get_session()
-        grpc_url = f"{self.base_url}/grpc-web/frontend.gateway.FrontendGateway/Call"
+        # 使用 config.base_url 而不是 self.base_url，因为 gRPC 网关路径不包含 /api/v1 前缀
+        grpc_url = f"{self.config.base_url}/api/grpc-web/frontend.gateway.FrontendGateway/Call"
         
         # 构建 gRPC-Web 请求 payload
         payload_json = json.dumps(data, ensure_ascii=False)
@@ -123,12 +124,27 @@ class BaziApiClient:
                 body = await response.read()
                 
                 # 解析 gRPC-Web 响应
+                # gRPC-Web 帧格式：1 字节标志 + 4 字节长度 + 消息
+                if len(body) < 5:
+                    raise RuntimeError(f"gRPC响应格式错误: 长度不足")
+                
                 # 跳过 gRPC 帧头（5 字节）
-                if len(body) > 5:
-                    json_body = body[5:].decode('utf-8')
-                    return json.loads(json_body)
-                else:
-                    raise RuntimeError(f"gRPC响应格式错误: {body}")
+                message = body[5:]
+                
+                # 响应消息是 protobuf 格式，需要找到 JSON 内容
+                # 格式：field 1 = success (varint), field 2 = json_response (string)
+                # 简化处理：直接查找 JSON 开始位置（第一个 '{' 字符）
+                json_start = message.find(b'{')
+                if json_start == -1:
+                    raise RuntimeError(f"gRPC响应中找不到 JSON: {message[:100]}")
+                
+                # 找到 JSON 结束位置（最后一个 '}' 字符）
+                json_end = message.rfind(b'}')
+                if json_end == -1:
+                    raise RuntimeError(f"gRPC响应中 JSON 格式错误: {message[:100]}")
+                
+                json_body = message[json_start:json_end+1].decode('utf-8')
+                return json.loads(json_body)
         except aiohttp.ClientResponseError as e:
             raise RuntimeError(f"gRPC请求失败: {grpc_url}, {e.status}, message='{e.message}'")
         except aiohttp.ClientError as e:
