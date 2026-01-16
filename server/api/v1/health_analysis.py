@@ -186,6 +186,14 @@ async def health_analysis_debug(request: HealthAnalysisRequest):
         # 获取五行统计
         element_counts = bazi_data.get('element_counts', {})
         
+        # ⚠️ 重要：从 wangshuai_result 中提取旺衰数据
+        # wangshuai_result 格式是 {'success': True, 'data': {...}}，需要提取 data
+        if not wangshuai_result.get('success'):
+            logger.warning(f"旺衰分析失败: {wangshuai_result.get('error')}")
+            wangshuai_data = {}
+        else:
+            wangshuai_data = wangshuai_result.get('data', {})
+        
         # 构建规则匹配数据
         rule_data = {
             'basic_info': bazi_data.get('basic_info', {}),
@@ -198,18 +206,19 @@ async def health_analysis_debug(request: HealthAnalysisRequest):
         }
         
         # 并行执行健康分析和规则匹配
+        # ⚠️ 重要：使用 wangshuai_data（提取后的数据），而不是 wangshuai_result（原始结果）
         health_result, health_rules = await asyncio.gather(
             loop.run_in_executor(executor, HealthAnalysisService.analyze,
-                                 bazi_data, element_counts, wangshuai_result,
-                                 wangshuai_result.get('xi_ji_elements', {})),
+                                 bazi_data, element_counts, wangshuai_data,
+                                 wangshuai_data.get('xi_ji_elements', {})),
             loop.run_in_executor(executor, RuleService.match_rules, rule_data, ['health'], True)
         )
         
         # 构建input_data（直接使用硬编码函数，确保数据完整性）
-        # 注：格式定义方式数据不完整问题，暂时禁用，直接使用硬编码函数
+        # ⚠️ 重要：使用 wangshuai_data（提取后的数据），而不是 wangshuai_result（原始结果）
         input_data = build_health_input_data(
             bazi_data,
-            wangshuai_result,
+            wangshuai_data,
             detail_result,
             dayun_sequence,
             health_result if health_result.get('success') else {},
@@ -483,19 +492,21 @@ async def health_analysis_stream_generator(
         }
         
         # 6. 并行执行健康分析和规则匹配
+        # ⚠️ 重要：使用 wangshuai_data（提取后的数据），而不是 wangshuai_result（原始结果）
         loop = asyncio.get_event_loop()
         executor = None
         health_result, health_rules = await asyncio.gather(
             loop.run_in_executor(executor, HealthAnalysisService.analyze,
-                                 bazi_data, element_counts, wangshuai_result, 
-                                 wangshuai_result.get('xi_ji_elements', {})),
+                                 bazi_data, element_counts, wangshuai_data, 
+                                 wangshuai_data.get('xi_ji_elements', {})),
             loop.run_in_executor(executor, RuleService.match_rules, rule_data, ['health'], True)
         )
         
         # 7. 构建input_data（直接使用硬编码函数，确保数据完整性）
+        # ⚠️ 重要：使用 wangshuai_data（提取后的数据），而不是 wangshuai_result（原始结果）
         input_data = build_health_input_data(
             bazi_data,
-            wangshuai_result,
+            wangshuai_data,
             detail_result,
             dayun_sequence,
             health_result if health_result.get('success') else {},
