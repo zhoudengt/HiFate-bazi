@@ -588,6 +588,10 @@ class BaziDataService:
                 raw_dayun_sequence, current_time, birth_year, dayun_mode, None, None
             )
         
+        # ⚠️ 保存原始大运序列，用于后续特殊流年的归属查找
+        # 这确保特殊流年可以正确归属到任何大运，即使该大运不在筛选范围内
+        all_dayun_sequence = raw_dayun_sequence
+        
         # 5. 根据筛选后的大运和 target_years 筛选流年
         filtered_liunian_sequence = []
         if include_liunian:
@@ -621,51 +625,105 @@ class BaziDataService:
                 if in_dayun_range and in_target_years:
                     filtered_liunian_sequence.append(liunian)
         
-        # 6. ⚠️ 核心：从流年中提取特殊流年（有 relations 的流年）
-        #    与排盘数据完全一致，不使用 SpecialLiunianService
+        # 6. ⚠️ 核心：直接调用排盘接口获取特殊流年数据，确保与排盘完全一致
+        #    使用 BaziDisplayService.get_fortune_display() 获取排盘数据，从中提取有 relations 的流年
         special_liunians_raw = []
         if include_special_liunian:
-            for liunian in raw_liunian_sequence:  # 使用原始流年序列（所有大运的流年）
-                relations = liunian.get('relations', [])
-                if relations and len(relations) > 0:
-                    # 查找该流年属于哪个大运
-                    year = liunian.get('year', 0)
-                    dayun_step = None
-                    dayun_ganzhi = ''
-                    
-                    for dayun in raw_dayun_sequence:
-                        d_year_start = dayun.get('year_start', 0)
-                        d_year_end = dayun.get('year_end', 0)
-                        d_stem = dayun.get('stem', '')
-                        d_branch = dayun.get('branch', '')
-                        d_is_xiaoyun = dayun.get('is_xiaoyun', False)
+            # ✅ 直接调用排盘接口获取数据（与前端显示的完全一致）
+            from server.services.bazi_display_service import BaziDisplayService
+            
+            fortune_display_result = BaziDisplayService.get_fortune_display(
+                final_solar_date,
+                final_solar_time,
+                gender,
+                current_time=current_time,
+                dayun_index=None,  # 获取所有大运
+                dayun_year_start=None,
+                dayun_year_end=None,
+                target_year=None,
+                quick_mode=False  # 完整模式，获取所有流年
+            )
+            
+            if fortune_display_result.get('success'):
+                # 从排盘接口返回的流年列表中提取有 relations 的流年
+                liunian_list = fortune_display_result.get('liunian', {}).get('list', [])
+                
+                for liunian_formatted in liunian_list:
+                    relations = liunian_formatted.get('relations', [])
+                    if relations and len(relations) > 0:
+                        year = liunian_formatted.get('year', 0)
+                        ganzhi = liunian_formatted.get('ganzhi', '')
                         
-                        # 跳过小运
-                        if d_stem == '小运' or d_is_xiaoyun:
-                            continue
+                        # 从原始流年序列中查找完整数据
+                        original_liunian = None
+                        for liunian in raw_liunian_sequence:
+                            if liunian.get('year') == year:
+                                original_liunian = liunian.copy()
+                                break
                         
-                        if d_year_start <= year <= d_year_end:
-                            dayun_step = dayun.get('step')
-                            dayun_ganzhi = f"{d_stem}{d_branch}"
-                            break
-                    
-                    # 添加大运信息到流年
-                    special_liunian = liunian.copy()
-                    special_liunian['dayun_step'] = dayun_step
-                    special_liunian['dayun_ganzhi'] = dayun_ganzhi
-                    if 'ganzhi' not in special_liunian:
-                        special_liunian['ganzhi'] = f"{liunian.get('stem', '')}{liunian.get('branch', '')}"
-                    
-                    special_liunians_raw.append(special_liunian)
+                        if original_liunian:
+                            # 查找该流年属于哪个大运
+                            dayun_step = None
+                            dayun_ganzhi = ''
+                            for dayun in raw_dayun_sequence:
+                                d_year_start = dayun.get('year_start', 0)
+                                d_year_end = dayun.get('year_end', 0)
+                                d_stem = dayun.get('stem', '')
+                                d_branch = dayun.get('branch', '')
+                                d_is_xiaoyun = dayun.get('is_xiaoyun', False)
+                                
+                                # 跳过小运
+                                if d_stem == '小运' or d_is_xiaoyun:
+                                    continue
+                                
+                                if d_year_start <= year <= d_year_end:
+                                    dayun_step = dayun.get('step')
+                                    dayun_ganzhi = f"{d_stem}{d_branch}"
+                                    break
+                            
+                            # 构建特殊流年数据
+                            special_liunian = original_liunian.copy()
+                            special_liunian['dayun_step'] = dayun_step
+                            special_liunian['dayun_ganzhi'] = dayun_ganzhi
+                            if 'ganzhi' not in special_liunian:
+                                special_liunian['ganzhi'] = ganzhi
+                            
+                            special_liunians_raw.append(special_liunian)
             
             # 按年份排序
             special_liunians_raw.sort(key=lambda x: (x.get('dayun_step', 0) or 0, x.get('year', 0)))
-            logger.info(f"[BaziDataService] 从排盘数据源提取特殊流年: {len(special_liunians_raw)}个")
+            logger.info(f"[BaziDataService] 从排盘接口提取特殊流年: {len(special_liunians_raw)}个")
             
-            # 打印前5个特殊流年详情（调试用）
+            # 打印前10个特殊流年详情（调试用）
             if special_liunians_raw:
-                for sl in special_liunians_raw[:5]:
+                for sl in special_liunians_raw[:10]:
                     logger.info(f"  - {sl.get('year')}年 {sl.get('ganzhi')} (大运{sl.get('dayun_step')}): {sl.get('relations', [])}")
+        
+        # 6.1 ⚠️ 关键修复：确保大运序列包含所有特殊流年所属的大运
+        #     这样 build_enhanced_dayun_structure 才能正确将特殊流年归属到大运
+        if include_special_liunian and special_liunians_raw:
+            # 收集所有特殊流年所属的大运 step
+            special_dayun_steps = set()
+            for sl in special_liunians_raw:
+                dayun_step = sl.get('dayun_step')
+                if dayun_step is not None:
+                    special_dayun_steps.add(dayun_step)
+            
+            # 获取筛选后大运的 step
+            filtered_steps = {d.get('step') for d in filtered_dayun_sequence}
+            
+            # 添加缺失的大运（特殊流年所属但不在筛选范围内的大运）
+            missing_steps = special_dayun_steps - filtered_steps
+            if missing_steps:
+                logger.info(f"[BaziDataService] 添加缺失的大运: {missing_steps}")
+                for dayun in all_dayun_sequence:
+                    step = dayun.get('step')
+                    if step in missing_steps:
+                        filtered_dayun_sequence.append(dayun)
+                
+                # 按 step 排序，确保大运顺序正确
+                filtered_dayun_sequence.sort(key=lambda x: x.get('step', 0) or 0)
+                logger.info(f"[BaziDataService] 合并后大运数量: {len(filtered_dayun_sequence)}")
         
         # 7. 确定当前大运和流年
         current_dayun = None
