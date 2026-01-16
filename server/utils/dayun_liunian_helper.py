@@ -313,6 +313,17 @@ def add_liunian_metadata(
     """
     liunian_copy = liunian.copy()
     
+    # ⚠️ 关键：确保保留 relations 字段（岁运并临、天克地冲、天合地合）
+    # relations 字段必须从原始流年数据中保留，不能丢失
+    if 'relations' not in liunian_copy:
+        liunian_copy['relations'] = liunian.get('relations', [])
+    
+    # ⚠️ 关键：确保保留 dayun_step 和 dayun_ganzhi 字段（用于确定流年归属）
+    if 'dayun_step' not in liunian_copy:
+        liunian_copy['dayun_step'] = liunian.get('dayun_step')
+    if 'dayun_ganzhi' not in liunian_copy:
+        liunian_copy['dayun_ganzhi'] = liunian.get('dayun_ganzhi', '')
+    
     # 添加人生阶段标签
     age = liunian.get('age')
     if age is None and birth_year is not None:

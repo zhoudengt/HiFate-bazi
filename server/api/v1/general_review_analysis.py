@@ -1316,11 +1316,18 @@ def build_general_review_input_data(
     
     # ⚠️ 优化：添加后处理函数（清理流月流日字段，限制流年数量）
     def clean_liunian_data(liunian: Dict[str, Any]) -> Dict[str, Any]:
-        """清理流年数据：移除流月流日字段"""
+        """清理流年数据：移除流月流日字段，保留 relations 和 dayun_step 字段"""
         cleaned = liunian.copy()
         fields_to_remove = ['liuyue_sequence', 'liuri_sequence', 'liushi_sequence']
         for field in fields_to_remove:
             cleaned.pop(field, None)
+        # ⚠️ 关键：确保 relations 和 dayun_step 字段被保留
+        if 'relations' not in cleaned:
+            cleaned['relations'] = liunian.get('relations', [])
+        if 'dayun_step' not in cleaned:
+            cleaned['dayun_step'] = liunian.get('dayun_step')
+        if 'dayun_ganzhi' not in cleaned:
+            cleaned['dayun_ganzhi'] = liunian.get('dayun_ganzhi', '')
         return cleaned
     
     # ⚠️ 修改：不再限制流年数量，优先级只用于排序，所有特殊流年都要显示
