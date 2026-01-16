@@ -1066,6 +1066,29 @@ def build_health_prompt(data: dict) -> str:
     # 1. 命盘体质总论
     prompt_lines.append("【命盘体质总论】")
     section1 = data.get('mingpan_tizhi_zonglun', {})
+    
+    # ⚠️ 重要：输出完整的四柱信息
+    bazi_pillars = section1.get('bazi_pillars', {})
+    if bazi_pillars:
+        year_pillar = bazi_pillars.get('year', {})
+        month_pillar = bazi_pillars.get('month', {})
+        day_pillar = bazi_pillars.get('day', {})
+        hour_pillar = bazi_pillars.get('hour', {})
+        
+        # 构建四柱字符串
+        pillars_list = []
+        if year_pillar.get('stem') and year_pillar.get('branch'):
+            pillars_list.append(f"{year_pillar.get('stem')}{year_pillar.get('branch')}")
+        if month_pillar.get('stem') and month_pillar.get('branch'):
+            pillars_list.append(f"{month_pillar.get('stem')}{month_pillar.get('branch')}")
+        if day_pillar.get('stem') and day_pillar.get('branch'):
+            pillars_list.append(f"{day_pillar.get('stem')}{day_pillar.get('branch')}")
+        if hour_pillar.get('stem') and hour_pillar.get('branch'):
+            pillars_list.append(f"{hour_pillar.get('stem')}{hour_pillar.get('branch')}")
+        
+        if pillars_list:
+            prompt_lines.append(f"四柱：{' '.join(pillars_list)}")
+    
     day_master = section1.get('day_master', {})
     if day_master.get('stem'):
         prompt_lines.append(f"日主：{day_master.get('stem')}{day_master.get('branch')}（{day_master.get('element', '')}）")
