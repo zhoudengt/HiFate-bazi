@@ -502,7 +502,7 @@ def build_input_data_from_result(
     if not format_def:
         raise ValueError(f"格式定义不存在: {format_name}")
     
-    return format_loader.build_input_data_from_result(
+    result = format_loader.build_input_data_from_result(
         format_def=format_def,
         bazi_data=bazi_data,
         detail_result=detail_result,
@@ -510,4 +510,15 @@ def build_input_data_from_result(
         rule_result=rule_result,
         **kwargs
     )
+    
+    # ⚠️ 确保返回结果是可修改的字典
+    if not isinstance(result, dict):
+        result = dict(result) if hasattr(result, '__iter__') else {}
+    
+    # ⚠️ 确保 career_wealth 格式必需的字段存在
+    if format_name == 'career_wealth_analysis':
+        result.setdefault('shiye_xing_gong', {})
+        result.setdefault('caifu_xing_gong', {})
+    
+    return result
 
