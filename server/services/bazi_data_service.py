@@ -812,22 +812,30 @@ class BaziDataService:
                 details=d.get('details', {})
             )
         
-        # 转换为模型列表
-        dayun_sequence_models = [_dict_to_dayun_model(d) for d in filtered_dayun_sequence]
-        liunian_sequence_models = [_dict_to_liunian_model(l) for l in filtered_liunian_sequence]
-        special_liunian_models = [_dict_to_special_liunian_model(s) for s in special_liunians_raw]
+        # 转换为字典列表（确保包含 ganzhi 字段）
+        def _ensure_ganzhi(d: Dict[str, Any]) -> Dict[str, Any]:
+            """确保字典包含 ganzhi 字段"""
+            if 'ganzhi' not in d or not d.get('ganzhi'):
+                d = d.copy()
+                d['ganzhi'] = f"{d.get('stem', '')}{d.get('branch', '')}"
+            return d
         
-        # 转换当前大运和流年
-        current_dayun_model = _dict_to_dayun_model(current_dayun) if current_dayun else None
-        current_liunian_model = _dict_to_liunian_model(current_liunian) if current_liunian else None
+        dayun_sequence_dicts = [_ensure_ganzhi(d) for d in filtered_dayun_sequence]
+        liunian_sequence_dicts = [_ensure_ganzhi(l) for l in filtered_liunian_sequence]
+        special_liunian_dicts = [_ensure_ganzhi(s) for s in special_liunians_raw]
         
-        # 9. 构建完整数据模型
+        # 处理当前大运和流年
+        current_dayun_dict = _ensure_ganzhi(current_dayun) if current_dayun else None
+        current_liunian_dict = _ensure_ganzhi(current_liunian) if current_liunian else None
+        
+        # 9. 构建完整数据模型（直接传入字典，让 Pydantic 进行转换）
+        # 这样可以避免热更新导致的类型不匹配问题
         fortune_data = BaziDetailModel(
-            dayun_sequence=dayun_sequence_models,
-            liunian_sequence=liunian_sequence_models,
-            special_liunians=special_liunian_models,
-            current_dayun=current_dayun_model,
-            current_liunian=current_liunian_model,
+            dayun_sequence=dayun_sequence_dicts,
+            liunian_sequence=liunian_sequence_dicts,
+            special_liunians=special_liunian_dicts,
+            current_dayun=current_dayun_dict,
+            current_liunian=current_liunian_dict,
             qiyun=qiyun,
             jiaoyun=jiaoyun,
             details=details
