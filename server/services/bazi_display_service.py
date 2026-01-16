@@ -1206,7 +1206,7 @@ class BaziDisplayService:
                 "self_sitting": pillar_details.get('self_sitting', ''),
                 "kongwang": pillar_details.get('kongwang', ''),
                 "nayin": pillar_details.get('nayin', ''),
-                "deities": pillar_details.get('deities', [])
+                "deities": sort_shensha(pillar_details.get('deities', []))  # ✅ 神煞按配置排序
             }
         
         # ✅ 新增：获取司令字段（复用 /bazi/interface 接口的逻辑，不重复计算）
