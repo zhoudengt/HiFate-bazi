@@ -207,10 +207,17 @@ async def health_analysis_debug(request: HealthAnalysisRequest):
         
         # 并行执行健康分析和规则匹配
         # ⚠️ 重要：使用 wangshuai_data（提取后的数据），而不是 wangshuai_result（原始结果）
+        # ⚠️ 修复：构建正确的 xi_ji_data 结构
+        xi_ji_data_for_health_debug = {
+            'xi_ji_elements': {
+                'xi_shen': wangshuai_data.get('xi_shen_elements', []),
+                'ji_shen': wangshuai_data.get('ji_shen_elements', [])
+            }
+        }
         health_result, health_rules = await asyncio.gather(
             loop.run_in_executor(executor, HealthAnalysisService.analyze,
                                  bazi_data, element_counts, wangshuai_data,
-                                 wangshuai_data.get('xi_ji_elements', {})),
+                                 xi_ji_data_for_health_debug),
             loop.run_in_executor(executor, RuleService.match_rules, rule_data, ['health'], True)
         )
         
@@ -493,12 +500,24 @@ async def health_analysis_stream_generator(
         
         # 6. 并行执行健康分析和规则匹配
         # ⚠️ 重要：使用 wangshuai_data（提取后的数据），而不是 wangshuai_result（原始结果）
+        # ⚠️ 修复：构建正确的 xi_ji_data 结构
+        # wangshuai_data 中的字段是 xi_shen_elements 和 ji_shen_elements（列表格式）
+        # HealthAnalysisService.analyze() 期望的 xi_ji_data 结构是：
+        # {'xi_ji_elements': {'xi_shen': [...], 'ji_shen': [...]}}
+        xi_ji_data_for_health = {
+            'xi_ji_elements': {
+                'xi_shen': wangshuai_data.get('xi_shen_elements', []),
+                'ji_shen': wangshuai_data.get('ji_shen_elements', [])
+            }
+        }
+        logger.info(f"[Health Analysis] xi_ji_data_for_health 构建完成: xi_shen={xi_ji_data_for_health['xi_ji_elements']['xi_shen']}, ji_shen={xi_ji_data_for_health['xi_ji_elements']['ji_shen']}")
+        
         loop = asyncio.get_event_loop()
         executor = None
         health_result, health_rules = await asyncio.gather(
             loop.run_in_executor(executor, HealthAnalysisService.analyze,
                                  bazi_data, element_counts, wangshuai_data, 
-                                 wangshuai_data.get('xi_ji_elements', {})),
+                                 xi_ji_data_for_health),
             loop.run_in_executor(executor, RuleService.match_rules, rule_data, ['health'], True)
         )
         
@@ -848,10 +867,18 @@ def build_health_input_data(
     yue_ling = f"{month_branch}月" if month_branch else ''
     
     # ⚠️ 修复：从 wangshuai_data（提取后的数据）中获取喜忌数据
+    # wangshuai_data 中的字段是 xi_shen_elements 和 ji_shen_elements（列表格式）
+    # 需要重新构建 xi_ji_elements 结构
     xi_ji_data = {
-        'xi_shen': wangshuai_data.get('xi_shen', ''),
-        'ji_shen': wangshuai_data.get('ji_shen', ''),
-        'xi_ji_elements': wangshuai_data.get('xi_ji_elements', {})
+        'xi_shen': wangshuai_data.get('xi_shen', []),
+        'ji_shen': wangshuai_data.get('ji_shen', []),
+        'xi_shen_elements': wangshuai_data.get('xi_shen_elements', []),
+        'ji_shen_elements': wangshuai_data.get('ji_shen_elements', []),
+        # 兼容旧格式
+        'xi_ji_elements': {
+            'xi_shen': wangshuai_data.get('xi_shen_elements', []),
+            'ji_shen': wangshuai_data.get('ji_shen_elements', [])
+        }
     }
     
     # 获取健康分析结果
