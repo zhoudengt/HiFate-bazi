@@ -814,6 +814,21 @@ def build_health_input_data(
     Returns:
         dict: 健康分析的input_data
     """
+    # ⚠️ 重要：从 wangshuai_result 中提取旺衰数据
+    # 兼容两种情况：
+    # 1. 传入的是 wangshuai_result（格式 {'success': True, 'data': {...}}），需要提取 data
+    # 2. 传入的是 wangshuai_data（已经提取的数据，有 'wangshuai' 字段），直接使用
+    if 'success' in wangshuai_result:
+        # 情况1：传入的是 wangshuai_result
+        if not wangshuai_result.get('success'):
+            logger.warning(f"旺衰分析失败: {wangshuai_result.get('error')}")
+            wangshuai_data = {}
+        else:
+            wangshuai_data = wangshuai_result.get('data', {})
+    else:
+        # 情况2：传入的是 wangshuai_data（已经提取的数据）
+        wangshuai_data = wangshuai_result
+    
     # 提取基础数据
     bazi_pillars = bazi_data.get('bazi_pillars', {})
     element_counts = bazi_data.get('element_counts', {})
@@ -824,19 +839,19 @@ def build_health_input_data(
     day_stem = day_pillar.get('stem', '')
     day_branch = day_pillar.get('branch', '')
     
-    # 提取旺衰数据
-    wangshuai = wangshuai_result.get('wangshuai', '')
+    # ⚠️ 修复：从 wangshuai_data（提取后的数据）中获取旺衰数据
+    wangshuai = wangshuai_data.get('wangshuai', '')
     
     # 提取月令
     month_pillar = bazi_pillars.get('month', {})
     month_branch = month_pillar.get('branch', '')
     yue_ling = f"{month_branch}月" if month_branch else ''
     
-    # 提取喜忌数据
+    # ⚠️ 修复：从 wangshuai_data（提取后的数据）中获取喜忌数据
     xi_ji_data = {
-        'xi_shen': wangshuai_result.get('xi_shen', ''),
-        'ji_shen': wangshuai_result.get('ji_shen', ''),
-        'xi_ji_elements': wangshuai_result.get('xi_ji_elements', {})
+        'xi_shen': wangshuai_data.get('xi_shen', ''),
+        'ji_shen': wangshuai_data.get('ji_shen', ''),
+        'xi_ji_elements': wangshuai_data.get('xi_ji_elements', {})
     }
     
     # 获取健康分析结果
