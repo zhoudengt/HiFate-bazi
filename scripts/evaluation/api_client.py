@@ -69,6 +69,71 @@ class BaziApiClient:
         except aiohttp.ClientError as e:
             raise RuntimeError(f"API请求失败: {url}, {e}")
     
+    async def _post_grpc(self, endpoint: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        通过 gRPC 网关发送请求
+        
+        用于调用可能未在 REST 路由中注册但在 gRPC 网关中动态注册的端点。
+        
+        Args:
+            endpoint: API端点（不含 /api/v1 前缀）
+            data: 请求数据
+            
+        Returns:
+            响应JSON数据
+        """
+        import struct
+        
+        session = await self._get_session()
+        grpc_url = f"{self.base_url}/grpc-web/frontend.gateway.FrontendGateway/Call"
+        
+        # 构建 gRPC-Web 请求 payload
+        payload_json = json.dumps(data, ensure_ascii=False)
+        
+        # 简单的 protobuf 编码：field 1 = endpoint, field 2 = payload_json
+        # field 1 (string): tag = 0x0a, length-prefixed
+        # field 2 (string): tag = 0x12, length-prefixed
+        endpoint_bytes = endpoint.encode('utf-8')
+        payload_bytes = payload_json.encode('utf-8')
+        
+        def encode_varint(value):
+            result = b''
+            while value > 127:
+                result += bytes([0x80 | (value & 0x7f)])
+                value >>= 7
+            result += bytes([value])
+            return result
+        
+        message = b'\x0a' + encode_varint(len(endpoint_bytes)) + endpoint_bytes
+        message += b'\x12' + encode_varint(len(payload_bytes)) + payload_bytes
+        
+        # gRPC-Web 帧格式：1 字节标志 + 4 字节长度 + 消息
+        frame = b'\x00' + struct.pack('>I', len(message)) + message
+        
+        headers = {
+            'Content-Type': 'application/grpc-web+proto',
+            'X-Grpc-Web': '1'
+        }
+        
+        try:
+            async with session.post(grpc_url, data=frame, headers=headers) as response:
+                if response.status == 404:
+                    raise RuntimeError(f"gRPC端点未找到: {endpoint}")
+                
+                body = await response.read()
+                
+                # 解析 gRPC-Web 响应
+                # 跳过 gRPC 帧头（5 字节）
+                if len(body) > 5:
+                    json_body = body[5:].decode('utf-8')
+                    return json.loads(json_body)
+                else:
+                    raise RuntimeError(f"gRPC响应格式错误: {body}")
+        except aiohttp.ClientResponseError as e:
+            raise RuntimeError(f"gRPC请求失败: {grpc_url}, {e.status}, message='{e.message}'")
+        except aiohttp.ClientError as e:
+            raise RuntimeError(f"gRPC请求失败: {grpc_url}, {e}")
+    
     async def _post_stream(self, endpoint: str, data: Dict[str, Any], 
                            retry_count: int = 0) -> StreamResponse:
         """
@@ -713,20 +778,7 @@ class BaziApiClient:
         """
         调用五行占比测试接口，获取 formatted_data
         
-        Returns:
-            包含 success, formatted_data 的字典
-        """
-        data = {
-            "solar_date": solar_date,
-            "solar_time": solar_time,
-            "gender": gender
-        }
-        return await self._post_json(ApiEndpoints.WUXING_PROPORTION_TEST, data)
-    
-    async def call_xishen_jishen_test(self, solar_date: str, solar_time: str,
-                                       gender: str) -> Dict[str, Any]:
-        """
-        调用喜神忌神测试接口，获取 formatted_data
+        优先尝试 REST 接口，失败时回退到 gRPC 网关。
         
         Returns:
             包含 success, formatted_data 的字典
@@ -736,12 +788,43 @@ class BaziApiClient:
             "solar_time": solar_time,
             "gender": gender
         }
-        return await self._post_json(ApiEndpoints.XISHEN_JISHEN_TEST, data)
+        try:
+            return await self._post_json(ApiEndpoints.WUXING_PROPORTION_TEST, data)
+        except RuntimeError as e:
+            if "404" in str(e):
+                # REST 接口不可用，尝试 gRPC 网关
+                return await self._post_grpc(ApiEndpoints.WUXING_PROPORTION_TEST, data)
+            raise
+    
+    async def call_xishen_jishen_test(self, solar_date: str, solar_time: str,
+                                       gender: str) -> Dict[str, Any]:
+        """
+        调用喜神忌神测试接口，获取 formatted_data
+        
+        优先尝试 REST 接口，失败时回退到 gRPC 网关。
+        
+        Returns:
+            包含 success, formatted_data 的字典
+        """
+        data = {
+            "solar_date": solar_date,
+            "solar_time": solar_time,
+            "gender": gender
+        }
+        try:
+            return await self._post_json(ApiEndpoints.XISHEN_JISHEN_TEST, data)
+        except RuntimeError as e:
+            if "404" in str(e):
+                # REST 接口不可用，尝试 gRPC 网关
+                return await self._post_grpc(ApiEndpoints.XISHEN_JISHEN_TEST, data)
+            raise
     
     async def call_daily_fortune_calendar_test(self, solar_date: str, solar_time: str,
                                                 gender: str, date: Optional[str] = None) -> Dict[str, Any]:
         """
         调用每日运势测试接口，获取 formatted_data
+        
+        优先尝试 REST 接口，失败时回退到 gRPC 网关。
         
         Args:
             solar_date: 用户生辰阳历日期（可选）
@@ -761,7 +844,13 @@ class BaziApiClient:
             data["gender"] = gender
         if date:
             data["date"] = date
-        return await self._post_json(ApiEndpoints.DAILY_FORTUNE_CALENDAR_TEST, data)
+        try:
+            return await self._post_json(ApiEndpoints.DAILY_FORTUNE_CALENDAR_TEST, data)
+        except RuntimeError as e:
+            if "404" in str(e):
+                # REST 接口不可用，尝试 gRPC 网关
+                return await self._post_grpc(ApiEndpoints.DAILY_FORTUNE_CALENDAR_TEST, data)
+            raise
     
     @staticmethod
     def generate_user_id() -> str:
