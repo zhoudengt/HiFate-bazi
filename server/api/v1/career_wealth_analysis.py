@@ -1003,10 +1003,21 @@ async def career_wealth_analysis_test(request: CareerWealthRequest):
                 wealth_judgments.append({'name': rule_name, 'text': text})
         
         # ⚠️ 安全访问：确保字段存在后再设置判词数据
-        if 'shiye_xing_gong' not in input_data:
+        # 确保 input_data 是可修改的字典
+        if not isinstance(input_data, dict):
+            logger.warning(f"input_data 类型异常: {type(input_data)}, 转换为字典")
+            input_data = dict(input_data) if hasattr(input_data, '__iter__') else {}
+        
+        # 使用 setdefault 确保字段存在
+        input_data.setdefault('shiye_xing_gong', {})
+        input_data.setdefault('caifu_xing_gong', {})
+        
+        # 确保子字段也是字典
+        if not isinstance(input_data.get('shiye_xing_gong'), dict):
             input_data['shiye_xing_gong'] = {}
-        if 'caifu_xing_gong' not in input_data:
+        if not isinstance(input_data.get('caifu_xing_gong'), dict):
             input_data['caifu_xing_gong'] = {}
+        
         input_data['shiye_xing_gong']['career_judgments'] = career_judgments
         input_data['caifu_xing_gong']['wealth_judgments'] = wealth_judgments
         
@@ -1316,6 +1327,19 @@ async def career_wealth_stream_generator(
             )
         
         # 6. 填充判词数据
+        # ⚠️ 安全访问：确保字段存在后再设置判词数据
+        if not isinstance(input_data, dict):
+            logger.warning(f"input_data 类型异常: {type(input_data)}, 转换为字典")
+            input_data = dict(input_data) if hasattr(input_data, '__iter__') else {}
+        
+        input_data.setdefault('shiye_xing_gong', {})
+        input_data.setdefault('caifu_xing_gong', {})
+        
+        if not isinstance(input_data.get('shiye_xing_gong'), dict):
+            input_data['shiye_xing_gong'] = {}
+        if not isinstance(input_data.get('caifu_xing_gong'), dict):
+            input_data['caifu_xing_gong'] = {}
+        
         input_data['shiye_xing_gong']['career_judgments'] = career_judgments
         input_data['caifu_xing_gong']['wealth_judgments'] = wealth_judgments
         
