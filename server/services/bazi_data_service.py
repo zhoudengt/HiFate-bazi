@@ -750,6 +750,7 @@ class BaziDataService:
                 step=d.get('step'),
                 stem=d.get('stem', ''),
                 branch=d.get('branch', ''),
+                ganzhi=d.get('ganzhi', f"{d.get('stem', '')}{d.get('branch', '')}"),
                 year_start=d.get('year_start'),
                 year_end=d.get('year_end'),
                 age_range=d.get('age_range', {}),
