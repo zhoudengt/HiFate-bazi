@@ -1002,6 +1002,11 @@ async def career_wealth_analysis_test(request: CareerWealthRequest):
             elif rule_type == 'wealth':
                 wealth_judgments.append({'name': rule_name, 'text': text})
         
+        # ⚠️ 安全访问：确保字段存在后再设置判词数据
+        if 'shiye_xing_gong' not in input_data:
+            input_data['shiye_xing_gong'] = {}
+        if 'caifu_xing_gong' not in input_data:
+            input_data['caifu_xing_gong'] = {}
         input_data['shiye_xing_gong']['career_judgments'] = career_judgments
         input_data['caifu_xing_gong']['wealth_judgments'] = wealth_judgments
         

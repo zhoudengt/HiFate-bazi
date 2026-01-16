@@ -40,7 +40,8 @@ except ImportError:
 from server.api.v1.general_review_analysis import (
     classify_special_liunians,
     organize_special_liunians_by_dayun,
-    extract_xi_ji_data
+    extract_xi_ji_data,
+    format_input_data_for_coze  # 用于格式化数据为 Coze Bot 输入格式
 )
 from server.utils.dayun_liunian_helper import (
     calculate_user_age,
