@@ -704,6 +704,8 @@ class BaziApiClient:
         """
         调用事业财富测试接口，获取 formatted_data
         
+        优先尝试 REST 接口，失败时回退到 gRPC 网关（支持动态代码更新）。
+        
         Returns:
             包含 success, formatted_data 的字典
         """
@@ -712,7 +714,17 @@ class BaziApiClient:
             "solar_time": solar_time,
             "gender": gender
         }
-        return await self._post_json(ApiEndpoints.CAREER_WEALTH_TEST, data)
+        try:
+            result = await self._post_json(ApiEndpoints.CAREER_WEALTH_TEST, data)
+            # 如果 REST 接口返回失败，尝试 gRPC 网关
+            if not result.get('success'):
+                return await self._post_grpc("/career-wealth/test", data)
+            return result
+        except RuntimeError as e:
+            if "404" in str(e):
+                # REST 接口不可用，尝试 gRPC 网关
+                return await self._post_grpc("/career-wealth/test", data)
+            raise
     
     async def call_general_review_test(self, solar_date: str, solar_time: str,
                                        gender: str) -> Dict[str, Any]:
