@@ -86,24 +86,29 @@ async def general_review_analysis_test(request: GeneralReviewRequest):
             request.location, request.latitude, request.longitude
         )
         
-        # 使用统一接口获取数据
+        # 使用统一接口获取基础数据（与流式接口保持一致的 modules 配置）
         modules = {
             'bazi': True,
             'wangshuai': True,
+            'xishen_jishen': True,
             'detail': True,
-            'personality': True,
-            'rizhu': True,
-            'health': True,
             'dayun': {
                 'mode': 'count',
-                'count': 13  # 获取所有大运
+                'count': 13  # 获取所有大运（包含小运）
             },
+            'liunian': True,
             'special_liunians': {
                 'dayun_config': {
                     'mode': 'count',
-                    'count': 13  # 获取所有大运
+                    'count': 8
                 },
-                'count': 200  # 获取足够多的特殊流年
+                'count': 100
+            },
+            'personality': True,
+            'rizhu': True,
+            'health': True,
+            'rules': {
+                'types': ['rizhu_gender', 'character', 'summary']
             }
         }
         
@@ -121,39 +126,118 @@ async def general_review_analysis_test(request: GeneralReviewRequest):
         )
         
         # 从统一接口结果中提取数据
-        bazi_data = unified_data.get('bazi', {})
+        bazi_module_data = unified_data.get('bazi', {})
+        if isinstance(bazi_module_data, dict) and 'bazi' in bazi_module_data:
+            bazi_data = bazi_module_data.get('bazi', {})
+            rizhu_from_bazi = bazi_module_data.get('rizhu', {})
+        else:
+            bazi_data = bazi_module_data
+            rizhu_from_bazi = {}
+        
         wangshuai_result = unified_data.get('wangshuai', {})
         detail_result = unified_data.get('detail', {})
         personality_result = unified_data.get('personality', {})
-        rizhu_result = unified_data.get('rizhu', {})
+        rizhu_result = unified_data.get('rizhu', {}) or rizhu_from_bazi
         health_result = unified_data.get('health', {})
-        special_liunians = unified_data.get('special_liunians', {}).get('list', [])
         
         # 提取和验证数据
-        if isinstance(bazi_data, dict) and 'bazi' in bazi_data:
-            bazi_data = bazi_data['bazi']
         bazi_data = validate_bazi_data(bazi_data)
         
-        # 获取大运序列（从detail_result）
-        dayun_sequence = detail_result.get('dayun_sequence', [])
+        # ✅ 使用统一数据服务获取大运流年、特殊流年数据（与流式接口保持一致）
+        from server.services.bazi_data_service import BaziDataService
         
-        # 获取喜忌数据
-        xishen_jishen_result = None
-        try:
-            xishen_request = XishenJishenRequest(
-                solar_date=final_solar_date,
-                solar_time=final_solar_time,
-                gender=request.gender,
-                calendar_type=request.calendar_type,
-                location=request.location,
-                latitude=request.latitude,
-                longitude=request.longitude
-            )
-            xishen_jishen_result = await get_xishen_jishen(xishen_request)
-        except Exception as e:
-            logger.warning(f"获取喜忌数据失败（不影响业务）: {e}")
+        fortune_data = await BaziDataService.get_fortune_data(
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
+            gender=request.gender,
+            calendar_type=request.calendar_type or "solar",
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude,
+            include_dayun=True,
+            include_liunian=True,
+            include_special_liunian=True,
+            dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,
+            target_years=BaziDataService.DEFAULT_TARGET_YEARS,
+            current_time=None
+        )
         
-        # 构建input_data（直接使用硬编码函数，确保数据完整性）
+        # 转换为字典格式（与流式接口保持一致）
+        dayun_sequence = []
+        liunian_sequence = []
+        special_liunians = []
+        
+        for dayun in fortune_data.dayun_sequence:
+            dayun_sequence.append({
+                'step': dayun.step,
+                'stem': dayun.stem,
+                'branch': dayun.branch,
+                'year_start': dayun.year_start,
+                'year_end': dayun.year_end,
+                'age_range': dayun.age_range,
+                'age_display': dayun.age_display,
+                'nayin': dayun.nayin,
+                'main_star': dayun.main_star,
+                'hidden_stems': dayun.hidden_stems or [],
+                'hidden_stars': dayun.hidden_stars or [],
+                'star_fortune': dayun.star_fortune,
+                'self_sitting': dayun.self_sitting,
+                'kongwang': dayun.kongwang,
+                'deities': dayun.deities or [],
+                'details': dayun.details or {}
+            })
+        
+        for liunian in fortune_data.liunian_sequence:
+            liunian_sequence.append({
+                'year': liunian.year,
+                'stem': liunian.stem,
+                'branch': liunian.branch,
+                'ganzhi': liunian.ganzhi,
+                'age': liunian.age,
+                'age_display': liunian.age_display,
+                'nayin': liunian.nayin,
+                'main_star': liunian.main_star,
+                'hidden_stems': liunian.hidden_stems or [],
+                'hidden_stars': liunian.hidden_stars or [],
+                'star_fortune': liunian.star_fortune,
+                'self_sitting': liunian.self_sitting,
+                'kongwang': liunian.kongwang,
+                'deities': liunian.deities or [],
+                'details': liunian.details or {}
+            })
+        
+        for special_liunian in fortune_data.special_liunians:
+            special_liunians.append({
+                'year': special_liunian.year,
+                'stem': special_liunian.stem,
+                'branch': special_liunian.branch,
+                'ganzhi': special_liunian.ganzhi,
+                'age': special_liunian.age,
+                'age_display': special_liunian.age_display,
+                'nayin': special_liunian.nayin,
+                'main_star': special_liunian.main_star,
+                'hidden_stems': special_liunian.hidden_stems or [],
+                'hidden_stars': special_liunian.hidden_stars or [],
+                'star_fortune': special_liunian.star_fortune,
+                'self_sitting': special_liunian.self_sitting,
+                'kongwang': special_liunian.kongwang,
+                'deities': special_liunian.deities or [],
+                'relations': special_liunian.relations or [],
+                'dayun_step': special_liunian.dayun_step,
+                'dayun_ganzhi': special_liunian.dayun_ganzhi,
+                'details': special_liunian.details or {}
+            })
+        
+        logger.info(f"[General Review Test] ✅ 统一数据服务获取完成 - dayun: {len(dayun_sequence)}, liunian: {len(liunian_sequence)}, special: {len(special_liunians)}")
+        
+        # 获取喜忌数据（从 unified_data 获取，与流式接口一致）
+        xishen_jishen_result = unified_data.get('xishen_jishen', {})
+        if xishen_jishen_result and hasattr(xishen_jishen_result, 'model_dump'):
+            xishen_jishen_result = xishen_jishen_result.model_dump()
+        elif xishen_jishen_result and hasattr(xishen_jishen_result, 'dict'):
+            xishen_jishen_result = xishen_jishen_result.dict()
+        
+        # 构建input_data（与流式接口保持一致）
         input_data = build_general_review_input_data(
             bazi_data,
             wangshuai_result,
@@ -165,11 +249,11 @@ async def general_review_analysis_test(request: GeneralReviewRequest):
             personality_result,
             rizhu_result,
             health_result,
-            None,  # liunian_sequence
+            liunian_sequence,  # 使用从 fortune_data 获取的流年序列
             special_liunians,
             xishen_jishen_result
         )
-        logger.info("✅ 使用硬编码函数构建 input_data: general_review_analysis")
+        logger.info("✅ [General Review Test] 使用与流式接口一致的数据构建 input_data")
         
         # 格式化数据
         formatted_data = format_input_data_for_coze(input_data)

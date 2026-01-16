@@ -84,23 +84,12 @@ async def health_analysis_v2_test(request: HealthAnalysisV2Request):
             request.solar_date, request.solar_time, "solar", None, None, None
         )
         
-        # 使用统一接口获取数据
+        # 使用统一接口获取基础数据（与流式接口保持一致）
         modules = {
             'bazi': True,
             'wangshuai': True,
             'detail': True,
-            'health': True,
-            'dayun': {
-                'mode': 'count',
-                'count': 13  # 获取所有大运
-            },
-            'special_liunians': {
-                'dayun_config': {
-                    'mode': 'count',
-                    'count': 13  # 获取所有大运
-                },
-                'count': 200  # 获取足够多的特殊流年
-            }
+            'health': True
         }
         
         unified_data = await BaziDataOrchestrator.fetch_data(
@@ -121,15 +110,60 @@ async def health_analysis_v2_test(request: HealthAnalysisV2Request):
         wangshuai_result = unified_data.get('wangshuai', {})
         detail_result = unified_data.get('detail', {})
         health_result = unified_data.get('health', {})
-        special_liunians = unified_data.get('special_liunians', {}).get('list', [])
         
         # 提取和验证数据
         if isinstance(bazi_data, dict) and 'bazi' in bazi_data:
             bazi_data = bazi_data['bazi']
         bazi_data = validate_bazi_data(bazi_data)
         
-        # 获取大运序列（从detail_result）
-        dayun_sequence = detail_result.get('dayun_sequence', [])
+        # ✅ 使用统一数据服务获取大运流年、特殊流年数据（与流式接口保持一致）
+        from server.services.bazi_data_service import BaziDataService
+        
+        fortune_data = await BaziDataService.get_fortune_data(
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
+            gender=request.gender,
+            calendar_type="solar",
+            location=None,
+            latitude=None,
+            longitude=None,
+            include_dayun=True,
+            include_liunian=True,
+            include_special_liunian=True,
+            dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,
+            target_years=BaziDataService.DEFAULT_TARGET_YEARS,
+            current_time=None
+        )
+        
+        # 转换为字典格式（与流式接口保持一致）
+        dayun_sequence = []
+        special_liunians = []
+        
+        for dayun in fortune_data.dayun_sequence:
+            dayun_sequence.append({
+                'step': dayun.step, 'stem': dayun.stem, 'branch': dayun.branch,
+                'year_start': dayun.year_start, 'year_end': dayun.year_end,
+                'age_range': dayun.age_range, 'age_display': dayun.age_display,
+                'nayin': dayun.nayin, 'main_star': dayun.main_star,
+                'hidden_stems': dayun.hidden_stems or [], 'hidden_stars': dayun.hidden_stars or [],
+                'star_fortune': dayun.star_fortune, 'self_sitting': dayun.self_sitting,
+                'kongwang': dayun.kongwang, 'deities': dayun.deities or [],
+                'details': dayun.details or {}
+            })
+        
+        for sl in fortune_data.special_liunians:
+            special_liunians.append({
+                'year': sl.year, 'stem': sl.stem, 'branch': sl.branch, 'ganzhi': sl.ganzhi,
+                'age': sl.age, 'age_display': sl.age_display, 'nayin': sl.nayin,
+                'main_star': sl.main_star, 'hidden_stems': sl.hidden_stems or [],
+                'hidden_stars': sl.hidden_stars or [], 'star_fortune': sl.star_fortune,
+                'self_sitting': sl.self_sitting, 'kongwang': sl.kongwang,
+                'deities': sl.deities or [], 'relations': sl.relations or [],
+                'dayun_step': sl.dayun_step, 'dayun_ganzhi': sl.dayun_ganzhi,
+                'details': sl.details or {}
+            })
+        
+        logger.info(f"[Health Test] ✅ 统一数据服务获取完成 - dayun: {len(dayun_sequence)}, special: {len(special_liunians)}")
         
         # 构建input_data
         input_data = build_health_analysis_input_data(

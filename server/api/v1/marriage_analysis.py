@@ -1347,22 +1347,11 @@ async def marriage_analysis_test(request: MarriageAnalysisRequest):
             request.location, request.latitude, request.longitude
         )
         
-        # 使用统一接口获取数据
+        # 使用统一接口获取基础数据（与流式接口保持一致）
         modules = {
             'bazi': True,
             'wangshuai': True,
-            'detail': True,
-            'dayun': {
-                'mode': 'count',
-                'count': 13  # 获取所有大运
-            },
-            'special_liunians': {
-                'dayun_config': {
-                    'mode': 'count',
-                    'count': 13  # 获取所有大运
-                },
-                'count': 200  # 获取足够多的特殊流年
-            }
+            'detail': True
         }
         
         unified_data = await BaziDataOrchestrator.fetch_data(
@@ -1382,7 +1371,6 @@ async def marriage_analysis_test(request: MarriageAnalysisRequest):
         bazi_result = unified_data.get('bazi', {})
         wangshuai_result = unified_data.get('wangshuai', {})
         detail_result = unified_data.get('detail', {})
-        special_liunians = unified_data.get('special_liunians', {}).get('list', [])
         
         # 提取和验证数据
         if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
@@ -1391,8 +1379,72 @@ async def marriage_analysis_test(request: MarriageAnalysisRequest):
             bazi_data = bazi_result
         bazi_data = validate_bazi_data(bazi_data)
         
-        # 获取大运序列（从detail_result）
-        dayun_sequence = detail_result.get('dayun_sequence', [])
+        # ✅ 使用统一数据服务获取大运流年、特殊流年数据（与流式接口保持一致）
+        from server.services.bazi_data_service import BaziDataService
+        
+        fortune_data = await BaziDataService.get_fortune_data(
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
+            gender=request.gender,
+            calendar_type=request.calendar_type or "solar",
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude,
+            include_dayun=True,
+            include_liunian=True,
+            include_special_liunian=True,
+            dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,
+            target_years=BaziDataService.DEFAULT_TARGET_YEARS,
+            current_time=None
+        )
+        
+        # 转换为字典格式（与流式接口保持一致）
+        dayun_sequence = []
+        special_liunians = []
+        
+        for dayun in fortune_data.dayun_sequence:
+            dayun_sequence.append({
+                'step': dayun.step,
+                'stem': dayun.stem,
+                'branch': dayun.branch,
+                'year_start': dayun.year_start,
+                'year_end': dayun.year_end,
+                'age_range': dayun.age_range,
+                'age_display': dayun.age_display,
+                'nayin': dayun.nayin,
+                'main_star': dayun.main_star,
+                'hidden_stems': dayun.hidden_stems or [],
+                'hidden_stars': dayun.hidden_stars or [],
+                'star_fortune': dayun.star_fortune,
+                'self_sitting': dayun.self_sitting,
+                'kongwang': dayun.kongwang,
+                'deities': dayun.deities or [],
+                'details': dayun.details or {}
+            })
+        
+        for special_liunian in fortune_data.special_liunians:
+            special_liunians.append({
+                'year': special_liunian.year,
+                'stem': special_liunian.stem,
+                'branch': special_liunian.branch,
+                'ganzhi': special_liunian.ganzhi,
+                'age': special_liunian.age,
+                'age_display': special_liunian.age_display,
+                'nayin': special_liunian.nayin,
+                'main_star': special_liunian.main_star,
+                'hidden_stems': special_liunian.hidden_stems or [],
+                'hidden_stars': special_liunian.hidden_stars or [],
+                'star_fortune': special_liunian.star_fortune,
+                'self_sitting': special_liunian.self_sitting,
+                'kongwang': special_liunian.kongwang,
+                'deities': special_liunian.deities or [],
+                'relations': special_liunian.relations or [],
+                'dayun_step': special_liunian.dayun_step,
+                'dayun_ganzhi': special_liunian.dayun_ganzhi,
+                'details': special_liunian.details or {}
+            })
+        
+        logger.info(f"[Marriage Test] ✅ 统一数据服务获取完成 - dayun: {len(dayun_sequence)}, special: {len(special_liunians)}")
         
         # 匹配规则
         rule_data = {
