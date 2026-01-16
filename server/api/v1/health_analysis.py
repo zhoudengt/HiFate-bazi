@@ -118,8 +118,70 @@ async def health_analysis_debug(request: HealthAnalysisRequest):
             bazi_data = bazi_result
         bazi_data = validate_bazi_data(bazi_data)
         
-        # 获取大运序列（从detail_result）
-        dayun_sequence = detail_result.get('dayun_sequence', [])
+        # ✅ 使用统一数据服务获取大运流年、特殊流年数据（与流式接口保持一致）
+        from server.services.bazi_data_service import BaziDataService
+        
+        fortune_data = await BaziDataService.get_fortune_data(
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
+            gender=request.gender,
+            calendar_type=request.calendar_type or "solar",
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude,
+            include_dayun=True,
+            include_liunian=True,
+            include_special_liunian=True,
+            dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,
+            target_years=BaziDataService.DEFAULT_TARGET_YEARS,
+            current_time=None
+        )
+        
+        # 转换为字典格式（与流式接口保持一致）
+        dayun_sequence = []
+        special_liunians = []
+        
+        for dayun in fortune_data.dayun_sequence:
+            dayun_sequence.append({
+                'step': dayun.step,
+                'stem': dayun.stem,
+                'branch': dayun.branch,
+                'year_start': dayun.year_start,
+                'year_end': dayun.year_end,
+                'age_range': dayun.age_range,
+                'age_display': dayun.age_display,
+                'nayin': dayun.nayin,
+                'main_star': dayun.main_star,
+                'hidden_stems': dayun.hidden_stems or [],
+                'hidden_stars': dayun.hidden_stars or [],
+                'star_fortune': dayun.star_fortune,
+                'self_sitting': dayun.self_sitting,
+                'kongwang': dayun.kongwang,
+                'deities': dayun.deities or [],
+                'details': dayun.details or {}
+            })
+        
+        for special_liunian in fortune_data.special_liunians:
+            special_liunians.append({
+                'year': special_liunian.year,
+                'stem': special_liunian.stem,
+                'branch': special_liunian.branch,
+                'ganzhi': special_liunian.ganzhi,
+                'age': special_liunian.age,
+                'age_display': special_liunian.age_display,
+                'nayin': special_liunian.nayin,
+                'main_star': special_liunian.main_star,
+                'hidden_stems': special_liunian.hidden_stems or [],
+                'hidden_stars': special_liunian.hidden_stars or [],
+                'star_fortune': special_liunian.star_fortune,
+                'self_sitting': special_liunian.self_sitting,
+                'kongwang': special_liunian.kongwang,
+                'deities': special_liunian.deities or [],
+                'relations': special_liunian.relations or [],
+                'dayun_step': special_liunian.dayun_step,
+                'dayun_ganzhi': special_liunian.dayun_ganzhi,
+                'details': special_liunian.details or {}
+            })
         
         # 获取五行统计
         element_counts = bazi_data.get('element_counts', {})
@@ -151,7 +213,8 @@ async def health_analysis_debug(request: HealthAnalysisRequest):
             detail_result,
             dayun_sequence,
             health_result if health_result.get('success') else {},
-            request.gender
+            request.gender,
+            special_liunians=special_liunians  # ✅ 添加特殊流年数据
         )
         logger.info("✅ 使用硬编码函数构建 input_data: health_analysis")
         
@@ -181,7 +244,9 @@ async def health_analysis_debug(request: HealthAnalysisRequest):
             "data_summary": {
                 "bazi_pillars": input_data.get('mingpan_tizhi_zonglun', {}).get('bazi_pillars', {}),
                 "health_rules_count": len(input_data.get('health_rules', {}).get('matched_rules', [])),
-                "dayun_count": len(input_data.get('dayun_jiankang', {}).get('dayun_list', [])),
+                "dayun_count": len(input_data.get('dayun_jiankang', {}).get('all_dayuns', [])),
+                "current_dayun": input_data.get('dayun_jiankang', {}).get('current_dayun'),
+                "key_dayuns_count": len(input_data.get('dayun_jiankang', {}).get('key_dayuns', [])),
                 "wuxing_balance": input_data.get('mingpan_tizhi_zonglun', {}).get('wuxing_balance', '')
             }
         }
@@ -449,6 +514,16 @@ async def health_analysis_stream_generator(
                 if isinstance(rule.get('content'), dict) and rule.get('content', {}).get('text')
             ]
         }
+        
+        # ⚠️ DEBUG: 输出传给大模型的关键数据
+        logger.info(f"[Health Analysis] 传给大模型的数据摘要:")
+        logger.info(f"  - 特殊流年数量: {len(special_liunians)}")
+        logger.info(f"  - 大运数量: {len(dayun_sequence)}")
+        logger.info(f"  - 当前大运: {input_data.get('dayun_jiankang', {}).get('current_dayun')}")
+        logger.info(f"  - 关键大运数量: {len(input_data.get('dayun_jiankang', {}).get('key_dayuns', []))}")
+        logger.info(f"  - 健康规则数量: {len(health_rules)}")
+        logger.info(f"  - 五行平衡: {input_data.get('mingpan_tizhi_zonglun', {}).get('wuxing_balance', '')}")
+        logger.info(f"  - 病理倾向: {input_data.get('wuxing_bingli', {}).get('pathology_tendency', {})}")
         
         # 9. 验证数据完整性（阶段3：数据验证与完整性检查）
         is_valid, validation_error = validate_health_input_data(input_data)
