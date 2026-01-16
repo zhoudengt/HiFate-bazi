@@ -1333,6 +1333,48 @@ async def grpc_web_gateway(request: Request):
             except Exception as e:
                 logger.error(f"动态注册端点失败: {e}", exc_info=True)
         
+        # 动态注册 /bazi/wuxing-proportion/test 端点（用于热更新后恢复）
+        if endpoint == "/bazi/wuxing-proportion/test":
+            try:
+                from server.api.v1.wuxing_proportion import WuxingProportionRequest, wuxing_proportion_test
+                async def _handle_wuxing_proportion_test_dynamic(payload: Dict[str, Any]):
+                    """处理五行占比测试接口请求（动态注册）"""
+                    request_model = WuxingProportionRequest(**payload)
+                    return await wuxing_proportion_test(request_model)
+                SUPPORTED_ENDPOINTS["/bazi/wuxing-proportion/test"] = _handle_wuxing_proportion_test_dynamic
+                handler = _handle_wuxing_proportion_test_dynamic
+                logger.info("✅ 动态注册端点: /bazi/wuxing-proportion/test")
+            except Exception as e:
+                logger.error(f"动态注册端点失败: {e}", exc_info=True)
+        
+        # 动态注册 /bazi/xishen-jishen/test 端点（用于热更新后恢复）
+        if endpoint == "/bazi/xishen-jishen/test":
+            try:
+                from server.api.v1.xishen_jishen import XishenJishenRequest, xishen_jishen_test
+                async def _handle_xishen_jishen_test_dynamic(payload: Dict[str, Any]):
+                    """处理喜神忌神测试接口请求（动态注册）"""
+                    request_model = XishenJishenRequest(**payload)
+                    return await xishen_jishen_test(request_model)
+                SUPPORTED_ENDPOINTS["/bazi/xishen-jishen/test"] = _handle_xishen_jishen_test_dynamic
+                handler = _handle_xishen_jishen_test_dynamic
+                logger.info("✅ 动态注册端点: /bazi/xishen-jishen/test")
+            except Exception as e:
+                logger.error(f"动态注册端点失败: {e}", exc_info=True)
+        
+        # 动态注册 /daily-fortune-calendar/test 端点（用于热更新后恢复）
+        if endpoint == "/daily-fortune-calendar/test":
+            try:
+                from server.api.v1.daily_fortune_calendar import DailyFortuneCalendarRequest, daily_fortune_calendar_test
+                async def _handle_daily_fortune_calendar_test_dynamic(payload: Dict[str, Any]):
+                    """处理每日运势日历测试接口请求（动态注册）"""
+                    request_model = DailyFortuneCalendarRequest(**payload)
+                    return await daily_fortune_calendar_test(request_model)
+                SUPPORTED_ENDPOINTS["/daily-fortune-calendar/test"] = _handle_daily_fortune_calendar_test_dynamic
+                handler = _handle_daily_fortune_calendar_test_dynamic
+                logger.info("✅ 动态注册端点: /daily-fortune-calendar/test")
+            except Exception as e:
+                logger.error(f"动态注册端点失败: {e}", exc_info=True)
+        
         if not handler:
             # 调试信息：列出所有已注册的端点
             available_endpoints = list(SUPPORTED_ENDPOINTS.keys())
