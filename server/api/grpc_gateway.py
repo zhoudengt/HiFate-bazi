@@ -592,6 +592,26 @@ async def _handle_xishen_jishen_stream(payload: Dict[str, Any]):
     return await _collect_sse_stream(generator)
 
 
+@_register("/career-wealth/test")
+async def _handle_career_wealth_test(payload: Dict[str, Any]):
+    """处理事业财富测试接口请求（使用动态导入确保获取最新代码）"""
+    import importlib
+    try:
+        # 动态重新导入模块以获取最新代码
+        career_module = importlib.import_module('server.api.v1.career_wealth_analysis')
+        importlib.reload(career_module)
+        
+        # 获取请求模型和处理函数
+        CareerWealthRequest = getattr(career_module, 'CareerWealthRequest')
+        career_wealth_analysis_test = getattr(career_module, 'career_wealth_analysis_test')
+        
+        request_model = CareerWealthRequest(**payload)
+        return await career_wealth_analysis_test(request_model)
+    except Exception as e:
+        logger.error(f"career_wealth_test 处理失败: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 @_register("/bazi/marriage-analysis/stream")
 async def _handle_marriage_analysis_stream(payload: Dict[str, Any]):
     """处理感情婚姻流式分析请求（gRPC-Web 转发）"""
