@@ -73,6 +73,7 @@ from server.api.v1.calendar_api import (
 from server.api.v1.daily_fortune_calendar import (
     DailyFortuneCalendarRequest,
     query_daily_fortune_calendar,
+    daily_fortune_calendar_test,
 )
 from server.api.v1.bazi import (
     BaziInterfaceRequest, 
@@ -95,10 +96,12 @@ except ImportError as e:
 from server.api.v1.wuxing_proportion import (
     WuxingProportionRequest,
     get_wuxing_proportion,
+    wuxing_proportion_test,
 )
 from server.api.v1.xishen_jishen import (
     XishenJishenRequest,
     get_xishen_jishen,
+    xishen_jishen_test,
 )
 from server.services.bazi_interface_service import BaziInterfaceService
 
@@ -559,12 +562,26 @@ async def _handle_wuxing_proportion(payload: Dict[str, Any]):
     return await get_wuxing_proportion(request_model)
 
 
+@_register("/bazi/wuxing-proportion/test")
+async def _handle_wuxing_proportion_test(payload: Dict[str, Any]):
+    """处理五行占比测试接口请求"""
+    request_model = WuxingProportionRequest(**payload)
+    return await wuxing_proportion_test(request_model)
+
+
 @_register("/bazi/wuxing-proportion/stream")
 async def _handle_wuxing_proportion_stream(payload: Dict[str, Any]):
     """处理五行占比流式分析请求（gRPC-Web 转发）"""
     request_model = WuxingProportionRequest(**payload)
     generator = wuxing_proportion_stream_generator(request_model)
     return await _collect_sse_stream(generator)
+
+
+@_register("/bazi/xishen-jishen/test")
+async def _handle_xishen_jishen_test(payload: Dict[str, Any]):
+    """处理喜神忌神测试接口请求"""
+    request_model = XishenJishenRequest(**payload)
+    return await xishen_jishen_test(request_model)
 
 
 @_register("/bazi/xishen-jishen/stream")
@@ -762,6 +779,13 @@ async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
     # 未登录用户只需要提供 date 参数
     request_model = DailyFortuneCalendarRequest(**payload)
     return await query_daily_fortune_calendar(request_model)
+
+
+@_register("/daily-fortune-calendar/test")
+async def _handle_daily_fortune_calendar_test(payload: Dict[str, Any]):
+    """处理每日运势日历测试接口请求"""
+    request_model = DailyFortuneCalendarRequest(**payload)
+    return await daily_fortune_calendar_test(request_model)
 
 
 @_register("/daily-fortune-calendar/stream")
