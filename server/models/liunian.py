@@ -24,7 +24,9 @@ class LiunianModel(BaseModel):
     self_sitting: Optional[str] = Field(None, description="自坐", example="")
     kongwang: Optional[str] = Field(None, description="空亡", example="")
     deities: Optional[List[str]] = Field(None, description="神煞列表", example=["天乙贵人"])
-    relations: Optional[List[Dict[str, Any]]] = Field(None, description="关系列表（冲合刑害等）", example=[{"type": "冲", "target": "日柱"}])
+    relations: Optional[List[Dict[str, Any]]] = Field(None, description="关系列表（岁运并临、天克地冲、天合地合）", example=[{"type": "岁运并临", "description": "流年与大运干支相同"}])
+    dayun_step: Optional[int] = Field(None, description="所属大运步数", example=3)
+    dayun_ganzhi: Optional[str] = Field(None, description="所属大运干支", example="庚寅")
     liuyue_sequence: Optional[List[Dict[str, Any]]] = Field(None, description="流月序列（12个月）")
     details: Optional[Dict[str, Any]] = Field(None, description="详细信息（原始数据）")
     
