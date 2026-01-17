@@ -47,6 +47,7 @@ from server.utils.dayun_liunian_helper import (
     build_enhanced_dayun_structure
 )
 from server.config.input_format_loader import build_input_data_from_result
+from server.utils.prompt_builders import format_children_study_input_data_for_coze as format_input_data_for_coze
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -1234,64 +1235,8 @@ def build_children_study_input_data(
     
     return input_data
 
-
-def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
-    """
-    将结构化数据格式化为 JSON 字符串（用于 Coze Bot System Prompt 的 {{input}} 占位符）
-    
-    ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
-    提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
-    
-    Args:
-        input_data: 结构化输入数据
-        
-    Returns:
-        str: JSON 格式的字符串，可以直接替换 {{input}} 占位符
-    """
-    import json
-    
-    # 获取原始数据
-    mingpan = input_data.get('mingpan_zinv_zonglun', {})
-    zinvxing = input_data.get('zinvxing_zinvgong', {})
-    shengyu = input_data.get('shengyu_shiji', {})
-    yangyu = input_data.get('yangyu_jianyi', {})
-    children_rules = input_data.get('children_rules', {})
-    
-    # ⚠️ 方案2：优化数据结构，使用引用避免重复
-    # 注意：为了确保 Bot 能正确理解，我们直接展开引用，但只保留一份数据
-    optimized_data = {
-        # 1. 命盘子女总论（基础数据，只提取一次）
-        'mingpan_zinv_zonglun': mingpan,
-        
-        # 2. 子女星与子女宫（十神数据只提取一次）
-        'zinvxing_zinvgong': zinvxing,
-        
-        # 3. 生育时机（引用十神，不重复存储）
-        'shengyu_shiji': {
-            'zinv_xing_type': shengyu.get('zinv_xing_type', ''),
-            'current_dayun': shengyu.get('current_dayun'),
-            'key_dayuns': shengyu.get('key_dayuns', []),
-            'all_dayuns': shengyu.get('all_dayuns', []),
-            # ⚠️ 直接引用十神数据（不重复存储）
-            'ten_gods': zinvxing.get('ten_gods', {})
-        },
-        
-        # 4. 养育建议（引用旺衰和十神，不重复存储）
-        'yangyu_jianyi': {
-            # ⚠️ 直接引用十神数据（不重复存储）
-            'ten_gods': zinvxing.get('ten_gods', {}),
-            # ⚠️ 直接引用旺衰字符串（不重复存储完整对象）
-            'wangshuai': mingpan.get('wangshuai', ''),
-            'xi_ji': yangyu.get('xi_ji', {})
-        }
-    }
-    
-    # 5. 添加子女规则（如果有）
-    if children_rules:
-        optimized_data['children_rules'] = children_rules
-    
-    # 格式化为 JSON 字符串（美化格式，便于 Bot 理解）
-    return json.dumps(optimized_data, ensure_ascii=False, indent=2)
+# ✅ format_input_data_for_coze 函数已移至 server/utils/prompt_builders.py
+# 通过顶部 import 导入，确保评测脚本和流式接口使用相同的函数
 
 
 def determine_children_star_type(ten_gods_data: Dict[str, Any], gender: str) -> str:

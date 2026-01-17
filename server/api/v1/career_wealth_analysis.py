@@ -47,6 +47,7 @@ from server.utils.dayun_liunian_helper import (
     build_enhanced_dayun_structure
 )
 from server.config.input_format_loader import build_input_data_from_result
+from server.utils.prompt_builders import format_career_wealth_input_data_for_coze as format_input_data_for_coze
 
 logger = logging.getLogger(__name__)
 
@@ -426,88 +427,8 @@ def build_career_wealth_input_data(
     
     return input_data
 
-
-def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
-    """
-    将结构化数据格式化为 JSON 字符串（用于 Coze Bot System Prompt 的 {{input}} 占位符）
-    
-    ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
-    提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
-    
-    Args:
-        input_data: 结构化输入数据
-        
-    Returns:
-        str: JSON 格式的字符串，可以直接替换 {{input}} 占位符
-    """
-    import json
-    
-    # 获取原始数据
-    mingpan = input_data.get('mingpan_shiye_caifu_zonglun', {})
-    shiye = input_data.get('shiye_xing_gong', {})
-    caifu = input_data.get('caifu_xing_gong', {})
-    shiye_yunshi = input_data.get('shiye_yunshi', {})
-    caifu_yunshi = input_data.get('caifu_yunshi', {})
-    tiyun = input_data.get('tiyun_jianyi', {})
-    
-    # ⚠️ 方案2：优化数据结构，使用引用避免重复
-    optimized_data = {
-        # 1. 命盘事业财富总论（基础数据，只提取一次）
-        'mingpan_shiye_caifu_zonglun': mingpan,
-        
-        # 2. 事业星与事业宫（引用十神，不重复存储）
-        'shiye_xing_gong': {
-            'shiye_xing': shiye.get('shiye_xing', {}),
-            'month_pillar_analysis': shiye.get('month_pillar_analysis', {}),
-            'ten_gods': mingpan.get('ten_gods', {}),
-            'ten_gods_stats': shiye.get('ten_gods_stats', {}),
-            'deities': shiye.get('deities', {}),
-            'career_judgments': shiye.get('career_judgments', [])
-        },
-        
-        # 3. 财富星与财富宫（引用十神，不重复存储）
-        'caifu_xing_gong': {
-            'caifu_xing': caifu.get('caifu_xing', {}),
-            'year_pillar_analysis': caifu.get('year_pillar_analysis', {}),
-            'hour_pillar_analysis': caifu.get('hour_pillar_analysis', {}),
-            'shishang_shengcai': caifu.get('shishang_shengcai', {}),
-            'caiku': caifu.get('caiku', {}),
-            'wealth_judgments': caifu.get('wealth_judgments', [])
-        },
-        
-        # 4. 事业运势（引用大运，不重复存储）
-        'shiye_yunshi': {
-            'current_age': shiye_yunshi.get('current_age', 0),
-            'current_dayun': shiye_yunshi.get('current_dayun'),
-            'key_dayuns': shiye_yunshi.get('key_dayuns', []),
-            'key_liunian': shiye_yunshi.get('key_liunian', []),
-            'chonghe_xinghai': shiye_yunshi.get('chonghe_xinghai', {})
-        },
-        
-        # 5. 财富运势（引用大运，不重复存储）
-        'caifu_yunshi': {
-            'wealth_stages': caifu_yunshi.get('wealth_stages', {}),
-            'current_dayun': shiye_yunshi.get('current_dayun'),  # 引用事业运势的当前大运
-            'key_dayuns': shiye_yunshi.get('key_dayuns', []),  # 引用事业运势的关键大运
-            'liunian_wealth_nodes': caifu_yunshi.get('liunian_wealth_nodes', []),
-            'caiku_timing': caifu_yunshi.get('caiku_timing', {})
-        },
-        
-        # 6. 提运建议（引用十神和喜忌，不重复存储）
-        'tiyun_jianyi': {
-            'ten_gods_summary': tiyun.get('ten_gods_summary', ''),
-            'xi_ji': tiyun.get('xi_ji', {}),
-            'fangwei': tiyun.get('fangwei', {}),
-            'hangye': tiyun.get('hangye', {}),
-            'wuxing_hangye': tiyun.get('wuxing_hangye', {})
-        }
-    }
-    
-    # 格式化为 JSON 字符串（美化格式，便于 Bot 理解）
-    return json.dumps(optimized_data, ensure_ascii=False, indent=2)
-
-
-# ⚠️ 已移除：build_natural_language_prompt 函数（方案1已废弃，使用方案2：format_input_data_for_coze）
+# ✅ format_input_data_for_coze 函数已移至 server/utils/prompt_builders.py
+# 通过顶部 import 导入，确保评测脚本和流式接口使用相同的函数
 
 
 def _calculate_ganzhi_elements(stem: str, branch: str) -> Dict[str, int]:

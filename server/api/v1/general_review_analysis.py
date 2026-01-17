@@ -52,6 +52,10 @@ from server.utils.dayun_liunian_helper import (
 )
 
 from server.config.input_format_loader import build_input_data_from_result
+from server.utils.prompt_builders import (
+    format_general_review_input_data_for_coze as format_input_data_for_coze,
+    _simplify_dayun
+)
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -2087,153 +2091,5 @@ def validate_general_review_input_data(data: dict) -> Tuple[bool, str]:
     
     return True, ""
 
-
-def _simplify_dayun(dayun: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """
-    精简大运数据，只保留关键信息，减少数据量
-    
-    Args:
-        dayun: 完整的大运数据
-        
-    Returns:
-        精简后的大运数据
-    """
-    if not dayun:
-        return None
-    
-    # ⚠️ 修复：正确获取大运干支（兼容不同的字段名）
-    stem = dayun.get('stem', dayun.get('gan', ''))
-    branch = dayun.get('branch', dayun.get('zhi', ''))
-    ganzhi = dayun.get('ganzhi', f'{stem}{branch}')
-    
-    # 只保留关键字段
-    simplified = {
-        'step': dayun.get('step', ''),  # ⚠️ 新增：大运步数（用于确定流年归属）
-        'ganzhi': ganzhi,
-        'stem': stem,
-        'branch': branch,
-        'age_display': dayun.get('age_display', ''),  # ⚠️ 新增：年龄显示
-        'start_age': dayun.get('start_age'),
-        'end_age': dayun.get('end_age'),
-        'wuxing': dayun.get('wuxing', ''),
-        'shishen': dayun.get('shishen', ''),
-        'analysis': dayun.get('analysis', '')[:200] if dayun.get('analysis') else '',  # 限制分析文本
-    }
-    
-    # ⚠️ 修改：不再限制流年数量，所有特殊流年都要显示
-    # 保留 relations 字段（岁运并临、天克地冲、天合地合）
-    liunians = dayun.get('liunians', [])
-    if liunians:
-        simplified['key_liunians'] = [
-            {
-                'year': l.get('year'),
-                'ganzhi': l.get('ganzhi', ''),
-                'dayun_step': l.get('dayun_step'),  # 流年归属的大运步数
-                'dayun_ganzhi': l.get('dayun_ganzhi', ''),  # 流年归属的大运干支
-                'relations': l.get('relations', []),  # 特殊关系（岁运并临、天克地冲、天合地合）
-                'type_display': l.get('type_display', ''),  # 关系类型显示
-                'brief': l.get('analysis', '')[:100] if l.get('analysis') else ''
-            }
-            for l in liunians  # ⚠️ 不再限制数量，显示所有流年
-        ]
-
-    return simplified
-
-
-def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
-    """
-    将结构化数据格式化为 JSON 字符串（用于 Coze Bot System Prompt 的 {{input}} 占位符）
-    
-    ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
-    提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
-    
-    ⚠️ 注意：此函数名虽然包含 "for_coze"，但实际上数据格式与平台无关
-    相同的 formatted_data 可以同时给 Coze 和百炼使用，实现数据格式解耦
-    
-    Args:
-        input_data: 结构化输入数据
-        
-    Returns:
-        str: JSON 格式的字符串，可以直接替换 {{input}} 占位符
-    """
-    import json
-    
-    # 获取原始数据
-    mingpan = input_data.get('mingpan_hexin_geju', {})
-    xingge = input_data.get('xingge_tezhi', {})
-    shiye_caiyun = input_data.get('shiye_caiyun', {})
-    jiating = input_data.get('jiating_liuqin', {})
-    jiankang = input_data.get('jiankang_yaodian', {})
-    guanjian = input_data.get('guanjian_dayun', {})
-    zhongsheng = input_data.get('zhongsheng_tidian', {})
-    rizhu_xinming = input_data.get('rizhu_xinming_jiexi', {})  # 新增：日柱性命解析
-    
-    # ⚠️ 方案2：优化数据结构，使用引用避免重复
-    optimized_data = {
-        # 1. 命盘核心格局（基础数据，只提取一次）
-        'mingpan_hexin_geju': mingpan,
-        
-        # 2. 性格特质（引用数据，不重复存储）
-        'xingge_tezhi': {
-            'day_master_personality': xingge.get('day_master_personality', []),
-            'rizhu_algorithm': xingge.get('rizhu_algorithm', ''),
-            'ten_gods_effect': xingge.get('ten_gods_effect', '')
-        },
-        
-        # 3. 事业财运轨迹（引用数据，不重复存储）
-        'shiye_caiyun': {
-            'shiye_xing': shiye_caiyun.get('shiye_xing', {}),
-            'caifu_xing': shiye_caiyun.get('caifu_xing', {}),
-            'dayun_effect': shiye_caiyun.get('dayun_effect', {})
-        },
-        
-        # 4. 家庭六亲关系（引用数据，不重复存储）
-        'jiating_liuqin': {
-            'year_pillar': jiating.get('year_pillar', {}),
-            'month_pillar': jiating.get('month_pillar', {}),
-            'day_pillar': jiating.get('day_pillar', {}),
-            'hour_pillar': jiating.get('hour_pillar', {})
-        },
-        
-        # 5. 健康要点（引用数据，不重复存储）
-        'jiankang_yaodian': {
-            'wuxing_balance': jiankang.get('wuxing_balance', {}),
-            'zangfu_duiying': jiankang.get('zangfu_duiying', {}),
-            'jiankang_ruodian': jiankang.get('jiankang_ruodian', {})
-        },
-        
-        # 6. 关键大运与人生节点（引用数据，不重复存储）
-        # ⚠️ 修改：不再限制大运数量，所有包含特殊流年的大运都要显示
-        'guanjian_dayun': {
-            'current_dayun': _simplify_dayun(guanjian.get('current_dayun')),
-            'key_dayuns': [_simplify_dayun(d) for d in guanjian.get('key_dayuns', [])],  # 不限制数量，显示所有关键大运
-            # dayun_sequence 太大（可能超过400KB），不传给 Coze Bot
-            'chonghe_xinghai': guanjian.get('chonghe_xinghai', {})
-        },
-        
-        # 7. 终生提点与建议（引用数据，不重复存储）
-        'zhongsheng_tidian': {
-            'xishen': zhongsheng.get('xishen', {}),
-            'jishen': zhongsheng.get('jishen', {}),
-            'xishen_wuxing': zhongsheng.get('xishen_wuxing', []),
-            'jishen_wuxing': zhongsheng.get('jishen_wuxing', []),
-            'fangwei_xuanze': zhongsheng.get('fangwei_xuanze', {}),
-            'hangye_xuanze': zhongsheng.get('hangye_xuanze', {}),
-            'xiushen_jianyi': zhongsheng.get('xiushen_jianyi', {}),
-            'fengshui_tiaojie': zhongsheng.get('fengshui_tiaojie', {})
-        },
-        
-        # 8. 日柱性命解析（新增：完整的日柱性格与命运分析数据）
-        'rizhu_xinming_jiexi': {
-            'rizhu': rizhu_xinming.get('rizhu', ''),
-            'gender': rizhu_xinming.get('gender', ''),
-            'gender_display': rizhu_xinming.get('gender_display', ''),
-            'descriptions': rizhu_xinming.get('descriptions', []),  # 完整的31条数据
-            'descriptions_count': rizhu_xinming.get('descriptions_count', 0),
-            'summary': rizhu_xinming.get('summary', '')
-        }
-    }
-    
-    # 格式化为 JSON 字符串（美化格式，便于 Bot 理解）
-    return json.dumps(optimized_data, ensure_ascii=False, indent=2)
-
+# ✅ _simplify_dayun 和 format_input_data_for_coze 函数已移至 server/utils/prompt_builders.py
+# 通过顶部 import 导入，确保评测脚本和流式接口使用相同的函数

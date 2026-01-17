@@ -726,9 +726,9 @@ class BaziApiClient:
             # ✅ 适配：/career-wealth/debug 返回的是 input_data，需要构建 formatted_data
             if result and result.get('success'):
                 input_data = result.get('input_data', {})
-                # ✅ 使用与流式接口相同的函数构建 formatted_data
-                from server.api.v1.career_wealth_analysis import format_input_data_for_coze
-                formatted_data = format_input_data_for_coze(input_data)
+                # ✅ 使用与流式接口相同的函数构建 formatted_data（从工具模块导入，无 FastAPI 依赖）
+                from server.utils.prompt_builders import format_career_wealth_input_data_for_coze
+                formatted_data = format_career_wealth_input_data_for_coze(input_data)
                 return {
                     "success": True,
                     "formatted_data": formatted_data,
@@ -764,9 +764,9 @@ class BaziApiClient:
         # ✅ 适配：/general-review/debug 返回的是 input_data，需要构建 formatted_data
         if result and result.get('success'):
             input_data = result.get('input_data', {})
-            # ✅ 使用与流式接口相同的函数构建 formatted_data
-            from server.api.v1.general_review_analysis import format_input_data_for_coze
-            formatted_data = format_input_data_for_coze(input_data)
+            # ✅ 使用与流式接口相同的函数构建 formatted_data（从工具模块导入，无 FastAPI 依赖）
+            from server.utils.prompt_builders import format_general_review_input_data_for_coze
+            formatted_data = format_general_review_input_data_for_coze(input_data)
             return {
                 "success": True,
                 "formatted_data": formatted_data,
@@ -797,9 +797,9 @@ class BaziApiClient:
         # ✅ 适配：/bazi/marriage-analysis/debug 返回的是 input_data，需要构建 formatted_data
         if result and result.get('success'):
             input_data = result.get('input_data', {})
-            # ✅ 使用与流式接口相同的函数构建 formatted_data
-            from server.api.v1.marriage_analysis import format_input_data_for_coze
-            formatted_data = format_input_data_for_coze(input_data)
+            # ✅ 使用与流式接口相同的函数构建 formatted_data（从工具模块导入，无 FastAPI 依赖）
+            from server.utils.prompt_builders import format_marriage_input_data_for_coze
+            formatted_data = format_marriage_input_data_for_coze(input_data)
             return {
                 "success": True,
                 "formatted_data": formatted_data,
@@ -830,8 +830,8 @@ class BaziApiClient:
         # ✅ 适配：/health/debug 返回的是 input_data，需要构建 prompt
         if result and result.get('success'):
             input_data = result.get('input_data', {})
-            # ✅ 使用与流式接口相同的函数构建 prompt
-            from server.api.v1.health_analysis import build_health_prompt
+            # ✅ 使用与流式接口相同的函数构建 prompt（从工具模块导入，无 FastAPI 依赖）
+            from server.utils.prompt_builders import build_health_prompt
             prompt = build_health_prompt(input_data)
             return {
                 "success": True,
@@ -863,9 +863,9 @@ class BaziApiClient:
         # ✅ 适配：/children-study/debug 返回的是 input_data，需要构建 formatted_data
         if result and result.get('success'):
             input_data = result.get('input_data', {})
-            # ✅ 使用与流式接口相同的函数构建 formatted_data
-            from server.api.v1.children_study_analysis import format_input_data_for_coze
-            formatted_data = format_input_data_for_coze(input_data)
+            # ✅ 使用与流式接口相同的函数构建 formatted_data（从工具模块导入，无 FastAPI 依赖）
+            from server.utils.prompt_builders import format_children_study_input_data_for_coze
+            formatted_data = format_children_study_input_data_for_coze(input_data)
             return {
                 "success": True,
                 "formatted_data": formatted_data,

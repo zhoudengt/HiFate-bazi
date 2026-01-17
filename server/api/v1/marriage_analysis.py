@@ -51,6 +51,10 @@ from server.utils.dayun_liunian_helper import (
     build_enhanced_dayun_structure
 )
 from server.config.input_format_loader import get_format_loader, build_input_data_from_result
+from server.utils.prompt_builders import (
+    format_marriage_input_data_for_coze as format_input_data_for_coze,
+    _filter_empty_deities
+)
 
 logger = logging.getLogger(__name__)
 
@@ -365,97 +369,8 @@ def build_marriage_input_data(
     
     return input_data
 
-
-def _filter_empty_deities(data: Any) -> Any:
-    """
-    递归过滤数据结构中所有 deities 数组的空字符串
-    
-    Args:
-        data: 要清理的数据（可以是 dict、list 或其他类型）
-        
-    Returns:
-        清理后的数据
-    """
-    if isinstance(data, dict):
-        result = {}
-        for key, value in data.items():
-            if key == 'deities' and isinstance(value, list):
-                # 过滤掉空字符串
-                result[key] = [item for item in value if item != '']
-            else:
-                result[key] = _filter_empty_deities(value)
-        return result
-    elif isinstance(data, list):
-        return [_filter_empty_deities(item) for item in data]
-    else:
-        return data
-
-
-def format_input_data_for_coze(input_data: Dict[str, Any]) -> str:
-    """
-    将结构化数据格式化为 JSON 字符串（用于 Coze Bot System Prompt 的 {{input}} 占位符）
-    
-    ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
-    提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
-    
-    Args:
-        input_data: 结构化输入数据
-        
-    Returns:
-        str: JSON 格式的字符串，可以直接替换 {{input}} 占位符
-    """
-    # 注意：json 模块已在文件开头导入，无需重复导入
-    
-    # 获取原始数据
-    mingpan = input_data.get('mingpan_zonglun', {})
-    peiou = input_data.get('peiou_tezheng', {})
-    ganqing = input_data.get('ganqing_zoushi', {})
-    shensha = input_data.get('shensha_dianjing', {})
-    jianyi = input_data.get('jianyi_fangxiang', {})
-    
-    # ⚠️ 方案2：优化数据结构，使用引用避免重复
-    optimized_data = {
-        # 1. 命盘总论（基础数据，只提取一次）
-        'mingpan_zonglun': mingpan,
-        
-        # 2. 配偶特征（引用十神，不重复存储）
-        'peiou_tezheng': {
-            'ten_gods': mingpan.get('ten_gods', {}),
-            'deities': peiou.get('deities', {}),
-            'marriage_judgments': peiou.get('marriage_judgments', []),
-            'peach_blossom_judgments': peiou.get('peach_blossom_judgments', []),
-            'matchmaking_judgments': peiou.get('matchmaking_judgments', []),
-            'zhengyuan_judgments': peiou.get('zhengyuan_judgments', [])
-        },
-        
-        # 3. 感情走势（引用十神和大运，不重复存储）
-        'ganqing_zoushi': {
-            'current_dayun': ganqing.get('current_dayun'),
-            'key_dayuns': ganqing.get('key_dayuns', []),
-            'ten_gods': mingpan.get('ten_gods', {})
-        },
-        
-        # 4. 神煞点睛（引用神煞，不重复存储）
-        'shensha_dianjing': {
-            'deities': peiou.get('deities', {})
-        },
-        
-        # 5. 建议方向（引用十神、喜忌和大运，不重复存储）
-        'jianyi_fangxiang': {
-            'ten_gods': mingpan.get('ten_gods', {}),
-            'xi_ji': jianyi.get('xi_ji', {}),
-            'current_dayun': ganqing.get('current_dayun'),
-            'key_dayuns': ganqing.get('key_dayuns', [])
-        }
-    }
-    
-    # ⚠️ 新增：过滤掉所有 deities 数组中的空字符串
-    cleaned_data = _filter_empty_deities(copy.deepcopy(optimized_data))
-    
-    # 格式化为 JSON 字符串（美化格式，便于 Bot 理解）
-    return json.dumps(cleaned_data, ensure_ascii=False, indent=2)
-
-# ⚠️ 已移除：build_natural_language_prompt 函数（方案1已废弃，使用方案2：format_input_data_for_coze）
+# ✅ _filter_empty_deities 和 format_input_data_for_coze 函数已移至 server/utils/prompt_builders.py
+# 通过顶部 import 导入，确保评测脚本和流式接口使用相同的函数
 
 
 def validate_input_data(data: dict) -> tuple[bool, str]:
