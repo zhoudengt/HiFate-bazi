@@ -283,47 +283,20 @@ class BaziDetailService:
         Returns:
             dict: 格式化后的详细八字数据
         """
+        # 导入格式化工具类
+        import sys
+        import os
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        sys.path.insert(0, os.path.join(project_root, "server", "utils"))
+        from bazi_formatters import BaziResultFormatter
+        
         basic_info = detail_result.get('basic_info', {})
         bazi_pillars = detail_result.get('bazi_pillars', {})
         details = detail_result.get('details', {})
         
-        # 格式化基本信息
-        current_time = basic_info.get('current_time', None)
-        if current_time and isinstance(current_time, datetime):
-            current_time_str = current_time.strftime('%Y-%m-%d %H:%M:%S')
-        elif current_time:
-            current_time_str = str(current_time)
-        else:
-            current_time_str = ''
-        
-        formatted_basic_info = {
-            "solar_date": basic_info.get('solar_date', ''),
-            "solar_time": basic_info.get('solar_time', ''),
-            "lunar_date": basic_info.get('lunar_date', {}),
-            "gender": basic_info.get('gender', ''),
-            "current_time": current_time_str,
-            "adjusted_solar_date": basic_info.get('adjusted_solar_date', ''),
-            "adjusted_solar_time": basic_info.get('adjusted_solar_time', ''),
-            "is_zi_shi_adjusted": basic_info.get('is_zi_shi_adjusted', False)
-        }
-        
-        # 格式化四柱信息
-        formatted_pillars = {}
-        for pillar_type in ['year', 'month', 'day', 'hour']:
-            pillar_details = details.get(pillar_type, {})
-            formatted_pillars[pillar_type] = {
-                "stem": bazi_pillars.get(pillar_type, {}).get('stem', ''),
-                "branch": bazi_pillars.get(pillar_type, {}).get('branch', ''),
-                "main_star": pillar_details.get('main_star', ''),
-                "hidden_stars": pillar_details.get('hidden_stars', []),
-                "sub_stars": pillar_details.get('sub_stars', pillar_details.get('hidden_stars', [])),
-                "hidden_stems": pillar_details.get('hidden_stems', []),
-                "star_fortune": pillar_details.get('star_fortune', ''),
-                "self_sitting": pillar_details.get('self_sitting', ''),
-                "kongwang": pillar_details.get('kongwang', ''),
-                "nayin": pillar_details.get('nayin', ''),
-                "deities": pillar_details.get('deities', [])
-            }
+        # 使用工具类格式化基本信息和四柱信息
+        formatted_basic_info = BaziResultFormatter.format_basic_info(basic_info)
+        formatted_pillars = BaziResultFormatter.format_pillars(bazi_pillars, details)
         
         # 格式化大运流年信息 - 数据在 details 中
         dayun_info = details.get('dayun', {})

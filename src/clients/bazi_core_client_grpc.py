@@ -19,30 +19,27 @@ sys.path.insert(0, os.path.join(project_root, "proto", "generated"))
 import bazi_core_pb2
 import bazi_core_pb2_grpc
 
+# 导入公共工具函数和基类
+sys.path.insert(0, os.path.join(project_root, "server", "utils"))
+from grpc_config import get_standard_grpc_options
+from grpc_helpers import parse_grpc_address
+from src.clients.base_grpc_client import BaseGrpcClient
+
 logger = logging.getLogger(__name__)
 
 
-class BaziCoreClient:
+class BaziCoreClient(BaseGrpcClient):
     """gRPC client for the bazi-core-service."""
 
     def __init__(self, base_url: Optional[str] = None, timeout: float = 30.0) -> None:
-        # base_url 格式: host:port 或 [host]:port
-        base_url = base_url or os.getenv("BAZI_CORE_SERVICE_URL", "")
-        if not base_url:
-            raise RuntimeError("BAZI_CORE_SERVICE_URL is not configured")
-        
-        # 解析地址（移除 http:// 前缀）
-        if base_url.startswith("http://"):
-            base_url = base_url[7:]
-        elif base_url.startswith("https://"):
-            base_url = base_url[8:]
-        
-        # 如果没有端口，添加默认端口
-        if ":" not in base_url:
-            base_url = f"{base_url}:9001"
-        
-        self.address = base_url
-        self.timeout = timeout
+        # 调用基类初始化方法
+        super().__init__(
+            service_name="bazi-core-service",
+            env_key="BAZI_CORE_SERVICE_URL",
+            default_port=9001,
+            base_url=base_url,
+            timeout=timeout
+        )
 
     def calculate_bazi(self, solar_date: str, solar_time: str, gender: str) -> Dict[str, Any]:
         """计算八字排盘"""
@@ -57,14 +54,8 @@ class BaziCoreClient:
         logger.info(f"[{request_time}] 🔵 调用 bazi-core-service (gRPC): {self.address}, solar_date={solar_date}, solar_time={solar_time}, gender={gender}")
         logger.debug("Calling bazi-core-service (gRPC): %s request=%s", self.address, request)
 
-        # 设置连接选项，避免 "Too many pings" 错误
-        options = [
-            ('grpc.keepalive_time_ms', 300000),  # 5分钟，减少 ping 频率
-            ('grpc.keepalive_timeout_ms', 20000),  # 20秒超时
-            ('grpc.keepalive_permit_without_calls', False),  # 没有调用时不发送 ping
-            ('grpc.http2.max_pings_without_data', 2),  # 允许最多2个 ping
-            ('grpc.http2.min_time_between_pings_ms', 60000),  # ping 之间至少间隔60秒
-        ]
+        # 使用基类方法获取标准 gRPC 配置
+        options = self.get_grpc_options()
         
         with grpc.insecure_channel(self.address, options=options) as channel:
             stub = bazi_core_pb2_grpc.BaziCoreServiceStub(channel)
@@ -216,13 +207,8 @@ class BaziCoreClient:
 
     def health_check(self) -> bool:
         """健康检查"""
-        request = bazi_core_pb2.HealthCheckRequest()
-        try:
-            with grpc.insecure_channel(self.address) as channel:
-                stub = bazi_core_pb2_grpc.BaziCoreServiceStub(channel)
-                response = stub.HealthCheck(request, timeout=5.0)
-                return response.status == "ok"
-        except grpc.RpcError:
-            logger.exception("bazi-core-service health check failed")
-            return False
+        return super().health_check(
+            stub_class=bazi_core_pb2_grpc.BaziCoreServiceStub,
+            request_class=bazi_core_pb2.HealthCheckRequest
+        )
 

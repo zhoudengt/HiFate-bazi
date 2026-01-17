@@ -1,0 +1,122 @@
+[
+  {
+    "type": "duplicate_client",
+    "severity": "medium",
+    "description": "发现重复的客户端实现：BaziCoreClient",
+    "files": [
+      "src/clients/bazi_core_client.py",
+      "src/clients/bazi_core_client_grpc.py"
+    ],
+    "suggestion": "考虑统一使用 gRPC 客户端（src/clients/bazi_core_client_grpc.py），移除 HTTP 客户端（src/clients/bazi_core_client.py）"
+  },
+  {
+    "type": "duplicate_client",
+    "severity": "medium",
+    "description": "发现重复的客户端实现：BaziFortuneClient",
+    "files": [
+      "src/clients/bazi_fortune_client.py",
+      "src/clients/bazi_fortune_client_grpc.py"
+    ],
+    "suggestion": "考虑统一使用 gRPC 客户端（src/clients/bazi_fortune_client_grpc.py），移除 HTTP 客户端（src/clients/bazi_fortune_client.py）"
+  },
+  {
+    "type": "duplicate_client",
+    "severity": "medium",
+    "description": "发现重复的客户端实现：BaziRuleClient",
+    "files": [
+      "src/clients/bazi_rule_client.py",
+      "src/clients/bazi_rule_client_grpc.py"
+    ],
+    "suggestion": "考虑统一使用 gRPC 客户端（src/clients/bazi_rule_client_grpc.py），移除 HTTP 客户端（src/clients/bazi_rule_client.py）"
+  },
+  {
+    "type": "duplicate_grpc_config",
+    "severity": "low",
+    "description": "发现 65 个文件包含相同的 gRPC keepalive 配置",
+    "files": [
+      "src/clients/bazi_rule_client_grpc.py",
+      "src/clients/bazi_core_client_grpc.py",
+      "src/clients/bazi_fortune_client_grpc.py",
+      "services/bazi_rule/grpc_server.py",
+      "services/fortune_rule/grpc_server.py",
+      "services/payment_service/grpc_server.py",
+      "services/prompt_optimizer/grpc_server.py",
+      "services/fortune_analysis/grpc_server.py",
+      "services/bazi_core/grpc_server.py",
+      "services/auth_service/grpc_server.py"
+    ],
+    "suggestion": "考虑将 gRPC 配置提取到公共工具类中，统一管理"
+  },
+  {
+    "type": "duplicate_code_block",
+    "severity": "medium",
+    "description": "发现 33 个文件包含相同的地址解析逻辑",
+    "files": [
+      "src/clients/bazi_rule_client_grpc.py",
+      "src/clients/bazi_core_client_grpc.py",
+      "src/clients/bazi_fortune_client_grpc.py",
+      ".hot_reload_backups/bazi_analyzer/v0/src_clients_bazi_fortune_client_grpc.py",
+      ".hot_reload_backups/bazi_analyzer/v0/src_clients_bazi_core_client_grpc.py",
+      ".hot_reload_backups/bazi_analyzer/v0/src_clients_bazi_rule_client_grpc.py",
+      ".hot_reload_backups/bazi_fortune/v0/src_clients_bazi_fortune_client_grpc.py",
+      ".hot_reload_backups/bazi_fortune/v0/src_clients_bazi_core_client_grpc.py",
+      ".hot_reload_backups/bazi_fortune/v0/src_clients_bazi_rule_client_grpc.py",
+      ".hot_reload_backups/auth_service/v0/src_clients_bazi_fortune_client_grpc.py",
+      ".hot_reload_backups/auth_service/v0/src_clients_bazi_core_client_grpc.py",
+      ".hot_reload_backups/auth_service/v0/src_clients_bazi_rule_client_grpc.py",
+      ".hot_reload_backups/bazi_core/v0/src_clients_bazi_fortune_client_grpc.py",
+      ".hot_reload_backups/bazi_core/v0/src_clients_bazi_core_client_grpc.py",
+      ".hot_reload_backups/bazi_core/v0/src_clients_bazi_rule_client_grpc.py",
+      ".hot_reload_backups/fortune_analysis/v0/src_clients_bazi_fortune_client_grpc.py",
+      ".hot_reload_backups/fortune_analysis/v0/src_clients_bazi_core_client_grpc.py",
+      ".hot_reload_backups/fortune_analysis/v0/src_clients_bazi_rule_client_grpc.py",
+      ".hot_reload_backups/prompt_optimizer/v0/src_clients_bazi_fortune_client_grpc.py",
+      ".hot_reload_backups/prompt_optimizer/v0/src_clients_bazi_core_client_grpc.py",
+      ".hot_reload_backups/prompt_optimizer/v0/src_clients_bazi_rule_client_grpc.py",
+      ".hot_reload_backups/payment_service/v0/src_clients_bazi_fortune_client_grpc.py",
+      ".hot_reload_backups/payment_service/v0/src_clients_bazi_core_client_grpc.py",
+      ".hot_reload_backups/payment_service/v0/src_clients_bazi_rule_client_grpc.py",
+      ".hot_reload_backups/fortune_rule/v0/src_clients_bazi_fortune_client_grpc.py",
+      ".hot_reload_backups/fortune_rule/v0/src_clients_bazi_core_client_grpc.py",
+      ".hot_reload_backups/fortune_rule/v0/src_clients_bazi_rule_client_grpc.py",
+      ".hot_reload_backups/bazi_rule/v0/src_clients_bazi_fortune_client_grpc.py",
+      ".hot_reload_backups/bazi_rule/v0/src_clients_bazi_core_client_grpc.py",
+      ".hot_reload_backups/bazi_rule/v0/src_clients_bazi_rule_client_grpc.py",
+      ".hot_reload_backups/intent_service/v0/src_clients_bazi_fortune_client_grpc.py",
+      ".hot_reload_backups/intent_service/v0/src_clients_bazi_core_client_grpc.py",
+      ".hot_reload_backups/intent_service/v0/src_clients_bazi_rule_client_grpc.py"
+    ],
+    "suggestion": "考虑将地址解析逻辑提取到公共工具函数中"
+  },
+  {
+    "type": "similar_files",
+    "severity": "low",
+    "description": "发现 7 对相似的文件",
+    "files": [
+      "src/clients/bazi_rule_client_grpc.py (126行) vs src/clients/bazi_fortune_client_grpc.py (93行)",
+      "src/clients/bazi_core_client.py (58行) vs src/clients/bazi_rule_client.py (67行)",
+      "src/clients/bazi_core_client.py (58行) vs src/clients/bazi_fortune_client.py (61行)",
+      "src/clients/bazi_core_client.py (58行) vs src/clients/bazi_fortune_client_grpc.py (93行)",
+      "src/clients/bazi_rule_client.py (67行) vs src/clients/bazi_fortune_client.py (61行)"
+    ],
+    "suggestion": "检查这些文件是否可以合并或提取公共代码"
+  },
+  {
+    "type": "duplicate_format_functions",
+    "severity": "low",
+    "description": "发现 1284 个格式化函数",
+    "files": [
+      "tests/test_special_liunian_service.py:test_format_special_liunians_for_prompt",
+      "tests/test_special_liunian_service.py:test_format_special_liunians_for_prompt_empty",
+      "scripts/test_format_loader.py:test_format_loader",
+      "src/bazi_calculator.py:_format_result",
+      "src/bazi_calculator.py:_format_requirement",
+      "src/analyzers/rizhu_gender_analyzer.py:get_formatted_output",
+      "src/printer/bazi_interface_printer.py:format_to_json",
+      "src/printer/bazi_interface_printer.py:format_interface_info",
+      "src/printer/bazi_interface_printer.py:print_formatted_text",
+      "src/printer/bazi_interface_printer.py:_format_hours"
+    ],
+    "suggestion": "考虑统一格式化函数的实现，提取到公共工具类中"
+  }
+]
