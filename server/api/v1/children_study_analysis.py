@@ -418,14 +418,10 @@ async def children_study_analysis_debug(request: ChildrenStudyRequest):
                 "error": f"数据完整性验证失败: {validation_error}"
             }
         
-        # ⚠️ 方案2：格式化数据为 Coze Bot 输入格式
-        formatted_data = format_input_data_for_coze(input_data)
-        
+        # ✅ 只返回 input_data，评测脚本使用相同的函数构建 formatted_data
         return {
             "success": True,
-            "input_data": input_data,  # 原始结构化数据
-            "formatted_data": formatted_data,  # ⚠️ 方案2：格式化后的 JSON 数据（用于 Coze Bot）
-            "formatted_data_length": len(formatted_data),  # 格式化数据长度
+            "input_data": input_data,
             "data_summary": {
                 "bazi_pillars": input_data.get('mingpan_zinv_zonglun', {}).get('bazi_pillars', {}),
                 "zinv_xing_type": input_data.get('zinvxing_zinvgong', {}).get('zinv_xing_type', ''),

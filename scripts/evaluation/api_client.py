@@ -702,7 +702,10 @@ class BaziApiClient:
     async def call_career_wealth_test(self, solar_date: str, solar_time: str,
                                       gender: str) -> Dict[str, Any]:
         """
-        调用事业财富测试接口，获取 formatted_data
+        调用事业财富调试接口，获取 formatted_data
+        
+        ✅ 使用 /career-wealth/debug 接口，与流式接口使用完全相同的逻辑
+        确保评测时使用的数据与真实流式接口完全一致。
         
         优先尝试 REST 接口，失败时回退到 gRPC 网关（支持动态代码更新）。
         
@@ -718,18 +721,35 @@ class BaziApiClient:
             result = await self._post_json(ApiEndpoints.CAREER_WEALTH_TEST, data)
             # 如果 REST 接口返回失败，尝试 gRPC 网关
             if not result.get('success'):
-                return await self._post_grpc("/career-wealth/test", data)
+                return await self._post_grpc("/career-wealth/debug", data)
+            
+            # ✅ 适配：/career-wealth/debug 返回的是 input_data，需要构建 formatted_data
+            if result and result.get('success'):
+                input_data = result.get('input_data', {})
+                # ✅ 使用与流式接口相同的函数构建 formatted_data
+                from server.api.v1.career_wealth_analysis import format_input_data_for_coze
+                formatted_data = format_input_data_for_coze(input_data)
+                return {
+                    "success": True,
+                    "formatted_data": formatted_data,
+                    "formatted_data_length": len(formatted_data),
+                    "input_data": input_data,
+                    "data_summary": result.get('data_summary', {})
+                }
             return result
         except RuntimeError as e:
             if "404" in str(e):
                 # REST 接口不可用，尝试 gRPC 网关
-                return await self._post_grpc("/career-wealth/test", data)
+                return await self._post_grpc("/career-wealth/debug", data)
             raise
     
     async def call_general_review_test(self, solar_date: str, solar_time: str,
                                        gender: str) -> Dict[str, Any]:
         """
-        调用总评测试接口，获取 formatted_data
+        调用总评调试接口，获取 formatted_data
+        
+        ✅ 使用 /general-review/debug 接口，与流式接口使用完全相同的逻辑
+        确保评测时使用的数据与真实流式接口完全一致。
         
         Returns:
             包含 success, formatted_data 的字典
@@ -739,12 +759,30 @@ class BaziApiClient:
             "solar_time": solar_time,
             "gender": gender
         }
-        return await self._post_json(ApiEndpoints.GENERAL_REVIEW_TEST, data)
+        result = await self._post_json(ApiEndpoints.GENERAL_REVIEW_TEST, data)
+        
+        # ✅ 适配：/general-review/debug 返回的是 input_data，需要构建 formatted_data
+        if result and result.get('success'):
+            input_data = result.get('input_data', {})
+            # ✅ 使用与流式接口相同的函数构建 formatted_data
+            from server.api.v1.general_review_analysis import format_input_data_for_coze
+            formatted_data = format_input_data_for_coze(input_data)
+            return {
+                "success": True,
+                "formatted_data": formatted_data,
+                "formatted_data_length": len(formatted_data),
+                "input_data": input_data,
+                "data_summary": result.get('summary', {})
+            }
+        return result
     
     async def call_marriage_analysis_test(self, solar_date: str, solar_time: str,
                                           gender: str) -> Dict[str, Any]:
         """
-        调用感情婚姻测试接口，获取 formatted_data
+        调用感情婚姻调试接口，获取 formatted_data
+        
+        ✅ 使用 /bazi/marriage-analysis/debug 接口，与流式接口使用完全相同的逻辑
+        确保评测时使用的数据与真实流式接口完全一致。
         
         Returns:
             包含 success, formatted_data 的字典
@@ -754,27 +792,63 @@ class BaziApiClient:
             "solar_time": solar_time,
             "gender": gender
         }
-        return await self._post_json(ApiEndpoints.MARRIAGE_ANALYSIS_TEST, data)
+        result = await self._post_json(ApiEndpoints.MARRIAGE_ANALYSIS_TEST, data)
+        
+        # ✅ 适配：/bazi/marriage-analysis/debug 返回的是 input_data，需要构建 formatted_data
+        if result and result.get('success'):
+            input_data = result.get('input_data', {})
+            # ✅ 使用与流式接口相同的函数构建 formatted_data
+            from server.api.v1.marriage_analysis import format_input_data_for_coze
+            formatted_data = format_input_data_for_coze(input_data)
+            return {
+                "success": True,
+                "formatted_data": formatted_data,
+                "formatted_data_length": len(formatted_data),
+                "input_data": input_data,
+                "data_summary": result.get('summary', {})
+            }
+        return result
     
     async def call_health_analysis_test(self, solar_date: str, solar_time: str,
                                         gender: str) -> Dict[str, Any]:
         """
-        调用身体健康测试接口，获取 formatted_data
+        调用身体健康调试接口，获取 formatted_data（prompt）
+        
+        ✅ 使用 /health/debug 接口，与流式接口 /health/stream 使用完全相同的逻辑
+        确保评测时使用的数据与真实流式接口完全一致。
         
         Returns:
-            包含 success, formatted_data 的字典
+            包含 success, formatted_data (即 prompt) 的字典
         """
         data = {
             "solar_date": solar_date,
             "solar_time": solar_time,
             "gender": gender
         }
-        return await self._post_json(ApiEndpoints.HEALTH_ANALYSIS_TEST, data)
+        result = await self._post_json(ApiEndpoints.HEALTH_ANALYSIS_TEST, data)
+        
+        # ✅ 适配：/health/debug 返回的是 input_data，需要构建 prompt
+        if result and result.get('success'):
+            input_data = result.get('input_data', {})
+            # ✅ 使用与流式接口相同的函数构建 prompt
+            from server.api.v1.health_analysis import build_health_prompt
+            prompt = build_health_prompt(input_data)
+            return {
+                "success": True,
+                "formatted_data": prompt,  # 使用相同的函数构建 prompt
+                "formatted_data_length": len(prompt),
+                "input_data": input_data,  # 保留 input_data 供调试
+                "data_summary": result.get('data_summary', {})
+            }
+        return result
     
     async def call_children_study_test(self, solar_date: str, solar_time: str,
                                        gender: str) -> Dict[str, Any]:
         """
-        调用子女学习测试接口，获取 formatted_data
+        调用子女学习调试接口，获取 formatted_data
+        
+        ✅ 使用 /children-study/debug 接口，与流式接口使用完全相同的逻辑
+        确保评测时使用的数据与真实流式接口完全一致。
         
         Returns:
             包含 success, formatted_data 的字典
@@ -784,7 +858,22 @@ class BaziApiClient:
             "solar_time": solar_time,
             "gender": gender
         }
-        return await self._post_json(ApiEndpoints.CHILDREN_STUDY_TEST, data)
+        result = await self._post_json(ApiEndpoints.CHILDREN_STUDY_TEST, data)
+        
+        # ✅ 适配：/children-study/debug 返回的是 input_data，需要构建 formatted_data
+        if result and result.get('success'):
+            input_data = result.get('input_data', {})
+            # ✅ 使用与流式接口相同的函数构建 formatted_data
+            from server.api.v1.children_study_analysis import format_input_data_for_coze
+            formatted_data = format_input_data_for_coze(input_data)
+            return {
+                "success": True,
+                "formatted_data": formatted_data,
+                "formatted_data_length": len(formatted_data),
+                "input_data": input_data,
+                "data_summary": result.get('data_summary', {})
+            }
+        return result
     
     async def call_annual_report_test(self, solar_date: str, solar_time: str,
                                       gender: str) -> Dict[str, Any]:

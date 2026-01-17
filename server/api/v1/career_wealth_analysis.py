@@ -1073,29 +1073,56 @@ async def career_wealth_analysis_test(request: CareerWealthRequest):
         input_data['shiye_xing_gong']['career_judgments'] = career_judgments
         input_data['caifu_xing_gong']['wealth_judgments'] = wealth_judgments
         
-        # 格式化数据
-        formatted_data = format_input_data_for_coze(input_data)
-        
+        # ✅ 只返回 input_data，评测脚本使用相同的函数构建 formatted_data
         return {
             "success": True,
-            "formatted_data": formatted_data,
-            "formatted_data_length": len(formatted_data),
+            "input_data": input_data,
             "data_summary": {
                 "bazi_pillars": input_data.get('mingpan_shiye_caifu_zonglun', {}).get('bazi_pillars', {}),
                 "dayun_count": len(input_data.get('shiye_yunshi', {}).get('key_dayuns', [])),
                 "current_dayun_liunians_count": len(input_data.get('shiye_yunshi', {}).get('current_dayun', {}).get('liunians', [])),
                 "key_dayuns_count": len(input_data.get('shiye_yunshi', {}).get('key_dayuns', [])),
                 "xi_ji": input_data.get('tiyun_jianyi', {}).get('xi_ji', {})
-            },
-            "usage": {
-                "description": "此接口返回的数据可以直接用于 Coze Bot 的 {{input}} 占位符",
-                "coze_bot_setup": "1. 登录 Coze 平台\n2. 找到'事业财富分析' Bot\n3. 进入 Bot 设置 → System Prompt\n4. 复制 docs/需求/Coze_Bot_System_Prompt_事业财富分析.md 中的提示词\n5. 粘贴到 System Prompt 中\n6. 保存设置",
-                "test_command": f'curl -X POST "http://localhost:8001/api/v1/career-wealth/test" -H "Content-Type: application/json" -d \'{{"solar_date": "{request.solar_date}", "solar_time": "{request.solar_time}", "gender": "{request.gender}", "calendar_type": "{request.calendar_type or "solar"}"}}\''
             }
         }
     except Exception as e:
         import traceback
         logger.error(f"测试接口异常: {e}\n{traceback.format_exc()}")
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
+@router.post("/career-wealth/debug", summary="调试：查看事业财富分析数据")
+async def career_wealth_analysis_debug(request: CareerWealthRequest):
+    """
+    调试接口：返回 input_data（与流式接口使用相同的数据构建逻辑）
+    
+    ✅ 只返回 input_data，评测脚本使用相同的函数构建 formatted_data
+    
+    Args:
+        request: 事业财富分析请求参数
+        
+    Returns:
+        dict: 包含 input_data 的调试信息
+    """
+    try:
+        # ✅ 直接调用 test 接口的逻辑（test 接口已返回 input_data）
+        result = await career_wealth_analysis_test(request)
+        
+        # ✅ 只返回 input_data，不返回 formatted_data
+        if result.get('success'):
+            return {
+                "success": True,
+                "input_data": result.get('input_data', {}),
+                "data_summary": result.get('data_summary', {})
+            }
+        return result
+    except Exception as e:
+        import traceback
+        logger.error(f"调试接口失败: {e}\n{traceback.format_exc()}")
         return {
             "success": False,
             "error": str(e),

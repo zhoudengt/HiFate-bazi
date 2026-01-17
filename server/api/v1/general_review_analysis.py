@@ -515,15 +515,10 @@ async def general_review_analysis_debug(request: GeneralReviewRequest):
                 "error": f"数据完整性验证失败: {validation_error}"
             }
         
-        # ⚠️ 方案2：格式化数据为 Coze Bot 输入格式
-        formatted_data = format_input_data_for_coze(input_data)
-        
-        # 返回 success、input_data 和 formatted_data
+        # ✅ 只返回 input_data，评测脚本使用相同的函数构建 formatted_data
         return {
             "success": True,
             "input_data": input_data,
-            "formatted_data": formatted_data,
-            "formatted_data_length": len(formatted_data),
             "summary": {
                 "bazi_pillars": input_data.get('mingpan_hexin_geju', {}).get('bazi_pillars', {}),
                 "dayun_count": len(input_data.get('guanjian_dayun', {}).get('key_dayuns', [])),

@@ -249,14 +249,10 @@ async def health_analysis_debug(request: HealthAnalysisRequest):
                 "error": f"数据完整性验证失败: {validation_error}"
             }
         
-        # 构建Prompt
-        prompt = build_health_prompt(input_data)
-        
+        # ✅ 只返回 input_data，评测脚本使用相同的函数构建 prompt
         return {
             "success": True,
             "input_data": input_data,
-            "prompt": prompt[:500],  # 只返回前500字符
-            "prompt_length": len(prompt),
             "data_summary": {
                 "bazi_pillars": input_data.get('mingpan_tizhi_zonglun', {}).get('bazi_pillars', {}),
                 "health_rules_count": len(input_data.get('health_rules', {}).get('matched_rules', [])),

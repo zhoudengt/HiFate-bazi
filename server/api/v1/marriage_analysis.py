@@ -1295,14 +1295,10 @@ async def extract_marriage_analysis_data(
         if not is_valid:
             raise ValueError(f"数据完整性验证失败: {validation_error}")
         
-        # 12. ⚠️ 方案2：格式化数据为 Coze Bot 输入格式
-        formatted_data = format_input_data_for_coze(input_data)
-        
+        # ✅ 只返回 input_data，评测脚本使用相同的函数构建 formatted_data
         return {
             'success': True,
-            'data': input_data,
-            'formatted_data': formatted_data,  # ⚠️ 新增：格式化后的数据
-            'formatted_data_length': len(formatted_data),  # ⚠️ 新增：数据长度
+            'input_data': input_data,  # ✅ 统一字段名：input_data
             'summary': {
                 'bazi_pillars': bool(input_data['mingpan_zonglun'].get('bazi_pillars')),
                 'ten_gods': bool(input_data['mingpan_zonglun'].get('ten_gods')),

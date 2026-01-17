@@ -85,17 +85,18 @@ class ApiEndpoints:
     # 智能问答（注意：前缀是 /smart-fortune）
     SMART_ANALYZE_STREAM = "/smart-fortune/smart-analyze-stream"
     
-    # ==================== 测试接口（返回 formatted_data）====================
+    # ==================== 调试/测试接口（返回 formatted_data）====================
+    # ✅ 优先使用 debug 接口，确保与流式接口使用完全相同的逻辑，保证评测一致性
     # 用于获取与 Coze 相同的结构化数据，供百炼平台使用
-    CAREER_WEALTH_TEST = "/career-wealth/test"
-    GENERAL_REVIEW_TEST = "/general-review/test"
-    MARRIAGE_ANALYSIS_TEST = "/bazi/marriage-analysis/test"
-    HEALTH_ANALYSIS_TEST = "/health-analysis-v2/test"
-    CHILDREN_STUDY_TEST = "/children-study/test"
-    ANNUAL_REPORT_TEST = "/annual-report/test"
-    WUXING_PROPORTION_TEST = "/bazi/wuxing-proportion/test"
-    XISHEN_JISHEN_TEST = "/bazi/xishen-jishen/test"
-    DAILY_FORTUNE_CALENDAR_TEST = "/daily-fortune-calendar/test"
+    CAREER_WEALTH_TEST = "/career-wealth/debug"  # ✅ 使用 debug 接口，与流式接口一致
+    GENERAL_REVIEW_TEST = "/general-review/debug"  # ✅ 使用 debug 接口，与流式接口一致
+    MARRIAGE_ANALYSIS_TEST = "/bazi/marriage-analysis/debug"  # ✅ 使用 debug 接口，与流式接口一致
+    HEALTH_ANALYSIS_TEST = "/health/debug"  # ✅ 使用 debug 接口，与流式接口一致
+    CHILDREN_STUDY_TEST = "/children-study/debug"  # ✅ 使用 debug 接口，与流式接口一致
+    ANNUAL_REPORT_TEST = "/annual-report/test"  # TODO: 创建 /annual-report/debug 接口
+    WUXING_PROPORTION_TEST = "/bazi/wuxing-proportion/test"  # TODO: 检查 test 接口是否与流式接口一致
+    XISHEN_JISHEN_TEST = "/bazi/xishen-jishen/test"  # TODO: 检查 test 接口是否与流式接口一致
+    DAILY_FORTUNE_CALENDAR_TEST = "/daily-fortune-calendar/test"  # TODO: 检查 test 接口是否与流式接口一致
 
 
 # Excel列映射配置
