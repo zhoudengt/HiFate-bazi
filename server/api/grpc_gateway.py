@@ -612,6 +612,26 @@ async def _handle_career_wealth_test(payload: Dict[str, Any]):
         return {"success": False, "error": str(e)}
 
 
+@_register("/career-wealth/debug")
+async def _handle_career_wealth_debug(payload: Dict[str, Any]):
+    """处理事业财富调试接口请求（返回 input_data，供评测脚本使用）"""
+    import importlib
+    try:
+        # 动态重新导入模块以获取最新代码
+        career_module = importlib.import_module('server.api.v1.career_wealth_analysis')
+        importlib.reload(career_module)
+        
+        # 获取请求模型和处理函数
+        CareerWealthRequest = getattr(career_module, 'CareerWealthRequest')
+        career_wealth_analysis_debug = getattr(career_module, 'career_wealth_analysis_debug')
+        
+        request_model = CareerWealthRequest(**payload)
+        return await career_wealth_analysis_debug(request_model)
+    except Exception as e:
+        logger.error(f"career_wealth_debug 处理失败: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 @_register("/bazi/marriage-analysis/stream")
 async def _handle_marriage_analysis_stream(payload: Dict[str, Any]):
     """处理感情婚姻流式分析请求（gRPC-Web 转发）"""
@@ -631,6 +651,24 @@ async def _handle_marriage_analysis_stream(payload: Dict[str, Any]):
         trace_id=trace_id
     )
     return await _collect_sse_stream(generator)
+
+
+@_register("/bazi/marriage-analysis/debug")
+async def _handle_marriage_analysis_debug(payload: Dict[str, Any]):
+    """处理感情婚姻调试接口请求（返回 input_data，供评测脚本使用）"""
+    import importlib
+    try:
+        marriage_module = importlib.import_module('server.api.v1.marriage_analysis')
+        importlib.reload(marriage_module)
+        
+        MarriageAnalysisRequest = getattr(marriage_module, 'MarriageAnalysisRequest')
+        marriage_analysis_debug = getattr(marriage_module, 'marriage_analysis_debug')
+        
+        request_model = MarriageAnalysisRequest(**payload)
+        return await marriage_analysis_debug(request_model)
+    except Exception as e:
+        logger.error(f"marriage_analysis_debug 处理失败: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 
 @_register("/career-wealth/stream")
@@ -667,6 +705,24 @@ async def _handle_children_study_stream(payload: Dict[str, Any]):
     return await _collect_sse_stream(generator)
 
 
+@_register("/children-study/debug")
+async def _handle_children_study_debug(payload: Dict[str, Any]):
+    """处理子女学习调试接口请求（返回 input_data，供评测脚本使用）"""
+    import importlib
+    try:
+        children_module = importlib.import_module('server.api.v1.children_study_analysis')
+        importlib.reload(children_module)
+        
+        ChildrenStudyRequest = getattr(children_module, 'ChildrenStudyRequest')
+        children_study_analysis_debug = getattr(children_module, 'children_study_analysis_debug')
+        
+        request_model = ChildrenStudyRequest(**payload)
+        return await children_study_analysis_debug(request_model)
+    except Exception as e:
+        logger.error(f"children_study_debug 处理失败: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 @_register("/health/stream")
 async def _handle_health_stream(payload: Dict[str, Any]):
     """处理健康分析流式请求（gRPC-Web 转发）"""
@@ -684,6 +740,24 @@ async def _handle_health_stream(payload: Dict[str, Any]):
     return await _collect_sse_stream(generator)
 
 
+@_register("/health/debug")
+async def _handle_health_debug(payload: Dict[str, Any]):
+    """处理身体健康调试接口请求（返回 input_data，供评测脚本使用）"""
+    import importlib
+    try:
+        health_module = importlib.import_module('server.api.v1.health_analysis')
+        importlib.reload(health_module)
+        
+        HealthAnalysisRequest = getattr(health_module, 'HealthAnalysisRequest')
+        health_analysis_debug = getattr(health_module, 'health_analysis_debug')
+        
+        request_model = HealthAnalysisRequest(**payload)
+        return await health_analysis_debug(request_model)
+    except Exception as e:
+        logger.error(f"health_debug 处理失败: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 @_register("/general-review/stream")
 async def _handle_general_review_stream(payload: Dict[str, Any]):
     """处理总评分析流式请求（gRPC-Web 转发）"""
@@ -699,6 +773,24 @@ async def _handle_general_review_stream(payload: Dict[str, Any]):
         request_model.bot_id
     )
     return await _collect_sse_stream(generator)
+
+
+@_register("/general-review/debug")
+async def _handle_general_review_debug(payload: Dict[str, Any]):
+    """处理总评调试接口请求（返回 input_data，供评测脚本使用）"""
+    import importlib
+    try:
+        general_module = importlib.import_module('server.api.v1.general_review_analysis')
+        importlib.reload(general_module)
+        
+        GeneralReviewRequest = getattr(general_module, 'GeneralReviewRequest')
+        general_review_analysis_debug = getattr(general_module, 'general_review_analysis_debug')
+        
+        request_model = GeneralReviewRequest(**payload)
+        return await general_review_analysis_debug(request_model)
+    except Exception as e:
+        logger.error(f"general_review_debug 处理失败: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 
 @_register("/annual-report/stream")
