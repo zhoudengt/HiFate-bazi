@@ -34,7 +34,7 @@ except ImportError:
     # 如果导入失败，抛出错误（不允许降级）
     def get_config_from_db_only(key: str) -> Optional[str]:
         raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
-from server.services.bazi_data_orchestrator import BaziDataOrchestrator
+from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
 from server.api.v1.general_review_analysis import organize_special_liunians_by_dayun
 from server.services.special_liunian_service import SpecialLiunianService
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
@@ -139,7 +139,7 @@ async def children_study_analysis_test(request: ChildrenStudyRequest):
         bazi_data = validate_bazi_data(bazi_data)
         
         # ✅ 使用统一数据服务获取大运流年、特殊流年数据（与流式接口保持一致）
-        from server.services.bazi_data_service import BaziDataService
+        from server.orchestrators.bazi_data_service import BaziDataService
         
         fortune_data = await BaziDataService.get_fortune_data(
             solar_date=final_solar_date,
@@ -552,7 +552,7 @@ async def children_study_analysis_stream_generator(
                 wangshuai_data = wangshuai_result.get('data', {})
             
             # ✅ 使用统一数据服务获取大运流年、特殊流年数据（确保数据一致性）
-            from server.services.bazi_data_service import BaziDataService
+            from server.orchestrators.bazi_data_service import BaziDataService
             
             # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
             fortune_data = await BaziDataService.get_fortune_data(

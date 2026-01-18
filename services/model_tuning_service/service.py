@@ -13,7 +13,7 @@ from typing import Optional
 from services.model_tuning_service.trainer import ModelTrainer
 from services.model_tuning_service.keyword_extractor import KeywordRuleExtractor
 from services.model_tuning_service.config import BASE_MODEL_NAME
-from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+from shared.config.database import get_mysql_connection, return_mysql_connection
 
 logger = logging.getLogger(__name__)
 

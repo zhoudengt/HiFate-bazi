@@ -20,7 +20,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.insert(0, project_root)
 
 from server.services.coze_stream_service import CozeStreamService
-from server.services.bazi_data_orchestrator import BaziDataOrchestrator
+from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
 from server.services.qa_question_generator import QAQuestionGenerator
 from server.config.mysql_config import get_mysql_connection, return_mysql_connection
 from server.utils.data_validator import validate_bazi_data

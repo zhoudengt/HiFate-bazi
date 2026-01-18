@@ -17,7 +17,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 # 导入配置加载器（从数据库读取配置）
 try:
-    from server.config.config_loader import get_config_from_db_only
+    from shared.config.config_loader import get_config_from_db_only
 except ImportError:
     # 如果导入失败，抛出错误（不允许降级）
     def get_config_from_db_only(key: str) -> Optional[str]:

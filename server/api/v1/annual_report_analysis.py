@@ -25,7 +25,7 @@ from server.services.wangshuai_service import WangShuaiService
 from server.services.bazi_detail_service import BaziDetailService
 from server.utils.data_validator import validate_bazi_data
 from server.utils.bazi_input_processor import BaziInputProcessor
-from server.services.bazi_data_orchestrator import BaziDataOrchestrator
+from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
 from server.services.annual_report_service import AnnualReportService
 
 # 导入配置加载器（从数据库读取配置）

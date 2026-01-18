@@ -14,7 +14,7 @@ from services.model_tuning_service.config import (
     BASE_MODEL_NAME, MODEL_CACHE_DIR, TUNED_MODEL_DIR,
     BATCH_SIZE, LEARNING_RATE, EPOCHS, MIN_QUESTIONS_FOR_TRAINING
 )
-from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+from shared.config.database import get_mysql_connection, return_mysql_connection
 
 logger = logging.getLogger(__name__)
 

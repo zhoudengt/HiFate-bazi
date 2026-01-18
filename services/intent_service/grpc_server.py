@@ -34,7 +34,7 @@ try:
     
     # 3. 验证关键配置（从数据库读取）
     try:
-        from server.config.config_loader import get_config_from_db_only
+        from shared.config.config_loader import get_config_from_db_only
         intent_bot_id = get_config_from_db_only("INTENT_BOT_ID")
         coze_token = get_config_from_db_only("COZE_ACCESS_TOKEN")
         if intent_bot_id:

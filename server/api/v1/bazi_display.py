@@ -288,7 +288,7 @@ async def get_fortune_display(request_wrapper: FortuneDisplayRequestWithMode = D
         # >>> 缓存检查结束 <<<
         
         # ✅ 使用统一数据服务（内部适配，接口层完全不动）
-        from server.services.bazi_data_service import BaziDataService
+        from server.orchestrators.bazi_data_service import BaziDataService
         
         # 使用 BaziDisplayService 直接调用（传递快速模式参数）
         loop = asyncio.get_event_loop()

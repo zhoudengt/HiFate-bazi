@@ -42,7 +42,7 @@ except ImportError:
 from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
 from core.analyzers.fortune_relation_analyzer import FortuneRelationAnalyzer
 from core.analyzers.wuxing_balance_analyzer import WuxingBalanceAnalyzer
-from server.services.bazi_data_orchestrator import BaziDataOrchestrator
+from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
 from server.services.industry_service import IndustryService
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.dayun_liunian_helper import (
@@ -148,7 +148,7 @@ async def general_review_analysis_test(request: GeneralReviewRequest):
         bazi_data = validate_bazi_data(bazi_data)
         
         # ✅ 使用统一数据服务获取大运流年、特殊流年数据（与流式接口保持一致）
-        from server.services.bazi_data_service import BaziDataService
+        from server.orchestrators.bazi_data_service import BaziDataService
         
         fortune_data = await BaziDataService.get_fortune_data(
             solar_date=final_solar_date,
@@ -690,7 +690,7 @@ async def general_review_analysis_stream_generator(
         bazi_data = validate_bazi_data(bazi_data)
         
         # ✅ 使用统一数据服务获取大运流年、特殊流年数据（确保数据一致性）
-        from server.services.bazi_data_service import BaziDataService
+        from server.orchestrators.bazi_data_service import BaziDataService
         
         # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
         fortune_data = await BaziDataService.get_fortune_data(

@@ -7,7 +7,7 @@ import json
 import logging
 from typing import Dict, Any, List
 from collections import Counter
-from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+from shared.config.database import get_mysql_connection, return_mysql_connection
 from services.model_tuning_service.config import (
     MIN_KEYWORD_FREQUENCY, MIN_KEYWORD_CONFIDENCE, AUTO_EXTRACT_KEYWORDS
 )

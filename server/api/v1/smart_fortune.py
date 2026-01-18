@@ -205,7 +205,7 @@ async def smart_analyze(
         if include_fortune_context:
             with monitor.stage("fortune_context", "流年大运分析", target_years=target_years, rule_types=rule_types):
                 try:
-                    from server.services.fortune_context_service import FortuneContextService
+                    from server.orchestrators.fortune_context_service import FortuneContextService
                     
                     fortune_context = FortuneContextService.get_fortune_context(
                         solar_date=solar_date,
@@ -888,7 +888,7 @@ def _calculate_bazi_data(
     from server.services.bazi_service import BaziService
     from server.services.bazi_detail_service import BaziDetailService
     from server.services.wangshuai_service import WangShuaiService
-    from server.services.fortune_context_service import FortuneContextService
+    from server.orchestrators.fortune_context_service import FortuneContextService
     from datetime import datetime
     
     solar_date = f"{year:04d}-{month:02d}-{day:02d}"
@@ -1522,7 +1522,7 @@ async def _original_scenario_generator(
             
             with monitor.stage("fortune_context", "流年大运分析", target_years=target_years, rule_types=rule_types):
                 try:
-                    from server.services.fortune_context_service import FortuneContextService
+                    from server.orchestrators.fortune_context_service import FortuneContextService
                     
                     fortune_context = FortuneContextService.get_fortune_context(
                         solar_date=solar_date,

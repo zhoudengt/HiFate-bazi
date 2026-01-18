@@ -48,7 +48,7 @@ MYSQL_CONFIG = {
 
 # Coze API 配置（用于生成优化建议，只从数据库读取）
 try:
-    from server.config.config_loader import get_config_from_db_only
+    from shared.config.config_loader import get_config_from_db_only
 except ImportError:
     # 如果导入失败，抛出错误（不允许降级）
     def get_config_from_db_only(key: str):

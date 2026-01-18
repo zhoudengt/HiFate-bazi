@@ -268,7 +268,7 @@ class BaziDataOrchestrator:
         if modules.get('fortune_display'):
             # ✅ 扩展：使用 BaziDataService.get_fortune_display（支持7个标准参数）
             # 注意：fortune_display 通常从 detail 中获取，但如果需要单独获取，使用 BaziDataService
-            from server.services.bazi_data_service import BaziDataService
+            from server.orchestrators.bazi_data_service import BaziDataService
             fortune_display_task = BaziDataService.get_fortune_display(
                 final_solar_date, final_solar_time, gender,
                 calendar_type or "solar",

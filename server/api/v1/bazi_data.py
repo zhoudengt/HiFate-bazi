@@ -17,7 +17,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
-from server.services.bazi_data_orchestrator import BaziDataOrchestrator
+from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
 from server.services.bazi_data_validator import BaziDataValidator
 from server.services.bazi_data_cache import BaziDataCache
 import asyncio

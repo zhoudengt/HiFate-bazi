@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # 尝试导入Redis（可选依赖）
 try:
-    from server.config.redis_config import get_redis_client
+    from shared.config.redis import get_redis_client
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
@@ -326,7 +326,7 @@ class DeskFengshuiEngine:
     def _get_default_db_config(self) -> Dict:
         """获取默认数据库配置"""
         try:
-            from server.config.mysql_config import MYSQL_CONFIG
+            from shared.config.database import MYSQL_CONFIG
             # 确保字符集配置正确
             config = MYSQL_CONFIG.copy()
             config['charset'] = 'utf8mb4'
@@ -573,7 +573,7 @@ class DeskFengshuiEngine:
             import pymysql
             
             # 使用连接池（必须）
-            from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+            from shared.config.database import get_mysql_connection, return_mysql_connection
             conn = get_mysql_connection()
             use_pool = True
             

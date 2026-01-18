@@ -43,7 +43,7 @@ except ImportError:
     # 如果导入失败，抛出错误（不允许降级）
     def get_config_from_db_only(key: str) -> Optional[str]:
         raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
-from server.services.bazi_data_orchestrator import BaziDataOrchestrator
+from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
 from server.api.v1.general_review_analysis import organize_special_liunians_by_dayun
 from server.utils.dayun_liunian_helper import (
     calculate_user_age,
@@ -592,7 +592,7 @@ async def marriage_analysis_stream_generator(
                 detail_result = {'success': False, 'data': {}}
             
             # ✅ 使用统一数据服务获取大运流年、特殊流年数据（确保数据一致性）
-            from server.services.bazi_data_service import BaziDataService
+            from server.orchestrators.bazi_data_service import BaziDataService
             
             # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
             fortune_data = await BaziDataService.get_fortune_data(
@@ -1142,7 +1142,7 @@ async def extract_marriage_analysis_data(
         # ✅ 修复：从 BaziDataService 获取特殊流年数据（与 stream 接口保持一致）
         special_liunians = []
         try:
-            from server.services.bazi_data_service import BaziDataService
+            from server.orchestrators.bazi_data_service import BaziDataService
             
             # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
             # 注意：extract_marriage_analysis_data 函数只接受基本参数，使用默认值
@@ -1291,7 +1291,7 @@ async def marriage_analysis_test(request: MarriageAnalysisRequest):
         bazi_data = validate_bazi_data(bazi_data)
         
         # ✅ 使用统一数据服务获取大运流年、特殊流年数据（与流式接口保持一致）
-        from server.services.bazi_data_service import BaziDataService
+        from server.orchestrators.bazi_data_service import BaziDataService
         
         fortune_data = await BaziDataService.get_fortune_data(
             solar_date=final_solar_date,
