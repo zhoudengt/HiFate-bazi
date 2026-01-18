@@ -38,20 +38,6 @@ class QAQuestionGenerator:
             raise ValueError("数据库配置缺失: QA_QUESTION_GENERATOR_BOT_ID 或 COZE_BOT_ID，请在 service_configs 表中配置")
         self.coze_service = CozeStreamService(bot_id=self.question_bot_id)
     
-    async def generate_questions_after_question(
-        self,
-        user_question: str,
-        bazi_data: Dict[str, Any],
-        intent_result: Dict[str, Any],
-        conversation_history: List[Dict[str, Any]]
-    ) -> List[str]:
-        """
-        用户提问后生成相关问题（已废弃，不再使用）
-        
-        注意：此方法已不再使用，问题生成改为在答案生成后并行生成
-        """
-        return []  # 不再生成提问前的问题
-    
     async def generate_questions_after_answer(
         self,
         user_question: str,
@@ -154,57 +140,6 @@ class QAQuestionGenerator:
         }
         
         return json.dumps(optimized_data, ensure_ascii=False, indent=2)
-    
-    # ⚠️ 已废弃：_build_question_generation_prompt 方法（方案1已废弃，使用方案2：format_input_data_for_coze）
-    def _build_question_generation_prompt(
-        self,
-        data: dict,
-        include_answer: bool = False
-    ) -> str:
-        """
-        构建问题生成提示词（已废弃，保留用于向后兼容）
-        
-        注意：新代码应使用 format_input_data_for_coze（方案2）
-        """
-        prompt_lines = []
-        
-        # 1. 用户问题
-        prompt_lines.append(f"【用户问题】")
-        prompt_lines.append(f"{data.get('user_question', '')}")
-        prompt_lines.append("")
-        
-        # 2. 答案内容（如果包含）
-        if include_answer and data.get('answer'):
-            prompt_lines.append(f"【答案内容】")
-            answer = data.get('answer', '')
-            # 只取前500字符
-            prompt_lines.append(f"{answer[:500]}...")
-            prompt_lines.append("")
-        
-        # 3. 意图
-        intent = data.get('intent', [])
-        if intent:
-            prompt_lines.append(f"【意图识别】")
-            prompt_lines.append(f"{', '.join(intent)}")
-            prompt_lines.append("")
-        
-        # 4. 八字摘要
-        bazi_summary = data.get('bazi_summary', '')
-        if bazi_summary:
-            prompt_lines.append(f"【八字摘要】")
-            prompt_lines.append(f"{bazi_summary}")
-            prompt_lines.append("")
-        
-        # 5. 对话上下文
-        conversation_context = data.get('conversation_context', {})
-        previous_questions = conversation_context.get('previous_questions', [])
-        if previous_questions:
-            prompt_lines.append(f"【对话历史】")
-            for i, q in enumerate(previous_questions, 1):
-                prompt_lines.append(f"  问题{i}：{q}")
-            prompt_lines.append("")
-        
-        return '\n'.join(prompt_lines)
     
     async def _call_question_bot(self, formatted_data: str) -> List[str]:
         """

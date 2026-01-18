@@ -29,9 +29,7 @@ from server.services.daily_fortune_calendar_service import DailyFortuneCalendarS
 from server.services.wuxing_proportion_service import WuxingProportionService
 from server.services.bazi_interface_service import BaziInterfaceService
 from server.services.bazi_display_service import BaziDisplayService
-from server.services.yigua_service import YiGuaService
 from server.services.bazi_ai_service import BaziAIService
-from server.services.liunian_enhanced_service import LiunianEnhancedService
 from server.api.v1.xishen_jishen import get_xishen_jishen, XishenJishenRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.utils.data_validator import validate_bazi_data
@@ -254,13 +252,6 @@ class BaziDataOrchestrator:
             )
             tasks.append(('wuxing_proportion', wuxing_proportion_task))
         
-        if modules.get('liunian_enhanced'):
-            liunian_enhanced_task = loop.run_in_executor(
-                executor, LiunianEnhancedService.analyze_liunian_enhanced,
-                final_solar_date, final_solar_time, gender, None, 10
-            )
-            tasks.append(('liunian_enhanced', liunian_enhanced_task))
-        
         # 5. 辅助模块（需要基础八字数据）
         if modules.get('shengong_minggong'):
             # ✅ 扩展：支持7个标准参数
@@ -302,15 +293,6 @@ class BaziDataOrchestrator:
             tasks.append(('monthly_fortune', monthly_fortune_task))
         
         # 7. 其他模块
-        if modules.get('yigua'):
-            # YiGuaService.divinate 需要 question 参数，这里使用默认问题
-            yigua_question = modules['yigua'].get('question', '占卜') if isinstance(modules['yigua'], dict) else '占卜'
-            yigua_task = loop.run_in_executor(
-                executor, YiGuaService.divinate,
-                yigua_question, current_time
-            )
-            tasks.append(('yigua', yigua_task))
-        
         if modules.get('bazi_ai'):
             ai_question = modules['bazi_ai'].get('question') if isinstance(modules.get('bazi_ai'), dict) else None
             ai_task = loop.run_in_executor(
@@ -627,13 +609,6 @@ class BaziDataOrchestrator:
         if modules.get('wuxing_proportion'):
             result['wuxing_proportion'] = task_data.get('wuxing_proportion')
         
-        if modules.get('liunian_enhanced'):
-            liunian_enhanced_data = task_data.get('liunian_enhanced')
-            if liunian_enhanced_data and isinstance(liunian_enhanced_data, dict):
-                result['liunian_enhanced'] = liunian_enhanced_data.get('data', liunian_enhanced_data)
-            else:
-                result['liunian_enhanced'] = liunian_enhanced_data
-        
         # 处理辅助模块（从基础数据中提取）
         if modules.get('deities') and bazi_data:
             deities = {}
@@ -709,9 +684,6 @@ class BaziDataOrchestrator:
             result['daily_fortune_calendar'] = calendar_data
         
         # 处理其他模块
-        if modules.get('yigua'):
-            result['yigua'] = task_data.get('yigua')
-        
         if modules.get('bazi_interface'):
             result['bazi_interface'] = task_data.get('interface')
         

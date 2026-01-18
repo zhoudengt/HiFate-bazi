@@ -347,10 +347,11 @@ async function loadFortuneData(dayunIndex = null) {
     }
 }
 
-// 加载流月数据
+// 加载流月数据（使用fortune/display统一接口）
 async function loadLiuyue(targetYear) {
     try {
-        const liuyueResponse = await api.post('/bazi/liuyue/display', {
+        // ✅ 修改：使用 fortune/display 统一接口替代 liuyue/display
+        const liuyueResponse = await api.post('/bazi/fortune/display', {
             solar_date: currentData.solar_date,
             solar_time: currentData.solar_time,
             gender: currentData.gender,

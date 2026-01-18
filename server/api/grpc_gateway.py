@@ -28,18 +28,11 @@ DEBUG_LOG_PATH = os.path.join(PROJECT_ROOT, 'logs', 'debug.log')
 # 认证相关代码已移除
 from server.api.v1.bazi_display import (
     BaziDisplayRequest,
-    DayunDisplayRequest,
     FortuneDisplayRequest,
-    LiunianDisplayRequest,
-    LiuyueDisplayRequest,
-    get_dayun_display,
     get_fortune_display,
-    get_liunian_display,
-    get_liuyue_display,
     get_pan_display,
 )
 from server.api.v1.wangshuai import WangShuaiRequest, calculate_wangshuai
-from server.api.v1.yigua import YiGuaRequest, divinate
 from server.api.v1.payment import (
     CreatePaymentSessionRequest,
     VerifyPaymentRequest,
@@ -50,14 +43,6 @@ from server.api.v1.smart_fortune import smart_analyze
 from server.api.v1.formula_analysis import (
     FormulaAnalysisRequest,
     analyze_formula_rules,
-)
-from server.api.v1.daily_fortune import (
-    DailyFortuneRequest,
-    get_daily_fortune,
-)
-from server.api.v1.monthly_fortune import (
-    MonthlyFortuneRequest,
-    calculate_monthly_fortune,
 )
 from server.api.v1.unified_payment import (
     CreatePaymentRequest,
@@ -372,34 +357,10 @@ async def _handle_fortune(payload: Dict[str, Any]):
     return result
 
 
-@_register("/bazi/dayun/display")
-async def _handle_dayun(payload: Dict[str, Any]):
-    request_model = DayunDisplayRequest(**payload)
-    return await get_dayun_display(request_model)
-
-
-@_register("/bazi/liunian/display")
-async def _handle_liunian(payload: Dict[str, Any]):
-    request_model = LiunianDisplayRequest(**payload)
-    return await get_liunian_display(request_model)
-
-
-@_register("/bazi/liuyue/display")
-async def _handle_liuyue(payload: Dict[str, Any]):
-    request_model = LiuyueDisplayRequest(**payload)
-    return await get_liuyue_display(request_model)
-
-
 @_register("/bazi/wangshuai")
 async def _handle_wangshuai(payload: Dict[str, Any]):
     request_model = WangShuaiRequest(**payload)
     return await calculate_wangshuai(request_model)
-
-
-@_register("/bazi/yigua/divinate")
-async def _handle_yigua(payload: Dict[str, Any]):
-    request_model = YiGuaRequest(**payload)
-    return await divinate(request_model)
 
 
 @_register("/auth/login")
@@ -453,20 +414,6 @@ async def _handle_formula_analysis(payload: Dict[str, Any]):
     """处理算法公式分析请求"""
     request_model = FormulaAnalysisRequest(**payload)
     return await analyze_formula_rules(request_model)
-
-
-@_register("/bazi/daily-fortune")
-async def _handle_daily_fortune(payload: Dict[str, Any]):
-    """处理今日运势分析请求"""
-    request_model = DailyFortuneRequest(**payload)
-    return await get_daily_fortune(request_model)
-
-
-@_register("/bazi/monthly-fortune")
-async def _handle_monthly_fortune(payload: Dict[str, Any]):
-    """处理当月运势分析请求"""
-    request_model = MonthlyFortuneRequest(**payload)
-    return await calculate_monthly_fortune(request_model)
 
 
 @_register("/bazi/interface")

@@ -185,13 +185,6 @@ except ImportError as e:
     chat_router = None
     CHAT_ROUTER_AVAILABLE = False
 
-# 新增：一事一卦路由
-try:
-    from server.api.v1.yigua import router as yigua_router
-    YIGUA_ROUTER_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"一事一卦路由导入失败（可选功能）: {e}")
-
 # 新增：面相分析V2路由（独立系统）
 try:
     from server.api.v2.face_analysis import router as face_analysis_v2_router
@@ -200,15 +193,6 @@ except ImportError as e:
     logger.warning(f"面相分析V2路由导入失败（可选功能）: {e}")
     face_analysis_v2_router = None
     FACE_ANALYSIS_V2_ROUTER_AVAILABLE = False
-
-# 新增：今日运势分析路由（类似 FateTell 的日运日签）
-try:
-    from server.api.v1.daily_fortune import router as daily_fortune_router
-    DAILY_FORTUNE_ROUTER_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"今日运势分析路由导入失败（可选功能）: {e}")
-    daily_fortune_router = None
-    DAILY_FORTUNE_ROUTER_AVAILABLE = False
 
 # 新增：运势API路由（调用第三方API）
 try:
@@ -227,15 +211,6 @@ except ImportError as e:
     logger.warning(f"万年历API路由导入失败（可选功能）: {e}")
     calendar_api_router = None
     CALENDAR_API_ROUTER_AVAILABLE = False
-
-# 新增：月运势分析路由（基于八字）
-try:
-    from server.api.v1.monthly_fortune import router as monthly_fortune_router
-    MONTHLY_FORTUNE_ROUTER_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"月运势分析路由导入失败（可选功能）: {e}")
-    monthly_fortune_router = None
-    MONTHLY_FORTUNE_ROUTER_AVAILABLE = False
 
 # 新增：日元-六十甲子路由
 try:
@@ -299,15 +274,6 @@ except ImportError as e:
     logger.warning(f"身体健康分析路由导入失败（可选功能）: {e}")
     health_analysis_router = None
     HEALTH_ANALYSIS_ROUTER_AVAILABLE = False
-
-# 身体健康分析路由 V2（条件可用）
-try:
-    from server.api.v1.health_analysis_v2 import router as health_analysis_v2_router
-    HEALTH_ANALYSIS_V2_ROUTER_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"身体健康分析路由 V2 导入失败（可选功能）: {e}")
-    health_analysis_v2_router = None
-    HEALTH_ANALYSIS_V2_ROUTER_AVAILABLE = False
 
 # 总评分析路由（条件可用）
 try:
@@ -762,24 +728,7 @@ def _register_all_routers_to_manager():
         enabled_getter=lambda: CHAT_ROUTER_AVAILABLE and chat_router is not None
     )
     
-    # 一事一卦路由（条件可用）
-    router_manager.register_router(
-        "yigua",
-        lambda: yigua_router,
-        prefix="/api/v1",
-        tags=["一事一卦"],
-        enabled_getter=lambda: YIGUA_ROUTER_AVAILABLE and yigua_router is not None
-    )
-    
     # 今日运势路由（条件可用）
-    router_manager.register_router(
-        "daily_fortune",
-        lambda: daily_fortune_router,
-        prefix="/api/v1",
-        tags=["今日运势"],
-        enabled_getter=lambda: DAILY_FORTUNE_ROUTER_AVAILABLE and daily_fortune_router is not None
-    )
-    
     # 运势API路由（条件可用）
     router_manager.register_router(
         "fortune_api",
@@ -796,15 +745,6 @@ def _register_all_routers_to_manager():
         prefix="/api/v1",
         tags=["万年历API"],
         enabled_getter=lambda: CALENDAR_API_ROUTER_AVAILABLE and calendar_api_router is not None
-    )
-    
-    # 月运势路由（条件可用）
-    router_manager.register_router(
-        "monthly_fortune",
-        lambda: monthly_fortune_router,
-        prefix="/api/v1",
-        tags=["月运势"],
-        enabled_getter=lambda: MONTHLY_FORTUNE_ROUTER_AVAILABLE and monthly_fortune_router is not None
     )
     
     # 每日运势日历路由（动态导入，条件可用）
@@ -886,15 +826,6 @@ def _register_all_routers_to_manager():
         enabled_getter=lambda: HEALTH_ANALYSIS_ROUTER_AVAILABLE and health_analysis_router is not None
     )
     
-    # 身体健康分析路由 V2（条件可用）
-    router_manager.register_router(
-        "health_analysis_v2",
-        lambda: health_analysis_v2_router,
-        prefix="/api/v1",
-        tags=["八字命理"],
-        enabled_getter=lambda: HEALTH_ANALYSIS_V2_ROUTER_AVAILABLE and health_analysis_v2_router is not None
-    )
-    
     # 总评分析路由（条件可用）
     router_manager.register_router(
         "general_review_analysis",
@@ -922,22 +853,6 @@ def _register_all_routers_to_manager():
         enabled_getter=lambda: FEEDBACK_ROUTER_AVAILABLE and feedback_router is not None
     )
     
-    # 流年大运增强分析路由（动态导入，条件可用）
-    def get_liunian_enhanced_router():
-        try:
-            from server.api.v1.liunian_enhanced import router as liunian_enhanced_router
-            return liunian_enhanced_router
-        except ImportError:
-            return None
-    
-    router_manager.register_router(
-        "liunian_enhanced",
-        get_liunian_enhanced_router,
-        prefix="/api/v1",
-        tags=["流年大运增强分析"],
-        enabled_getter=lambda: get_liunian_enhanced_router() is not None
-    )
-    
     # 统一支付路由（条件可用）
     router_manager.register_router(
         "unified_payment",
@@ -963,22 +878,6 @@ def _register_all_routers_to_manager():
         prefix="/api/v1",
         tags=["前端展示"],
         enabled_getter=lambda: BAZI_DISPLAY_ROUTER_AVAILABLE and bazi_display_router is not None
-    )
-    
-    # 面相手相分析路由（动态导入，条件可用）
-    def get_fortune_analysis_router():
-        try:
-            from server.api.v1.fortune_analysis import router as fortune_analysis_router
-            return fortune_analysis_router
-        except ImportError:
-            return None
-    
-    router_manager.register_router(
-        "fortune_analysis",
-        get_fortune_analysis_router,
-        prefix="/api/v1",
-        tags=["面相手相分析"],
-        enabled_getter=lambda: get_fortune_analysis_router() is not None
     )
     
     # 流式分析路由（动态导入，条件可用）

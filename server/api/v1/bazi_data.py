@@ -77,10 +77,10 @@ async def get_bazi_data(request: BaziDataRequest):
     - 基础模块: bazi, wangshuai, xishen_jishen, wuxing
     - 大运流年模块: dayun, liunian, liuyue, special_liunian, fortune_display
     - 规则匹配模块: rules（支持所有规则类型）
-    - 分析模块: health, personality, rizhu, wuxing_proportion, liunian_enhanced
+    - 分析模块: health, personality, rizhu, wuxing_proportion
     - 辅助模块: deities, branch_relations, career_star, wealth_star, children_star, shengong_minggong
     - 运势模块: daily_fortune, monthly_fortune, daily_fortune_calendar
-    - 其他模块: yigua, bazi_interface, bazi_ai
+    - 其他模块: bazi_interface, bazi_ai
     
     Args:
         request: 统一数据获取请求参数

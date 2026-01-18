@@ -49,10 +49,6 @@ class Sidebar {
                         <span class="nav-item-icon">📋</span>
                         <span class="nav-item-text">基本信息</span>
                     </a>
-                    <a href="yigua.html" class="nav-item" data-page="yigua">
-                        <span class="nav-item-icon">💬</span>
-                        <span class="nav-item-text">召唤</span>
-                    </a>
                     <a href="#" class="nav-item" data-page="shop">
                         <span class="nav-item-icon">🛒</span>
                         <span class="nav-item-text">商店</span>
@@ -117,7 +113,6 @@ class Sidebar {
         if (filename.includes('shengong-minggong')) return 'shengong-minggong';
         if (filename.includes('daily-fortune-calendar')) return 'daily-fortune-calendar';
         if (filename.includes('fortune')) return 'dayun-liunian';
-        if (filename.includes('yigua')) return 'yigua';
         if (filename.includes('dayun')) return 'dayun';
         if (filename.includes('liunian')) return 'liunian';
         if (filename.includes('wuxing-proportion')) return 'wuxing-proportion';

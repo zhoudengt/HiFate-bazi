@@ -314,7 +314,12 @@ class EnhancedRuleEngine:
             self._build_advanced_index()
     
     def load_from_db(self, db_connection):
-        """从数据库加载规则（需要实现数据库连接）"""
-        # TODO: 实现数据库加载逻辑
+        """
+        从数据库加载规则（已废弃，不需要实现）
+        
+        注意：数据库加载逻辑在 RuleService 中实现，此方法保留仅用于向后兼容。
+        实际使用应通过 RuleService.get_engine() 获取引擎，RuleService 会自动从数据库加载规则。
+        """
+        # 此方法不再使用，数据库加载在 RuleService 中实现
         pass
 

@@ -37,7 +37,7 @@ except ImportError:
     def get_config_from_db_only(key: str) -> Optional[str]:
         raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
 from server.services.bazi_data_orchestrator import BaziDataOrchestrator
-from server.api.v1.general_review_analysis import organize_special_liunians_by_dayun
+from server.api.v1.general_review_analysis import organize_special_liunians_by_dayun, format_input_data_for_coze
 from server.services.special_liunian_service import SpecialLiunianService
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
@@ -45,7 +45,7 @@ from server.services.user_interaction_logger import get_user_interaction_logger
 import time
 
 from server.config.input_format_loader import build_input_data_from_result
-from server.utils.prompt_builders import build_health_prompt
+# build_health_prompt 已废弃，改用 format_input_data_for_coze（方案2）
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -563,10 +563,10 @@ async def health_analysis_stream_generator(
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 10. 构建自然语言Prompt（阶段4：Prompt构建）
-        prompt = build_health_prompt(input_data)
-        logger.info(f"Prompt长度: {len(prompt)} 字符")
-        logger.debug(f"Prompt前500字符: {prompt[:500]}")
+        # 10. 格式化数据为 Coze Bot 输入格式（方案2，与V2保持一致）
+        formatted_data = format_input_data_for_coze(input_data)
+        logger.info(f"格式化数据长度: {len(formatted_data)} 字符")
+        logger.debug(f"格式化数据前500字符: {formatted_data[:500]}")
         
         # 11. 调用 LLM API（阶段5：LLM API调用，支持 Coze 和百炼平台）
         from server.services.llm_service_factory import LLMServiceFactory
@@ -576,7 +576,7 @@ async def health_analysis_stream_generator(
         llm_start_time = time.time()
         has_content = False
         
-        async for chunk in llm_service.stream_analysis(prompt, bot_id=used_bot_id):
+        async for chunk in llm_service.stream_analysis(formatted_data, bot_id=used_bot_id):
             # 记录第一个token时间
             if llm_first_token_time is None and chunk.get('type') == 'progress':
                 llm_first_token_time = time.time()
@@ -1072,5 +1072,5 @@ def validate_health_input_data(data: dict) -> tuple[bool, str]:
     
     return True, ""
 
-# ✅ build_health_prompt 函数已移至 server/utils/prompt_builders.py
-# 通过顶部 import 导入，确保评测脚本和流式接口使用相同的函数
+# ✅ 已升级为方案2：使用 format_input_data_for_coze 替代 build_health_prompt
+# 与 health_analysis_v2.py 保持一致，提高 AI 处理效率
