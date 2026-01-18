@@ -14,7 +14,7 @@ from server.utils.timezone_converter import (
     format_datetime_for_bazi
 )
 from server.utils.timezone_mapping import match_location_to_timezone
-from src.tool.LunarConverter import LunarConverter
+from core.calculators.LunarConverter import LunarConverter
 
 
 class TestTimezoneMapping:

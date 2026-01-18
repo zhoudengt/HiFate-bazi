@@ -174,7 +174,7 @@ def build_marriage_input_data(
             
             if solar_date and solar_time:
                 # 重新计算八字（仅在本地，避免递归调用）
-                from src.tool.BaziCalculator import BaziCalculator
+                from core.calculators.BaziCalculator import BaziCalculator
                 calculator = BaziCalculator(solar_date, solar_time, gender)
                 recalc_result = calculator.calculate()
                 if recalc_result and 'bazi_pillars' in recalc_result:

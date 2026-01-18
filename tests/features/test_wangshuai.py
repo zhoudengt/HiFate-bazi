@@ -11,7 +11,7 @@ import os
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
-from src.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
+from core.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
 
 def test_wangshuai():
     """测试旺衰分析"""

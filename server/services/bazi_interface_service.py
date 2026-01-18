@@ -12,7 +12,7 @@ import os
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, project_root)
 
-from src.bazi_interface_generator import BaziInterfaceGenerator
+from core.calculators.bazi_interface_generator import BaziInterfaceGenerator
 
 
 class BaziInterfaceService:

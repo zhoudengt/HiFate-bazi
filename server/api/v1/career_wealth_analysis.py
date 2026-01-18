@@ -40,7 +40,7 @@ except ImportError:
         raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
 from server.services.bazi_data_orchestrator import BaziDataOrchestrator
 from server.api.v1.general_review_analysis import classify_special_liunians, organize_special_liunians_by_dayun
-from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
+from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
 from server.utils.dayun_liunian_helper import (
     calculate_user_age,
     get_current_dayun,

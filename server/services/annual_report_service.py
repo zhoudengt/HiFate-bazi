@@ -19,8 +19,8 @@ from server.services.taisui_service import TaisuiService
 from server.services.fengshui_service import FengshuiService
 from server.services.monthly_fortune_service import MonthlyFortuneService
 from server.utils.dayun_liunian_helper import calculate_user_age
-from src.data.stems_branches import BRANCH_ZODIAC
-from src.tool.LunarConverter import LunarConverter
+from core.data.stems_branches import BRANCH_ZODIAC
+from core.calculators.LunarConverter import LunarConverter
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,7 @@ from typing import Dict, Any
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, project_root)
 
-from src.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
+from core.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
 
 logger = logging.getLogger(__name__)
 

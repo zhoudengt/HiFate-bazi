@@ -158,7 +158,7 @@ async def match_bazi_rules(request: BaziRulesRequest, http_request: Request):
         loop = asyncio.get_event_loop()
         
         # 1. 构造规则引擎需要的八字数据（包含流年信息）
-        from src.tool.BaziCalculator import BaziCalculator
+        from core.calculators.BaziCalculator import BaziCalculator
         calculator = BaziCalculator(final_solar_date, final_solar_time, request.gender)
         bazi_data = await loop.run_in_executor(
             executor,
@@ -245,7 +245,7 @@ async def curated_bazi_rules(
     try:
         loop = asyncio.get_event_loop()
         # 计算规则输入（与 match 接口一致）
-        from src.tool.BaziCalculator import BaziCalculator
+        from core.calculators.BaziCalculator import BaziCalculator
         calculator = BaziCalculator(request.solar_date, request.solar_time, request.gender)
         bazi_data = await loop.run_in_executor(
             executor,

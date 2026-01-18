@@ -227,7 +227,7 @@ class StreamDataAssembler:
         day_branch = day_pillar.get('branch', '')
         
         # 计算日主五行
-        from src.data.constants import STEM_ELEMENTS
+        from core.data.constants import STEM_ELEMENTS
         day_element = STEM_ELEMENTS.get(day_stem, '')
         
         return {

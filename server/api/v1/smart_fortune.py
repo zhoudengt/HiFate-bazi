@@ -19,7 +19,7 @@ from server.services.intent_client import IntentServiceClient
 from server.services.bazi_service import BaziService
 from server.services.fortune_llm_client import get_fortune_llm_client
 from server.utils.performance_monitor import PerformanceMonitor
-from src.tool.BaziCalculator import BaziCalculator
+from core.calculators.BaziCalculator import BaziCalculator
 
 router = APIRouter()
 bazi_service = BaziService()

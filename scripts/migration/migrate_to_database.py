@@ -12,7 +12,7 @@ import json
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from src.bazi_config.rizhu_gender_config import RIZHU_GENDER_CONFIG
+from core.config.rizhu_gender_config import RIZHU_GENDER_CONFIG
 from server.db.rule_content_dao import RuleContentDAO
 
 

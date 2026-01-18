@@ -14,8 +14,8 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
 sys.path.insert(0, PROJECT_ROOT)
 
-from src.tool.BaziCalculator import BaziCalculator  # noqa: E402
-from src.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer  # noqa: E402
+from core.calculators.BaziCalculator import BaziCalculator  # noqa: E402
+from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer  # noqa: E402
 
 from .schemas import AnalyzerType, BaziAnalyzerRequest, BaziAnalyzerResponse  # noqa: E402
 

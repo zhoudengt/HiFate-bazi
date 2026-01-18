@@ -108,7 +108,7 @@ class BaziClient:
     def _calculate_with_analyzer(self, solar_date: str, solar_time: str, gender: str) -> Dict:
         """直接使用分析器计算喜神忌神（备用方案）"""
         try:
-            from src.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
+            from core.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
             
             # 直接使用分析器，它内部会计算八字
             analyzer = WangShuaiAnalyzer()
@@ -168,7 +168,7 @@ class BaziClient:
             八字基本信息
         """
         try:
-            from src.bazi_calculator import WenZhenBazi
+            from core.calculators.bazi_calculator import WenZhenBazi
             
             bazi_calc = WenZhenBazi(solar_date, solar_time, gender)
             bazi_result = bazi_calc.calculate()

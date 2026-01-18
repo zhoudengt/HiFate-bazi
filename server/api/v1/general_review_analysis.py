@@ -27,7 +27,7 @@ from server.services.bazi_detail_service import BaziDetailService
 from server.services.rule_service import RuleService
 from server.services.health_analysis_service import HealthAnalysisService
 from server.services.rizhu_liujiazi_service import RizhuLiujiaziService
-from src.analyzers.fortune_relation_analyzer import FortuneRelationAnalyzer
+from core.analyzers.fortune_relation_analyzer import FortuneRelationAnalyzer
 from server.utils.data_validator import validate_bazi_data
 from server.api.v1.xishen_jishen import get_xishen_jishen, XishenJishenRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
@@ -39,9 +39,9 @@ except ImportError:
     # 如果导入失败，抛出错误（不允许降级）
     def get_config_from_db_only(key: str) -> Optional[str]:
         raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
-from src.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
-from src.analyzers.fortune_relation_analyzer import FortuneRelationAnalyzer
-from src.analyzers.wuxing_balance_analyzer import WuxingBalanceAnalyzer
+from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
+from core.analyzers.fortune_relation_analyzer import FortuneRelationAnalyzer
+from core.analyzers.wuxing_balance_analyzer import WuxingBalanceAnalyzer
 from server.services.bazi_data_orchestrator import BaziDataOrchestrator
 from server.services.industry_service import IndustryService
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
@@ -1712,7 +1712,7 @@ def analyze_wuxing_liutong(element_counts: dict, bazi_pillars: dict) -> dict:
     基于五行统计和生克关系分析五行流通
     """
     try:
-        from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
+        from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
         
         # 五行生克关系
         ELEMENT_RELATIONS = {

@@ -12,9 +12,9 @@ from typing import Dict, Any, Optional, List
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
-from src.tool.LunarConverter import LunarConverter
-from src.data.stems_branches import BRANCH_ZODIAC
-from src.data.relations import BRANCH_CHONG, BRANCH_XING, BRANCH_HAI, BRANCH_PO
+from core.calculators.LunarConverter import LunarConverter
+from core.data.stems_branches import BRANCH_ZODIAC
+from core.data.relations import BRANCH_CHONG, BRANCH_XING, BRANCH_HAI, BRANCH_PO
 import logging
 
 logger = logging.getLogger(__name__)

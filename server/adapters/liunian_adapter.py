@@ -53,7 +53,7 @@ class LiunianAdapter:
         Returns:
             Dict[str, Any]: 旧格式的流年数据（与 BaziDisplayService._format_liunian_item 格式一致）
         """
-        from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
+        from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
         
         return {
             "year": liunian.year,

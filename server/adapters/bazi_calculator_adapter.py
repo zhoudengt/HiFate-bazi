@@ -14,7 +14,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.insert(0, project_root)
 
 from server.interfaces.bazi_calculator_interface import IBaziCalculator
-from src.tool.BaziCalculator import BaziCalculator as LocalBaziCalculator
+from core.calculators.BaziCalculator import BaziCalculator as LocalBaziCalculator
 
 
 class BaziCalculatorAdapter(IBaziCalculator):

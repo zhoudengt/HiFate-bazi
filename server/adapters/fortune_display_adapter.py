@@ -119,7 +119,7 @@ class FortuneDisplayAdapter:
         Returns:
             Dict[str, Any]: 格式化后的流月数据
         """
-        from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
+        from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
         
         stem = liuyue.get('stem', '')
         branch = liuyue.get('branch', '')

@@ -18,7 +18,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
 sys.path.insert(0, PROJECT_ROOT)
 
-from src.bazi_core.calculator import BaziCoreCalculator  # noqa: E402
+from core.calculators.bazi_core_calculator import BaziCoreCalculator  # noqa: E402
 
 from .schemas import BaziCoreRequest, BaziCoreResponse  # noqa: E402
 

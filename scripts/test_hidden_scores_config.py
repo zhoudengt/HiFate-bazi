@@ -12,8 +12,8 @@ import os
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from src.data.wangshuai_config import WangShuaiConfigLoader
-from src.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
+from core.data.wangshuai_config import WangShuaiConfigLoader
+from core.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
 
 
 def test_config_loading():

@@ -10,8 +10,8 @@ import os
 from typing import Dict, Any, Optional, List
 
 from server.services.bazi_service import BaziService
-from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
-from src.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
+from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
+from core.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
 
 
 class WuxingProportionService:

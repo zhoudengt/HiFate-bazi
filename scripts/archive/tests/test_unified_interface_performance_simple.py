@@ -23,7 +23,7 @@ sys.path.insert(0, project_root)
 
 # 直接使用本地计算函数，不依赖服务层
 try:
-    from src.bazi_fortune.helpers import compute_local_detail
+    from core.calculators.helpers import compute_local_detail
     print("✅ 使用本地计算函数")
 except ImportError as e:
     print(f"❌ 无法导入本地计算函数: {e}")

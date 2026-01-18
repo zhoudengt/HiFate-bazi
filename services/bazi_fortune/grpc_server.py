@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "proto", "generated"))
 import bazi_fortune_pb2
 import bazi_fortune_pb2_grpc
 
-from src.bazi_fortune.helpers import compute_local_detail
+from core.calculators.helpers import compute_local_detail
 
 
 class BaziFortuneServicer(bazi_fortune_pb2_grpc.BaziFortuneServiceServicer):

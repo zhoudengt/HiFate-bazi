@@ -353,7 +353,7 @@ def import_zodiac_data(conn, dry_run: bool = False) -> Tuple[int, int]:
     
     # 地支列表（用于验证）
     valid_branches = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥']
-    from src.data.stems_branches import BRANCH_ZODIAC
+    from core.data.stems_branches import BRANCH_ZODIAC
     
     import re
     

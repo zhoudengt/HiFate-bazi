@@ -14,7 +14,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
 sys.path.insert(0, PROJECT_ROOT)
 
-from src.bazi_fortune.helpers import compute_local_detail  # noqa: E402
+from core.calculators.helpers import compute_local_detail  # noqa: E402
 
 from .schemas import BaziFortuneRequest, BaziFortuneResponse  # noqa: E402
 

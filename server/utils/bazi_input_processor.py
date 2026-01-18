@@ -6,7 +6,7 @@
 
 import logging
 from typing import Optional, Tuple
-from src.tool.LunarConverter import LunarConverter
+from core.calculators.LunarConverter import LunarConverter
 from server.utils.timezone_converter import convert_local_to_solar_time, format_datetime_for_bazi
 
 logger = logging.getLogger(__name__)

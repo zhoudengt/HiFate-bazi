@@ -170,7 +170,7 @@ def test_retry_mechanism():
     
     try:
         print_test("测试重试逻辑")
-        from src.clients.base_grpc_client import BaseGrpcClient
+        from shared.clients.base_grpc_client import BaseGrpcClient
         
         # 创建一个测试客户端
         class TestClient(BaseGrpcClient):

@@ -14,8 +14,8 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.bazi_service import BaziService
-from src.ai.bazi_ai_analyzer import BaziAIAnalyzer
-from src.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
+from core.analyzers.bazi_ai_analyzer import BaziAIAnalyzer
+from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
 
 
 class BaziAIService:

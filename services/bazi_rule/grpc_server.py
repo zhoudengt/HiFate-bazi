@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "proto", "generated"))
 import bazi_rule_pb2
 import bazi_rule_pb2_grpc
 
-from src.tool.BaziCalculator import BaziCalculator
+from core.calculators.BaziCalculator import BaziCalculator
 
 
 class BaziRuleServicer(bazi_rule_pb2_grpc.BaziRuleServiceServicer):

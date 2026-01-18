@@ -499,7 +499,7 @@ class FortuneRuleServicer(fortune_rule_pb2_grpc.FortuneRuleServiceServicer):
             
             # 降级方案：使用 BaziCoreClient
             try:
-                from src.clients.bazi_core_client_grpc import BaziCoreClient
+                from shared.clients.bazi_core_client_grpc import BaziCoreClient
                 client = BaziCoreClient()
                 bazi_result = client.calculate_bazi(solar_date, solar_time, gender)
                 

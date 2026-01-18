@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "proto", "generated"))
 import bazi_core_pb2
 import bazi_core_pb2_grpc
 
-from src.bazi_core.calculator import BaziCoreCalculator
+from core.calculators.bazi_core_calculator import BaziCoreCalculator
 
 
 class BaziCoreServicer(bazi_core_pb2_grpc.BaziCoreServiceServicer):

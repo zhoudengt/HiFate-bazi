@@ -13,11 +13,11 @@ import sys
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, project_root)
 
-from src.tool.BaziCalculator import BaziCalculator
-from src.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
+from core.calculators.BaziCalculator import BaziCalculator
+from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
 # 延迟导入 gRPC 客户端，避免导入时触发版本检查错误
-# from src.clients.bazi_core_client_grpc import BaziCoreClient
-# from src.clients.bazi_rule_client_grpc import BaziRuleClient
+# from shared.clients.bazi_core_client_grpc import BaziCoreClient
+# from shared.clients.bazi_rule_client_grpc import BaziRuleClient
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class BaziService:
         if core_service_url:
             try:
                 # 延迟导入，避免导入时触发版本检查错误
-                from src.clients.bazi_core_client_grpc import BaziCoreClient
+                from shared.clients.bazi_core_client_grpc import BaziCoreClient
                 # 使用30秒超时，确保有足够时间处理复杂计算
                 client = BaziCoreClient(base_url=core_service_url, timeout=30.0)
                 bazi_result = client.calculate_bazi(solar_date, solar_time, gender)
@@ -320,7 +320,7 @@ class BaziService:
         if rule_service_url:
             try:
                 # 延迟导入，避免导入时触发版本检查错误
-                from src.clients.bazi_rule_client_grpc import BaziRuleClient
+                from shared.clients.bazi_rule_client_grpc import BaziRuleClient
                 # 安全地获取基本信息
                 basic_info = bazi_result.get('basic_info', {})
                 if not isinstance(basic_info, dict):

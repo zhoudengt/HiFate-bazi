@@ -186,8 +186,8 @@ class CalendarAPIService:
             
             # 获取合（六合）
             day_branch = day_ganzhi[1] if len(day_ganzhi) > 1 else ''
-            from src.data.relations import BRANCH_LIUHE
-            from src.data.stems_branches import BRANCH_ZODIAC
+            from core.data.relations import BRANCH_LIUHE
+            from core.data.stems_branches import BRANCH_ZODIAC
             he_branch = BRANCH_LIUHE.get(day_branch, '')
             he_zodiac = BRANCH_ZODIAC.get(he_branch, '')
             

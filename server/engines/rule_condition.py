@@ -8,8 +8,8 @@
 from collections import Counter
 from typing import Dict, List, Any, Optional, Tuple
 
-from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
-from src.data.relations import (
+from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
+from core.data.relations import (
     STEM_HE,
     BRANCH_LIUHE,
     BRANCH_CHONG,
@@ -354,7 +354,7 @@ class EnhancedRuleCondition:
             elif key == "wangshuai":
                 """旺衰条件匹配"""
                 try:
-                    from src.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
+                    from core.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
                     
                     basic_info = bazi_data.get('basic_info', {})
                     solar_date = basic_info.get('solar_date', '')
@@ -856,7 +856,7 @@ class EnhancedRuleCondition:
                 if not day_stem:
                     return False
                 
-                from src.bazi_config.ten_gods_config import TenGodsCalculator
+                from core.config.ten_gods_config import TenGodsCalculator
                 calculator = TenGodsCalculator()
                 
                 # 统计主星十神数量（年、月、时柱的主星）
@@ -925,7 +925,7 @@ class EnhancedRuleCondition:
                 month_branch = bazi_pillars.get('month', {}).get('branch', '')
                 
                 # 获取月柱副星（地支藏干的十神）
-                from src.bazi_config.ten_gods_config import TenGodsCalculator
+                from core.config.ten_gods_config import TenGodsCalculator
                 calculator = TenGodsCalculator()
                 month_ten_gods = calculator.get_branch_ten_gods(day_stem, month_branch)
                 
@@ -1319,7 +1319,7 @@ class EnhancedRuleCondition:
                     return False
                 
                 try:
-                    from src.analyzers.ten_gods_energy_analyzer import TenGodsEnergyAnalyzer
+                    from core.analyzers.ten_gods_energy_analyzer import TenGodsEnergyAnalyzer
                     analyzer = TenGodsEnergyAnalyzer()
                     
                     ten_gods_stats = bazi_data.get('ten_gods_stats', {})
@@ -1437,7 +1437,7 @@ class EnhancedRuleCondition:
                 if not day_stem:
                     return False
                 
-                from src.bazi_config.ten_gods_config import TenGodsCalculator
+                from core.config.ten_gods_config import TenGodsCalculator
                 calculator = TenGodsCalculator()
                 
                 count = 0
@@ -1449,7 +1449,7 @@ class EnhancedRuleCondition:
                         continue
                     
                     # 获取地支本气（第一个藏干）
-                    from src.data.constants import HIDDEN_STEMS
+                    from core.data.constants import HIDDEN_STEMS
                     hidden_stems = HIDDEN_STEMS.get(branch, [])
                     if hidden_stems:
                         benqi_stem = hidden_stems[0][0]  # 第一个藏干的天干
@@ -1583,8 +1583,8 @@ class EnhancedRuleCondition:
                 if not day_stem:
                     return False
                 
-                from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
-                from src.bazi_config.ten_gods_config import TenGodsCalculator
+                from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
+                from core.config.ten_gods_config import TenGodsCalculator
                 
                 calculator = TenGodsCalculator()
                 
@@ -1640,7 +1640,7 @@ class EnhancedRuleCondition:
                 
                 # 统计五合
                 if "wuhe" in include_types:
-                    from src.data.relations import STEM_HE
+                    from core.data.relations import STEM_HE
                     bazi_pillars = bazi_data.get('bazi_pillars', {})
                     stems = [
                         bazi_pillars.get('year', {}).get('stem', ''),
@@ -1658,7 +1658,7 @@ class EnhancedRuleCondition:
                 # 统计三合、三会、六合（使用现有的branch_liuhe_sanhe_count逻辑）
                 if any(t in include_types for t in ["sanhe", "sanhui", "liuhe"]):
                     # 使用现有的branch_liuhe_sanhe_count逻辑
-                    from src.data.relations import BRANCH_LIUHE, BRANCH_SANHE_GROUPS, BRANCH_SANHUI_GROUPS
+                    from core.data.relations import BRANCH_LIUHE, BRANCH_SANHE_GROUPS, BRANCH_SANHUI_GROUPS
                     bazi_pillars = bazi_data.get('bazi_pillars', {})
                     branches = [
                         bazi_pillars.get('year', {}).get('branch', ''),
@@ -1709,7 +1709,7 @@ class EnhancedRuleCondition:
                 hour_stem = hour_pillar.get('stem', '')
                 hour_branch = hour_pillar.get('branch', '')
                 
-                from src.data.constants import STEM_ELEMENTS
+                from core.data.constants import STEM_ELEMENTS
                 day_element = STEM_ELEMENTS.get(day_stem, '')
                 
                 # 金神条件：日柱或时柱为乙丑、己巳、癸酉，且日主为金

@@ -76,7 +76,7 @@ class BaziServiceV2:
         else:
             # 补充缺失字段（使用本地计算）
             try:
-                from src.tool.BaziCalculator import BaziCalculator
+                from core.calculators.BaziCalculator import BaziCalculator
                 local_calc = BaziCalculator(solar_date, solar_time, gender)
                 local_calc._calculate_with_lunar()
                 local_calc._calculate_ten_gods()

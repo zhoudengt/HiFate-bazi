@@ -69,7 +69,7 @@ if has_grpc:
 # 降级模式：直接使用本地计算函数
 if not has_grpc:
     try:
-        from src.bazi_fortune.helpers import compute_local_detail
+        from core.calculators.helpers import compute_local_detail
         print("✅ 降级模式：使用本地计算函数")
         
         # 创建一个简单的包装类来模拟 BaziDetailService
@@ -314,7 +314,7 @@ def test_async_warmup_performance():
     def warmup_dayun(dayun_idx: int):
         """预热单个大运"""
         try:
-            from src.bazi_fortune.helpers import compute_local_detail
+            from core.calculators.helpers import compute_local_detail
             result = compute_local_detail(
                 solar_date, solar_time, gender,
                 current_time=current_time,

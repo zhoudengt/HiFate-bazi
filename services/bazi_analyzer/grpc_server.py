@@ -22,8 +22,8 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "proto", "generated"))
 import bazi_analyzer_pb2
 import bazi_analyzer_pb2_grpc
 
-from src.tool.BaziCalculator import BaziCalculator
-from src.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
+from core.calculators.BaziCalculator import BaziCalculator
+from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
 
 
 class BaziAnalyzerServicer(bazi_analyzer_pb2_grpc.BaziAnalyzerServiceServicer):

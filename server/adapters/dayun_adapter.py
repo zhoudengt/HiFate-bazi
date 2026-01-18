@@ -53,7 +53,7 @@ class DayunAdapter:
         Returns:
             Dict[str, Any]: 旧格式的大运数据（与 BaziDisplayService._format_dayun_item 格式一致）
         """
-        from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
+        from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
         
         return {
             "index": dayun.step,

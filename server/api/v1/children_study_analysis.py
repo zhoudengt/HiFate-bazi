@@ -38,7 +38,7 @@ from server.services.bazi_data_orchestrator import BaziDataOrchestrator
 from server.api.v1.general_review_analysis import organize_special_liunians_by_dayun
 from server.services.special_liunian_service import SpecialLiunianService
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
-from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
+from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
 from server.services.user_interaction_logger import get_user_interaction_logger
 import time
 from server.utils.dayun_liunian_helper import (

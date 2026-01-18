@@ -183,7 +183,7 @@ class QueryAdapterRegistry:
 def register_default_adapters():
     """注册默认的查询适配器"""
     try:
-        from src.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
+        from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
         QueryAdapterRegistry.register(
             'RizhuGenderAnalyzer',
             RizhuGenderAnalyzer,
@@ -194,7 +194,7 @@ def register_default_adapters():
         print(f"⚠ 注册 RizhuGenderAnalyzer 失败: {e}")
     
     try:
-        from src.analyzers.deities_analyzer import DeitiesAnalyzer
+        from core.analyzers.deities_analyzer import DeitiesAnalyzer
         QueryAdapterRegistry.register(
             'DeitiesAnalyzer',
             DeitiesAnalyzer,

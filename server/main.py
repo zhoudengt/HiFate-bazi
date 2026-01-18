@@ -442,7 +442,7 @@ async def lifespan(app: FastAPI):
     # ✅ 性能优化：预热节气表缓存（服务启动时预计算常用年份）
     try:
         from datetime import datetime
-        from src.bazi_fortune.bazi_calculator_docs import BaziCalculator as DocsBaziCalculator
+        from core.calculators.bazi_calculator_docs import BaziCalculator as DocsBaziCalculator
         
         current_year = datetime.now().year
         # 预热当前年份前后各5年的节气表（共11年）

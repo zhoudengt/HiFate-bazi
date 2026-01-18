@@ -141,7 +141,7 @@ class MonthlyFortuneService:
     @staticmethod
     def _extract_liuyue_info(detail_result: Dict[str, Any], target_date: date) -> Dict[str, Any]:
         """提取流月信息（直接使用LunarConverter计算当月干支）"""
-        from src.tool.LunarConverter import LunarConverter
+        from core.calculators.LunarConverter import LunarConverter
         
         liuyue_info = {
             "month": target_date.strftime("%Y-%m"),
@@ -631,7 +631,7 @@ class MonthlyFortuneService:
             }
         """
         try:
-            from src.tool.LunarConverter import LunarConverter
+            from core.calculators.LunarConverter import LunarConverter
             
             # 计算该月的五运六气
             # 五运：根据年份天干计算

@@ -16,8 +16,8 @@ from typing import Optional, Dict, Any, List
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, project_root)
 
-from src.clients.bazi_fortune_client_grpc import BaziFortuneClient
-from src.bazi_fortune.helpers import compute_local_detail
+from shared.clients.bazi_fortune_client_grpc import BaziFortuneClient
+from core.calculators.helpers import compute_local_detail
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ class BaziDetailService:
             # 计算当前大运索引
             if dayun_index is None:
                 try:
-                    from src.bazi_fortune.bazi_calculator_docs import BaziCalculator
+                    from core.calculators.bazi_calculator_docs import BaziCalculator
                     fortune_calc = BaziCalculator(solar_date, solar_time, gender)
                     if current_time is None:
                         from datetime import datetime
@@ -166,7 +166,7 @@ class BaziDetailService:
         bazi_calculator = None
         if include_rules or include_rizhu_liujiazi:
             try:
-                from src.tool.BaziCalculator import BaziCalculator
+                from core.calculators.BaziCalculator import BaziCalculator
                 bazi_calculator = BaziCalculator(solar_date, solar_time, gender)
                 bazi_calculator.calculate()
             except Exception as e:

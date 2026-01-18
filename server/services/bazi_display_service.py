@@ -19,8 +19,8 @@ from server.services.bazi_detail_service import BaziDetailService
 from server.services.shensha_sort_service import sort_shensha
 
 # 导入常量
-from src.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS, HEAVENLY_STEMS
-from src.data.stems_branches import STEM_YINYANG, BRANCH_YINYANG
+from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS, HEAVENLY_STEMS
+from core.data.stems_branches import STEM_YINYANG, BRANCH_YINYANG
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +74,9 @@ def _calculate_default_liunian(year: int, birth_year: int, day_stem: str = None)
     
     try:
         # 导入计算器
-        from src.bazi_fortune.calculators.star_fortune_calculator import StarFortuneCalculator
-        from src.bazi_fortune.calculators.deities_calculator import DeitiesCalculator
-        from src.bazi_fortune.constants import HIDDEN_STEMS, NAYIN_MAP, TEN_GODS_MAP
+        from core.calculators.calculators.star_fortune_calculator import StarFortuneCalculator
+        from core.calculators.calculators.deities_calculator import DeitiesCalculator
+        from core.calculators.constants import HIDDEN_STEMS, NAYIN_MAP, TEN_GODS_MAP
         
         star_calc = StarFortuneCalculator()
         deities_calc = DeitiesCalculator()
@@ -200,7 +200,7 @@ class BaziDisplayService:
         # ✅ 获取日柱解析（性格与命运解析）
         rizhu_analysis = None
         try:
-            from src.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
+            from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
             bazi_pillars = bazi_data.get('bazi_pillars', {})
             analyzer = RizhuGenderAnalyzer(bazi_pillars, gender)
             analysis_result = analyzer.analyze_rizhu_gender()

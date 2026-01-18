@@ -24,7 +24,7 @@ from server.services.bazi_interface_service import BaziInterfaceService
 from server.services.bazi_detail_service import BaziDetailService
 from server.services.shensha_sort_service import sort_shensha
 from server.utils import bazi_cache
-from src.tool.LunarConverter import LunarConverter
+from core.calculators.LunarConverter import LunarConverter
 from server.utils.timezone_converter import convert_local_to_solar_time, format_datetime_for_bazi
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
@@ -686,8 +686,8 @@ def _calculate_shengong_minggong_details(
         logger.debug(f"interface_data keys: {list(interface_data.keys())}, palaces: {palaces}")
         
         try:
-            from src.analyzers.bazi_interface_analyzer import BaziInterfaceAnalyzer
-            from src.tool.LunarConverter import LunarConverter
+            from core.analyzers.bazi_interface_analyzer import BaziInterfaceAnalyzer
+            from core.calculators.LunarConverter import LunarConverter
             
             analyzer = BaziInterfaceAnalyzer()
             converter = LunarConverter()
@@ -762,7 +762,7 @@ def _calculate_shengong_minggong_details(
             if month_stem and month_branch_char:
                 month_stem_branch = month_stem + month_branch_char
                 # 使用 BaziInterfaceAnalyzer 计算胎元
-                from src.analyzers.bazi_interface_analyzer import BaziInterfaceAnalyzer
+                from core.analyzers.bazi_interface_analyzer import BaziInterfaceAnalyzer
                 analyzer = BaziInterfaceAnalyzer()
                 taiyuan_ganzhi = analyzer.get_fetal_origin(month_stem_branch)
                 logger.info(f"从月柱计算胎元: 月柱={month_stem_branch}, 胎元={taiyuan_ganzhi}")
@@ -785,7 +785,7 @@ def _calculate_shengong_minggong_details(
             month_branch_char = month_pillar.get('branch', '')
             if month_stem and month_branch_char:
                 month_stem_branch = month_stem + month_branch_char
-                from src.analyzers.bazi_interface_analyzer import BaziInterfaceAnalyzer
+                from core.analyzers.bazi_interface_analyzer import BaziInterfaceAnalyzer
                 analyzer = BaziInterfaceAnalyzer()
                 taiyuan_ganzhi = analyzer.get_fetal_origin(month_stem_branch)
                 if not taiyuan_ganzhi or len(taiyuan_ganzhi) != 2:
@@ -797,13 +797,13 @@ def _calculate_shengong_minggong_details(
             raise ValueError(f"胎元干支格式错误: {taiyuan_ganzhi}（应为2个字符）。错误: {str(e)}")
     
     # 7. 导入计算所需的模块
-    from src.bazi_config.ten_gods_config import TenGodsCalculator
-    from src.bazi_config.star_fortune_config import StarFortuneCalculator
-    from src.bazi_config.deities_config import DeitiesCalculator
-    from src.data.constants import HIDDEN_STEMS, NAYIN_MAP
+    from core.config.ten_gods_config import TenGodsCalculator
+    from core.config.star_fortune_config import StarFortuneCalculator
+    from core.config.deities_config import DeitiesCalculator
+    from core.data.constants import HIDDEN_STEMS, NAYIN_MAP
     
     # 创建 WenZhenBazi 实例用于主星计算（与基本信息页面保持一致）
-    from src.bazi_calculator import WenZhenBazi
+    from core.calculators.bazi_calculator import WenZhenBazi
     bazi_calc = WenZhenBazi(solar_date, solar_time, gender)
     
     # 5. 计算身宫详细信息

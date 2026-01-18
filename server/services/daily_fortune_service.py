@@ -242,7 +242,7 @@ class DailyFortuneService:
     @staticmethod
     def _extract_liuri_info(detail_result: Dict[str, Any], target_date: date) -> Dict[str, Any]:
         """提取流日信息（直接使用LunarConverter计算今日干支）"""
-        from src.tool.LunarConverter import LunarConverter
+        from core.calculators.LunarConverter import LunarConverter
         
         liuri_info = {
             "date": target_date.strftime("%Y-%m-%d"),
@@ -710,7 +710,7 @@ class DailyFortuneService:
         """使用 LLM 生成运势分析（可选）"""
         try:
             from server.services.llm_generate_service import LLMGenerateService
-            from src.ai.bazi_ai_analyzer import BaziAIAnalyzer
+            from core.analyzers.bazi_ai_analyzer import BaziAIAnalyzer
             
             # 构建 Prompt
             prompt_lines = []

@@ -26,7 +26,7 @@ from coze_integration import CozeIntegration
 
 # 导入八字客户端
 try:
-    from src.clients.bazi_core_client_grpc import BaziCoreClient
+    from shared.clients.bazi_core_client_grpc import BaziCoreClient
     BAZI_CLIENT_AVAILABLE = True
 except ImportError:
     BAZI_CLIENT_AVAILABLE = False

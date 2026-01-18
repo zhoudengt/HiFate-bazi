@@ -23,7 +23,7 @@ from server.services.wangshuai_service import WangShuaiService
 from server.services.bazi_detail_service import BaziDetailService
 from server.services.health_analysis_service import HealthAnalysisService
 from server.services.bazi_display_service import BaziDisplayService
-from src.analyzers.fortune_relation_analyzer import FortuneRelationAnalyzer
+from core.analyzers.fortune_relation_analyzer import FortuneRelationAnalyzer
 from server.utils.api_cache_helper import (
     generate_cache_key, get_cached_result, set_cached_result, L2_TTL
 )

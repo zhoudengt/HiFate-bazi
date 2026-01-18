@@ -37,7 +37,7 @@ class BaziRuleClientAdapter(IBaziRuleClient):
             timeout: 超时时间
         """
         # 延迟导入，避免导入时依赖 gRPC
-        from src.clients.bazi_rule_client_grpc import BaziRuleClient as GrpcBaziRuleClient
+        from shared.clients.bazi_rule_client_grpc import BaziRuleClient as GrpcBaziRuleClient
         self._client = GrpcBaziRuleClient(base_url=base_url, timeout=timeout)
         self._base_url = base_url
         self._timeout = timeout
