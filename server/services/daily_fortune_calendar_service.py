@@ -90,6 +90,12 @@ class DailyFortuneCalendarService:
             calendar_service = CalendarAPIService()
             calendar_result = calendar_service.get_calendar(date=date_str)
             
+            # 计算目标日期（在使用前定义）
+            if date_str:
+                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            else:
+                target_date = date.today()
+            
             # 即使万年历API失败，也尝试返回基本数据
             if not calendar_result.get('success'):
                 # 使用默认值，确保基本功能可用
@@ -108,10 +114,6 @@ class DailyFortuneCalendarService:
                 }
             
             # 2. 计算流年、流月、流日
-            if date_str:
-                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-            else:
-                target_date = date.today()
             liunian, liuyue, liuri = DailyFortuneCalendarService.calculate_liunian_liuyue_liuri(target_date)
             
             # 3. 获取六十甲子运势

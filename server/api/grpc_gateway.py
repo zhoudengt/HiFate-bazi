@@ -849,10 +849,11 @@ async def _handle_daily_fortune_calendar_test(payload: Dict[str, Any]):
 
 @_register("/daily-fortune-calendar/stream")
 async def _handle_daily_fortune_calendar_stream(payload: Dict[str, Any]):
-    """处理每日运势日历流式查询请求"""
-    from server.api.v1.daily_fortune_calendar import query_daily_fortune_calendar_stream
+    """处理每日运势日历流式查询请求（gRPC-Web 转发）"""
+    from server.api.v1.daily_fortune_calendar import daily_fortune_stream_generator
     request_model = DailyFortuneCalendarRequest(**payload)
-    return await query_daily_fortune_calendar_stream(request_model)
+    generator = daily_fortune_stream_generator(request_model)
+    return await _collect_sse_stream(generator)
 
 
 @_register("/api/v2/face/analyze")
