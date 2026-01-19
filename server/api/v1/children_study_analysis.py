@@ -49,6 +49,12 @@ from server.utils.dayun_liunian_helper import (
 from server.config.input_format_loader import build_input_data_from_result
 from server.utils.prompt_builders import format_children_study_input_data_for_coze as format_input_data_for_coze
 
+# ✅ 性能优化：导入流式缓存工具
+from server.utils.stream_cache_helper import (
+    get_llm_cache, set_llm_cache,
+    compute_input_data_hash, LLM_CACHE_TTL
+)
+
 # 配置日志
 logger = logging.getLogger(__name__)
 
@@ -554,8 +560,23 @@ async def children_study_analysis_stream_generator(
             # ✅ 使用统一数据服务获取大运流年、特殊流年数据（确保数据一致性）
             from server.orchestrators.bazi_data_service import BaziDataService
             
-            # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
-            fortune_data = await BaziDataService.get_fortune_data(
+            # ✅ 性能优化：并行获取运势数据和规则匹配（减少首次响应时间）
+            # 获取五行统计（用于规则匹配）
+            element_counts = bazi_data.get('element_counts', {})
+            
+            # 准备规则匹配数据
+            rule_data = {
+                'basic_info': bazi_data.get('basic_info', {}),
+                'bazi_pillars': bazi_data.get('bazi_pillars', {}),
+                'details': bazi_data.get('details', {}),
+                'ten_gods_stats': bazi_data.get('ten_gods_stats', {}),
+                'elements': bazi_data.get('elements', {}),
+                'element_counts': element_counts,
+                'relationships': bazi_data.get('relationships', {})
+            }
+            
+            # 创建并行任务
+            fortune_task = BaziDataService.get_fortune_data(
                 solar_date=final_solar_date,
                 solar_time=final_solar_time,
                 gender=gender,
@@ -568,8 +589,30 @@ async def children_study_analysis_stream_generator(
                 include_special_liunian=True,
                 dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,  # 统一的大运模式
                 target_years=BaziDataService.DEFAULT_TARGET_YEARS,  # 统一的年份范围
-                current_time=None
+                current_time=None,
+                detail_result=detail_result  # ✅ 性能优化：复用已获取的 detail_result
             )
+            
+            rules_task = loop.run_in_executor(
+                executor,
+                RuleService.match_rules,
+                rule_data,
+                ['children'],  # 匹配子女类型规则
+                True
+            )
+            
+            # 并行执行运势数据获取和规则匹配
+            fortune_data, children_rules = await asyncio.gather(fortune_task, rules_task, return_exceptions=True)
+            
+            # 处理异常结果
+            if isinstance(fortune_data, Exception):
+                logger.error(f"运势数据获取失败: {fortune_data}")
+                raise fortune_data
+            
+            # 处理规则匹配结果（非核心，失败时使用空列表）
+            if isinstance(children_rules, Exception):
+                logger.warning(f"规则匹配异常（使用空列表）: {children_rules}")
+                children_rules = []
             
             # 从统一数据服务获取大运序列和特殊流年
             dayun_sequence = []
@@ -646,39 +689,16 @@ async def children_study_analysis_stream_generator(
             yield f"data: {json.dumps(error_response, ensure_ascii=False)}\n\n"
             return
         
-        # 获取五行统计
-        element_counts = bazi_data.get('element_counts', {})
+        # ✅ 性能优化：规则已在前面并行获取（children_rules）
         
-        # 5. 并行匹配子女类型规则（NEW）
-        rule_data = {
-            'basic_info': bazi_data.get('basic_info', {}),
-            'bazi_pillars': bazi_data.get('bazi_pillars', {}),
-            'details': bazi_data.get('details', {}),
-            'ten_gods_stats': bazi_data.get('ten_gods_stats', {}),
-            'elements': bazi_data.get('elements', {}),
-            'element_counts': element_counts,
-            'relationships': bazi_data.get('relationships', {})
-        }
-        
-        loop = asyncio.get_event_loop()
-        executor = None
-        
-        children_rules = await loop.run_in_executor(
-            executor,
-            RuleService.match_rules,
-            rule_data,
-            ['children'],  # 匹配子女类型规则
-            True
-        )
-        
-        # 6. 构建input_data（优先使用数据库格式定义）
+        # 5. 构建input_data（优先使用数据库格式定义）
         try:
             input_data = build_input_data_from_result(
                 format_name='children_study_analysis',
                 bazi_data=bazi_data,
                 detail_result=detail_result,
                 wangshuai_result=wangshuai_result,
-                rule_result={'matched_rules': matched_rules},
+                rule_result={'matched_rules': children_rules},
                 dayun_sequence=dayun_sequence,
                 special_liunians=special_liunians,
                 gender=gender
@@ -725,6 +745,24 @@ async def children_study_analysis_stream_generator(
         logger.info(f"格式化数据长度: {len(formatted_data)} 字符")
         logger.debug(f"格式化数据前500字符: {formatted_data[:500]}")
         
+        # ✅ 性能优化：检查 LLM 缓存
+        input_data_hash = compute_input_data_hash(input_data)
+        cached_llm_content = get_llm_cache("children_study", input_data_hash)
+        
+        if cached_llm_content:
+            logger.info(f"✅ LLM 缓存命中: children_study")
+            # 发送缓存的内容（模拟流式响应）
+            complete_msg = {
+                'type': 'complete',
+                'content': cached_llm_content
+            }
+            yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
+            total_duration = time.time() - api_start_time
+            logger.info(f"✅ 从缓存返回完成: 耗时={total_duration:.2f}s")
+            return
+        
+        logger.info(f"❌ LLM 缓存未命中: children_study")
+        
         # 10. 调用 LLM API（阶段5：LLM API调用，支持 Coze 和百炼平台）
         # ⚠️ 方案2：直接发送格式化后的数据，Bot 会自动使用 System Prompt 中的模板
         from server.services.llm_service_factory import LLMServiceFactory
@@ -733,6 +771,7 @@ async def children_study_analysis_stream_generator(
         # 11. 流式处理（阶段6：流式处理）
         llm_start_time = time.time()
         has_content = False
+        complete_content = ""
         
         async for chunk in llm_service.stream_analysis(formatted_data, bot_id=used_bot_id):
             # 记录第一个token时间
@@ -744,8 +783,14 @@ async def children_study_analysis_stream_generator(
                 llm_output_chunks.append(chunk.get('content', ''))
                 has_content = True
             elif chunk.get('type') == 'complete':
-                llm_output_chunks.append(chunk.get('content', ''))
+                complete_content = chunk.get('content', '')
+                llm_output_chunks.append(complete_content)
                 has_content = True
+                
+                # ✅ 性能优化：缓存 LLM 生成结果
+                if complete_content:
+                    set_llm_cache("children_study", input_data_hash, complete_content, LLM_CACHE_TTL)
+                    logger.info(f"✅ LLM 缓存已写入: children_study")
             
             yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
             if chunk.get('type') in ['complete', 'error']:

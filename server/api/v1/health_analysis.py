@@ -47,6 +47,12 @@ import time
 from server.config.input_format_loader import build_input_data_from_result
 # build_health_prompt 已废弃，改用 format_input_data_for_coze（方案2）
 
+# ✅ 性能优化：导入流式缓存工具
+from server.utils.stream_cache_helper import (
+    get_llm_cache, set_llm_cache,
+    compute_input_data_hash, LLM_CACHE_TTL
+)
+
 # 配置日志
 logger = logging.getLogger(__name__)
 
@@ -388,6 +394,7 @@ async def health_analysis_stream_generator(
             from server.orchestrators.bazi_data_service import BaziDataService
             
             # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
+            # ✅ 性能优化：传入已获取的 detail_result，避免重复调用 calculate_detail_full
             fortune_data = await BaziDataService.get_fortune_data(
                 solar_date=final_solar_date,
                 solar_time=final_solar_time,
@@ -401,7 +408,8 @@ async def health_analysis_stream_generator(
                 include_special_liunian=True,
                 dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,  # 统一的大运模式
                 target_years=BaziDataService.DEFAULT_TARGET_YEARS,  # 统一的年份范围
-                current_time=None
+                current_time=None,
+                detail_result=detail_result  # ✅ 性能优化：复用已获取的 detail_result
             )
             
             # 从统一数据服务获取大运序列和特殊流年
@@ -568,6 +576,24 @@ async def health_analysis_stream_generator(
         logger.info(f"格式化数据长度: {len(formatted_data)} 字符")
         logger.debug(f"格式化数据前500字符: {formatted_data[:500]}")
         
+        # ✅ 性能优化：检查 LLM 缓存
+        input_data_hash = compute_input_data_hash(input_data)
+        cached_llm_content = get_llm_cache("health", input_data_hash)
+        
+        if cached_llm_content:
+            logger.info(f"✅ LLM 缓存命中: health")
+            # 发送缓存的内容（模拟流式响应）
+            complete_msg = {
+                'type': 'complete',
+                'content': cached_llm_content
+            }
+            yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
+            total_duration = time.time() - api_start_time
+            logger.info(f"✅ 从缓存返回完成: 耗时={total_duration:.2f}s")
+            return
+        
+        logger.info(f"❌ LLM 缓存未命中: health")
+        
         # 11. 调用 LLM API（阶段5：LLM API调用，支持 Coze 和百炼平台）
         from server.services.llm_service_factory import LLMServiceFactory
         llm_service = LLMServiceFactory.get_service(scene="health", bot_id=used_bot_id)
@@ -575,6 +601,7 @@ async def health_analysis_stream_generator(
         # 12. 流式处理（阶段6：流式处理）
         llm_start_time = time.time()
         has_content = False
+        complete_content = ""
         
         async for chunk in llm_service.stream_analysis(formatted_data, bot_id=used_bot_id):
             # 记录第一个token时间
@@ -586,8 +613,14 @@ async def health_analysis_stream_generator(
                 llm_output_chunks.append(chunk.get('content', ''))
                 has_content = True
             elif chunk.get('type') == 'complete':
-                llm_output_chunks.append(chunk.get('content', ''))
+                complete_content = chunk.get('content', '')
+                llm_output_chunks.append(complete_content)
                 has_content = True
+                
+                # ✅ 性能优化：缓存 LLM 生成结果
+                if complete_content:
+                    set_llm_cache("health", input_data_hash, complete_content, LLM_CACHE_TTL)
+                    logger.info(f"✅ LLM 缓存已写入: health")
             
             yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
             if chunk.get('type') in ['complete', 'error']:

@@ -49,6 +49,12 @@ from server.utils.dayun_liunian_helper import (
 from server.config.input_format_loader import build_input_data_from_result
 from server.utils.prompt_builders import format_career_wealth_input_data_for_coze as format_input_data_for_coze
 
+# ✅ 性能优化：导入流式缓存工具
+from server.utils.stream_cache_helper import (
+    get_llm_cache, set_llm_cache,
+    compute_input_data_hash, LLM_CACHE_TTL
+)
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -1203,8 +1209,20 @@ async def career_wealth_stream_generator(
             # ✅ 使用统一数据服务获取大运流年、特殊流年数据（确保数据一致性）
             from server.orchestrators.bazi_data_service import BaziDataService
             
-            # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
-            fortune_data = await BaziDataService.get_fortune_data(
+            # ✅ 性能优化：并行获取运势数据和规则匹配（减少首次响应时间）
+            # 准备规则匹配数据
+            rule_data = {
+                'basic_info': bazi_data.get('basic_info', {}),
+                'bazi_pillars': bazi_data.get('bazi_pillars', {}),
+                'details': bazi_data.get('details', {}),
+                'ten_gods_stats': bazi_data.get('ten_gods_stats', {}),
+                'elements': bazi_data.get('elements', {}),
+                'element_counts': bazi_data.get('element_counts', {}),
+                'relationships': bazi_data.get('relationships', {})
+            }
+            
+            # 创建并行任务
+            fortune_task = BaziDataService.get_fortune_data(
                 solar_date=final_solar_date,
                 solar_time=final_solar_time,
                 gender=gender,
@@ -1217,8 +1235,30 @@ async def career_wealth_stream_generator(
                 include_special_liunian=True,
                 dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,  # 统一的大运模式
                 target_years=BaziDataService.DEFAULT_TARGET_YEARS,  # 统一的年份范围
-                current_time=None
+                current_time=None,
+                detail_result=detail_result  # ✅ 性能优化：复用已获取的 detail_result
             )
+            
+            rules_task = loop.run_in_executor(
+                executor,
+                RuleService.match_rules,
+                rule_data,
+                ['career', 'wealth', 'summary'],
+                True  # use_cache
+            )
+            
+            # 并行执行运势数据获取和规则匹配
+            fortune_data, all_matched_rules = await asyncio.gather(fortune_task, rules_task, return_exceptions=True)
+            
+            # 处理异常结果
+            if isinstance(fortune_data, Exception):
+                logger.error(f"运势数据获取失败: {fortune_data}")
+                raise fortune_data
+            
+            # 处理规则匹配结果（非核心，失败时使用空列表）
+            if isinstance(all_matched_rules, Exception):
+                logger.warning(f"规则匹配异常（使用空列表）: {all_matched_rules}")
+                all_matched_rules = []
             
             # ✅ 性能优化：使用列表推导式批量转换，减少循环开销
             # 从统一数据服务获取大运序列和特殊流年
@@ -1283,45 +1323,21 @@ async def career_wealth_stream_generator(
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 4. 获取规则匹配数据（事业、财富等）
-        try:
-            rule_data = {
-                'basic_info': bazi_data.get('basic_info', {}),
-                'bazi_pillars': bazi_data.get('bazi_pillars', {}),
-                'details': bazi_data.get('details', {}),
-                'ten_gods_stats': bazi_data.get('ten_gods_stats', {}),
-                'elements': bazi_data.get('elements', {}),
-                'element_counts': bazi_data.get('element_counts', {}),
-                'relationships': bazi_data.get('relationships', {})
-            }
+        # 4. 处理规则匹配数据（已在前面并行获取）
+        # ✅ 性能优化：规则已在前面并行获取（all_matched_rules）
+        # 按类型分类
+        career_judgments = []
+        wealth_judgments = []
+        for rule in all_matched_rules:
+            rule_type = rule.get('rule_type', '')
+            rule_name = rule.get('rule_name', '')
+            content = rule.get('content', {})
+            text = content.get('text', '') if isinstance(content, dict) else str(content)
             
-            # 一次查询匹配多种类型
-            all_matched_rules = await loop.run_in_executor(
-                executor,
-                RuleService.match_rules,
-                rule_data,
-                ['career', 'wealth', 'summary'],
-                True
-            )
-            
-            # 按类型分类
-            career_judgments = []
-            wealth_judgments = []
-            for rule in all_matched_rules:
-                rule_type = rule.get('rule_type', '')
-                rule_name = rule.get('rule_name', '')
-                content = rule.get('content', {})
-                text = content.get('text', '') if isinstance(content, dict) else str(content)
-                
-                if rule_type == 'career':
-                    career_judgments.append({'name': rule_name, 'text': text})
-                elif rule_type == 'wealth':
-                    wealth_judgments.append({'name': rule_name, 'text': text})
-                    
-        except Exception as e:
-            logger.warning(f"规则匹配失败（不影响业务）: {e}")
-            career_judgments = []
-            wealth_judgments = []
+            if rule_type == 'career':
+                career_judgments.append({'name': rule_name, 'text': text})
+            elif rule_type == 'wealth':
+                wealth_judgments.append({'name': rule_name, 'text': text})
         
         # 5. 构建 input_data（优先使用数据库格式定义）
         try:
@@ -1331,7 +1347,7 @@ async def career_wealth_stream_generator(
                 bazi_data=bazi_data,
                 detail_result=detail_result,
                 wangshuai_result=wangshuai_result,
-                rule_result={'matched_rules': matched_rules},
+                rule_result={'matched_rules': all_matched_rules},
                 dayun_sequence=dayun_sequence,
                 special_liunians=special_liunians,
                 gender=gender
@@ -1383,6 +1399,30 @@ async def career_wealth_stream_generator(
         formatted_data = format_input_data_for_coze(input_data)
         logger.info(f"格式化数据长度: {len(formatted_data)} 字符")
         logger.debug(f"格式化数据前500字符: {formatted_data[:500]}")
+        
+        # ✅ 性能优化：检查 LLM 缓存
+        input_data_hash = compute_input_data_hash(input_data)
+        cached_llm_content = get_llm_cache("career_wealth", input_data_hash)
+        
+        if cached_llm_content:
+            logger.info(f"[{trace_id}] ✅ LLM 缓存命中: career_wealth")
+            # 发送缓存的内容（模拟流式响应）
+            progress_msg = {
+                'type': 'progress',
+                'content': '正在调用AI分析...'
+            }
+            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
+            
+            complete_msg = {
+                'type': 'complete',
+                'content': cached_llm_content
+            }
+            yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
+            total_duration = time.time() - api_start_time
+            logger.info(f"[{trace_id}] ✅ 从缓存返回完成: 耗时={total_duration:.2f}s")
+            return
+        
+        logger.info(f"[{trace_id}] ❌ LLM 缓存未命中: career_wealth")
         
         # 发送数据构建完成进度提示
         progress_msg = {
@@ -1448,6 +1488,12 @@ async def career_wealth_stream_generator(
                     llm_output_chunks.append(complete_content)  # 收集完整内容
                     msg = {'type': 'complete', 'content': complete_content}
                     yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                    
+                    # ✅ 性能优化：缓存 LLM 生成结果
+                    if complete_content:
+                        set_llm_cache("career_wealth", input_data_hash, complete_content, LLM_CACHE_TTL)
+                        logger.info(f"[{trace_id}] ✅ LLM 缓存已写入: career_wealth")
+                    
                     logger.info(f"流式生成完成，共 {chunk_count} 个chunk")
                     break
                 elif result.get('type') == 'error':

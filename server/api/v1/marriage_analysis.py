@@ -36,6 +36,13 @@ from server.utils.bazi_input_processor import BaziInputProcessor
 from server.services.user_interaction_logger import get_user_interaction_logger
 import time
 
+# ✅ 性能优化：导入流式缓存工具
+from server.utils.stream_cache_helper import (
+    get_stream_data_cache, set_stream_data_cache,
+    get_llm_cache, set_llm_cache,
+    compute_input_data_hash, DATA_CACHE_TTL, LLM_CACHE_TTL
+)
+
 # 导入配置加载器（从数据库读取配置）
 try:
     from server.config.config_loader import get_config_from_db_only
@@ -608,8 +615,9 @@ async def marriage_analysis_stream_generator(
             # ✅ 使用统一数据服务获取大运流年、特殊流年数据（确保数据一致性）
             from server.orchestrators.bazi_data_service import BaziDataService
             
-            # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
-            fortune_data = await BaziDataService.get_fortune_data(
+            # ✅ 性能优化：并行获取运势数据和规则匹配（减少首次响应时间）
+            # 创建并行任务
+            fortune_task = BaziDataService.get_fortune_data(
                 solar_date=final_solar_date,
                 solar_time=final_solar_time,
                 gender=gender,
@@ -622,8 +630,30 @@ async def marriage_analysis_stream_generator(
                 include_special_liunian=True,
                 dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,  # 统一的大运模式
                 target_years=BaziDataService.DEFAULT_TARGET_YEARS,  # 统一的年份范围
-                current_time=None
+                current_time=None,
+                detail_result=detail_result  # ✅ 性能优化：复用已获取的 detail_result
             )
+            
+            rules_task = loop.run_in_executor(
+                executor,
+                RuleService.match_rules,
+                bazi_data,
+                ['marriage', 'peach_blossom', 'marriage_match', 'zhengyuan'],
+                True  # use_cache
+            )
+            
+            # 并行执行运势数据获取和规则匹配
+            fortune_data, matched_rules = await asyncio.gather(fortune_task, rules_task, return_exceptions=True)
+            
+            # 处理异常结果
+            if isinstance(fortune_data, Exception):
+                logger.error(f"[{trace_id}] ❌ 运势数据获取失败: {fortune_data}")
+                raise fortune_data
+            
+            # 处理规则匹配结果（非核心，失败时使用空列表）
+            if isinstance(matched_rules, Exception):
+                logger.warning(f"[{trace_id}] ⚠️ 规则匹配异常（使用空列表）: {matched_rules}")
+                matched_rules = []
             
             # 从统一数据服务获取大运序列和特殊流年
             dayun_sequence = []
@@ -694,50 +724,40 @@ async def marriage_analysis_stream_generator(
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 3. 获取规则匹配数据（婚姻、桃花等）
+        # 3. 处理规则匹配数据（已在前面并行获取）
         marriage_judgments = []
         peach_blossom_judgments = []
         matchmaking_judgments = []
         zhengyuan_judgments = []
         
-        try:
-            matched_rules = await loop.run_in_executor(
-                executor,
-                RuleService.match_rules,
-                bazi_data,
-                ['marriage', 'peach_blossom', 'marriage_match', 'zhengyuan'],
-                True  # use_cache
-            )
+        # ✅ 性能优化：规则已在前面并行获取（matched_rules）
+        for rule in matched_rules:
+            rule_type = rule.get('rule_type', '')
+            content = rule.get('content', {})
+            text = content.get('text', '') if isinstance(content, dict) else str(content)
+            rule_name = rule.get('rule_name', '')
             
-            for rule in matched_rules:
-                rule_type = rule.get('rule_type', '')
-                content = rule.get('content', {})
-                text = content.get('text', '') if isinstance(content, dict) else str(content)
-                rule_name = rule.get('rule_name', '')
-                
-                if 'marriage' in rule_type.lower() or '婚姻' in text:
-                    if '婚配' in rule_name or '婚配' in text:
-                        matchmaking_judgments.append({
-                            'name': rule_name,
-                            'text': text
-                        })
-                    elif '正缘' in rule_name or '正缘' in text:
-                        zhengyuan_judgments.append({
-                            'name': rule_name,
-                            'text': text
-                        })
-                    else:
-                        marriage_judgments.append({
-                            'name': rule_name,
-                            'text': text
-                        })
-                if 'peach' in rule_type.lower() or '桃花' in text:
-                    peach_blossom_judgments.append({
+            if 'marriage' in rule_type.lower() or '婚姻' in text:
+                if '婚配' in rule_name or '婚配' in text:
+                    matchmaking_judgments.append({
                         'name': rule_name,
                         'text': text
                     })
-        except Exception as e:
-            logger.warning(f"规则匹配失败（不影响业务）: {e}")
+                elif '正缘' in rule_name or '正缘' in text:
+                    zhengyuan_judgments.append({
+                        'name': rule_name,
+                        'text': text
+                    })
+                else:
+                    marriage_judgments.append({
+                        'name': rule_name,
+                        'text': text
+                    })
+            if 'peach' in rule_type.lower() or '桃花' in text:
+                peach_blossom_judgments.append({
+                    'name': rule_name,
+                    'text': text
+                })
         
         # 4. 构建 input_data（优先使用数据库格式定义，验证失败则降级到硬编码函数）
         use_hardcoded = False
@@ -801,6 +821,30 @@ async def marriage_analysis_stream_generator(
         formatted_data = format_input_data_for_coze(input_data)
         logger.info(f"格式化数据长度: {len(formatted_data)} 字符")
         logger.debug(f"格式化数据前500字符: {formatted_data[:500]}")
+        
+        # ✅ 性能优化：检查 LLM 缓存
+        input_data_hash = compute_input_data_hash(input_data)
+        cached_llm_content = get_llm_cache("marriage", input_data_hash)
+        
+        if cached_llm_content:
+            logger.info(f"[{trace_id}] ✅ LLM 缓存命中: marriage")
+            # 发送缓存的内容（模拟流式响应）
+            progress_msg = {
+                'type': 'progress',
+                'content': '正在调用AI分析...'
+            }
+            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
+            
+            complete_msg = {
+                'type': 'complete',
+                'content': cached_llm_content
+            }
+            yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
+            total_duration = time.time() - api_start_time
+            logger.info(f"[{trace_id}] ✅ 从缓存返回完成: 耗时={total_duration:.2f}s")
+            return
+        
+        logger.info(f"[{trace_id}] ❌ LLM 缓存未命中: marriage")
         
         # 发送数据构建完成进度提示
         progress_msg = {
@@ -881,11 +925,18 @@ async def marriage_analysis_stream_generator(
                         await asyncio.sleep(0.05)
                 elif result.get('type') == 'complete':
                     has_content = True
+                    complete_content = result.get('content', '')
                     msg = {
                         'type': 'complete',
-                        'content': result.get('content', '')
+                        'content': complete_content
                     }
                     yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                    
+                    # ✅ 性能优化：缓存 LLM 生成结果
+                    if complete_content:
+                        set_llm_cache("marriage", input_data_hash, complete_content, LLM_CACHE_TTL)
+                        logger.info(f"[{trace_id}] ✅ LLM 缓存已写入: marriage")
+                    
                     total_duration = time.time() - api_start_time
                     logger.info(f"[{trace_id}] ✅ 流式生成完成: chunks={chunk_count}, 耗时={total_duration:.2f}s")
                     return
