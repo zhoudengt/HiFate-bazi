@@ -603,6 +603,7 @@ async def general_review_analysis_stream_generator(
             solar_date, solar_time, calendar_type or "solar", location, latitude, longitude
         )
         
+        # ✅ 性能优化：提前 yield 进度，让客户端更快看到响应
         # 发送初始进度提示
         progress_msg = {
             'type': 'progress',
@@ -611,6 +612,7 @@ async def general_review_analysis_stream_generator(
         yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
         
         # 3. 使用统一接口获取数据（阶段2：数据获取与并行优化）
+        # ✅ 性能优化：在数据获取开始时就 yield，减少客户端等待时间
         try:
             # 构建统一接口的 modules 配置
             modules = {
@@ -639,6 +641,14 @@ async def general_review_analysis_stream_generator(
             }
             
             logger.info(f"[General Review Stream] 开始调用统一接口获取数据")
+            # ✅ 性能优化：在数据获取开始时就 yield 进度，减少客户端等待时间
+            # 发送数据获取进度提示（提前 yield）
+            progress_msg = {
+                'type': 'progress',
+                'content': '正在获取大运流年数据...'
+            }
+            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
+            
             unified_data = await BaziDataOrchestrator.fetch_data(
                 solar_date=final_solar_date,
                 solar_time=final_solar_time,
@@ -648,13 +658,6 @@ async def general_review_analysis_stream_generator(
                 parallel=True
             )
             logger.info(f"[General Review Stream] ✅ 统一接口数据获取完成")
-            
-            # 发送数据获取完成进度提示
-            progress_msg = {
-                'type': 'progress',
-                'content': '正在获取大运流年数据...'
-            }
-            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
             
         except Exception as e:
             import traceback
@@ -702,9 +705,11 @@ async def general_review_analysis_stream_generator(
         bazi_data = validate_bazi_data(bazi_data)
         
         # ✅ 使用统一数据服务获取大运流年、特殊流年数据（确保数据一致性）
+        # ✅ 性能优化：复用 unified_data 中已获取的 detail_data，避免重复计算
         from server.orchestrators.bazi_data_service import BaziDataService
         
         # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
+        # 性能优化：传入已获取的 detail_data，避免重复调用 calculate_detail_full
         fortune_data = await BaziDataService.get_fortune_data(
             solar_date=final_solar_date,
             solar_time=final_solar_time,
@@ -718,7 +723,8 @@ async def general_review_analysis_stream_generator(
             include_special_liunian=True,
             dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,  # 统一的大运模式
             target_years=BaziDataService.DEFAULT_TARGET_YEARS,  # 统一的年份范围
-            current_time=None
+            current_time=None,
+            detail_result=detail_data  # ✅ 性能优化：复用已获取的 detail_data
         )
         
         # 发送大运流年数据获取完成进度提示
@@ -728,14 +734,11 @@ async def general_review_analysis_stream_generator(
         }
         yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
         
+        # ✅ 性能优化：使用列表推导式批量转换，减少循环开销
         # 从统一数据服务获取大运序列和特殊流年
-        dayun_sequence = []
-        liunian_sequence = []
-        special_liunians = []
-        
-        # 转换为字典格式（兼容现有代码）
-        for dayun in fortune_data.dayun_sequence:
-            dayun_sequence.append({
+        # 转换为字典格式（兼容现有代码）- 使用列表推导式优化性能
+        dayun_sequence = [
+            {
                 'step': dayun.step,
                 'stem': dayun.stem,
                 'branch': dayun.branch,
@@ -752,11 +755,13 @@ async def general_review_analysis_stream_generator(
                 'kongwang': dayun.kongwang,
                 'deities': dayun.deities or [],
                 'details': dayun.details or {}
-            })
+            }
+            for dayun in fortune_data.dayun_sequence
+        ]
         
-        # 转换为字典格式（兼容现有代码）
-        for liunian in fortune_data.liunian_sequence:
-            liunian_sequence.append({
+        # 转换为字典格式（兼容现有代码）- 使用列表推导式优化性能
+        liunian_sequence = [
+            {
                 'year': liunian.year,
                 'stem': liunian.stem,
                 'branch': liunian.branch,
@@ -772,11 +777,13 @@ async def general_review_analysis_stream_generator(
                 'kongwang': liunian.kongwang,
                 'deities': liunian.deities or [],
                 'details': liunian.details or {}
-            })
+            }
+            for liunian in fortune_data.liunian_sequence
+        ]
         
-        # 转换为字典格式（兼容现有代码）
-        for special_liunian in fortune_data.special_liunians:
-            special_liunians.append({
+        # 转换为字典格式（兼容现有代码）- 使用列表推导式优化性能
+        special_liunians = [
+            {
                 'year': special_liunian.year,
                 'stem': special_liunian.stem,
                 'branch': special_liunian.branch,
@@ -795,7 +802,9 @@ async def general_review_analysis_stream_generator(
                 'dayun_step': special_liunian.dayun_step,
                 'dayun_ganzhi': special_liunian.dayun_ganzhi,
                 'details': special_liunian.details or {}
-            })
+            }
+            for special_liunian in fortune_data.special_liunians
+        ]
         
         logger.info(f"[General Review Stream] ✅ 统一数据服务获取完成 - dayun_sequence 数量: {len(dayun_sequence)}, liunian_sequence 数量: {len(liunian_sequence)}, 特殊流年数量: {len(special_liunians)}")
         

@@ -629,9 +629,10 @@ async def marriage_analysis_stream_generator(
             dayun_sequence = []
             special_liunians = []
             
-            # 转换为字典格式（兼容现有代码）
-            for dayun in fortune_data.dayun_sequence:
-                dayun_sequence.append({
+            # ✅ 性能优化：使用列表推导式批量转换，减少循环开销
+            # 转换为字典格式（兼容现有代码）- 使用列表推导式优化性能
+            dayun_sequence = [
+                {
                     'step': dayun.step,
                     'stem': dayun.stem,
                     'branch': dayun.branch,
@@ -648,11 +649,13 @@ async def marriage_analysis_stream_generator(
                     'kongwang': dayun.kongwang,
                     'deities': dayun.deities or [],
                     'details': dayun.details or {}
-                })
+                }
+                for dayun in fortune_data.dayun_sequence
+            ]
             
-            # 转换为字典格式（兼容现有代码）
-            for special_liunian in fortune_data.special_liunians:
-                special_liunians.append({
+            # 转换为字典格式（兼容现有代码）- 使用列表推导式优化性能
+            special_liunians = [
+                {
                     'year': special_liunian.year,
                     'stem': special_liunian.stem,
                     'branch': special_liunian.branch,
@@ -671,7 +674,9 @@ async def marriage_analysis_stream_generator(
                     'dayun_step': special_liunian.dayun_step,
                     'dayun_ganzhi': special_liunian.dayun_ganzhi,
                     'details': special_liunian.details or {}
-                })
+                }
+                for special_liunian in fortune_data.special_liunians
+            ]
             
             # 发送大运流年数据获取完成进度提示
             progress_msg = {
