@@ -302,7 +302,6 @@ async def general_review_analysis_stream(request: GeneralReviewRequest):
         StreamingResponse: SSE 流式响应
     """
     logger.info(f"[General Review API] 收到请求: solar_date={request.solar_date}, solar_time={request.solar_time}")
-    print(f"[General Review API] 收到请求: solar_date={request.solar_date}, solar_time={request.solar_time}")
     
     return StreamingResponse(
         general_review_analysis_stream_generator(
@@ -330,7 +329,7 @@ async def general_review_analysis_debug(request: GeneralReviewRequest):
     Returns:
         dict: 包含数据和 Prompt 的调试信息
     """
-    print(f"[DEBUG general_review_analysis_debug] 函数被调用，参数: solar_date={request.solar_date}, solar_time={request.solar_time}, gender={request.gender}")
+    logger.debug(f"[DEBUG general_review_analysis_debug] 函数被调用，参数: solar_date={request.solar_date}, solar_time={request.solar_time}, gender={request.gender}")
     logger.info(f"[General Review Debug] ========== 函数开始执行 ==========")
     logger.info(f"[General Review Debug] 函数被调用，参数: solar_date={request.solar_date}, solar_time={request.solar_time}, gender={request.gender}")
     try:
@@ -497,7 +496,7 @@ async def general_review_analysis_debug(request: GeneralReviewRequest):
         logger.info("✅ 使用硬编码函数构建 input_data: general_review_analysis")
         
         # ⚠️ DEBUG: 调用后检查变量
-        print(f"[DEBUG] build_general_review_input_data 调用后，dayun_sequence 数量: {len(dayun_sequence)}, special_liunians 数量: {len(special_liunians)}")
+        logger.debug(f"[DEBUG] build_general_review_input_data 调用后，dayun_sequence 数量: {len(dayun_sequence)}, special_liunians 数量: {len(special_liunians)}")
         logger.info(f"[General Review Debug] build_general_review_input_data 调用后，dayun_sequence 数量: {len(dayun_sequence)}, special_liunians 数量: {len(special_liunians)}")
         
         # 添加日柱规则
@@ -581,8 +580,7 @@ async def general_review_analysis_stream_generator(
     llm_output_chunks = []
     
     # 调试：确认生成器被调用
-    logger.info(f"[General Review Stream DEBUG] 生成器开始执行: solar_date={solar_date}")
-    print(f"[General Review Stream DEBUG] 生成器开始执行: solar_date={solar_date}")
+    logger.debug(f"[General Review Stream DEBUG] 生成器开始执行: solar_date={solar_date}")
     
     try:
         # 1. 确定使用的 bot_id（优先级：参数 > 数据库配置 > 环境变量）
@@ -604,6 +602,13 @@ async def general_review_analysis_stream_generator(
         final_solar_date, final_solar_time, _ = BaziInputProcessor.process_input(
             solar_date, solar_time, calendar_type or "solar", location, latitude, longitude
         )
+        
+        # 发送初始进度提示
+        progress_msg = {
+            'type': 'progress',
+            'content': '正在获取八字数据...'
+        }
+        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
         
         # 3. 使用统一接口获取数据（阶段2：数据获取与并行优化）
         try:
@@ -643,6 +648,13 @@ async def general_review_analysis_stream_generator(
                 parallel=True
             )
             logger.info(f"[General Review Stream] ✅ 统一接口数据获取完成")
+            
+            # 发送数据获取完成进度提示
+            progress_msg = {
+                'type': 'progress',
+                'content': '正在获取大运流年数据...'
+            }
+            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
             
         except Exception as e:
             import traceback
@@ -708,6 +720,13 @@ async def general_review_analysis_stream_generator(
             target_years=BaziDataService.DEFAULT_TARGET_YEARS,  # 统一的年份范围
             current_time=None
         )
+        
+        # 发送大运流年数据获取完成进度提示
+        progress_msg = {
+            'type': 'progress',
+            'content': '正在构建分析数据...'
+        }
+        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
         
         # 从统一数据服务获取大运序列和特殊流年
         dayun_sequence = []
@@ -852,6 +871,13 @@ async def general_review_analysis_stream_generator(
         logger.info(f"[General Review Stream] 格式化数据长度: {len(formatted_data)} 字符")
         logger.debug(f"[General Review Stream] 格式化数据前500字符: {formatted_data[:500]}")
         
+        # 发送数据构建完成进度提示
+        progress_msg = {
+            'type': 'progress',
+            'content': '正在调用AI分析...'
+        }
+        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
+        
         # 8.1 保存参数到文件（用于数据减枝分析）
         try:
             # 创建保存目录
@@ -915,8 +941,7 @@ async def general_review_analysis_stream_generator(
             logger.warning(f"[General Review Stream] 保存参数文件失败: {e}", exc_info=True)
         
         # 9. 调用 LLM API（阶段5：LLM API调用，支持 Coze 和百炼平台）
-        print(f"🔍 [步骤5-LLM调用] 开始调用 LLM API，Bot ID: {used_bot_id}")
-        logger.info(f"[步骤5-LLM调用] 开始调用 LLM API，Bot ID: {used_bot_id}")
+        logger.info(f"🔍 [步骤5-LLM调用] 开始调用 LLM API，Bot ID: {used_bot_id}")
         from server.services.llm_service_factory import LLMServiceFactory
         llm_service = LLMServiceFactory.get_service(scene="general_review", bot_id=used_bot_id)
 
@@ -940,17 +965,14 @@ async def general_review_analysis_stream_generator(
                 total_content_length += len(content)
                 has_content = True
                 if chunk_count == 1:
-                    print(f"✅ [步骤5-Coze调用] 收到第一个响应块，类型: {chunk_type}")
-                    logger.info(f"[步骤5-Coze调用] 收到第一个响应块，类型: {chunk_type}")
+                    logger.info(f"✅ [步骤5-Coze调用] 收到第一个响应块，类型: {chunk_type}")
             elif chunk_type == 'complete':
                 complete_content = chunk.get('content', '')
                 llm_output_chunks.append(complete_content)  # 收集完整内容
-                print(f"✅ [步骤5-Coze调用] 收到完成响应，总块数: {chunk_count}, 总内容长度: {total_content_length}")
-                logger.info(f"[步骤5-Coze调用] 收到完成响应，总块数: {chunk_count}, 总内容长度: {total_content_length}")
+                logger.info(f"✅ [步骤5-Coze调用] 收到完成响应，总块数: {chunk_count}, 总内容长度: {total_content_length}")
                 has_content = True
             elif chunk_type == 'error':
-                print(f"❌ [步骤5-Coze调用] 收到错误响应: {chunk.get('content', '')}")
-                logger.error(f"[步骤5-Coze调用] 收到错误响应: {chunk.get('content', '')}")
+                logger.error(f"❌ [步骤5-Coze调用] 收到错误响应: {chunk.get('content', '')}")
             
             yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
             if chunk_type in ['complete', 'error']:

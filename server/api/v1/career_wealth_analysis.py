@@ -1135,6 +1135,13 @@ async def career_wealth_stream_generator(
             longitude
         )
         
+        # 发送初始进度提示
+        progress_msg = {
+            'type': 'progress',
+            'content': '正在获取八字数据...'
+        }
+        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
+        
         # 3. 并行获取基础数据
         loop = asyncio.get_event_loop()
         executor = None
@@ -1167,6 +1174,13 @@ async def career_wealth_stream_generator(
             )
             
             bazi_result, wangshuai_result, detail_result = await asyncio.gather(bazi_task, wangshuai_task, detail_task)
+            
+            # 发送数据获取完成进度提示
+            progress_msg = {
+                'type': 'progress',
+                'content': '正在获取大运流年数据...'
+            }
+            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
             
             # 提取八字数据
             if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
@@ -1253,6 +1267,13 @@ async def career_wealth_stream_generator(
                     'dayun_ganzhi': special_liunian.dayun_ganzhi,
                     'details': special_liunian.details or {}
                 })
+            
+            # 发送大运流年数据获取完成进度提示
+            progress_msg = {
+                'type': 'progress',
+                'content': '正在构建分析数据...'
+            }
+            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
                 
         except Exception as e:
             import traceback
@@ -1360,6 +1381,13 @@ async def career_wealth_stream_generator(
         formatted_data = format_input_data_for_coze(input_data)
         logger.info(f"格式化数据长度: {len(formatted_data)} 字符")
         logger.debug(f"格式化数据前500字符: {formatted_data[:500]}")
+        
+        # 发送数据构建完成进度提示
+        progress_msg = {
+            'type': 'progress',
+            'content': '正在调用AI分析...'
+        }
+        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
         
         # 9. 创建 LLM 流式服务（支持 Coze 和百炼平台）
         try:
