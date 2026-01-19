@@ -7,6 +7,7 @@
 
 import sys
 import os
+import logging
 from typing import Dict, Any, Optional
 
 # 添加项目根目录到路径
@@ -16,6 +17,8 @@ sys.path.insert(0, project_root)
 from server.services.bazi_service import BaziService
 from core.analyzers.bazi_ai_analyzer import BaziAIAnalyzer
 from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
+
+logger = logging.getLogger(__name__)
 
 
 class BaziAIService:
@@ -64,9 +67,9 @@ class BaziAIService:
                 bazi_pillars = bazi_data.get('bazi_pillars', {})
                 analyzer = RizhuGenderAnalyzer(bazi_pillars, gender)
                 rizhu_analysis_text = analyzer.get_formatted_output()
-                print(f"✓ 已获取日柱性别分析内容（长度: {len(rizhu_analysis_text)} 字符）")
+                logger.info(f"✓ 已获取日柱性别分析内容（长度: {len(rizhu_analysis_text)} 字符）")
             except Exception as e:
-                print(f"获取日柱性别分析失败: {e}")
+                logger.warning(f"获取日柱性别分析失败: {e}")
                 rizhu_analysis_text = ""
         
         # 3. 调用Coze AI分析器
@@ -107,9 +110,9 @@ class BaziAIService:
                                 "changes_count": polished_result.get('changes_count', 0)  # 修改数量
                             }
                         else:
-                            print(f"性格与命运解析处理失败: {polished_result.get('error')}")
+                            logger.warning(f"性格与命运解析处理失败: {polished_result.get('error')}")
                 except Exception as e:
-                    print(f"性格与命运解析处理异常: {e}")
+                    logger.error(f"性格与命运解析处理异常: {e}", exc_info=True)
                     polished_rules = None
                     polished_rules_info = None
             

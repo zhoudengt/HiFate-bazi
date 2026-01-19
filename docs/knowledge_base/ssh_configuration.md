@@ -61,7 +61,7 @@ chmod 600 ~/.ssh/config
 
 **Node1**：
 ```bash
-sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@8.210.52.217 \
+sshpass -p '${SSH_PASSWORD}' ssh -o StrictHostKeyChecking=no root@8.210.52.217 \
   "mkdir -p ~/.ssh && chmod 700 ~/.ssh && \
    echo '$(cat ~/.ssh/id_rsa_hifate.pub)' >> ~/.ssh/authorized_keys && \
    chmod 600 ~/.ssh/authorized_keys"
@@ -69,7 +69,7 @@ sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@8.210.52.217 \
 
 **Node2**：
 ```bash
-sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@47.243.160.43 \
+sshpass -p '${SSH_PASSWORD}' ssh -o StrictHostKeyChecking=no root@47.243.160.43 \
   "mkdir -p ~/.ssh && chmod 700 ~/.ssh && \
    echo '$(cat ~/.ssh/id_rsa_hifate.pub)' >> ~/.ssh/authorized_keys && \
    chmod 600 ~/.ssh/authorized_keys"

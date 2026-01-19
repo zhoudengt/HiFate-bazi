@@ -13,9 +13,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
 
+# 使用统一环境配置
+from server.config.env_config import is_production
+
 # 生产环境配置
-PRODUCTION_MODE = False  # 从环境变量读取
-SHOW_DETAILED_ERRORS = False  # 生产环境不显示详细错误
+PRODUCTION_MODE = is_production()  # 从统一环境配置读取
+SHOW_DETAILED_ERRORS = not is_production()  # 生产环境不显示详细错误
 
 
 class ExceptionHandlerMiddleware(BaseHTTPMiddleware):

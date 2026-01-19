@@ -275,7 +275,7 @@ Host node2
 | Node1 | `ssh node1` | 8.210.52.217 |
 | Node2 | `ssh node2` | 47.243.160.43 |
 
-**密码**：`Yuanqizhan@163`
+**密码**：`${SSH_PASSWORD}`
 
 ### 🚫 禁止的行为
 
@@ -286,5 +286,5 @@ Host node2
 ### ✅ 正确的操作流程
 
 1. 直接执行 `ssh node1` 或 `ssh node2`
-2. 输入密码 `Yuanqizhan@163`
+2. 输入密码 `${SSH_PASSWORD}`
 3. 等待连接完成后执行操作

@@ -16,9 +16,9 @@ import time
 # ⚠️ 重要：根据环境自动选择默认配置
 # 本地开发：localhost:3306，密码: 123456
 # 生产环境：8.210.52.217:3306 (公网) / 172.18.121.222:3306 (内网)，密码: Yuanqizhan@163
-# 判断环境（本地开发 or 生产）
-# 通过环境变量 ENV 或 APP_ENV 判断，local/development 表示本地开发，其他表示生产环境
-IS_LOCAL_DEV = os.getenv("ENV", os.getenv("APP_ENV", "local")).lower() in ["local", "development"]
+# 使用统一环境配置
+from server.config.env_config import is_local_dev
+IS_LOCAL_DEV = is_local_dev()
 
 # 根据环境设置默认值
 # ⚠️ 安全规范：密码必须通过环境变量配置，不允许硬编码
@@ -45,18 +45,39 @@ mysql_config = {
 }
 
 # MySQL 连接池配置
-# 优化说明：
-# - mincached=2：减少服务启动时连接数（11服务×2=22 < 40，避免超过max_user_connections）
-# - maxcached=20：减少最大缓存连接数，节省资源
-# - maxconnections=30：每个服务最多30个连接（根据15个用户需求调整）
-# - recycle_time=300：连接回收时间5分钟，确保空闲连接及时回收
-MYSQL_POOL_CONFIG = {
-    'mincached': 2,         # 最小连接数（从5减少到2，减少启动时连接数）
-    'maxcached': 20,        # 最大缓存连接数（从30减少到20）
-    'maxconnections': 30,   # 最大连接数（从50减少到30，每个服务最多30个连接）
-    'connection_timeout': 30,  # 获取连接的超时时间（秒）
-    'recycle_time': 300,     # 连接回收时间（秒），超过此时间未使用的连接将被关闭（5分钟）
-}
+# 使用统一环境配置进行优化
+from server.config.env_config import get_env_config
+
+env_config = get_env_config()
+
+# 根据环境动态调整连接池配置
+if env_config.is_local_dev:
+    # 本地开发环境：较小的连接池
+    MYSQL_POOL_CONFIG = {
+        'mincached': 2,         # 最小连接数
+        'maxcached': 10,        # 最大缓存连接数
+        'maxconnections': 20,   # 最大连接数
+        'connection_timeout': 10,  # 获取连接的超时时间（秒）
+        'recycle_time': 300,     # 连接回收时间（秒），5分钟
+    }
+elif env_config.is_production:
+    # 生产环境：较大的连接池以支持高并发
+    MYSQL_POOL_CONFIG = {
+        'mincached': 5,         # 最小连接数（预热连接）
+        'maxcached': 30,        # 最大缓存连接数
+        'maxconnections': 50,   # 最大连接数（支持更高并发）
+        'connection_timeout': 30,  # 获取连接的超时时间（秒）
+        'recycle_time': 3600,     # 连接回收时间（秒），1小时（生产环境连接更稳定）
+    }
+else:
+    # 预发布环境：中等配置
+    MYSQL_POOL_CONFIG = {
+        'mincached': 3,         # 最小连接数
+        'maxcached': 20,        # 最大缓存连接数
+        'maxconnections': 30,   # 最大连接数
+        'connection_timeout': 20,  # 获取连接的超时时间（秒）
+        'recycle_time': 600,     # 连接回收时间（秒），10分钟
+    }
 
 # 全局连接池实例
 _mysql_pool: Optional['MySQLConnectionPool'] = None

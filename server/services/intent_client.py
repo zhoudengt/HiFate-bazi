@@ -5,12 +5,15 @@ Intent Service gRPC 客户端
 import grpc
 import os
 import sys
+import logging
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 from proto import intent_pb2, intent_pb2_grpc
 from typing import Dict, Any, List
+
+logger = logging.getLogger(__name__)
 
 
 class IntentServiceClient:
@@ -39,9 +42,9 @@ class IntentServiceClient:
                 ]
             )
             self.stub = intent_pb2_grpc.IntentServiceStub(self.channel)
-            print(f"Intent Service client connected to {self.service_url}")
+            logger.info(f"Intent Service client connected to {self.service_url}")
         except Exception as e:
-            print(f"Failed to connect to Intent Service: {e}")
+            logger.error(f"Failed to connect to Intent Service: {e}")
             raise
     
     def classify(
@@ -86,7 +89,7 @@ class IntentServiceClient:
                             "is_explicit": ti.is_explicit if hasattr(ti, 'is_explicit') else False
                         }
                 except Exception as e:
-                    print(f"Warning: Failed to parse time_intent: {e}")
+                    logger.warning(f"Failed to parse time_intent: {e}")
             
             return {
                 "intents": list(response.intents),
@@ -103,7 +106,7 @@ class IntentServiceClient:
             }
             
         except grpc.RpcError as e:
-            print(f"Intent Service RPC error: {e}")
+            logger.error(f"Intent Service RPC error: {e}")
             # 返回默认分类
             return {
                 "intents": ["general"],
@@ -117,7 +120,7 @@ class IntentServiceClient:
                 "error": str(e)
             }
         except Exception as e:
-            print(f"Intent classification error: {e}")
+            logger.error(f"Intent classification error: {e}", exc_info=True)
             return {
                 "intents": ["general"],
                 "confidence": 0.5,
@@ -155,7 +158,7 @@ class IntentServiceClient:
             return results
             
         except Exception as e:
-            print(f"Batch classification error: {e}")
+            logger.error(f"Batch classification error: {e}", exc_info=True)
             return [self.classify(q) for q in questions]
     
     def health_check(self) -> bool:

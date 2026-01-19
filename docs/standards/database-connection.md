@@ -16,7 +16,7 @@
 - **公网地址**: `8.210.52.217:3306`（本地开发使用）
 - **私网地址**: `172.18.121.222:3306`（生产环境使用）
 - **用户名**: `root`
-- **密码**: `Yuanqizhan@163`
+- **密码**: `${SSH_PASSWORD}`
 - **数据库**: `hifate_bazi`
 
 ### Node1 Docker MongoDB
@@ -35,7 +35,7 @@
 MYSQL_HOST=8.210.52.217  # Node1 公网IP
 MYSQL_PORT=3306
 MYSQL_USER=root
-MYSQL_PASSWORD=Yuanqizhan@163
+MYSQL_PASSWORD=${SSH_PASSWORD}
 MYSQL_DATABASE=hifate_bazi
 
 # MongoDB配置
@@ -51,7 +51,7 @@ MONGO_DB=bazi_feedback
 MYSQL_HOST=172.18.121.222  # Node1 内网IP
 MYSQL_PORT=3306
 MYSQL_USER=root
-MYSQL_PASSWORD=Yuanqizhan@163
+MYSQL_PASSWORD=${SSH_PASSWORD}
 MYSQL_DATABASE=hifate_bazi
 
 # MongoDB配置

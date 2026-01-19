@@ -10,7 +10,7 @@
 cd /Users/zhoudt/Downloads/project/HiFate-bazi
 
 # 设置 SSH 密码（如果需要）
-export SSH_PASSWORD="Yuanqizhan@163"
+export SSH_PASSWORD="${SSH_PASSWORD}"
 
 # 执行双机修复
 bash scripts/fix_buildx_dual_nodes.sh
@@ -132,5 +132,5 @@ ssh root@8.210.52.217 "cd /opt/HiFate-bazi && git pull origin master"
 
 - **Node1**: 8.210.52.217 (公网), 172.18.121.222 (内网)
 - **Node2**: 47.243.160.43 (公网), 172.18.121.223 (内网)
-- **SSH 密码**: Yuanqizhan@163（从环境变量读取）
+- **SSH 密码**: ${SSH_PASSWORD}（从环境变量读取）
 

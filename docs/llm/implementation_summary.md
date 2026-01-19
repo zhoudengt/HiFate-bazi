@@ -140,7 +140,7 @@ bash deploy/scripts/incremental_deploy_production.sh
 
 ```bash
 # Node1
-sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@8.210.52.217
+sshpass -p '${SSH_PASSWORD}' ssh -o StrictHostKeyChecking=no root@8.210.52.217
 cd /opt/HiFate-bazi
 git pull origin main  # 或相应的分支
 pip3 install dashscope>=1.14.0  # 如果需要
@@ -148,7 +148,7 @@ python3 scripts/ai/auto_hot_reload.py --trigger
 python3 scripts/ai/auto_hot_reload.py --verify
 
 # Node2
-sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@47.243.160.43
+sshpass -p '${SSH_PASSWORD}' ssh -o StrictHostKeyChecking=no root@47.243.160.43
 cd /opt/HiFate-bazi
 git pull origin main
 pip3 install dashscope>=1.14.0  # 如果需要

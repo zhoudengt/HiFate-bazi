@@ -15,12 +15,15 @@
 
 import sys
 import os
+import logging
 from typing import Dict, Any, Optional, List
 
 # 添加项目根目录到路径
 # 从 server/hot_reload/reloaders.py 到项目根目录：上移3级
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
+
+logger = logging.getLogger(__name__)
 
 
 class RuleReloader:
@@ -37,10 +40,10 @@ class RuleReloader:
         try:
             from server.services.rule_service import RuleService
             RuleService.reload_rules()
-            print("✓ 规则已重新加载")
+            logger.info("✓ 规则已重新加载")
             return True
         except Exception as e:
-            print(f"⚠ 规则重载失败: {e}")
+            logger.warning(f"⚠ 规则重载失败: {e}")
             return False
 
 
@@ -59,10 +62,10 @@ class ContentReloader:
             from server.engines.query_adapters import QueryAdapterRegistry
             # 清空内容缓存
             QueryAdapterRegistry._content_cache.clear()
-            print("✓ 内容缓存已清空")
+            logger.info("✓ 内容缓存已清空")
             return True
         except Exception as e:
-            print(f"⚠ 内容重载失败: {e}")
+            logger.warning(f"⚠ 内容重载失败: {e}")
             return False
 
 
@@ -80,10 +83,10 @@ class ConfigReloader:
         try:
             # 这里可以添加其他配置的重载逻辑
             # 例如：Redis配置、MySQL配置等
-            print("✓ 配置已重新加载")
+            logger.info("✓ 配置已重新加载")
             return True
         except Exception as e:
-            print(f"⚠ 配置重载失败: {e}")
+            logger.warning(f"⚠ 配置重载失败: {e}")
             return False
 
 
@@ -123,7 +126,7 @@ class CacheReloader:
                         if cursor == 0:
                             break
                     if deleted_count > 0:
-                        print(f"   ✓ 清理了 {deleted_count} 个 bazi_detail 缓存键")
+                        logger.info(f"   ✓ 清理了 {deleted_count} 个 bazi_detail 缓存键")
                     
                     # 清理 special_liunians:* 模式的键
                     cursor = 0
@@ -136,23 +139,23 @@ class CacheReloader:
                         if cursor == 0:
                             break
                     if deleted_count > 0:
-                        print(f"   ✓ 清理了 {deleted_count} 个 special_liunians 缓存键")
+                        logger.info(f"   ✓ 清理了 {deleted_count} 个 special_liunians 缓存键")
             except Exception as e:
-                print(f"   ⚠ Redis 特定缓存清理失败: {e}")
+                logger.warning(f"   ⚠ Redis 特定缓存清理失败: {e}")
                 # 不设置 success = False，因为这是可选的
             
-            print("   ✓ 缓存已清空（L1内存 + L2 Redis）")
+            logger.info("   ✓ 缓存已清空（L1内存 + L2 Redis）")
         except Exception as e:
-            print(f"   ⚠ 缓存清理失败: {e}")
+            logger.warning(f"   ⚠ 缓存清理失败: {e}")
             success = False
         
         # 2. 清理 IndustryService 缓存
         try:
             from server.services.industry_service import IndustryService
             IndustryService.clear_cache()
-            print("   ✓ IndustryService 缓存已清理")
+            logger.info("   ✓ IndustryService 缓存已清理")
         except Exception as e:
-            print(f"   ⚠ IndustryService 缓存清理失败: {e}")
+            logger.warning(f"   ⚠ IndustryService 缓存清理失败: {e}")
             # 不设置 success = False，因为这是可选的
         
         # 3. 清理 ConfigService 缓存（如果存在）
@@ -161,15 +164,15 @@ class CacheReloader:
             # ConfigService 使用类级别缓存，直接设置为 None
             ConfigService._element_cache = None
             ConfigService._mingge_cache = None
-            print("   ✓ ConfigService 缓存已清理")
+            logger.info("   ✓ ConfigService 缓存已清理")
         except Exception as e:
-            print(f"   ⚠ ConfigService 缓存清理失败: {e}")
+            logger.warning(f"   ⚠ ConfigService 缓存清理失败: {e}")
             # 不设置 success = False，因为这是可选的
         
         if success:
-            print("✓ 缓存重载完成")
+            logger.info("✓ 缓存重载完成")
         else:
-            print("⚠ 缓存重载部分失败")
+            logger.warning("⚠ 缓存重载部分失败")
         
         return success
 
@@ -225,9 +228,9 @@ class SourceCodeReloader:
         reloaded_modules = []
         failed_modules = []
         
-        print("\n" + "="*60)
-        print(f"🔄 源代码热更新开始 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print("="*60)
+        logger.info("\n" + "="*60)
+        logger.info(f"🔄 源代码热更新开始 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info("="*60)
         
         try:
             for module_name, module_info in monitored_modules.items():
@@ -238,7 +241,7 @@ class SourceCodeReloader:
                     # 检查文件是否存在
                     full_path = os.path.join(project_root, file_path)
                     if not os.path.exists(full_path):
-                        print(f"  ⚠ 文件不存在: {file_path}")
+                        logger.warning(f"  ⚠ 文件不存在: {file_path}")
                         continue
                     
                     # 获取文件修改时间
@@ -253,16 +256,16 @@ class SourceCodeReloader:
                         try:
                             import importlib
                             module = importlib.import_module(module_name)
-                            print(f"     🔄 模块未加载，已导入: {module_name}")
+                            logger.info(f"     🔄 模块未加载，已导入: {module_name}")
                         except ImportError as e:
-                            print(f"     ⚠ 模块未加载且无法导入: {module_name} ({e})")
+                            logger.warning(f"     ⚠ 模块未加载且无法导入: {module_name} ({e})")
                             continue
                     
                     # 打印模块信息（无论是否已加载）
-                    print(f"\n  📦 模块: {module_name}")
-                    print(f"     📄 文件: {file_path}")
-                    print(f"     📝 功能: {description}")
-                    print(f"     🕒 修改时间: {mtime_str}")
+                    logger.info(f"\n  📦 模块: {module_name}")
+                    logger.info(f"     📄 文件: {file_path}")
+                    logger.info(f"     📝 功能: {description}")
+                    logger.info(f"     🕒 修改时间: {mtime_str}")
                     
                     # ⭐ 特殊处理：如果是 grpc_gateway 模块，需要先处理端点注册
                     if module_name == 'server.api.grpc_gateway':
@@ -270,7 +273,7 @@ class SourceCodeReloader:
                             # 1. 先获取当前的端点字典
                             from server.api.grpc_gateway import SUPPORTED_ENDPOINTS
                             old_count = len(SUPPORTED_ENDPOINTS)
-                            print(f"     🔄 重新注册前端点数量: {old_count}")
+                            logger.info(f"     🔄 重新注册前端点数量: {old_count}")
                             
                             # 2. 清空端点字典（避免残留旧端点）
                             SUPPORTED_ENDPOINTS.clear()
@@ -281,30 +284,30 @@ class SourceCodeReloader:
                             # 4. 重新获取端点字典（装饰器已执行）
                             from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as NEW_ENDPOINTS
                             new_count = len(NEW_ENDPOINTS)
-                            print(f"     🔄 重新加载后端点数量: {new_count}")
+                            logger.info(f"     🔄 重新加载后端点数量: {new_count}")
                             
                             # 5. 如果端点仍未注册，直接调用 _ensure_endpoints_registered 手动注册
                             if new_count == 0:
-                                print(f"     ⚠️  装饰器未注册端点，直接手动注册所有关键端点...")
+                                logger.warning(f"     ⚠️  装饰器未注册端点，直接手动注册所有关键端点...")
                                 try:
                                     from server.api.grpc_gateway import _ensure_endpoints_registered
                                     _ensure_endpoints_registered()
                                     from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_ENDPOINTS
                                     final_count = len(FINAL_ENDPOINTS)
-                                    print(f"     ✅ 手动注册成功（端点数量: {final_count}）")
+                                    logger.info(f"     ✅ 手动注册成功（端点数量: {final_count}）")
                                 except Exception as e:
-                                    print(f"     ❌ 手动注册失败: {e}")
+                                    logger.error(f"     ❌ 手动注册失败: {e}")
                                     import traceback
                                     traceback.print_exc()
                             else:
-                                print(f"     ✅ gRPC 端点已重新注册（端点数量: {new_count}）")
+                                logger.info(f"     ✅ gRPC 端点已重新注册（端点数量: {new_count}）")
                             
                             # 6. 验证关键端点是否已注册（无论端点数量是否为0）
                             from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_CHECK
                             key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi', '/daily-fortune-calendar/query']
                             missing_endpoints = [ep for ep in key_endpoints if ep not in FINAL_CHECK]
                             if missing_endpoints:
-                                print(f"     ⚠️  关键端点未注册: {missing_endpoints}，再次尝试手动注册...")
+                                logger.warning(f"     ⚠️  关键端点未注册: {missing_endpoints}，再次尝试手动注册...")
                                 try:
                                     from server.api.grpc_gateway import _ensure_endpoints_registered
                                     _ensure_endpoints_registered()
@@ -312,18 +315,18 @@ class SourceCodeReloader:
                                     final_count2 = len(FINAL_CHECK2)
                                     missing_endpoints2 = [ep for ep in key_endpoints if ep not in FINAL_CHECK2]
                                     if missing_endpoints2:
-                                        print(f"     ❌ 关键端点仍然缺失: {missing_endpoints2}")
+                                        logger.error(f"     ❌ 关键端点仍然缺失: {missing_endpoints2}")
                                     else:
-                                        print(f"     ✅ 关键端点验证通过（端点数量: {final_count2}）")
+                                        logger.info(f"     ✅ 关键端点验证通过（端点数量: {final_count2}）")
                                 except Exception as e:
-                                    print(f"     ❌ 关键端点恢复失败: {e}")
+                                    logger.error(f"     ❌ 关键端点恢复失败: {e}")
                                     import traceback
                                     traceback.print_exc()
                             else:
-                                print(f"     ✅ 关键端点验证通过")
+                                logger.info(f"     ✅ 关键端点验证通过")
                                 
                         except Exception as e:
-                            print(f"     ❌ gRPC 端点重新注册失败: {e}")
+                            logger.error(f"     ❌ gRPC 端点重新注册失败: {e}")
                             import traceback
                             traceback.print_exc()
                     else:
@@ -333,7 +336,7 @@ class SourceCodeReloader:
                     # ⭐ 特殊处理：如果是 server.main 模块，需要重新注册路由
                     if module_name == 'server.main':
                         try:
-                            print(f"     🔄 检测到 server.main 模块更新，重新注册路由...")
+                            logger.info(f"     🔄 检测到 server.main 模块更新，重新注册路由...")
                             # 等待模块重新加载完成
                             import time
                             time.sleep(0.1)  # 短暂延迟，确保模块重新加载完成
@@ -349,9 +352,9 @@ class SourceCodeReloader:
                                         main_module = sys.modules['server.main']
                                         if hasattr(main_module, '_register_all_routers_to_manager'):
                                             main_module._register_all_routers_to_manager()
-                                            print(f"     ✅ 路由信息已重新注册到管理器")
+                                            logger.info(f"     ✅ 路由信息已重新注册到管理器")
                                 except Exception as e2:
-                                    print(f"     ⚠️  重新注册路由信息到管理器失败: {e2}")
+                                    logger.warning(f"     ⚠️  重新注册路由信息到管理器失败: {e2}")
                                 
                                 # 清除注册状态，强制重新注册到 FastAPI 应用
                                 router_manager.clear_registered_state()
@@ -359,11 +362,11 @@ class SourceCodeReloader:
                                 results = router_manager.register_all_routers(force=True)
                                 success_count = sum(1 for v in results.values() if v)
                                 failed_count = sum(1 for v in results.values() if not v)
-                                print(f"     ✅ 路由重新注册到 FastAPI 应用完成: {success_count} 成功, {failed_count} 失败")
+                                logger.info(f"     ✅ 路由重新注册到 FastAPI 应用完成: {success_count} 成功, {failed_count} 失败")
                             else:
-                                print(f"     ⚠️  路由管理器未初始化，跳过路由重新注册")
+                                logger.warning(f"     ⚠️  路由管理器未初始化，跳过路由重新注册")
                         except Exception as e:
-                            print(f"     ⚠️  路由重新注册失败（不影响模块重载）: {e}")
+                            logger.warning(f"     ⚠️  路由重新注册失败（不影响模块重载）: {e}")
                             import traceback
                             traceback.print_exc()
                     
@@ -373,7 +376,7 @@ class SourceCodeReloader:
                         'description': description,
                         'mtime': mtime_str
                     })
-                    print(f"     ✅ 重载成功")
+                    logger.info(f"     ✅ 重载成功")
                         
                 except Exception as e:
                     error_msg = str(e)
@@ -382,30 +385,30 @@ class SourceCodeReloader:
                         'file': file_path,
                         'error': error_msg
                     })
-                    print(f"  ❌ 重载模块 {module_name} 失败: {error_msg}")
+                    logger.error(f"  ❌ 重载模块 {module_name} 失败: {error_msg}")
             
             # 打印总结
-            print("\n" + "-"*60)
+            logger.info("\n" + "-"*60)
             if reloaded_modules:
-                print(f"✅ 源代码热更新完成 - 成功重载 {len(reloaded_modules)} 个模块:")
+                logger.info(f"✅ 源代码热更新完成 - 成功重载 {len(reloaded_modules)} 个模块:")
                 for info in reloaded_modules:
-                    print(f"   • {info['module']}")
-                    print(f"     文件: {info['file']}")
-                    print(f"     功能: {info['description']}")
-                    print(f"     修改时间: {info['mtime']}")
+                    logger.info(f"   • {info['module']}")
+                    logger.info(f"     文件: {info['file']}")
+                    logger.info(f"     功能: {info['description']}")
+                    logger.info(f"     修改时间: {info['mtime']}")
             
             if failed_modules:
-                print(f"\n⚠️  失败 {len(failed_modules)} 个模块:")
+                logger.warning(f"\n⚠️  失败 {len(failed_modules)} 个模块:")
                 for info in failed_modules:
-                    print(f"   • {info['module']}: {info['error']}")
+                    logger.error(f"   • {info['module']}: {info['error']}")
             
-            print("="*60 + "\n")
+            logger.info("="*60 + "\n")
             
             return len(reloaded_modules) > 0
             
         except Exception as e:
-            print(f"❌ 源代码热更新失败: {e}")
-            print("="*60 + "\n")
+            logger.error(f"❌ 源代码热更新失败: {e}", exc_info=True)
+            logger.error("="*60 + "\n")
             return False
 
 
@@ -429,30 +432,30 @@ class MicroserviceReloaderProxy:
             
             reloaders = get_all_microservice_reloaders()
             if not reloaders:
-                print("⚠ 没有注册的微服务热更新器")
+                logger.warning("⚠ 没有注册的微服务热更新器")
                 return True
             
-            print(f"\n🔄 开始重载 {len(reloaders)} 个微服务...")
+            logger.info(f"\n🔄 开始重载 {len(reloaders)} 个微服务...")
             results = reload_all_microservices()
             
             success_count = sum(1 for v in results.values() if v)
             failed_count = len(results) - success_count
             
             if failed_count > 0:
-                print(f"⚠ 微服务重载: {success_count} 成功, {failed_count} 失败")
+                logger.warning(f"⚠ 微服务重载: {success_count} 成功, {failed_count} 失败")
                 for service_name, success in results.items():
                     if not success:
-                        print(f"   ❌ {service_name}")
+                        logger.error(f"   ❌ {service_name}")
                 return False
             
-            print(f"✓ 所有微服务重载成功 ({success_count} 个)")
+            logger.info(f"✓ 所有微服务重载成功 ({success_count} 个)")
             return True
             
         except ImportError:
-            print("⚠ 微服务热更新模块未加载")
+            logger.warning("⚠ 微服务热更新模块未加载")
             return True
         except Exception as e:
-            print(f"⚠ 微服务重载失败: {e}")
+            logger.error(f"⚠ 微服务重载失败: {e}", exc_info=True)
             return False
 
 
@@ -475,7 +478,7 @@ class SingletonReloader:
         Returns:
             bool: 是否成功
         """
-        print("\n🔄 开始重置单例实例...")
+        logger.info("\n🔄 开始重置单例实例...")
         success_count = 0
         failed_count = 0
         
@@ -489,22 +492,22 @@ class SingletonReloader:
                         for attr in attrs:
                             if hasattr(cls, attr):
                                 setattr(cls, attr, None)
-                        print(f"   ✓ 重置 {class_name}")
+                        logger.info(f"   ✓ 重置 {class_name}")
                         success_count += 1
                     else:
-                        print(f"   ⚠ 类未找到: {class_name}")
+                        logger.warning(f"   ⚠ 类未找到: {class_name}")
                 else:
-                    print(f"   ⚠ 模块未加载: {module_path}")
+                    logger.warning(f"   ⚠ 模块未加载: {module_path}")
                     
             except Exception as e:
-                print(f"   ❌ 重置失败 {class_name}: {e}")
+                logger.error(f"   ❌ 重置失败 {class_name}: {e}")
                 failed_count += 1
         
         if failed_count > 0:
-            print(f"⚠ 单例重置: {success_count} 成功, {failed_count} 失败")
+            logger.warning(f"⚠ 单例重置: {success_count} 成功, {failed_count} 失败")
             return False
         
-        print(f"✓ 单例重置完成 ({success_count} 个)")
+        logger.info(f"✓ 单例重置完成 ({success_count} 个)")
         return True
     
     @staticmethod
@@ -532,19 +535,19 @@ class ConfigReloaderEnhanced:
             bool: 是否成功
         """
         try:
-            print("\n🔄 开始重载配置...")
+            logger.info("\n🔄 开始重载配置...")
             
             # 1. 重新加载环境变量
             from dotenv import load_dotenv
             load_dotenv(override=True)
-            print("   ✓ 环境变量已重新加载")
+            logger.info("   ✓ 环境变量已重新加载")
             
             # 2. 重置配置单例
             try:
                 from server.config.app_config import AppConfig
                 if hasattr(AppConfig, '_instance'):
                     AppConfig._instance = None
-                    print("   ✓ AppConfig 已重置")
+                    logger.info("   ✓ AppConfig 已重置")
             except ImportError:
                 pass
             
@@ -552,7 +555,7 @@ class ConfigReloaderEnhanced:
             try:
                 from server.config.mysql_config import refresh_connection_pool
                 refresh_connection_pool()
-                print("   ✓ MySQL 连接池已刷新")
+                logger.info("   ✓ MySQL 连接池已刷新")
             except (ImportError, AttributeError):
                 pass
             
@@ -560,15 +563,15 @@ class ConfigReloaderEnhanced:
             try:
                 from server.config.redis_config import refresh_redis_connection
                 refresh_redis_connection()
-                print("   ✓ Redis 连接已刷新")
+                logger.info("   ✓ Redis 连接已刷新")
             except (ImportError, AttributeError):
                 pass
             
-            print("✓ 配置重载完成")
+            logger.info("✓ 配置重载完成")
             return True
             
         except Exception as e:
-            print(f"⚠ 配置重载失败: {e}")
+            logger.warning(f"⚠ 配置重载失败: {e}")
             return False
 
 
@@ -604,9 +607,9 @@ def reload_all_modules() -> Dict[str, bool]:
     """按顺序重载所有模块"""
     from datetime import datetime
     
-    print("\n" + "="*60)
-    print(f"🔄 全量热更新开始 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("="*60)
+    logger.info("\n" + "="*60)
+    logger.info(f"🔄 全量热更新开始 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("="*60)
     
     results = {}
     for module_name in RELOAD_ORDER:
@@ -615,18 +618,18 @@ def reload_all_modules() -> Dict[str, bool]:
             try:
                 results[module_name] = reloader.reload()
             except Exception as e:
-                print(f"❌ {module_name} 重载失败: {e}")
+                logger.error(f"❌ {module_name} 重载失败: {e}")
                 results[module_name] = False
     
     success_count = sum(1 for v in results.values() if v)
     failed_count = len(results) - success_count
     
-    print("\n" + "-"*60)
+    logger.info("\n" + "-"*60)
     if failed_count > 0:
-        print(f"⚠ 全量热更新完成: {success_count} 成功, {failed_count} 失败")
+        logger.warning(f"⚠ 全量热更新完成: {success_count} 成功, {failed_count} 失败")
     else:
-        print(f"✅ 全量热更新完成: 所有 {success_count} 个模块更新成功")
-    print("="*60 + "\n")
+        logger.info(f"✅ 全量热更新完成: 所有 {success_count} 个模块更新成功")
+    logger.info("="*60 + "\n")
     
     return results
 

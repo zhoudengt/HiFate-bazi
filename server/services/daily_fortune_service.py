@@ -216,7 +216,7 @@ class DailyFortuneService:
                 return cached_result
         except Exception as e:
             # Redis不可用，降级到数据库查询
-            print(f"⚠️  Redis缓存不可用，降级到数据库查询: {e}")
+            logger.warning(f"⚠️  Redis缓存不可用，降级到数据库查询: {e}")
         
         # 3. 缓存未命中，查询数据库
         result = DailyFortuneService._calculate_daily_fortune_from_database(
@@ -235,7 +235,7 @@ class DailyFortuneService:
                 cache.l2.ttl = 3600
             except Exception as e:
                 # 缓存写入失败不影响业务
-                print(f"⚠️  缓存写入失败（不影响业务）: {e}")
+                logger.warning(f"⚠️  缓存写入失败（不影响业务）: {e}")
         
         return result
     
@@ -319,8 +319,7 @@ class DailyFortuneService:
         # 第一行就打印参数类型
         import logging
         logger = logging.getLogger(__name__)
-        logger.error(f"DEBUG _generate_with_rules 入口: bazi_data类型={type(bazi_data)}, liuri_info类型={type(liuri_info)}, matched_rules类型={type(matched_rules)}, target_date类型={type(target_date)}")
-        logger.error(f"DEBUG _generate_with_rules 入口: 参数顺序检查 - bazi_data前100字符={str(bazi_data)[:100]}")
+        # DEBUG日志已移除，如需调试请使用logger.debug()
         
         # 【防御性代码】确保 bazi_data 是字典类型
         # 注意：在调用此函数前应该已经检查并修复了 bazi_data 的类型
@@ -342,13 +341,8 @@ class DailyFortuneService:
         lines.append("")
         
         # 提取八字关键信息
-        logger.error(f"DEBUG 第233行前: bazi_data类型={type(bazi_data)}, isinstance检查={isinstance(bazi_data, dict)}")
-        logger.error(f"DEBUG 第233行前: bazi_data内容={str(bazi_data)[:150]}")
-        
         day_stem = bazi_data.get('bazi_pillars', {}).get('day', {}).get('stem', '未知')
         day_branch = bazi_data.get('bazi_pillars', {}).get('day', {}).get('branch', '未知')
-        
-        logger.error(f"DEBUG 第236行前: bazi_data类型={type(bazi_data)}")
         day_element = bazi_data.get('elements', {}).get('day', {}).get('stem_element', '未知')
         
         # 流日信息
@@ -826,9 +820,9 @@ class DailyFortuneService:
                 try:
                     redis_client.publish('cache:invalidate:daily_fortune', target_date or 'all')
                 except Exception as e:
-                    print(f"⚠️  发布缓存失效事件失败: {e}")
+                    logger.warning(f"⚠️  发布缓存失效事件失败: {e}")
                 
-                print(f"✅ 已清理每日运势服务缓存: {deleted_count} 条（日期: {target_date or 'all'}）")
+                logger.info(f"✅ 已清理每日运势服务缓存: {deleted_count} 条（日期: {target_date or 'all'}）")
         except Exception as e:
-            print(f"⚠️  缓存失效操作失败（不影响业务）: {e}")
+            logger.warning(f"⚠️  缓存失效操作失败（不影响业务）: {e}")
 

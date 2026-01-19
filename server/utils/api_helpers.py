@@ -5,10 +5,15 @@ API辅助函数 - 提取公共代码
 """
 
 import logging
-from typing import Any, Dict, Optional
-from fastapi import HTTPException
+import functools
+from typing import Any, Dict, Optional, Callable, TypeVar, Union
+from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
+
+# 定义函数类型泛型
+F = TypeVar('F', bound=Callable[..., Any])
 
 
 def create_success_response(data: Any = None, message: Optional[str] = None) -> Dict[str, Any]:
@@ -107,3 +112,120 @@ def validate_bazi_request(solar_date: str, solar_time: str, gender: str) -> None
     # 验证性别
     if gender not in ['male', 'female']:
         raise ValueError('性别必须为 male 或 female')
+
+
+def api_error_handler(func: F) -> F:
+    """
+    API异常处理装饰器
+    
+    统一捕获异常并返回标准错误响应
+    
+    使用示例：
+        @api_error_handler
+        async def my_api_endpoint(request: MyRequest):
+            # 业务逻辑
+            return MyResponse(success=True, data=result)
+    
+    注意：
+        - 如果函数返回的是 Response 对象（如 StreamingResponse），装饰器不会处理
+        - 如果函数返回的是 Pydantic 模型，装饰器会将其转换为字典
+        - 如果函数抛出 HTTPException，装饰器会直接抛出（不捕获）
+        - 其他异常会被捕获并返回标准错误响应
+    """
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        try:
+            result = await func(*args, **kwargs)
+            
+            # 如果返回的是 Response 对象（如 StreamingResponse），直接返回
+            if isinstance(result, (JSONResponse,)):
+                return result
+            
+            # 如果返回的是 Pydantic 模型，转换为字典
+            if hasattr(result, 'model_dump'):
+                return result.model_dump(exclude_none=True)
+            elif hasattr(result, 'dict'):
+                return result.dict(exclude_none=True)
+            
+            return result
+            
+        except HTTPException:
+            # HTTPException 直接抛出，由 FastAPI 处理
+            raise
+        except ValueError as e:
+            # 参数验证错误
+            logger.warning(f"参数验证错误 [{func.__name__}]: {str(e)}")
+            return create_error_response(
+                error=str(e),
+                error_type="validation_error"
+            )
+        except Exception as e:
+            # 其他未处理的异常
+            logger.error(f"未处理的异常 [{func.__name__}]: {str(e)}", exc_info=True)
+            return create_error_response(
+                error="服务器内部错误，请稍后重试",
+                error_type="internal_error"
+            )
+    
+    return wrapper  # type: ignore
+
+
+def api_error_handler(func: F) -> F:
+    """
+    API异常处理装饰器
+    
+    自动捕获异常并返回标准错误响应，减少重复的异常处理代码
+    
+    使用示例：
+        @router.post("/api/endpoint")
+        @api_error_handler
+        async def my_endpoint(request: MyRequest):
+            # 业务逻辑
+            return MyResponse(success=True, data=result)
+    
+    功能：
+    1. 自动捕获所有异常
+    2. 记录错误日志
+    3. 返回标准错误响应格式
+    4. 保留HTTPException的原始行为
+    
+    Args:
+        func: 被装饰的API端点函数
+    
+    Returns:
+        装饰后的函数
+    """
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        try:
+            # 执行原始函数
+            result = await func(*args, **kwargs)
+            return result
+        except HTTPException:
+            # FastAPI的HTTPException直接抛出，保持原有行为
+            raise
+        except ValueError as e:
+            # 参数验证错误
+            logger.warning(f"参数验证错误 [{func.__name__}]: {str(e)}")
+            return JSONResponse(
+                status_code=400,
+                content=create_error_response(
+                    error=str(e),
+                    error_type="validation_error"
+                )
+            )
+        except Exception as e:
+            # 其他未处理的异常
+            logger.error(
+                f"未处理的异常 [{func.__name__}]: {str(e)}",
+                exc_info=True
+            )
+            return JSONResponse(
+                status_code=500,
+                content=create_error_response(
+                    error="服务器内部错误，请稍后重试",
+                    error_type="internal_error"
+                )
+            )
+    
+    return wrapper  # type: ignore

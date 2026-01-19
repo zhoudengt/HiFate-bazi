@@ -8,6 +8,7 @@ import sys
 import os
 import threading
 import time
+import logging
 from typing import Dict, List, Optional
 
 # 添加项目根目录到路径
@@ -18,6 +19,8 @@ from server.engines.rule_engine import EnhancedRuleEngine
 from server.engines.query_adapters import QueryAdapterRegistry
 from server.utils.cache_multi_level import get_multi_cache
 from server.config.mysql_config import mysql_config
+
+logger = logging.getLogger(__name__)
 
 
 class RuleReloader:
@@ -36,7 +39,7 @@ class RuleReloader:
         self.running = True
         self.thread = threading.Thread(target=self._reload_loop, daemon=True)
         self.thread.start()
-        print(f"✓ 规则自动刷新器已启动（间隔: {self.interval}秒）")
+        logger.info(f"✓ 规则自动刷新器已启动（间隔: {self.interval}秒）")
     
     def stop(self):
         """停止自动刷新"""
@@ -58,17 +61,17 @@ class RuleReloader:
                     QueryAdapterRegistry._content_cache.clear()
                     QueryAdapterRegistry._cached_version = current_version
                     RuleService._cached_content_version = current_version
-                    print(f"✓ 规则内容自动刷新: {time.strftime('%Y-%m-%d %H:%M:%S')} (版本: {current_version})")
+                    logger.info(f"✓ 规则内容自动刷新: {time.strftime('%Y-%m-%d %H:%M:%S')} (版本: {current_version})")
                 
                 # 检查规则版本号
                 current_rule_version = RuleContentDAO.get_rule_version()
                 if current_rule_version > RuleService._cached_rule_version:
                     RuleService.reload_rules()
                     RuleService._cached_rule_version = current_rule_version
-                    print(f"✓ 规则自动刷新: {time.strftime('%Y-%m-%d %H:%M:%S')} (版本: {current_rule_version})")
+                    logger.info(f"✓ 规则自动刷新: {time.strftime('%Y-%m-%d %H:%M:%S')} (版本: {current_rule_version})")
                     
             except Exception as e:
-                print(f"⚠ 规则刷新失败: {e}")
+                logger.warning(f"⚠ 规则刷新失败: {e}")
 
 
 class RuleService:
@@ -156,10 +159,10 @@ class RuleService:
                         if rule['rule_type'] == 'health' and rule['rule_code'].startswith('FORMULA_70'):
                             health_rule_count += 1
                     
-                    print(f"✓ 从数据库加载规则: {len(rules)} 条 (health类型FORMULA_70xxx: {health_rule_count}条)")
+                    logger.info(f"✓ 从数据库加载规则: {len(rules)} 条 (health类型FORMULA_70xxx: {health_rule_count}条)")
                     db_rules_loaded = True
             except Exception as e:
-                print(f"⚠ 从数据库加载规则失败: {e}")
+                logger.error(f"⚠ 从数据库加载规则失败: {e}", exc_info=True)
                 if not db_rules_loaded:
                     raise RuntimeError(
                         "规则必须从数据库加载，数据库连接失败。"
@@ -314,7 +317,7 @@ class RuleService:
                 cls._cached_rule_version = RuleContentDAO.get_rule_version()
                 QueryAdapterRegistry._cached_version = cls._cached_content_version
             except Exception as e:
-                print(f"⚠ 初始化版本号失败: {e}")
+                logger.warning(f"⚠ 初始化版本号失败: {e}")
     
     @classmethod
     def check_and_reload(cls) -> bool:

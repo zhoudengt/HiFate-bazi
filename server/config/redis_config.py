@@ -161,38 +161,58 @@ def check_redis_health() -> bool:
         return False
 
 
-def get_redis_pool_stats() -> Optional[Dict[str, Any]]:
+def get_redis_pool_stats() -> Dict[str, Any]:
     """
     获取连接池统计信息（优化方案1.5）
     
     Returns:
-        连接池统计信息字典，如果连接池不存在则返回 None
+        连接池统计信息字典
     """
-    global redis_pool
-    if redis_pool:
-        try:
-            # 注意：这些属性可能在不同版本的 redis-py 中有所不同
-            # 使用 try-except 确保兼容性
-            stats = {
-                'max_connections': redis_pool.max_connections,
-            }
-            
-            # 尝试获取连接使用情况（如果可用）
-            if hasattr(redis_pool, '_in_use_connections'):
-                stats['connections_in_use'] = len(redis_pool._in_use_connections)
-            if hasattr(redis_pool, '_available_connections'):
-                stats['available_connections'] = len(redis_pool._available_connections)
-            if hasattr(redis_pool, '_created_connections'):
-                stats['created_connections'] = redis_pool._created_connections
-                
-            return stats
-        except Exception as e:
-            print(f"⚠️ 获取连接池统计信息失败: {e}")
-            return {
-                'max_connections': redis_pool.max_connections,
-                'error': str(e)
-            }
-    return None
+    global redis_pool, redis_client
+    
+    if redis_pool is None:
+        return {"status": "not_initialized"}
+    
+    try:
+        if redis_client is None:
+            redis_client = get_redis_client()
+        
+        if redis_client is None:
+            return {"status": "unavailable"}
+        
+        # 获取 Redis 信息
+        info = redis_client.info()
+        
+        stats = {
+            "status": "active",
+            "max_connections": redis_pool.max_connections,
+        }
+        
+        # 尝试获取连接使用情况（如果可用）
+        if hasattr(redis_pool, '_in_use_connections'):
+            stats['connections_in_use'] = len(redis_pool._in_use_connections)
+        if hasattr(redis_pool, '_available_connections'):
+            stats['available_connections'] = len(redis_pool._available_connections)
+        if hasattr(redis_pool, '_created_connections'):
+            stats['created_connections'] = redis_pool._created_connections
+        
+        # 添加 Redis 服务器信息
+        stats.update({
+            "connected_clients": info.get('connected_clients', 0),
+            "used_memory": info.get('used_memory_human', 'N/A'),
+            "used_memory_bytes": info.get('used_memory', 0),
+            "keyspace": info.get('db0', {}),
+            "total_commands_processed": info.get('total_commands_processed', 0),
+            "instantaneous_ops_per_sec": info.get('instantaneous_ops_per_sec', 0)
+        })
+        
+        return stats
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "max_connections": redis_pool.max_connections if redis_pool else 0
+        }
 
 
 # 自动初始化（如果 Redis 可用）（优化方案1.1：使用新的默认参数）

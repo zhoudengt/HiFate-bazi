@@ -26,11 +26,7 @@ class QAQuestionGenerator:
     
     def __init__(self):
         # 导入配置加载器（从数据库读取配置）
-        try:
-            from server.config.config_loader import get_config_from_db_only
-        except ImportError:
-            def get_config_from_db_only(key: str) -> Optional[str]:
-                raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
+        from server.config.config_loader import get_config_from_db_only
         
         # 只从数据库读取，不降级到环境变量
         self.question_bot_id = get_config_from_db_only("QA_QUESTION_GENERATOR_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")

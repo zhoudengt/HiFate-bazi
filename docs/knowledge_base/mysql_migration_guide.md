@@ -35,12 +35,12 @@
 | 服务器IP（公网） | 8.210.52.217 |
 | 服务器IP（内网） | 172.18.121.222 |
 | SSH用户 | root |
-| SSH密码 | Yuanqizhan@163 |
+| SSH密码 | ${SSH_PASSWORD} |
 | Docker容器名 | hifate-mysql-master |
 | MySQL版本 | 8.0 |
 | MySQL端口 | 3306 |
 | MySQL用户 | root |
-| MySQL密码 | Yuanqizhan@163 |
+| MySQL密码 | ${SSH_PASSWORD} |
 | 数据库名 | hifate_bazi |
 | 项目目录 | /opt/HiFate-bazi |
 
@@ -51,12 +51,12 @@
 | 服务器IP（公网） | 47.243.160.43 |
 | 服务器IP（内网） | 172.18.121.223 |
 | SSH用户 | root |
-| SSH密码 | Yuanqizhan@163 |
+| SSH密码 | ${SSH_PASSWORD} |
 | Docker容器名 | hifate-mysql-slave |
 | MySQL版本 | 8.0 |
 | MySQL端口 | 3306 |
 | MySQL用户 | root |
-| MySQL密码 | Yuanqizhan@163 |
+| MySQL密码 | ${SSH_PASSWORD} |
 | 数据库名 | hifate_bazi |
 | 项目目录 | /opt/HiFate-bazi |
 
@@ -117,10 +117,10 @@
 
 ```bash
 # 在主库查看主从状态
-docker exec -i hifate-mysql-master mysql -uroot -p'Yuanqizhan@163' -e "SHOW MASTER STATUS\G"
+docker exec -i hifate-mysql-master mysql -uroot -p'${SSH_PASSWORD}' -e "SHOW MASTER STATUS\G"
 
 # 在备库查看同步状态
-sshpass -p 'Yuanqizhan@163' ssh root@47.243.160.43 "docker exec -i hifate-mysql-slave mysql -uroot -p'Yuanqizhan@163' -e 'SHOW SLAVE STATUS\G'"
+sshpass -p '${SSH_PASSWORD}' ssh root@47.243.160.43 "docker exec -i hifate-mysql-slave mysql -uroot -p'${SSH_PASSWORD}' -e 'SHOW SLAVE STATUS\G'"
 
 # 关键指标：
 # - Slave_IO_Running: Yes
@@ -162,13 +162,13 @@ mysql_migrate() {
     
     # 2. 在 Node1 主库执行迁移
     echo "2️⃣ 在 Node1 主库执行迁移..."
-    sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@8.210.52.217 \
-        "cd /opt/HiFate-bazi && git pull origin master && docker exec -i hifate-mysql-master mysql -uroot -p'Yuanqizhan@163' hifate_bazi < $SQL_FILE"
+    sshpass -p '${SSH_PASSWORD}' ssh -o StrictHostKeyChecking=no root@8.210.52.217 \
+        "cd /opt/HiFate-bazi && git pull origin master && docker exec -i hifate-mysql-master mysql -uroot -p'${SSH_PASSWORD}' hifate_bazi < $SQL_FILE"
     
     # 3. 验证结果
     echo "3️⃣ 验证迁移结果..."
-    sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@8.210.52.217 \
-        "docker exec -i hifate-mysql-master mysql -uroot -p'Yuanqizhan@163' hifate_bazi -e 'SHOW TABLES;'"
+    sshpass -p '${SSH_PASSWORD}' ssh -o StrictHostKeyChecking=no root@8.210.52.217 \
+        "docker exec -i hifate-mysql-master mysql -uroot -p'${SSH_PASSWORD}' hifate_bazi -e 'SHOW TABLES;'"
     
     echo "✅ 迁移完成！备库将自动同步。"
 }
@@ -178,13 +178,13 @@ mysql_check_sync() {
     echo "🔍 检查主从同步状态..."
     
     echo "📊 主库状态 (Node1):"
-    sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@8.210.52.217 \
-        "docker exec -i hifate-mysql-master mysql -uroot -p'Yuanqizhan@163' -e 'SHOW MASTER STATUS\G'" 2>/dev/null | grep -E "File|Position"
+    sshpass -p '${SSH_PASSWORD}' ssh -o StrictHostKeyChecking=no root@8.210.52.217 \
+        "docker exec -i hifate-mysql-master mysql -uroot -p'${SSH_PASSWORD}' -e 'SHOW MASTER STATUS\G'" 2>/dev/null | grep -E "File|Position"
     
     echo ""
     echo "📊 备库状态 (Node2):"
-    sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@47.243.160.43 \
-        "docker exec -i hifate-mysql-slave mysql -uroot -p'Yuanqizhan@163' -e 'SHOW SLAVE STATUS\G'" 2>/dev/null | grep -E "Slave_IO_Running|Slave_SQL_Running|Seconds_Behind_Master"
+    sshpass -p '${SSH_PASSWORD}' ssh -o StrictHostKeyChecking=no root@47.243.160.43 \
+        "docker exec -i hifate-mysql-slave mysql -uroot -p'${SSH_PASSWORD}' -e 'SHOW SLAVE STATUS\G'" 2>/dev/null | grep -E "Slave_IO_Running|Slave_SQL_Running|Seconds_Behind_Master"
 }
 ```
 
@@ -284,28 +284,28 @@ git push gitee master
 
 ```bash
 # SSH 到 Node1 主库服务器
-sshpass -p 'Yuanqizhan@163' ssh root@8.210.52.217
+sshpass -p '${SSH_PASSWORD}' ssh root@8.210.52.217
 
 # 或手动 SSH
 ssh root@8.210.52.217
-# 密码：Yuanqizhan@163
+# 密码：${SSH_PASSWORD}
 
 # 拉取最新代码
 cd /opt/HiFate-bazi
 git pull origin master
 
 # 在 Docker MySQL 主库中执行迁移
-docker exec -i hifate-mysql-master mysql -uroot -p'Yuanqizhan@163' hifate_bazi < server/db/migrations/create_xxx.sql
+docker exec -i hifate-mysql-master mysql -uroot -p'${SSH_PASSWORD}' hifate_bazi < server/db/migrations/create_xxx.sql
 ```
 
 ### 步骤4：验证迁移结果
 
 ```bash
 # 验证主库表结构
-docker exec -i hifate-mysql-master mysql -uroot -p'Yuanqizhan@163' hifate_bazi -e "DESCRIBE table_name;"
+docker exec -i hifate-mysql-master mysql -uroot -p'${SSH_PASSWORD}' hifate_bazi -e "DESCRIBE table_name;"
 
 # 验证主库表数据（可选）
-docker exec -i hifate-mysql-master mysql -uroot -p'Yuanqizhan@163' hifate_bazi -e "SELECT COUNT(*) FROM table_name;"
+docker exec -i hifate-mysql-master mysql -uroot -p'${SSH_PASSWORD}' hifate_bazi -e "SELECT COUNT(*) FROM table_name;"
 ```
 
 ---
@@ -335,20 +335,20 @@ mysql -u root -p123456 hifate_bazi -e "SHOW TABLES;"
 docker ps | grep mysql
 
 # 进入 MySQL 容器交互模式
-docker exec -it hifate-mysql-master mysql -uroot -p'Yuanqizhan@163' hifate_bazi
+docker exec -it hifate-mysql-master mysql -uroot -p'${SSH_PASSWORD}' hifate_bazi
 
 # 执行 SQL 文件
-docker exec -i hifate-mysql-master mysql -uroot -p'Yuanqizhan@163' hifate_bazi < file.sql
+docker exec -i hifate-mysql-master mysql -uroot -p'${SSH_PASSWORD}' hifate_bazi < file.sql
 
 # 执行单条 SQL
-docker exec -i hifate-mysql-master mysql -uroot -p'Yuanqizhan@163' hifate_bazi -e "SQL语句;"
+docker exec -i hifate-mysql-master mysql -uroot -p'${SSH_PASSWORD}' hifate_bazi -e "SQL语句;"
 ```
 
 ### 一键迁移命令（本地执行）
 
 ```bash
 # 一键 SSH 到 Node1 并执行迁移
-sshpass -p 'Yuanqizhan@163' ssh root@8.210.52.217 "cd /opt/HiFate-bazi && git pull origin master && docker exec -i hifate-mysql-master mysql -uroot -p'Yuanqizhan@163' hifate_bazi < server/db/migrations/create_xxx.sql"
+sshpass -p '${SSH_PASSWORD}' ssh root@8.210.52.217 "cd /opt/HiFate-bazi && git pull origin master && docker exec -i hifate-mysql-master mysql -uroot -p'${SSH_PASSWORD}' hifate_bazi < server/db/migrations/create_xxx.sql"
 ```
 
 ---
@@ -363,7 +363,7 @@ sshpass -p 'Yuanqizhan@163' ssh root@8.210.52.217 "cd /opt/HiFate-bazi && git pu
 
 4. **备份重要表**：修改或删除重要表前，先备份数据
    ```bash
-   docker exec -i hifate-mysql-master mysqldump -uroot -p'Yuanqizhan@163' hifate_bazi table_name > backup.sql
+   docker exec -i hifate-mysql-master mysqldump -uroot -p'${SSH_PASSWORD}' hifate_bazi table_name > backup.sql
    ```
 
 5. **大表迁移**：对于大表的结构修改，考虑在低峰期执行，或使用 `pt-online-schema-change` 工具

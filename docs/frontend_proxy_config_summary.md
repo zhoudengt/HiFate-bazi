@@ -56,7 +56,7 @@
 
 ```bash
 cd /Users/zhoudt/Downloads/project/HiFate-bazi
-export SSH_PASSWORD="Yuanqizhan@163"
+export SSH_PASSWORD="${SSH_PASSWORD}"
 bash scripts/deploy_frontend_proxy_dual_nodes.sh
 ```
 

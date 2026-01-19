@@ -306,7 +306,7 @@ async def rollback_module(module_name: Optional[str] = None, version: Optional[i
             )
         except Exception as e:
             # 如果集群同步不可用，执行本地回滚
-            print(f"⚠ 集群同步不可用，执行本地回滚: {e}")
+            logger.warning(f"⚠ 集群同步不可用，执行本地回滚: {e}")
             
             # 执行本地回滚（重新加载所有模块）
             from .reloaders import reload_all_modules

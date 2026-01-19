@@ -6,6 +6,7 @@
 
 import sys
 import os
+import logging
 from typing import Dict, Any, Optional, List
 
 # 添加项目根目录到路径
@@ -13,6 +14,8 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.insert(0, project_root)
 
 from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+
+logger = logging.getLogger(__name__)
 
 
 class RizhuLiujiaziService:
@@ -51,10 +54,10 @@ class RizhuLiujiaziService:
                 try:
                     cursor.execute("SHOW TABLES LIKE 'rizhu_liujiazi'")
                     if not cursor.fetchone():
-                        print(f"⚠️  表 rizhu_liujiazi 不存在", flush=True)
+                        logger.warning("⚠️  表 rizhu_liujiazi 不存在")
                         return None
                 except Exception as e:
-                    print(f"⚠️  检查表存在性失败: {e}", flush=True)
+                    logger.warning(f"⚠️  检查表存在性失败: {e}")
                     # 继续尝试查询，可能表存在但检查失败
                 
                 # ✅ 优化：使用单一查询，先尝试最可能成功的方式
@@ -98,7 +101,7 @@ class RizhuLiujiaziService:
                         }
                 else:
                     # 添加详细日志，便于排查问题
-                    print(f"⚠️  未找到日柱 {rizhu} 的解析内容（所有查询方式都失败）", flush=True)
+                    logger.warning(f"⚠️  未找到日柱 {rizhu} 的解析内容（所有查询方式都失败）")
                     
                     # 检查表中是否有数据（各种方式）
                     debug_queries = [
@@ -121,14 +124,14 @@ class RizhuLiujiaziService:
                                 total_count = count_result[0] if count_result else 0
                             else:
                                 total_count = count_result
-                            print(f"⚠️  {desc}: {total_count}", flush=True)
+                            logger.debug(f"⚠️  {desc}: {total_count}")
                         except Exception as e:
-                            print(f"⚠️  {desc}查询失败: {e}", flush=True)
+                            logger.debug(f"⚠️  {desc}查询失败: {e}")
                     
                     return None
                     
         except Exception as e:
-            print(f"⚠️  查询日柱解析失败: {e}", flush=True)
+            logger.error(f"⚠️  查询日柱解析失败: {e}", exc_info=True)
             import traceback
             traceback.print_exc()
             return None
@@ -162,7 +165,7 @@ class RizhuLiujiaziService:
                     return int(result) if result else 0
                     
         except Exception as e:
-            print(f"⚠️  查询总记录数失败: {e}", flush=True)
+            logger.error(f"⚠️  查询总记录数失败: {e}", exc_info=True)
             return 0
         finally:
             if conn:
@@ -202,7 +205,7 @@ class RizhuLiujiaziService:
                 ]
                     
         except Exception as e:
-            print(f"⚠️  查询日柱列表失败: {e}", flush=True)
+            logger.error(f"⚠️  查询日柱列表失败: {e}", exc_info=True)
             return []
         finally:
             if conn:

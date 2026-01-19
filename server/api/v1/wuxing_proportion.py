@@ -9,6 +9,7 @@ import sys
 import os
 import json
 import asyncio
+import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, validator
@@ -23,6 +24,7 @@ from server.utils.api_cache_helper import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Coze Bot ID（五行占比分析专用）
 WUXING_PROPORTION_BOT_ID = "7585498208202473523"
@@ -104,7 +106,7 @@ async def get_wuxing_proportion(request: WuxingProportionRequest):
         )
     except Exception as e:
         import traceback
-        print(f"❌ 五行占比查询失败: {e}\n{traceback.format_exc()}")
+        logger.error(f"❌ 五行占比查询失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
 
 

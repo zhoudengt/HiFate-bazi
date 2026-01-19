@@ -9,6 +9,9 @@ import os
 from typing import Optional
 from dataclasses import dataclass
 
+# 使用统一环境配置
+from server.config.env_config import get_env_config
+
 
 @dataclass
 class DatabaseConfig:
@@ -26,9 +29,9 @@ class DatabaseConfig:
         # ⚠️ 重要：根据环境自动选择默认配置
         # 本地开发：localhost:3306，密码: 123456
         # 生产环境：8.210.52.217:3306 (公网) / 172.18.121.222:3306 (内网)，密码: Yuanqizhan@163
-        # 判断环境（本地开发 or 生产）
-        env_value = os.getenv("ENV", os.getenv("APP_ENV", "local")).lower()
-        is_local_dev = env_value in ["local", "development"]
+        # 使用统一环境配置
+        from server.config.env_config import is_local_dev
+        is_local_dev = is_local_dev()
         
         # 根据环境设置默认值
         # ⚠️ 安全规范：密码必须通过环境变量配置，不允许硬编码
@@ -86,12 +89,13 @@ class ServiceConfig:
     @classmethod
     def from_env(cls) -> 'ServiceConfig':
         """从环境变量创建配置"""
+        env_config = get_env_config()
         return cls(
-            bazi_core_url=os.getenv('BAZI_CORE_SERVICE_URL'),
-            bazi_rule_url=os.getenv('BAZI_RULE_SERVICE_URL'),
-            bazi_fortune_url=os.getenv('BAZI_FORTUNE_SERVICE_URL'),
-            bazi_core_strict=os.getenv('BAZI_CORE_SERVICE_STRICT', '0') == '1',
-            bazi_fortune_strict=os.getenv('BAZI_FORTUNE_SERVICE_STRICT', '0') == '1'
+            bazi_core_url=env_config.get_config('BAZI_CORE_SERVICE_URL'),
+            bazi_rule_url=env_config.get_config('BAZI_RULE_SERVICE_URL'),
+            bazi_fortune_url=env_config.get_config('BAZI_FORTUNE_SERVICE_URL'),
+            bazi_core_strict=env_config.get_bool_config('BAZI_CORE_SERVICE_STRICT', default=False),
+            bazi_fortune_strict=env_config.get_bool_config('BAZI_FORTUNE_SERVICE_STRICT', default=False)
         )
 
 
@@ -111,11 +115,12 @@ class AppConfig:
     @classmethod
     def from_env(cls) -> 'AppConfig':
         """从环境变量创建完整配置"""
+        env_config = get_env_config()
         config = cls(
-            env=os.getenv('APP_ENV', 'development'),
-            debug=os.getenv('DEBUG', 'False').lower() == 'true',
-            secret_key=os.getenv('SECRET_KEY', 'dev-secret-change-me'),
-            log_level=os.getenv('LOG_LEVEL', 'INFO')
+            env=env_config.env,
+            debug=env_config.get_bool_config('DEBUG', default=False),
+            secret_key=env_config.get_config('SECRET_KEY', default='dev-secret-change-me'),
+            log_level=env_config.get_config('LOG_LEVEL', default='INFO')
         )
         
         # 加载子配置

@@ -16,8 +16,6 @@ sys.path.insert(0, project_root)
 from core.calculators.BaziCalculator import BaziCalculator
 from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
 # 延迟导入 gRPC 客户端，避免导入时触发版本检查错误
-# from shared.clients.bazi_core_client_grpc import BaziCoreClient
-# from shared.clients.bazi_rule_client_grpc import BaziRuleClient
 
 logger = logging.getLogger(__name__)
 

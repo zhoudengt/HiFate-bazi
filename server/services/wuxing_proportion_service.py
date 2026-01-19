@@ -7,11 +7,14 @@
 
 import sys
 import os
+import logging
 from typing import Dict, Any, Optional, List
 
 from server.services.bazi_service import BaziService
 from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
 from core.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
+
+logger = logging.getLogger(__name__)
 
 
 class WuxingProportionService:
@@ -123,7 +126,7 @@ class WuxingProportionService:
                 analyzer = WangShuaiAnalyzer()
                 wangshuai_result = analyzer.analyze(solar_date, solar_time, gender)
             except Exception as e:
-                print(f"⚠️  旺衰分析失败（不影响业务）: {e}")
+                logger.warning(f"⚠️  旺衰分析失败（不影响业务）: {e}")
             
             # 7. 分析相生相克关系
             element_relations = WuxingProportionService._analyze_element_relations(proportions)
@@ -139,7 +142,7 @@ class WuxingProportionService:
             }
         except Exception as e:
             import traceback
-            print(f"❌ 五行占比计算失败: {e}\n{traceback.format_exc()}")
+            logger.error(f"❌ 五行占比计算失败: {e}", exc_info=True)
             return {
                 "success": False,
                 "error": f"计算失败: {str(e)}"

@@ -41,12 +41,12 @@
 ```bash
 # 连接配置
 用户名: root
-密码: Yuanqizhan@163
+密码: ${SSH_PASSWORD}  # 从环境变量读取，禁止硬编码
 项目目录: /opt/HiFate-bazi
 
 # 连接命令（使用 sshpass）
-sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@8.210.52.217  # Node1
-sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@47.243.160.43  # Node2
+sshpass -p "${SSH_PASSWORD}" ssh -o StrictHostKeyChecking=no root@8.210.52.217  # Node1
+sshpass -p "${SSH_PASSWORD}" ssh -o StrictHostKeyChecking=no root@47.243.160.43  # Node2
 ```
 
 ### Git 仓库
@@ -214,7 +214,7 @@ ping 8.210.52.217
 nc -zv 8.210.52.217 22
 
 # 3. 增加连接超时时间
-sshpass -p 'Yuanqizhan@163' ssh -o ConnectTimeout=60 root@8.210.52.217
+sshpass -p "${SSH_PASSWORD}" ssh -o ConnectTimeout=60 root@8.210.52.217
 
 # 4. 检查本地网络（尝试使用手机热点）
 ```
@@ -267,7 +267,7 @@ curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/trigger
 curl http://8.210.52.217:8001/api/v1/hot-reload/verify
 
 # 4. 检查服务日志
-sshpass -p 'Yuanqizhan@163' ssh root@8.210.52.217 \
+sshpass -p "${SSH_PASSWORD}" ssh root@8.210.52.217 \
   "docker logs --tail 50 hifate-web 2>&1 | grep -i reload"
 ```
 
@@ -287,14 +287,14 @@ sshpass -p 'Yuanqizhan@163' ssh root@8.210.52.217 \
 **排查步骤**：
 ```bash
 # 1. 检查两台服务器的 Git 版本
-sshpass -p 'Yuanqizhan@163' ssh root@8.210.52.217 \
+sshpass -p "${SSH_PASSWORD}" ssh root@8.210.52.217 \
   "cd /opt/HiFate-bazi && git rev-parse --short HEAD"
 
-sshpass -p 'Yuanqizhan@163' ssh root@47.243.160.43 \
+sshpass -p "${SSH_PASSWORD}" ssh root@47.243.160.43 \
   "cd /opt/HiFate-bazi && git rev-parse --short HEAD"
 
 # 2. 手动拉取代码
-sshpass -p 'Yuanqizhan@163' ssh root@<IP> \
+sshpass -p "${SSH_PASSWORD}" ssh root@<IP> \
   "cd /opt/HiFate-bazi && git pull gitee master"
 ```
 
@@ -310,15 +310,15 @@ HTTP/1.1 502 Bad Gateway
 **排查步骤**：
 ```bash
 # 1. 检查 Web 服务是否运行
-sshpass -p 'Yuanqizhan@163' ssh root@8.210.52.217 \
+sshpass -p "${SSH_PASSWORD}" ssh root@8.210.52.217 \
   "docker ps | grep hifate-web"
 
 # 2. 检查服务日志
-sshpass -p 'Yuanqizhan@163' ssh root@8.210.52.217 \
+sshpass -p "${SSH_PASSWORD}" ssh root@8.210.52.217 \
   "docker logs --tail 100 hifate-web 2>&1 | tail -30"
 
 # 3. 检查 Nginx 配置
-sshpass -p 'Yuanqizhan@163' ssh root@8.210.52.217 \
+sshpass -p "${SSH_PASSWORD}" ssh root@8.210.52.217 \
   "docker logs --tail 50 hifate-nginx 2>&1"
 ```
 
@@ -348,11 +348,11 @@ echo "Node2:" && curl -s http://47.243.160.43:8001/health | head -1
 
 ```bash
 # Node1 Web 服务日志
-sshpass -p 'Yuanqizhan@163' ssh root@8.210.52.217 \
+sshpass -p "${SSH_PASSWORD}" ssh root@8.210.52.217 \
   "docker logs --tail 100 hifate-web 2>&1"
 
 # Node2 Web 服务日志
-sshpass -p 'Yuanqizhan@163' ssh root@47.243.160.43 \
+sshpass -p "${SSH_PASSWORD}" ssh root@47.243.160.43 \
   "docker logs --tail 100 hifate-web 2>&1"
 ```
 

@@ -115,7 +115,7 @@ git commit -m "feat: 支持 LLM 平台切换（Coze/百炼），每个接口可�
 
 ```bash
 # 1. 连接到 Node1
-sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@8.210.52.217
+sshpass -p '${SSH_PASSWORD}' ssh -o StrictHostKeyChecking=no root@8.210.52.217
 
 # 2. 进入项目目录
 cd /opt/HiFate-bazi
@@ -150,7 +150,7 @@ tail -f /opt/HiFate-bazi/logs/server.log | grep -i "llm\|platform\|bailian"
 
 ```bash
 # 1. 连接到 Node2
-sshpass -p 'Yuanqizhan@163' ssh -o StrictHostKeyChecking=no root@47.243.160.43
+sshpass -p '${SSH_PASSWORD}' ssh -o StrictHostKeyChecking=no root@47.243.160.43
 
 # 2. 重复 Node1 的步骤
 cd /opt/HiFate-bazi

@@ -323,7 +323,7 @@ ping 8.210.52.217
 nc -zv 8.210.52.217 22
 
 # 3. 使用 sshpass 连接（已配置密码）
-sshpass -p 'Yuanqizhan@163' ssh -o ConnectTimeout=30 root@8.210.52.217
+sshpass -p '${SSH_PASSWORD}' ssh -o ConnectTimeout=30 root@8.210.52.217
 
 # 4. 如果仍然失败，检查服务器状态（通过阿里云控制台）
 ```

@@ -136,6 +136,40 @@ class CalendarAPIService:
     
     def _calculate_local(self, date: str, date_obj: datetime, weekday_cn: str, weekday_en: str) -> Dict[str, Any]:
         """使用本地计算万年历信息（使用 lunar_python 库）"""
+        # 先初始化基础字段（不依赖 lunar_python，确保即使 lunar_python 失败也有基础数据）
+        base_result = {
+            'success': True,
+            'provider': 'local',
+            'date': date,
+            'solar_date': f"{date_obj.year}年{date_obj.month}月{date_obj.day}日",
+            'weekday': weekday_cn,      # 从参数传入，不依赖 lunar_python
+            'weekday_en': weekday_en,   # 从参数传入，不依赖 lunar_python
+            'lunar_date': '',           # 依赖 lunar_python，默认为空
+            'lunar_year': '',
+            'shengxiao': '',
+            'xingzuo': '',
+            'ganzhi': {
+                'year': '',
+                'month': '',
+                'day': '',
+                'hour': ''
+            },
+            'wuxing': [],
+            'nayin': [],
+            'yi': [],
+            'ji': [],
+            'luck_level': '中平',
+            'deities': {},
+            'chong_he_sha': {},
+            'xingxiu': {},
+            'pengzu': {},
+            'shensha': {},
+            'jiuxing': {},
+            'other': {},
+            'festivals': []
+        }
+        
+        # 尝试使用 lunar_python 计算详细数据
         try:
             from lunar_python import Solar
             
@@ -249,25 +283,20 @@ class CalendarAPIService:
             else:
                 luck_level = '中平'
             
-            return {
-                'success': True,
-                'provider': 'local',
-                'date': date,
-                'solar_date': f"{date_obj.year}年{date_obj.month}月{date_obj.day}日",
-                'weekday': weekday_cn,
-                'weekday_en': weekday_en,
+            # 更新基础结果中的字段（lunar_python 计算成功）
+            base_result.update({
                 'lunar_date': lunar_date_str,
                 'lunar_year': lunar_year_cn,
-                'shengxiao': shengxiao,  # 生肖
-                'xingzuo': xingzuo,  # 星座
+                'shengxiao': shengxiao,
+                'xingzuo': xingzuo,
                 'ganzhi': {
                     'year': year_ganzhi,
                     'month': month_ganzhi,
                     'day': day_ganzhi,
-                    'hour': hour_ganzhi  # 子时干支（默认）
+                    'hour': hour_ganzhi
                 },
-                'wuxing': bazi_wuxing,  # 八字五行
-                'nayin': bazi_nayin,  # 八字纳音
+                'wuxing': bazi_wuxing,
+                'nayin': bazi_nayin,
                 'yi': yi_list,
                 'ji': ji_list,
                 'luck_level': luck_level,
@@ -275,53 +304,52 @@ class CalendarAPIService:
                     'xishen': xi_shen,
                     'caishen': cai_shen,
                     'fushen': fu_shen,
-                    'yanggui': yang_gui,  # 阳贵
-                    'yingui': yin_gui,  # 阴贵
-                    'taishen': tai_shen,  # 胎神方位
-                    'taishen_explanation': self._generate_taishen_explanation(tai_shen)  # 胎神解释
+                    'yanggui': yang_gui,
+                    'yingui': yin_gui,
+                    'taishen': tai_shen,
+                    'taishen_explanation': self._generate_taishen_explanation(tai_shen)
                 },
                 'chong_he_sha': {
                     'chong': chong_desc,
                     'he': he_zodiac,
                     'sha': sha_desc
                 },
-                # 新增字段
-                'xingxiu': {  # 星宿
+                'xingxiu': {
                     'name': xiu,
                     'luck': xiu_luck,
                     'song': xiu_song,
                     'zheng': zheng,
                     'animal': animal
                 },
-                'pengzu': {  # 彭祖百忌
+                'pengzu': {
                     'gan': pengzu_gan,
                     'zhi': pengzu_zhi
                 },
-                'shensha': {  # 吉神凶煞
+                'shensha': {
                     'jishen': ji_shen,
                     'xiongsha': xiong_sha
                 },
-                'jiuxing': {  # 九星
+                'jiuxing': {
                     'year': year_nine_star,
                     'month': month_nine_star,
                     'day': day_nine_star
                 },
-                'other': {  # 其他
-                    'liuyao': liu_yao,  # 六曜
-                    'zhixing': zhi_xing,  # 建除十二神
-                    'yuexiang': yue_xiang,  # 月相
-                    'wuhou': wu_hou,  # 物候
-                    'hou': hou,  # 候
-                    'jieqi': jie_qi  # 节气
+                'other': {
+                    'liuyao': liu_yao,
+                    'zhixing': zhi_xing,
+                    'yuexiang': yue_xiang,
+                    'wuhou': wu_hou,
+                    'hou': hou,
+                    'jieqi': jie_qi
                 },
-                'festivals': all_festivals  # 节日
-            }
+                'festivals': all_festivals
+            })
+            
+            return base_result
         except Exception as e:
-            logger.error(f"本地计算万年历失败: {e}", exc_info=True)
-            return {
-                'success': False,
-                'error': f'计算万年历失败: {str(e)}'
-            }
+            # lunar_python 失败时，返回基础字段（weekday, weekday_en, solar_date 等）
+            logger.warning(f"lunar_python 计算失败: {e}，返回基础数据（weekday、solar_date）")
+            return base_result
     
     def _call_jisuapi(self, date: str) -> Dict[str, Any]:
         """调用极速数据万年历API"""

@@ -92,23 +92,23 @@ class MicroserviceReloader:
         self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._thread.start()
         
-        print(f"✓ [{self.service_name}] 微服务热更新监控已启动（检查间隔: {self.check_interval}秒）")
+        logger.info(f"✓ [{self.service_name}] 微服务热更新监控已启动（检查间隔: {self.check_interval}秒）")
     
     def stop(self):
         """停止热更新监控"""
         self._running = False
         if self._thread:
             self._thread.join(timeout=2)
-        print(f"✓ [{self.service_name}] 微服务热更新监控已停止")
+        logger.info(f"✓ [{self.service_name}] 微服务热更新监控已停止")
     
     def _monitor_loop(self):
         """监控循环"""
         while self._running:
             try:
                 if self._check_and_reload():
-                    print(f"✓ [{self.service_name}] 热更新完成")
+                    logger.info(f"✓ [{self.service_name}] 热更新完成")
             except Exception as e:
-                print(f"⚠ [{self.service_name}] 热更新检查失败: {e}")
+                logger.warning(f"⚠ [{self.service_name}] 热更新检查失败: {e}")
             
             time.sleep(self.check_interval)
     
@@ -177,7 +177,7 @@ class MicroserviceReloader:
             return state
             
         except Exception as e:
-            print(f"⚠ [{self.service_name}] 无法读取文件 {file_path}: {e}")
+            logger.warning(f"⚠ [{self.service_name}] 无法读取文件 {file_path}: {e}")
             return None
     
     def _check_syntax_content(self, content: bytes, file_path: str) -> bool:

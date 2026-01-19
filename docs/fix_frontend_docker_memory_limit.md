@@ -16,7 +16,7 @@
 
 ```bash
 # 设置 SSH 密码（如果需要）
-export SSH_PASSWORD="Yuanqizhan@163"
+export SSH_PASSWORD="${SSH_PASSWORD}"
 
 # 执行修复脚本
 bash scripts/fix_frontend_docker_memory_limit.sh

@@ -506,7 +506,8 @@ class BaziDataService:
         include_special_liunian: bool = True,
         dayun_mode: str = DEFAULT_DAYUN_MODE,
         target_years: Optional[List[int]] = None,
-        current_time: Optional[datetime] = None
+        current_time: Optional[datetime] = None,
+        detail_result: Optional[Dict[str, Any]] = None  # ✅ 性能优化：允许传入已计算的 detail_result，避免重复计算
     ) -> BaziDetailModel:
         """
         获取完整的运势数据（用于5个分析接口）
@@ -540,20 +541,25 @@ class BaziDataService:
         if current_time is None:
             current_time = datetime.now()
         
-        # 2. ⚠️ 核心：使用 BaziDetailService.calculate_detail_full() 作为唯一数据源
-        #    与排盘接口 /api/v1/bazi/fortune/display 完全一致
-        loop = asyncio.get_event_loop()
-        executor = None
-        detail_result = await loop.run_in_executor(
-            executor,
-            BaziDetailService.calculate_detail_full,
-            final_solar_date,
-            final_solar_time,
-            gender,
-            current_time,
-            None,  # dayun_index（不指定，获取所有大运）
-            None   # target_year
-        )
+        # 2. ⚠️ 性能优化：如果已传入 detail_result，直接使用，避免重复计算
+        #    这样可以复用 BaziDataOrchestrator.fetch_data() 已经获取的 detail 数据
+        if detail_result is None:
+            # 2.1 如果没有传入，则调用 BaziDetailService.calculate_detail_full() 作为唯一数据源
+            #     与排盘接口 /api/v1/bazi/fortune/display 完全一致
+            loop = asyncio.get_event_loop()
+            executor = None
+            detail_result = await loop.run_in_executor(
+                executor,
+                BaziDetailService.calculate_detail_full,
+                final_solar_date,
+                final_solar_time,
+                gender,
+                current_time,
+                None,  # dayun_index（不指定，获取所有大运）
+                None   # target_year
+            )
+        else:
+            logger.debug("[BaziDataService] 复用已传入的 detail_result，跳过重复计算")
         
         if not detail_result:
             logger.warning("[BaziDataService] calculate_detail_full() 返回空结果")

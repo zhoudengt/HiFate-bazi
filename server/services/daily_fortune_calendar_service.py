@@ -8,6 +8,7 @@
 import sys
 import os
 import hashlib
+import logging
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime, date
 
@@ -17,6 +18,8 @@ sys.path.insert(0, project_root)
 
 from server.services.calendar_api_service import CalendarAPIService
 from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+
+logger = logging.getLogger(__name__)
 
 
 class DailyFortuneCalendarService:
@@ -146,7 +149,7 @@ class DailyFortuneCalendarService:
                                     birth_stem = stem_data.get('char', '')
                 except Exception as e:
                     import traceback
-                    print(f"从 /bazi/pan/display 接口获取日干失败，回退到原有方式: {e}\n{traceback.format_exc()}")
+                    logger.warning(f"从 /bazi/pan/display 接口获取日干失败，回退到原有方式: {e}", exc_info=True)
                 
                 # 如果接口调用失败，回退到原有方式
                 if not birth_stem:
@@ -183,7 +186,7 @@ class DailyFortuneCalendarService:
                     # lunar_python不可用，跳过
                     pass
                 except Exception as e:
-                    print(f"计算建除失败: {e}")
+                    logger.warning(f"计算建除失败: {e}")
                     pass
             
             # 7. 获取胎神信息
@@ -203,7 +206,7 @@ class DailyFortuneCalendarService:
                         if rizhu:
                             master_info = {'rizhu': rizhu, 'today_shishen': None}
                 except Exception as e:
-                    print(f"计算日主失败: {e}")
+                    logger.warning(f"计算日主失败: {e}")
                     pass
             
             # 9. 获取五行穿搭（原幸运颜色）
@@ -296,7 +299,7 @@ class DailyFortuneCalendarService:
                 return cached_result
         except Exception as e:
             # Redis不可用，降级到数据库查询
-            print(f"⚠️  Redis缓存不可用，降级到数据库查询: {e}")
+            logger.warning(f"⚠️  Redis缓存不可用，降级到数据库查询: {e}")
         
         # 3. 缓存未命中，查询数据库
         result = DailyFortuneCalendarService._query_from_database(
@@ -315,7 +318,7 @@ class DailyFortuneCalendarService:
                 cache.l2.ttl = 3600
             except Exception as e:
                 # 缓存写入失败不影响业务
-                print(f"⚠️  缓存写入失败（不影响业务）: {e}")
+                logger.warning(f"⚠️  缓存写入失败（不影响业务）: {e}")
         
         return result
     
@@ -351,8 +354,7 @@ class DailyFortuneCalendarService:
             return liunian, liuyue, liuri
             
         except Exception as e:
-            import traceback
-            print(f"计算流年流月流日失败: {e}\n{traceback.format_exc()}")
+            logger.error(f"计算流年流月流日失败: {e}", exc_info=True)
             return "", "", ""
     
     @staticmethod
@@ -435,7 +437,7 @@ class DailyFortuneCalendarService:
                     return content
                 return None
         except Exception as e:
-            print(f"查询六十甲子运势失败: {e}")
+            logger.error(f"查询六十甲子运势失败: {e}")
             return None
         finally:
             if conn:
@@ -499,7 +501,7 @@ class DailyFortuneCalendarService:
                     return hint
                     
         except Exception as e:
-            print(f"查询十神提示失败: {e}")
+            logger.error(f"查询十神提示失败: {e}")
             return None
         finally:
             if conn:
@@ -548,7 +550,7 @@ class DailyFortuneCalendarService:
                 return "\n".join(lines)
                 
         except Exception as e:
-            print(f"查询生肖刑冲破害失败: {e}")
+            logger.error(f"查询生肖刑冲破害失败: {e}")
             return None
         finally:
             if conn:
@@ -622,7 +624,7 @@ class DailyFortuneCalendarService:
                     'summary': None
                 }
         except Exception as e:
-            print(f"查询建除十二神信息失败: {e}")
+            logger.error(f"查询建除十二神信息失败: {e}")
             return None
         finally:
             if conn:
@@ -683,7 +685,7 @@ class DailyFortuneCalendarService:
                 'today_shishen': today_shishen
             }
         except Exception as e:
-            print(f"获取命主信息失败: {e}")
+            logger.error(f"获取命主信息失败: {e}")
             return None
     
     @staticmethod
@@ -734,7 +736,7 @@ class DailyFortuneCalendarService:
                     return result.get('shishen')
                 return None
         except Exception as e:
-            print(f"查询十神失败: {e}")
+            logger.error(f"查询十神失败: {e}")
             return None
         finally:
             if conn:
@@ -874,7 +876,7 @@ class DailyFortuneCalendarService:
                                     if color:
                                         colors.append(color)
         except Exception as e:
-            print(f"获取幸运颜色失败: {e}")
+            logger.error(f"获取幸运颜色失败: {e}")
         finally:
             if conn:
                 try:
@@ -931,7 +933,7 @@ class DailyFortuneCalendarService:
             # 判断十神是否在喜神列表中
             return shishen in xi_shen_list
         except Exception as e:
-            print(f"判断十神是否为喜用失败: {e}")
+            logger.error(f"判断十神是否为喜用失败: {e}")
             return False
     
     @staticmethod
@@ -983,7 +985,7 @@ class DailyFortuneCalendarService:
                                 directions_list = [d.strip() for d in directions_str.replace('、', ',').split(',') if d.strip()]
                                 directions.extend(directions_list)
             except Exception as e:
-                print(f"获取贵人指路失败: {e}")
+                logger.error(f"获取贵人指路失败: {e}")
             finally:
                 if conn:
                     try:
@@ -1039,7 +1041,7 @@ class DailyFortuneCalendarService:
                             if direction:
                                 directions.append(direction)
             except Exception as e:
-                print(f"获取瘟神方位失败: {e}")
+                logger.error(f"获取瘟神方位失败: {e}")
             finally:
                 if conn:
                     try:
@@ -1091,9 +1093,9 @@ class DailyFortuneCalendarService:
                 try:
                     redis_client.publish('cache:invalidate:daily_fortune', target_date or 'all')
                 except Exception as e:
-                    print(f"⚠️  发布缓存失效事件失败: {e}")
+                    logger.warning(f"⚠️  发布缓存失效事件失败: {e}")
                 
-                print(f"✅ 已清理每日运势缓存: {deleted_count} 条（日期: {target_date or 'all'}）")
+                logger.info(f"✅ 已清理每日运势缓存: {deleted_count} 条（日期: {target_date or 'all'}）")
         except Exception as e:
-            print(f"⚠️  缓存失效操作失败（不影响业务）: {e}")
+            logger.warning(f"⚠️  缓存失效操作失败（不影响业务）: {e}")
 

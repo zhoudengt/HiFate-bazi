@@ -17,12 +17,15 @@ import time
 import uuid
 import socket
 import threading
+import logging
 from typing import Dict, Optional, Callable, List
 from datetime import datetime
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
+
+logger = logging.getLogger(__name__)
 
 
 # Redis 频道
@@ -113,7 +116,7 @@ class ClusterSynchronizer:
         # 注册节点状态
         self._update_node_status("online")
         
-        print(f"✓ 双机同步器已启动 (节点: {self.node_id})")
+        logger.info(f"✓ 双机同步器已启动 (节点: {self.node_id})")
     
     def stop(self):
         """停止同步器"""
@@ -133,7 +136,7 @@ class ClusterSynchronizer:
         if self._subscribe_thread:
             self._subscribe_thread.join(timeout=2)
         
-        print(f"✓ 双机同步器已停止 (节点: {self.node_id})")
+        logger.info(f"✓ 双机同步器已停止 (节点: {self.node_id})")
     
     def _subscribe_loop(self):
         """订阅循环"""
@@ -149,7 +152,7 @@ class ClusterSynchronizer:
                     CHANNEL_HEALTH
                 )
                 
-                print(f"✓ [{self.node_id}] 已订阅热更新频道")
+                logger.info(f"✓ [{self.node_id}] 已订阅热更新频道")
                 
                 # 监听消息
                 for message in self._pubsub.listen():
@@ -160,7 +163,7 @@ class ClusterSynchronizer:
                         self._handle_message(message['channel'], message['data'])
                 
             except Exception as e:
-                print(f"⚠ [{self.node_id}] 订阅异常: {e}")
+                logger.warning(f"⚠ [{self.node_id}] 订阅异常: {e}")
                 time.sleep(5)  # 重试间隔
     
     def _handle_message(self, channel: str, data: str):
@@ -180,7 +183,7 @@ class ClusterSynchronizer:
                 self._handle_health_check(payload)
                 
         except Exception as e:
-            print(f"⚠ [{self.node_id}] 处理消息失败: {e}")
+            logger.warning(f"⚠ [{self.node_id}] 处理消息失败: {e}")
     
     def _handle_trigger(self, payload: Dict):
         """处理热更新触发事件"""
@@ -188,7 +191,7 @@ class ClusterSynchronizer:
         modules = payload.get('modules', [])
         source_node = payload.get('source_node')
         
-        print(f"\n📥 [{self.node_id}] 收到热更新事件 (来自: {source_node}, 模块: {modules})")
+        logger.info(f"\n📥 [{self.node_id}] 收到热更新事件 (来自: {source_node}, 模块: {modules})")
         
         try:
             # 执行热更新
@@ -204,7 +207,7 @@ class ClusterSynchronizer:
             self._send_confirm(event_id, success)
             
         except Exception as e:
-            print(f"❌ [{self.node_id}] 热更新执行失败: {e}")
+            logger.error(f"❌ [{self.node_id}] 热更新执行失败: {e}")
             self._send_confirm(event_id, False, str(e))
     
     def _handle_rollback(self, payload: Dict):
@@ -213,19 +216,19 @@ class ClusterSynchronizer:
         version = payload.get('version')
         source_node = payload.get('source_node')
         
-        print(f"\n⚠ [{self.node_id}] 收到回滚事件 (来自: {source_node}, 版本: {version})")
+        logger.warning(f"\n⚠ [{self.node_id}] 收到回滚事件 (来自: {source_node}, 版本: {version})")
         
         try:
             if self.on_rollback_callback:
                 success = self.on_rollback_callback(version)
             else:
-                print(f"⚠ [{self.node_id}] 未配置回滚回调")
+                logger.warning(f"⚠ [{self.node_id}] 未配置回滚回调")
                 success = False
             
             self._send_confirm(event_id, success, "rollback")
             
         except Exception as e:
-            print(f"❌ [{self.node_id}] 回滚执行失败: {e}")
+            logger.error(f"❌ [{self.node_id}] 回滚执行失败: {e}")
             self._send_confirm(event_id, False, str(e))
     
     def _handle_health_check(self, payload: Dict):
@@ -257,7 +260,7 @@ class ClusterSynchronizer:
             redis_client = self._get_redis_client()
             redis_client.publish(channel, json.dumps(data, ensure_ascii=False))
         except Exception as e:
-            print(f"⚠ [{self.node_id}] 发布消息失败: {e}")
+            logger.warning(f"⚠ [{self.node_id}] 发布消息失败: {e}")
     
     def _update_node_status(self, status: str):
         """更新节点状态"""
@@ -271,7 +274,7 @@ class ClusterSynchronizer:
             }, ensure_ascii=False)
             redis_client.setex(key, NODE_STATUS_EXPIRE, value)
         except Exception as e:
-            print(f"⚠ [{self.node_id}] 更新节点状态失败: {e}")
+            logger.warning(f"⚠ [{self.node_id}] 更新节点状态失败: {e}")
     
     def trigger_cluster_update(self, modules: List[str] = None) -> str:
         """
@@ -306,7 +309,7 @@ class ClusterSynchronizer:
                 'timestamp': datetime.now().isoformat()
             })
             
-            print(f"📤 [{self.node_id}] 已发送集群热更新事件 (ID: {event_id})")
+            logger.info(f"📤 [{self.node_id}] 已发送集群热更新事件 (ID: {event_id})")
             return event_id
             
         finally:
@@ -335,7 +338,7 @@ class ClusterSynchronizer:
                 'timestamp': datetime.now().isoformat()
             })
             
-            print(f"📤 [{self.node_id}] 已发送集群回滚事件 (ID: {event_id})")
+            logger.info(f"📤 [{self.node_id}] 已发送集群回滚事件 (ID: {event_id})")
             return event_id
             
         finally:
@@ -362,7 +365,7 @@ class ClusterSynchronizer:
             return nodes
             
         except Exception as e:
-            print(f"⚠ [{self.node_id}] 检查集群健康失败: {e}")
+            logger.warning(f"⚠ [{self.node_id}] 检查集群健康失败: {e}")
             return {}
     
     def _acquire_lock(self, timeout: int = LOCK_TIMEOUT) -> bool:
@@ -376,7 +379,7 @@ class ClusterSynchronizer:
             return result is True
             
         except Exception as e:
-            print(f"⚠ [{self.node_id}] 获取锁失败: {e}")
+            logger.warning(f"⚠ [{self.node_id}] 获取锁失败: {e}")
             return False
     
     def _release_lock(self):
@@ -385,7 +388,7 @@ class ClusterSynchronizer:
             redis_client = self._get_redis_client()
             redis_client.delete(LOCK_KEY)
         except Exception as e:
-            print(f"⚠ [{self.node_id}] 释放锁失败: {e}")
+            logger.warning(f"⚠ [{self.node_id}] 释放锁失败: {e}")
     
     def get_status(self) -> Dict:
         """获取同步器状态"""

@@ -96,7 +96,6 @@ class SpecialLiunianService:
         executor = None
         
         logger.info(f"⏱️ [性能优化] 一次性调用 calculate_detail_full() 获取所有大运和流年数据...")
-        print(f"⏱️ [性能优化] 一次性调用 calculate_detail_full() 获取所有大运和流年数据...")
         
         # 调用 calculate_detail_full()（不指定 dayun_index，获取所有大运和流年）
         detail_result = await loop.run_in_executor(
@@ -119,7 +118,6 @@ class SpecialLiunianService:
         liunian_sequence = details.get('liunian_sequence', [])
         
         logger.info(f"✅ [性能优化] 获取到 {len(liunian_sequence)} 个流年数据")
-        print(f"✅ [性能优化] 获取到 {len(liunian_sequence)} 个流年数据")
         
         # 筛选有 relations 的流年，并按大运分组
         special_liunians = []
@@ -174,20 +172,18 @@ class SpecialLiunianService:
         
         elapsed_time = time.time() - start_time
         logger.info(f"⏱️ [性能优化] 流年筛选完成，耗时: {elapsed_time:.3f}秒，找到 {len(special_liunians)} 个特殊流年")
-        print(f"⏱️ [性能优化] 流年筛选完成，耗时: {elapsed_time:.3f}秒，找到 {len(special_liunians)} 个特殊流年")
         
         # 按大运和年份排序
         special_liunians.sort(key=lambda x: (x.get('dayun_step', 0), x.get('year', 0)))
         
         total_elapsed = time.time() - start_time
         logger.info(f"✅ [步骤1-流年查询] 批量获取完成，共找到 {len(special_liunians)} 个特殊流年（不去重），总耗时: {total_elapsed:.3f}秒")
-        print(f"✅ [步骤1-流年查询] 批量获取完成，共找到 {len(special_liunians)} 个特殊流年（不去重），总耗时: {total_elapsed:.3f}秒")
         
-        # 打印前5个特殊流年详情
+        # 记录前5个特殊流年详情（DEBUG级别）
         if special_liunians:
-            print(f"📋 [步骤1-流年查询] 前5个特殊流年详情:")
+            logger.debug(f"📋 [步骤1-流年查询] 前5个特殊流年详情:")
             for liunian in special_liunians[:5]:
-                print(f"   - {liunian.get('year')}年 {liunian.get('ganzhi')} (大运{liunian.get('dayun_step')}): {liunian.get('relations', [])}")
+                logger.debug(f"   - {liunian.get('year')}年 {liunian.get('ganzhi')} (大运{liunian.get('dayun_step')}): {liunian.get('relations', [])}")
         
         # 4. 写入缓存（仅成功时）
         try:

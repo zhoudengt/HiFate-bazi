@@ -6,7 +6,7 @@
 - **主机**: `8.210.52.217`
 - **端口**: `3306`
 - **用户名**: `root`
-- **密码**: `Yuanqizhan@163`
+- **密码**: `${SSH_PASSWORD}`
 - **数据库**: `hifate_bazi`
 
 ### MongoDB 连接信息（生产 Node1 Docker）
@@ -31,7 +31,7 @@
 - **Port**: `3306`
 - **Database**: `hifate_bazi`
 - **Username**: `root`
-- **Password**: `Yuanqizhan@163`
+- **Password**: `${SSH_PASSWORD}`
 
 ### 步骤 3: 测试连接
 1. 点击左下角的 **"Test Connection"** 按钮

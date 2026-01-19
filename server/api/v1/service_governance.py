@@ -282,6 +282,65 @@ async def check_service_health(service_name: str):
         )
 
 
+# ==================== 性能统计 API ====================
+
+class PerformanceStatsResponse(BaseModel):
+    """性能统计响应模型"""
+    success: bool = Field(..., description="是否成功")
+    data: Optional[Dict[str, Any]] = Field(None, description="性能统计数据")
+    error: Optional[str] = Field(None, description="错误信息")
+
+
+@router.get("/governance/performance/stats", response_model=PerformanceStatsResponse, summary="获取性能统计信息")
+async def get_performance_stats():
+    """
+    获取性能统计信息
+    
+    包括：
+    - 数据库连接池统计
+    - Redis连接池统计
+    - 缓存统计（命中率等）
+    """
+    try:
+        stats = {}
+        
+        # 1. MySQL连接池统计
+        try:
+            from server.config.mysql_config import get_connection_pool_stats
+            stats["mysql_pool"] = get_connection_pool_stats()
+        except Exception as e:
+            logger.warning(f"获取MySQL连接池统计失败: {e}")
+            stats["mysql_pool"] = {"error": str(e)}
+        
+        # 2. Redis连接池统计
+        try:
+            from server.config.redis_config import get_redis_pool_stats
+            stats["redis_pool"] = get_redis_pool_stats()
+        except Exception as e:
+            logger.warning(f"获取Redis连接池统计失败: {e}")
+            stats["redis_pool"] = {"error": str(e)}
+        
+        # 3. 多级缓存统计
+        try:
+            from server.utils.cache_multi_level import get_multi_cache
+            cache = get_multi_cache()
+            stats["cache"] = cache.stats()
+        except Exception as e:
+            logger.warning(f"获取缓存统计失败: {e}")
+            stats["cache"] = {"error": str(e)}
+        
+        return PerformanceStatsResponse(
+            success=True,
+            data=stats
+        )
+    except Exception as e:
+        logger.error(f"获取性能统计失败: {e}", exc_info=True)
+        return PerformanceStatsResponse(
+            success=False,
+            error=str(e)
+        )
+
+
 # ==================== 综合状态 API ====================
 
 @router.get("/governance/dashboard", response_model=ServiceStatusResponse, summary="获取治理仪表板数据")

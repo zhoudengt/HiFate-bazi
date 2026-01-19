@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 # 判断环境（本地开发 or 生产）
 # 通过环境变量 ENV 判断，local 表示本地开发，其他表示生产环境
-IS_LOCAL_DEV = os.getenv("ENV", "local").lower() == "local"
+# 使用统一环境配置
+from server.config.env_config import is_local_dev
+IS_LOCAL_DEV = is_local_dev()
 
 # MySQL配置
 # ⚠️ 安全规范：密码必须通过环境变量配置，不允许硬编码

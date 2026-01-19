@@ -12,7 +12,6 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, validator
 from typing import Optional, Tuple
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
@@ -31,12 +30,8 @@ from server.api.v1.models.bazi_base_models import BaziBaseRequest
 
 router = APIRouter()
 
-# 根据CPU核心数动态调整线程池大小（优化高并发性能）
-import os
-cpu_count = os.cpu_count() or 4
-# 线程池大小 = CPU核心数 * 2，但不超过100
-max_workers = min(cpu_count * 2, 100)
-executor = ThreadPoolExecutor(max_workers=max_workers)
+# 使用统一的异步执行器（性能优化）
+from server.utils.async_executor import run_in_executor
 
 
 # 向后兼容：保留原函数，内部调用公共方法
@@ -174,10 +169,8 @@ async def calculate_bazi(request: BaziRequest, http_request: Request):
                     data=cached_result
                 )
         
-        # 在线程池中执行CPU密集型计算
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            executor,
+        # 在线程池中执行CPU密集型计算（使用统一执行器）
+        result = await run_in_executor(
             BaziService.calculate_bazi_full,
             final_solar_date,
             final_solar_time,
@@ -272,11 +265,9 @@ async def generate_bazi_interface(request: BaziInterfaceRequest, http_request: R
             )
         
         # 在线程池中执行CPU密集型计算（添加超时保护，最多30秒）
-        loop = asyncio.get_event_loop()
         try:
             result = await asyncio.wait_for(
-                loop.run_in_executor(
-                    executor,
+                run_in_executor(
                     BaziInterfaceService.generate_interface_full,
                     final_solar_date,
                     final_solar_time,
@@ -394,11 +385,9 @@ async def calculate_bazi_detail(request: BaziDetailRequest, http_request: Reques
                 data=cached_result
             )
         
-        # 在线程池中执行CPU密集型计算
+        # 在线程池中执行CPU密集型计算（使用统一执行器）
         # 默认使用快速模式（只计算当前大运）+ 异步预热
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            executor,
+        result = await run_in_executor(
             BaziDetailService.calculate_detail_full,
             final_solar_date,
             final_solar_time,
@@ -525,10 +514,8 @@ async def get_shengong_minggong(request: ShengongMinggongRequest, http_request: 
                     data=cached_result
                 )
         
-        # 在线程池中执行CPU密集型计算
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            executor,
+        # 在线程池中执行CPU密集型计算（使用统一执行器）
+        result = await run_in_executor(
             _calculate_shengong_minggong_details,
             final_solar_date,
             final_solar_time,

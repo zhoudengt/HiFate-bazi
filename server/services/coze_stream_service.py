@@ -28,12 +28,7 @@ sys.path.insert(0, project_root)
 logger = logging.getLogger(__name__)
 
 # 导入配置加载器（从数据库读取配置）
-try:
-    from server.config.config_loader import get_config_from_db_only
-except ImportError:
-    # 如果导入失败，抛出错误（不允许降级）
-    def get_config_from_db_only(key: str) -> Optional[str]:
-        raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
+from server.config.config_loader import get_config_from_db_only
 
 # 导入基类
 from server.services.base_llm_stream_service import BaseLLMStreamService

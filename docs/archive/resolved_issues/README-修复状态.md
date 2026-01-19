@@ -28,7 +28,7 @@ python3 scripts/test_until_fixed.py
 
 ```bash
 scp scripts/temp_rules_export.sql root@8.210.52.217:/tmp/rules_import.sql && \
-ssh root@8.210.52.217 "cd /opt/HiFate-bazi && docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql && curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/check"
+ssh root@8.210.52.217 "cd /opt/HiFate-bazi && docker exec -i hifate-mysql-master mysql -uroot -p${SSH_PASSWORD} hifate_bazi < /tmp/rules_import.sql && curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/check"
 ```
 
 然后等待 5 秒后验证：

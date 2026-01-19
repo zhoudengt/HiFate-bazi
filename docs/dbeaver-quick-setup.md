@@ -11,7 +11,7 @@
 - **主机**: `8.210.52.217`
 - **端口**: `3306`
 - **用户名**: `root`
-- **密码**: `Yuanqizhan@163`
+- **密码**: `${SSH_PASSWORD}`
 - **数据库**: `hifate_bazi`
 
 ### MongoDB 连接（生产 Node1 Docker）
@@ -46,7 +46,7 @@
    - **Port**: `3306`
    - **Database**: `hifate_bazi`
    - **Username**: `root`
-   - **Password**: `Yuanqizhan@163`
+   - **Password**: `${SSH_PASSWORD}`
    - ✅ 勾选 **"Save password"**
 
 5. **测试连接**
@@ -105,7 +105,7 @@
 
 **错误**: "Access denied for user..."
 - ✅ 检查用户名和密码是否正确
-- ✅ 确认密码为：`Yuanqizhan@163`
+- ✅ 确认密码为：`${SSH_PASSWORD}`
 
 **错误**: "Can't connect to MySQL server..."
 - ✅ 检查网络连接是否正常
@@ -113,7 +113,7 @@
 - ✅ 尝试使用命令测试连接：
   ```bash
   mysql -h 8.210.52.217 -P 3306 -u root -p
-  # 输入密码: Yuanqizhan@163
+  # 输入密码: ${SSH_PASSWORD}
   ```
 
 ### MongoDB 连接失败
@@ -161,7 +161,7 @@ try:
         host='8.210.52.217',
         port=3306,
         user='root',
-        password='Yuanqizhan@163',
+        password='${SSH_PASSWORD}',
         database='hifate_bazi'
     )
     print("✅ MySQL 连接成功")

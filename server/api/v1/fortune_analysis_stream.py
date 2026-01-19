@@ -9,11 +9,14 @@ import sys
 import os
 import json
 import asyncio
+import logging
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
 import grpc
+
+logger = logging.getLogger(__name__)
 
 # 添加项目根目录到路径
 # server/api/v1/fortune_analysis_stream.py -> 向上4级到项目根
@@ -69,9 +72,9 @@ try:
     from image_validator import ImageValidator
     image_validator = ImageValidator()
     IMAGE_VALIDATOR_AVAILABLE = True
-    print("✅ 图像验证器导入成功")
+    logger.info("✅ 图像验证器导入成功")
 except ImportError as e:
-    print(f"⚠️  图像验证器导入失败: {e}，将跳过图像类型验证")
+    logger.warning(f"⚠️  图像验证器导入失败: {e}，将跳过图像类型验证")
     image_validator = None
     IMAGE_VALIDATOR_AVAILABLE = False
 
@@ -80,11 +83,10 @@ try:
     from hand_analyzer_stream import HandAnalyzerStream
     hand_analyzer_stream = HandAnalyzerStream()
     HAND_STREAM_ANALYZER_AVAILABLE = True
-    print("✅ 手相流式分析器导入成功")
+    logger.info("✅ 手相流式分析器导入成功")
 except ImportError as e:
     import traceback
-    print(f"⚠️  手相流式分析器导入失败: {e}")
-    print(traceback.format_exc())
+    logger.warning(f"⚠️  手相流式分析器导入失败: {e}", exc_info=True)
     hand_analyzer_stream = None
     HAND_STREAM_ANALYZER_AVAILABLE = False
 
@@ -92,11 +94,10 @@ try:
     from face_analyzer_stream import FaceAnalyzerStream
     face_analyzer_stream = FaceAnalyzerStream()
     FACE_STREAM_ANALYZER_AVAILABLE = True
-    print("✅ 面相流式分析器导入成功")
+    logger.info("✅ 面相流式分析器导入成功")
 except ImportError as e:
     import traceback
-    print(f"⚠️  面相流式分析器导入失败: {e}")
-    print(traceback.format_exc())
+    logger.warning(f"⚠️  面相流式分析器导入失败: {e}", exc_info=True)
     face_analyzer_stream = None
     FACE_STREAM_ANALYZER_AVAILABLE = False
 
@@ -154,7 +155,7 @@ async def analyze_hand_stream_generator(image_bytes: bytes, image_format: str,
         
         # 使用手相流式分析器（真正的流式响应）
         if HAND_STREAM_ANALYZER_AVAILABLE and hand_analyzer_stream:
-            print("✅ 使用手相流式分析器（真正的流式响应）")
+            logger.info("✅ 使用手相流式分析器（真正的流式响应）")
             try:
                 # 使用手相流式分析器
                 async for result in hand_analyzer_stream.analyze_hand_stream(
@@ -166,7 +167,7 @@ async def analyze_hand_stream_generator(image_bytes: bytes, image_format: str,
                     use_bazi=use_bazi,
                     progress_callback=lambda text: None  # 进度在内部处理
                 ):
-                    print(f"📤 流式分析器返回: type={result.get('type')}, statusText={result.get('statusText', '')}")
+                    logger.debug(f"📤 流式分析器返回: type={result.get('type')}, statusText={result.get('statusText', '')}")
                     
                     # 转换结果格式
                     if result.get('type') == 'progress':
@@ -181,7 +182,7 @@ async def analyze_hand_stream_generator(image_bytes: bytes, image_format: str,
                         await asyncio.sleep(0.1)
                     elif result.get('type') == 'complete':
                         data = result.get('data', {})
-                        print(f"📤 发送complete消息，data类型: {type(data)}, success: {data.get('success') if isinstance(data, dict) else 'N/A'}")
+                        logger.debug(f"📤 发送complete消息，data类型: {type(data)}, success: {data.get('success') if isinstance(data, dict) else 'N/A'}")
                         complete_msg = {
                             'type': 'complete',
                             'data': data,
@@ -191,7 +192,7 @@ async def analyze_hand_stream_generator(image_bytes: bytes, image_format: str,
                             'showPlayButton': False
                         }
                         yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
-                        print(f"✅ complete消息已发送到客户端")
+                        logger.debug("✅ complete消息已发送到客户端")
                     elif result.get('type') == 'error':
                         error_msg = {
                             'type': 'error',
@@ -202,11 +203,11 @@ async def analyze_hand_stream_generator(image_bytes: bytes, image_format: str,
                             'showPlayButton': False
                         }
                         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
-                        print(f"❌ error消息已发送到客户端")
+                        logger.error("❌ error消息已发送到客户端")
             except Exception as stream_error:
                 import traceback
                 error_detail = f"流式分析器异常: {str(stream_error)}\n{traceback.format_exc()}"
-                print(f"❌ {error_detail}")
+                logger.error(f"❌ {error_detail}")
                 error_msg = {
                     'type': 'error',
                     'error': f"流式分析失败: {str(stream_error)}",
@@ -217,13 +218,13 @@ async def analyze_hand_stream_generator(image_bytes: bytes, image_format: str,
                 }
                 yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
         else:
-            print("⚠️  流式分析器不可用，使用 gRPC（非流式，较慢）")
+            logger.warning("⚠️  流式分析器不可用，使用 gRPC（非流式，较慢）")
             # 降级方案：使用 gRPC（非流式）
             # 先验证图像
             if IMAGE_VALIDATOR_AVAILABLE and image_validator:
-                print("🔍 验证图像...")
+                logger.debug("🔍 验证图像...")
                 is_valid, error_msg = image_validator.validate_hand_image(image_bytes)
-                print(f"验证结果: 有效={is_valid}, 错误={error_msg}")
+                logger.debug(f"验证结果: 有效={is_valid}, 错误={error_msg}")
                 if not is_valid:
                     error_response = {
                         'type': 'error',
@@ -236,7 +237,7 @@ async def analyze_hand_stream_generator(image_bytes: bytes, image_format: str,
                     yield f"data: {json.dumps(error_response, ensure_ascii=False)}\n\n"
                     return
             else:
-                print("⚠️  图像验证器不可用，跳过验证")
+                logger.warning("⚠️  图像验证器不可用，跳过验证")
             
             # 构建 gRPC 请求
             request = fortune_analysis_pb2.HandAnalysisRequest()
@@ -353,7 +354,7 @@ async def analyze_face_stream_generator(image_bytes: bytes, image_format: str,
         
         # 使用面相流式分析器（真正的流式响应）
         if FACE_STREAM_ANALYZER_AVAILABLE and face_analyzer_stream:
-            print("✅ 使用面相流式分析器（真正的流式响应）")
+            logger.info("✅ 使用面相流式分析器（真正的流式响应）")
             try:
                 # 使用面相流式分析器
                 async for result in face_analyzer_stream.analyze_face_stream(
@@ -365,7 +366,7 @@ async def analyze_face_stream_generator(image_bytes: bytes, image_format: str,
                     use_bazi=use_bazi,
                     progress_callback=lambda text: None  # 进度在内部处理
                 ):
-                    print(f"📤 流式分析器返回: type={result.get('type')}, statusText={result.get('statusText', '')}")
+                    logger.debug(f"📤 流式分析器返回: type={result.get('type')}, statusText={result.get('statusText', '')}")
                     
                     # 转换结果格式
                     if result.get('type') == 'progress':
@@ -380,7 +381,7 @@ async def analyze_face_stream_generator(image_bytes: bytes, image_format: str,
                         await asyncio.sleep(0.1)
                     elif result.get('type') == 'complete':
                         data = result.get('data', {})
-                        print(f"📤 发送complete消息，data类型: {type(data)}, success: {data.get('success') if isinstance(data, dict) else 'N/A'}")
+                        logger.debug(f"📤 发送complete消息，data类型: {type(data)}, success: {data.get('success') if isinstance(data, dict) else 'N/A'}")
                         complete_msg = {
                             'type': 'complete',
                             'data': data,
@@ -390,7 +391,7 @@ async def analyze_face_stream_generator(image_bytes: bytes, image_format: str,
                             'showPlayButton': False
                         }
                         yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
-                        print(f"✅ complete消息已发送到客户端")
+                        logger.debug("✅ complete消息已发送到客户端")
                     elif result.get('type') == 'error':
                         error_msg = {
                             'type': 'error',
@@ -401,11 +402,11 @@ async def analyze_face_stream_generator(image_bytes: bytes, image_format: str,
                             'showPlayButton': False
                         }
                         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
-                        print(f"❌ error消息已发送到客户端")
+                        logger.error("❌ error消息已发送到客户端")
             except Exception as stream_error:
                 import traceback
                 error_detail = f"流式分析器异常: {str(stream_error)}\n{traceback.format_exc()}"
-                print(f"❌ {error_detail}")
+                logger.error(f"❌ {error_detail}")
                 error_msg = {
                     'type': 'error',
                     'error': f"流式分析失败: {str(stream_error)}",
@@ -416,13 +417,13 @@ async def analyze_face_stream_generator(image_bytes: bytes, image_format: str,
                 }
                 yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
         else:
-            print("⚠️  流式分析器不可用，使用 gRPC（非流式，较慢）")
+            logger.warning("⚠️  流式分析器不可用，使用 gRPC（非流式，较慢）")
             # 降级方案：使用 gRPC（非流式）
             # 先验证图像
             if IMAGE_VALIDATOR_AVAILABLE and image_validator:
-                print("🔍 验证图像...")
+                logger.debug("🔍 验证图像...")
                 is_valid, error_msg = image_validator.validate_face_image(image_bytes)
-                print(f"验证结果: 有效={is_valid}, 错误={error_msg}")
+                logger.debug(f"验证结果: 有效={is_valid}, 错误={error_msg}")
                 if not is_valid:
                     error_response = {
                         'type': 'error',
@@ -435,7 +436,7 @@ async def analyze_face_stream_generator(image_bytes: bytes, image_format: str,
                     yield f"data: {json.dumps(error_response, ensure_ascii=False)}\n\n"
                     return
             else:
-                print("⚠️  图像验证器不可用，跳过验证")
+                logger.warning("⚠️  图像验证器不可用，跳过验证")
             
             # 构建 gRPC 请求
             request = fortune_analysis_pb2.FaceAnalysisRequest()

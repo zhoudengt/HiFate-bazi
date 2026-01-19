@@ -27,15 +27,21 @@ class L1MemoryCache:
         self._cache_times = {}
         self.max_size = max_size
         self.ttl = ttl
+        # 缓存统计
+        self._hits = 0
+        self._misses = 0
     
     def get(self, key: str) -> Optional[Any]:
         """从缓存获取结果"""
         if key not in self._cache:
+            self._misses += 1
             return None
         if time.time() - self._cache_times[key] > self.ttl:
             del self._cache[key]
             del self._cache_times[key]
+            self._misses += 1
             return None
+        self._hits += 1
         return self._cache[key]
     
     def set(self, key: str, value: Any):
@@ -54,10 +60,17 @@ class L1MemoryCache:
     
     def stats(self) -> dict:
         """获取缓存统计信息"""
+        total_requests = self._hits + self._misses
+        hit_rate = (self._hits / total_requests * 100) if total_requests > 0 else 0.0
+        
         return {
             "size": len(self._cache),
             "max_size": self.max_size,
-            "ttl": self.ttl
+            "ttl": self.ttl,
+            "hits": self._hits,
+            "misses": self._misses,
+            "hit_rate_percent": round(hit_rate, 2),
+            "total_requests": total_requests
         }
 
 
@@ -76,16 +89,24 @@ class L2RedisCache:
         self.redis = redis_client
         self.ttl = ttl
         self._available = redis_client is not None
+        # 缓存统计
+        self._hits = 0
+        self._misses = 0
     
     def get(self, key: str) -> Optional[Any]:
         """从缓存获取结果"""
         if not self._available:
+            self._misses += 1
             return None
         try:
             data = self.redis.get(key)
             if data:
+                self._hits += 1
                 return json.loads(data)
+            else:
+                self._misses += 1
         except Exception:
+            self._misses += 1
             return None
         return None
     
@@ -114,12 +135,20 @@ class L2RedisCache:
             return {"status": "unavailable"}
         try:
             info = self.redis.info()
-            return {
+            total_requests = self._hits + self._misses
+            hit_rate = (self._hits / total_requests * 100) if total_requests > 0 else 0.0
+            
+            stats = {
                 "status": "available",
                 "used_memory": info.get('used_memory_human', 'N/A'),
                 "connected_clients": info.get('connected_clients', 0),
-                "keyspace": info.get('db0', {})
+                "keyspace": info.get('db0', {}),
+                "hits": self._hits,
+                "misses": self._misses,
+                "hit_rate_percent": round(hit_rate, 2),
+                "total_requests": total_requests
             }
+            return stats
         except Exception:
             return {"status": "error"}
 
@@ -182,7 +211,12 @@ class MultiLevelCache:
     
     def delete(self, key: str):
         """删除缓存（所有层级）"""
-        self.l1.delete(key) if hasattr(self.l1, 'delete') else None
+        # L1: 从内存缓存删除
+        if key in self.l1._cache:
+            del self.l1._cache[key]
+        if key in self.l1._cache_times:
+            del self.l1._cache_times[key]
+        # L2: 从Redis删除
         self.l2.delete(key)
     
     def clear(self):
@@ -209,10 +243,63 @@ class MultiLevelCache:
     
     def stats(self) -> dict:
         """获取缓存统计信息"""
+        l1_stats = self.l1.stats()
+        l2_stats = self.l2.stats()
+        
+        # 计算总体命中率
+        total_hits = l1_stats.get('hits', 0) + l2_stats.get('hits', 0)
+        total_misses = l1_stats.get('misses', 0) + l2_stats.get('misses', 0)
+        total_requests = total_hits + total_misses
+        overall_hit_rate = (total_hits / total_requests * 100) if total_requests > 0 else 0.0
+        
         return {
-            "l1": self.l1.stats(),
-            "l2": self.l2.stats()
+            "l1": l1_stats,
+            "l2": l2_stats,
+            "overall": {
+                "hits": total_hits,
+                "misses": total_misses,
+                "total_requests": total_requests,
+                "hit_rate_percent": round(overall_hit_rate, 2)
+            }
         }
+    
+    def invalidate_pattern(self, pattern: str):
+        """
+        按模式删除缓存（支持通配符）
+        
+        Args:
+            pattern: 缓存键模式（支持 * 通配符）
+        """
+        # L1: 遍历内存缓存
+        keys_to_delete = []
+        for key in list(self.l1._cache.keys()):
+            if self._match_pattern(key, pattern):
+                keys_to_delete.append(key)
+        
+        for key in keys_to_delete:
+            if key in self.l1._cache:
+                del self.l1._cache[key]
+            if key in self.l1._cache_times:
+                del self.l1._cache_times[key]
+        
+        # L2: Redis支持模式删除（使用SCAN）
+        if self.l2._available:
+            try:
+                # 使用Redis的SCAN命令查找匹配的键
+                cursor = 0
+                while True:
+                    cursor, keys = self.l2.redis.scan(cursor, match=pattern, count=100)
+                    if keys:
+                        self.l2.redis.delete(*keys)
+                    if cursor == 0:
+                        break
+            except Exception:
+                pass  # Redis不可用时忽略
+    
+    def _match_pattern(self, key: str, pattern: str) -> bool:
+        """简单的模式匹配（支持 * 通配符）"""
+        import fnmatch
+        return fnmatch.fnmatch(key, pattern)
 
 
 # 全局多级缓存实例（延迟初始化）
