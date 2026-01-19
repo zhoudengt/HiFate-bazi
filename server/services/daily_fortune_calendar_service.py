@@ -320,13 +320,22 @@ class DailyFortuneCalendarService:
             cache = get_multi_cache()
             cached_result = cache.get(cache_key)
             if cached_result:
-                # 缓存命中，直接返回（0个数据库连接）
-                return cached_result
+                # ✅ 修复：如果缓存的 weekday 为空，清除缓存并重新计算（修复旧缓存问题）
+                if not cached_result.get('weekday') or not cached_result.get('weekday_en'):
+                    logger.warning(f"⚠️  检测到缓存的 weekday 为空，清除缓存并重新计算: {cache_key}")
+                    try:
+                        cache.delete(cache_key)
+                    except Exception as e:
+                        logger.warning(f"清除缓存失败: {e}")
+                    # 继续执行，重新计算
+                else:
+                    # 缓存命中且数据完整，直接返回（0个数据库连接）
+                    return cached_result
         except Exception as e:
             # Redis不可用，降级到数据库查询
             logger.warning(f"⚠️  Redis缓存不可用，降级到数据库查询: {e}")
         
-        # 3. 缓存未命中，查询数据库
+        # 3. 缓存未命中或缓存数据不完整，查询数据库
         result = DailyFortuneCalendarService._query_from_database(
             date_str, user_solar_date, user_solar_time, user_gender
         )
