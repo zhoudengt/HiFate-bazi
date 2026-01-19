@@ -944,6 +944,7 @@ async def career_wealth_analysis_test(request: CareerWealthRequest):
         )
         
         # 构建input_data（优先使用数据库格式定义）
+        use_hardcoded = False
         try:
             input_data = build_input_data_from_result(
                 format_name='career_wealth_analysis',
@@ -954,10 +955,21 @@ async def career_wealth_analysis_test(request: CareerWealthRequest):
                 special_liunians=special_liunians,
                 gender=request.gender
             )
-            logger.info("✅ 使用数据库格式定义构建 input_data: career_wealth_analysis")
+            # ✅ 检查格式定义构建的数据是否完整
+            required_sections = ['mingpan_shiye_caifu_zonglun', 'shiye_xing_gong', 'caifu_xing_gong', 
+                               'shiye_yunshi', 'caifu_yunshi', 'tiyun_jianyi']
+            missing_sections = [s for s in required_sections if s not in input_data or not input_data[s]]
+            if missing_sections:
+                logger.warning(f"⚠️ 格式定义构建的数据不完整（缺少: {missing_sections}），降级到硬编码函数")
+                use_hardcoded = True
+            else:
+                logger.info("✅ 使用数据库格式定义构建 input_data: career_wealth_analysis")
         except Exception as e:
             # 降级到硬编码函数
             logger.warning(f"⚠️ 格式定义构建失败，使用硬编码函数: {e}")
+            use_hardcoded = True
+        
+        if use_hardcoded:
             input_data = build_career_wealth_input_data(
                 bazi_data,
                 wangshuai_result,
@@ -1340,6 +1352,7 @@ async def career_wealth_stream_generator(
                 wealth_judgments.append({'name': rule_name, 'text': text})
         
         # 5. 构建 input_data（优先使用数据库格式定义）
+        use_hardcoded = False
         try:
             # 尝试从数据库格式定义构建
             input_data = build_input_data_from_result(
@@ -1352,10 +1365,21 @@ async def career_wealth_stream_generator(
                 special_liunians=special_liunians,
                 gender=gender
             )
-            logger.info("✅ 使用数据库格式定义构建 input_data: career_wealth_analysis")
+            # ✅ 检查格式定义构建的数据是否完整
+            required_sections = ['mingpan_shiye_caifu_zonglun', 'shiye_xing_gong', 'caifu_xing_gong', 
+                               'shiye_yunshi', 'caifu_yunshi', 'tiyun_jianyi']
+            missing_sections = [s for s in required_sections if s not in input_data or not input_data[s]]
+            if missing_sections:
+                logger.warning(f"⚠️ 格式定义构建的数据不完整（缺少: {missing_sections}），降级到硬编码函数")
+                use_hardcoded = True
+            else:
+                logger.info("✅ 使用数据库格式定义构建 input_data: career_wealth_analysis")
         except Exception as e:
             # 降级到硬编码函数
             logger.warning(f"⚠️ 格式定义构建失败，使用硬编码函数: {e}")
+            use_hardcoded = True
+        
+        if use_hardcoded:
             input_data = build_career_wealth_input_data(
                 bazi_data,
                 wangshuai_result,
