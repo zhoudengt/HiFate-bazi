@@ -217,21 +217,32 @@ async def children_study_analysis_test(request: ChildrenStudyRequest):
         )
         
         # 构建input_data（优先使用数据库格式定义）
+        use_hardcoded = False
         try:
             input_data = build_input_data_from_result(
                 format_name='children_study_analysis',
                 bazi_data=bazi_data,
                 detail_result=detail_result,
                 wangshuai_result=wangshuai_result,
-                rule_result={'matched_rules': matched_rules},
+                rule_result={'matched_rules': children_rules},
                 dayun_sequence=dayun_sequence,
                 special_liunians=special_liunians,
                 gender=request.gender
             )
-            logger.info("✅ 使用数据库格式定义构建 input_data: children_study_analysis")
+            # ✅ 检查格式定义构建的数据是否完整
+            required_sections = ['mingpan_zinv_zonglun', 'zinvxing_zinvgong', 'shengyu_shiji', 'yangyu_jianyi']
+            missing_sections = [s for s in required_sections if s not in input_data or not input_data[s]]
+            if missing_sections:
+                logger.warning(f"⚠️ 格式定义构建的数据不完整（缺少: {missing_sections}），降级到硬编码函数")
+                use_hardcoded = True
+            else:
+                logger.info("✅ 使用数据库格式定义构建 input_data: children_study_analysis")
         except Exception as e:
             # 降级到硬编码函数
             logger.warning(f"⚠️ 格式定义构建失败，使用硬编码函数: {e}")
+            use_hardcoded = True
+        
+        if use_hardcoded:
             input_data = build_children_study_input_data(
                 bazi_data,
                 wangshuai_result,
@@ -382,21 +393,32 @@ async def children_study_analysis_debug(request: ChildrenStudyRequest):
         )
         
         # 构建input_data（优先使用数据库格式定义）
+        use_hardcoded = False
         try:
             input_data = build_input_data_from_result(
                 format_name='children_study_analysis',
                 bazi_data=bazi_data,
                 detail_result=detail_result,
                 wangshuai_result=wangshuai_result,
-                rule_result={'matched_rules': matched_rules},
+                rule_result={'matched_rules': children_rules},
                 dayun_sequence=dayun_sequence,
                 special_liunians=special_liunians,
                 gender=request.gender
             )
-            logger.info("✅ 使用数据库格式定义构建 input_data: children_study_analysis")
+            # ✅ 检查格式定义构建的数据是否完整
+            required_sections = ['mingpan_zinv_zonglun', 'zinvxing_zinvgong', 'shengyu_shiji', 'yangyu_jianyi']
+            missing_sections = [s for s in required_sections if s not in input_data or not input_data[s]]
+            if missing_sections:
+                logger.warning(f"⚠️ 格式定义构建的数据不完整（缺少: {missing_sections}），降级到硬编码函数")
+                use_hardcoded = True
+            else:
+                logger.info("✅ 使用数据库格式定义构建 input_data: children_study_analysis")
         except Exception as e:
             # 降级到硬编码函数
             logger.warning(f"⚠️ 格式定义构建失败，使用硬编码函数: {e}")
+            use_hardcoded = True
+        
+        if use_hardcoded:
             input_data = build_children_study_input_data(
                 bazi_data,
                 wangshuai_result,
@@ -692,6 +714,7 @@ async def children_study_analysis_stream_generator(
         # ✅ 性能优化：规则已在前面并行获取（children_rules）
         
         # 5. 构建input_data（优先使用数据库格式定义）
+        use_hardcoded = False
         try:
             input_data = build_input_data_from_result(
                 format_name='children_study_analysis',
@@ -703,10 +726,20 @@ async def children_study_analysis_stream_generator(
                 special_liunians=special_liunians,
                 gender=gender
             )
-            logger.info("✅ 使用数据库格式定义构建 input_data: children_study_analysis")
+            # ✅ 检查格式定义构建的数据是否完整
+            required_sections = ['mingpan_zinv_zonglun', 'zinvxing_zinvgong', 'shengyu_shiji', 'yangyu_jianyi']
+            missing_sections = [s for s in required_sections if s not in input_data or not input_data[s]]
+            if missing_sections:
+                logger.warning(f"⚠️ 格式定义构建的数据不完整（缺少: {missing_sections}），降级到硬编码函数")
+                use_hardcoded = True
+            else:
+                logger.info("✅ 使用数据库格式定义构建 input_data: children_study_analysis")
         except Exception as e:
             # 降级到硬编码函数
             logger.warning(f"⚠️ 格式定义构建失败，使用硬编码函数: {e}")
+            use_hardcoded = True
+        
+        if use_hardcoded:
             input_data = build_children_study_input_data(
                 bazi_data,
                 wangshuai_result,
