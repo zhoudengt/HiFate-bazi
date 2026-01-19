@@ -195,7 +195,21 @@ async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
         cache_key = generate_cache_key("dailycalendar", query_date, user_hash)
         cached = get_cached_result(cache_key, "daily-fortune-calendar")
         if cached:
-            return DailyFortuneCalendarResponse(**cached)
+            # ✅ 修复：如果缓存的 weekday 为空，清除缓存并重新计算（修复旧缓存问题）
+            if not cached.get('weekday') or not cached.get('weekday_en'):
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"⚠️  API层检测到缓存的 weekday 为空，清除缓存并重新计算: {cache_key}")
+                try:
+                    from server.utils.cache_multi_level import get_multi_cache
+                    cache = get_multi_cache()
+                    cache.delete(cache_key)
+                except Exception as e:
+                    logger.warning(f"清除API层缓存失败: {e}")
+                # 继续执行，重新计算
+            else:
+                # 缓存命中且数据完整，直接返回
+                return DailyFortuneCalendarResponse(**cached)
         # >>> 缓存检查结束 <<<
         
         # 使用模块级别的导入（已在文件顶部导入）
