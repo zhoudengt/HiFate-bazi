@@ -99,22 +99,47 @@ class DailyFortuneCalendarService:
             else:
                 target_date = date.today()
             
-            # 即使万年历API失败，也尝试返回基本数据
-            if not calendar_result.get('success'):
+            # ✅ 修复：即使万年历API失败或返回空数据，也尝试返回基本数据
+            # 检查是否成功且有有效数据（weekday 为空说明 lunar_python 失败）
+            if not calendar_result.get('success') or not calendar_result.get('weekday'):
+                # 计算星期几（不依赖API，确保始终有值）
+                weekday_en = target_date.strftime('%A')
+                weekday_map = {
+                    'Monday': '星期一',
+                    'Tuesday': '星期二',
+                    'Wednesday': '星期三',
+                    'Thursday': '星期四',
+                    'Friday': '星期五',
+                    'Saturday': '星期六',
+                    'Sunday': '星期日'
+                }
+                weekday_cn = weekday_map.get(weekday_en, weekday_en)
+                
                 # 使用默认值，确保基本功能可用
                 calendar_result = {
                     'success': True,
-                    'solar_date': f"{target_date.year}年{target_date.month}月{target_date.day}日" if date_str else "",
-                    'lunar_date': '',
-                    'weekday': '',
-                    'weekday_en': '',
-                    'yi': [],
-                    'ji': [],
-                    'luck_level': '',
-                    'deities': {},
-                    'chong_he_sha': {},
-                    'other': {}
+                    'solar_date': f"{target_date.year}年{target_date.month}月{target_date.day}日",
+                    'lunar_date': calendar_result.get('lunar_date', '') if calendar_result.get('success') else '',
+                    'weekday': weekday_cn,  # ✅ 确保有值
+                    'weekday_en': weekday_en,  # ✅ 确保有值
+                    'yi': calendar_result.get('yi', []) if calendar_result.get('success') and calendar_result.get('yi') else [],
+                    'ji': calendar_result.get('ji', []) if calendar_result.get('success') and calendar_result.get('ji') else [],
+                    'luck_level': calendar_result.get('luck_level', '') if calendar_result.get('success') else '',
+                    'deities': calendar_result.get('deities', {}) if calendar_result.get('success') and calendar_result.get('deities') else {},
+                    'chong_he_sha': calendar_result.get('chong_he_sha', {}) if calendar_result.get('success') and calendar_result.get('chong_he_sha') else {},
+                    'other': calendar_result.get('other', {}) if calendar_result.get('success') else {}
                 }
+            else:
+                # ✅ 修复：即使API成功，也确保 weekday 和 weekday_en 有值（防止API返回空值）
+                if not calendar_result.get('weekday'):
+                    weekday_en = target_date.strftime('%A')
+                    weekday_map = {
+                        'Monday': '星期一', 'Tuesday': '星期二', 'Wednesday': '星期三',
+                        'Thursday': '星期四', 'Friday': '星期五', 'Saturday': '星期六', 'Sunday': '星期日'
+                    }
+                    calendar_result['weekday'] = weekday_map.get(weekday_en, weekday_en)
+                if not calendar_result.get('weekday_en'):
+                    calendar_result['weekday_en'] = target_date.strftime('%A')
             
             # 2. 计算流年、流月、流日
             liunian, liuyue, liuri = DailyFortuneCalendarService.calculate_liunian_liuyue_liuri(target_date)
