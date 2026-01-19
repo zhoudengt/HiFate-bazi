@@ -8,6 +8,7 @@
 import logging
 import os
 import sys
+import uuid
 from typing import Dict, Any, Optional, List
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -1114,6 +1115,9 @@ async def career_wealth_stream_generator(
         longitude: 经度（用于时区转换和真太阳时计算，优先级2）
         bot_id: Coze Bot ID（可选）
     """
+    # 生成 trace_id 用于请求追踪
+    trace_id = str(uuid.uuid4())[:8]
+    
     # 记录开始时间和前端输入
     api_start_time = time.time()
     frontend_input = {
