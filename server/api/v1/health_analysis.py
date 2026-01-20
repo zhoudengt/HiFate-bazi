@@ -36,16 +36,12 @@ except ImportError:
     # 如果导入失败，抛出错误（不允许降级）
     def get_config_from_db_only(key: str) -> Optional[str]:
         raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
-from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
-from server.api.v1.general_review_analysis import organize_special_liunians_by_dayun, format_input_data_for_coze
-from server.services.special_liunian_service import SpecialLiunianService
+from server.api.v1.general_review_analysis import organize_special_liunians_by_dayun
+from server.utils.prompt_builders import format_health_input_data_for_coze as format_input_data_for_coze
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
 from server.services.user_interaction_logger import get_user_interaction_logger
 import time
-
-from server.config.input_format_loader import build_input_data_from_result
-# build_health_prompt 已废弃，改用 format_input_data_for_coze（方案2）
 
 # ✅ 性能优化：导入流式缓存工具
 from server.utils.stream_cache_helper import (
@@ -1104,6 +1100,3 @@ def validate_health_input_data(data: dict) -> tuple[bool, str]:
         return False, error_msg
     
     return True, ""
-
-# ✅ 已升级为方案2：使用 format_input_data_for_coze 替代 build_health_prompt
-# 与 health_analysis_v2.py 保持一致，提高 AI 处理效率

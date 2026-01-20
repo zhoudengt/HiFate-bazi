@@ -542,6 +542,52 @@ def format_children_study_input_data_for_coze(input_data: Dict[str, Any]) -> str
 
 
 # ==============================================================================
+# 健康分析格式化函数
+# ==============================================================================
+
+def format_health_input_data_for_coze(input_data: Dict[str, Any]) -> str:
+    """
+    将健康分析的结构化数据格式化为 JSON 字符串（用于 Coze Bot System Prompt 的 {{input}} 占位符）
+    
+    ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
+    提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
+    
+    Args:
+        input_data: 结构化输入数据（健康分析格式）
+        
+    Returns:
+        str: JSON 格式的字符串，可以直接替换 {{input}} 占位符
+    """
+    # 获取健康分析的数据结构
+    mingpan = input_data.get('mingpan_tizhi_zonglun', {})
+    wuxing_bingli = input_data.get('wuxing_bingli', {})
+    dayun_jiankang = input_data.get('dayun_jiankang', {})
+    tizhi_tiaoli = input_data.get('tizhi_tiaoli', {})
+    health_rules = input_data.get('health_rules', {})
+    
+    # ⚠️ 方案2：优化数据结构，使用引用避免重复
+    optimized_data = {
+        # 1. 命盘体质总论（基础数据，只提取一次）
+        'mingpan_tizhi_zonglun': mingpan,
+        
+        # 2. 五行病理推演（完整数据）
+        'wuxing_bingli': wuxing_bingli,
+        
+        # 3. 大运流年健康警示（完整数据）
+        'dayun_jiankang': dayun_jiankang,
+        
+        # 4. 体质调理建议（完整数据）
+        'tizhi_tiaoli': tizhi_tiaoli,
+        
+        # 5. 健康规则（如果有）
+        'health_rules': health_rules
+    }
+    
+    # 格式化为 JSON 字符串（美化格式，便于 Bot 理解）
+    return json.dumps(optimized_data, ensure_ascii=False, indent=2)
+
+
+# ==============================================================================
 # 总评分析格式化函数
 # ==============================================================================
 
