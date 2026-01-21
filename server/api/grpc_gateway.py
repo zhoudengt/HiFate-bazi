@@ -848,6 +848,15 @@ async def _handle_daily_fortune_calendar_stream(payload: Dict[str, Any]):
     return await _collect_sse_stream(generator)
 
 
+@_register("/homepage/contents")
+async def _handle_homepage_contents(payload: Dict[str, Any]):
+    """获取首页内容列表（gRPC-Web 转发）"""
+    from server.api.v1.homepage_content import get_homepage_contents
+    # enabled_only 参数从 payload 中获取，默认为 True
+    enabled_only = payload.get("enabled_only", True)
+    return await get_homepage_contents(enabled_only=enabled_only)
+
+
 @_register("/api/v2/face/analyze")
 async def _handle_face_analysis_v2(payload: Dict[str, Any]):
     """处理面相分析V2请求（支持文件上传）"""
@@ -931,11 +940,7 @@ async def _handle_desk_fengshui(payload: Dict[str, Any]):
     try:
         
         result = await analyze_desk_fengshui(
-            image=image_file,
-            solar_date=payload.get("solar_date"),
-            solar_time=payload.get("solar_time"),
-            gender=payload.get("gender"),
-            use_bazi=payload.get("use_bazi", True)
+            image=image_file
         )
         
         
@@ -1370,6 +1375,55 @@ async def grpc_web_gateway(request: Request):
             except Exception as e:
                 logger.error(f"动态注册端点失败: {e}", exc_info=True)
         
+        # 动态注册 /api/v2/desk-fengshui/analyze 端点（用于热更新后恢复）
+        if endpoint == "/api/v2/desk-fengshui/analyze":
+            try:
+                from server.api.v2.desk_fengshui_api import analyze_desk_fengshui
+                from fastapi import UploadFile
+                import base64
+                from io import BytesIO
+                
+                async def _handle_desk_fengshui_dynamic(payload: Dict[str, Any]):
+                    """处理办公桌风水分析请求（动态注册）"""
+                    # 处理 base64 编码的图片
+                    image_base64 = payload.get("image_base64", "")
+                    if not image_base64:
+                        raise HTTPException(status_code=400, detail="缺少图片数据")
+                    
+                    # 解码 base64
+                    try:
+                        # 移除 data:image/xxx;base64, 前缀（如果有）
+                        if "," in image_base64:
+                            image_base64 = image_base64.split(",")[1]
+                        image_bytes = base64.b64decode(image_base64)
+                    except Exception as e:
+                        raise HTTPException(status_code=400, detail=f"图片解码失败: {str(e)}")
+                    
+                    # 创建 UploadFile 对象
+                    image_file = UploadFile(
+                        file=BytesIO(image_bytes),
+                        filename=payload.get("filename", "desk.jpg"),
+                        headers={"content-type": payload.get("content_type", "image/jpeg")}
+                    )
+                    
+                    # 调用原始接口
+                    result = await analyze_desk_fengshui(image=image_file)
+                    
+                    # 处理响应
+                    if isinstance(result, JSONResponse):
+                        body = result.body
+                        if isinstance(body, bytes):
+                            return json.loads(body.decode('utf-8'))
+                        else:
+                            return body
+                    return result
+                
+                SUPPORTED_ENDPOINTS["/api/v2/desk-fengshui/analyze"] = _handle_desk_fengshui_dynamic
+                handler = _handle_desk_fengshui_dynamic
+                logger.info("✅ 动态注册端点: /api/v2/desk-fengshui/analyze")
+            except Exception as e:
+                logger.error(f"动态注册端点失败: {e}", exc_info=True)
+        
         # 动态注册 /bazi/xishen-jishen 端点（用于热更新后恢复）
         if endpoint == "/bazi/xishen-jishen":
             try:
@@ -1725,7 +1779,7 @@ def _ensure_endpoints_registered():
     global SUPPORTED_ENDPOINTS
     
     # ⭐ 关键修复：如果端点列表为空，说明热更新后装饰器未执行，直接手动注册所有关键端点
-    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi"]
+    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/api/v2/desk-fengshui/analyze"]
     if len(SUPPORTED_ENDPOINTS) == 0:
         logger.error(f"🚨 端点列表为空！直接手动注册所有关键端点...")
         # 直接进入手动注册逻辑，跳过重新加载模块（因为重新加载后端点仍然是空的）
@@ -1813,6 +1867,53 @@ def _ensure_endpoints_registered():
                 except Exception as e:
                     logger.error(f"❌ 手动注册 /bazi/rizhu-liujiazi 端点失败: {e}", exc_info=True)
             
+            # 手动注册 /api/v2/desk-fengshui/analyze 端点
+            if "/api/v2/desk-fengshui/analyze" in missing_endpoints:
+                try:
+                    from server.api.v2.desk_fengshui_api import analyze_desk_fengshui
+                    from fastapi import UploadFile
+                    import base64
+                    from io import BytesIO
+                    
+                    async def _handle_desk_fengshui_manual(payload: Dict[str, Any]):
+                        """处理办公桌风水分析请求（手动注册）"""
+                        # 处理 base64 编码的图片
+                        image_base64 = payload.get("image_base64", "")
+                        if not image_base64:
+                            raise HTTPException(status_code=400, detail="缺少图片数据")
+                        
+                        # 解码 base64
+                        try:
+                            if "," in image_base64:
+                                image_base64 = image_base64.split(",")[1]
+                            image_bytes = base64.b64decode(image_base64)
+                        except Exception as e:
+                            raise HTTPException(status_code=400, detail=f"图片解码失败: {str(e)}")
+                        
+                        # 创建 UploadFile 对象
+                        image_file = UploadFile(
+                            file=BytesIO(image_bytes),
+                            filename=payload.get("filename", "desk.jpg"),
+                            headers={"content-type": payload.get("content_type", "image/jpeg")}
+                        )
+                        
+                        # 调用原始接口
+                        result = await analyze_desk_fengshui(image=image_file)
+                        
+                        # 处理响应
+                        if isinstance(result, JSONResponse):
+                            body = result.body
+                            if isinstance(body, bytes):
+                                return json.loads(body.decode('utf-8'))
+                            else:
+                                return body
+                        return result
+                    
+                    SUPPORTED_ENDPOINTS["/api/v2/desk-fengshui/analyze"] = _handle_desk_fengshui_manual
+                    logger.error("🚨 手动注册端点: /api/v2/desk-fengshui/analyze")
+                except Exception as e:
+                    logger.error(f"❌ 手动注册 /api/v2/desk-fengshui/analyze 端点失败: {e}", exc_info=True)
+            
         except Exception as e:
             logger.error(f"手动注册端点失败: {e}", exc_info=True)
 
@@ -1871,7 +1972,7 @@ try:
     logger.info("🔧 模块加载时检查端点注册状态...")
     _ensure_endpoints_registered()
     # 验证关键端点是否已注册
-    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi"]
+    key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/api/v2/desk-fengshui/analyze"]
     missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
     if missing:
         logger.warning(f"⚠️  模块加载后关键端点缺失: {missing}，当前端点数量: {len(SUPPORTED_ENDPOINTS)}")

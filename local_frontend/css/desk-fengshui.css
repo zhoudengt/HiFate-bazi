@@ -209,6 +209,9 @@ input:checked + .slider:before {
 /* Action section */
 .action-section {
     text-align: center;
+    display: flex;
+    gap: 15px;
+    justify-content: center;
 }
 
 .btn-analyze {
@@ -220,6 +223,8 @@ input:checked + .slider:before {
     border-radius: 50px;
     cursor: pointer;
     transition: transform 0.2s, box-shadow 0.2s;
+    flex: 1;
+    max-width: 300px;
 }
 
 .btn-analyze:hover:not(:disabled) {
@@ -230,6 +235,16 @@ input:checked + .slider:before {
 .btn-analyze:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+}
+
+.stream-btn {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.stream-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #f5576c 0%, #f093fb 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 5px 20px rgba(245, 87, 108, 0.4);
 }
 
 .spinner {
@@ -645,5 +660,66 @@ footer {
     .form-row {
         grid-template-columns: 1fr;
     }
+    
+    .action-section {
+        flex-direction: column;
+    }
+    
+    .btn-analyze {
+        max-width: 100%;
+    }
+}
+
+/* LLM分析区域 */
+.llm-status {
+    padding: 10px;
+    background: #f0f0f0;
+    border-radius: 5px;
+    margin-bottom: 15px;
+    font-size: 0.9em;
+    color: #666;
+}
+
+.llm-content {
+    line-height: 1.8;
+    color: #333;
+    min-height: 100px;
+}
+
+.llm-content.streaming {
+    border-left: 3px solid #667eea;
+    padding-left: 15px;
+}
+
+.llm-content p {
+    margin: 10px 0;
+}
+
+.llm-content h4 {
+    margin: 20px 0 10px 0;
+    color: #667eea;
+}
+
+.llm-content h5 {
+    margin: 15px 0 8px 0;
+    color: #764ba2;
+}
+
+.llm-content .error {
+    color: #e74c3c;
+    padding: 15px;
+    background: #fee;
+    border-radius: 5px;
+    border-left: 3px solid #e74c3c;
+}
+
+.stream-btn {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.stream-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #f5576c 0%, #f093fb 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 5px 20px rgba(245, 87, 108, 0.4);
 }
 

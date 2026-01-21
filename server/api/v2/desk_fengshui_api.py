@@ -22,6 +22,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v2/desk-fengshui", tags=["办公桌风水"])
 
+# 导入流式接口路由
+try:
+    from server.api.v2.desk_fengshui_stream import router as desk_stream_router
+    router.include_router(desk_stream_router)
+    logger.info("✅ 办公桌风水流式接口路由已加载")
+except ImportError as e:
+    logger.warning(f"⚠️  办公桌风水流式接口路由导入失败（可选功能）: {e}")
+
 
 class DeskAnalysisResponse(BaseModel):
     """办公桌风水分析响应"""
@@ -32,11 +40,7 @@ class DeskAnalysisResponse(BaseModel):
 
 @router.post("/analyze", response_model=DeskAnalysisResponse, summary="分析办公桌风水")
 async def analyze_desk_fengshui(
-    image: UploadFile = File(..., description="办公桌照片"),
-    solar_date: Optional[str] = Form(None, description="用户出生日期 YYYY-MM-DD"),
-    solar_time: Optional[str] = Form(None, description="用户出生时间 HH:MM"),
-    gender: Optional[str] = Form(None, description="性别 male/female"),
-    use_bazi: bool = Form(True, description="是否结合八字分析")
+    image: UploadFile = File(..., description="办公桌照片")
 ):
     """
     分析办公桌风水布局
@@ -46,15 +50,10 @@ async def analyze_desk_fengshui(
     2. AI识别物品和位置
     3. 匹配风水规则
     4. 为每个物品生成详细分析
-    5. 结合用户八字（喜神、忌神）深度融合
-    6. 提供三级建议体系
+    5. 提供三级建议体系
     
     **参数**：
     - **image**: 办公桌照片（必需）
-    - **solar_date**: 用户出生日期（可选，格式：YYYY-MM-DD）
-    - **solar_time**: 用户出生时间（可选，格式：HH:MM）
-    - **gender**: 性别（可选，male/female）
-    - **use_bazi**: 是否结合八字分析（默认true）
     
     **返回**：
     - **items**: 检测到的物品列表（含位置信息）
@@ -63,29 +62,20 @@ async def analyze_desk_fengshui(
       - label: 中文名称
       - current_position: 当前位置
       - is_position_ideal: 位置是否理想
-      - analysis: 详细分析（评估、理想位置、禁忌位置、五行、八字相关性等）
+      - analysis: 详细分析（评估、理想位置、禁忌位置、五行等）
       - suggestion: 调整建议（如有）
     - **recommendations**: 三级建议体系
       - must_adjust: 必须调整（违反禁忌）
-      - should_add: 建议添加（基于八字喜神）
+      - should_add: 建议添加
       - optional_optimize: 可选优化
-    - **bazi_analysis**: 八字深度融合分析
-      - xishen_analysis: 喜神分析（元素数量、状态、推荐物品/颜色）
-      - jishen_analysis: 忌神分析（桌面忌神物品、建议）
-      - element_balance: 桌面五行分布
-      - overall_compatibility: 整体相容度评分
-      - personalized_tips: 个性化建议
-      - color_recommendations: 颜色推荐
     - **adjustments**: 调整建议（需要移动的物品）
     - **additions**: 增加建议（建议添加的物品）
     - **removals**: 删除建议（不宜摆放的物品）
     - **score**: 综合评分（0-100）
     - **summary**: 分析总结
-    - **xishen**: 喜神（如果use_bazi=true）
-    - **jishen**: 忌神（如果use_bazi=true）
     """
     try:
-        logger.info(f"收到办公桌风水分析请求: {image.filename}, use_bazi={use_bazi}")
+        logger.info(f"收到办公桌风水分析请求: {image.filename}")
         
         # 1. 验证图片
         if not image.content_type.startswith('image/'):
@@ -94,27 +84,30 @@ async def analyze_desk_fengshui(
         # 2. 读取图片数据
         image_bytes = await image.read()
         
-        # 3. 参数验证
-        if use_bazi:
-            if not solar_date or not solar_time or not gender:
-                logger.warning("use_bazi=True 但缺少八字参数，将不使用八字分析")
-                use_bazi = False
-        
-        # 4. 调用分析服务（异步，带超时）
+        # 3. 调用分析服务（异步，带超时）
         try:
             import asyncio
-            from analyzer import DeskFengshuiAnalyzer
-            
+            # 确保从正确的路径导入
+            import sys
+            desk_fengshui_path = os.path.join(BASE_DIR, 'services', 'desk_fengshui')
+            # 确保desk_fengshui路径在最前面，这样相对导入才能工作
+            if desk_fengshui_path in sys.path:
+                sys.path.remove(desk_fengshui_path)
+            sys.path.insert(0, desk_fengshui_path)
+            # 切换到desk_fengshui目录以确保相对导入工作
+            old_cwd = os.getcwd()
+            try:
+                os.chdir(desk_fengshui_path)
+                from analyzer import DeskFengshuiAnalyzer
+            finally:
+                os.chdir(old_cwd)
             analyzer = DeskFengshuiAnalyzer()
             
             # 使用异步方法以提升并发性能，添加总超时（90秒）
             result = await asyncio.wait_for(
                 analyzer.analyze_async(
                     image_bytes=image_bytes,
-                    solar_date=solar_date,
-                    solar_time=solar_time,
-                    gender=gender,
-                    use_bazi=use_bazi
+                    use_bazi=False
                 ),
                 timeout=90.0  # 90秒总超时
             )
@@ -157,7 +150,7 @@ async def analyze_desk_fengshui(
             logger.error("分析超时（>90秒）")
             raise HTTPException(
                 status_code=504,
-                detail="分析超时，请稍后重试。建议：1) 上传更小的图片 2) 关闭八字分析（use_bazi=false）"
+                detail="分析超时，请稍后重试。建议：上传更小的图片"
             )
         except ImportError as e:
             logger.error(f"服务模块导入失败: {e}", exc_info=True)

@@ -36,42 +36,6 @@
                 </div>
             </section>
 
-            <!-- 步骤2: 填写八字信息（可选） -->
-            <section class="bazi-section">
-                <h2>🔮 八字信息（可选）</h2>
-                <p class="info-text">提供八字信息后，系统将结合您的喜神忌神给出更个性化的建议</p>
-                
-                <div class="form-toggle">
-                    <label class="switch">
-                        <input type="checkbox" id="useBazi" checked>
-                        <span class="slider"></span>
-                    </label>
-                    <span>使用八字分析</span>
-                </div>
-
-                <div class="bazi-form" id="baziForm">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="solarDate">出生日期</label>
-                            <input type="date" id="solarDate" class="form-control">
-                        </div>
-                        <div class="form-group">
-                            <label for="solarTime">出生时间</label>
-                            <input type="time" id="solarTime" class="form-control">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="gender">性别</label>
-                            <select id="gender" class="form-control">
-                                <option value="male">男</option>
-                                <option value="female">女</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
             <!-- 错误消息容器 -->
             <div id="errorMessage" class="error-message" style="display: none;"></div>
 
@@ -79,6 +43,13 @@
             <section class="action-section">
                 <button class="btn-analyze" id="btnAnalyze" disabled>
                     <span class="btn-text">开始分析</span>
+                    <span class="btn-loading" style="display: none;">
+                        <span class="spinner"></span>
+                        分析中...
+                    </span>
+                </button>
+                <button class="btn-analyze stream-btn" id="btnAnalyzeStream" disabled>
+                    <span class="btn-text">流式分析（AI整合）</span>
                     <span class="btn-loading" style="display: none;">
                         <span class="spinner"></span>
                         分析中...
@@ -105,10 +76,6 @@
                     <div class="score-info">
                         <h3 id="scoreSummary">办公桌风水布局</h3>
                         <p id="scoreDescription"></p>
-                        <div class="bazi-info" id="baziInfo" style="display: none;">
-                            <span class="badge badge-xishen">喜神: <span id="xishen">-</span></span>
-                            <span class="badge badge-jishen">忌神: <span id="jishen">-</span></span>
-                        </div>
                     </div>
                 </div>
 
@@ -137,6 +104,13 @@
                     <h3>🗑️ 物品移除建议</h3>
                     <div class="suggestions-list" id="removalsList"></div>
                 </div>
+
+                <!-- AI整合分析（流式） -->
+                <div class="suggestions-card" id="llmAnalysisCard" style="display: none;">
+                    <h3>🤖 AI整合分析</h3>
+                    <div id="llmStatus" class="llm-status" style="display: none;"></div>
+                    <div id="llmAnalysisContent" class="llm-content"></div>
+                </div>
             </section>
         </main>
 
@@ -145,15 +119,15 @@
         </footer>
     </div>
 
-    <script src="config.js"></script>
+    <script src="config.js?v=2.0"></script>
     <!-- 核心工具类 -->
-    <script src="js/core/error-handler.js"></script>
-    <script src="js/core/dom-utils.js"></script>
-    <script src="js/core/validator.js"></script>
+    <script src="js/core/error-handler.js?v=2.0"></script>
+    <script src="js/core/dom-utils.js?v=2.0"></script>
+    <script src="js/core/validator.js?v=2.0"></script>
     <!-- API客户端 -->
-    <script src="js/api.js"></script>
+    <script src="js/api.js?v=2.0"></script>
     <!-- 页面脚本 -->
-    <script src="js/desk-fengshui.js"></script>
+    <script src="js/desk-fengshui.js?v=2.0"></script>
 </body>
 </html>
 

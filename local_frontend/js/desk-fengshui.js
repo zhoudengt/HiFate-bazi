@@ -57,17 +57,14 @@ class DeskFengshuiAnalyzer {
             this.removeImage();
         });
         
-        // 八字开关
-        const useBazi = document.getElementById('useBazi');
-        const baziForm = document.getElementById('baziForm');
-        
-        useBazi.addEventListener('change', () => {
-            baziForm.style.display = useBazi.checked ? 'block' : 'none';
-        });
-        
         // 分析按钮
         document.getElementById('btnAnalyze').addEventListener('click', () => {
             this.analyze();
+        });
+        
+        // 流式分析按钮
+        document.getElementById('btnAnalyzeStream').addEventListener('click', () => {
+            this.analyzeStream();
         });
     }
     
@@ -108,6 +105,7 @@ class DeskFengshuiAnalyzer {
             document.querySelector('.upload-prompt').style.display = 'none';
             document.getElementById('preview').style.display = 'block';
             document.getElementById('btnAnalyze').disabled = false;
+            document.getElementById('btnAnalyzeStream').disabled = false;
         };
         reader.readAsDataURL(file);
     }
@@ -145,43 +143,6 @@ class DeskFengshuiAnalyzer {
             return;
         }
         
-        const useBazi = document.getElementById('useBazi').checked;
-        
-        if (useBazi) {
-            const solarDate = document.getElementById('solarDate').value;
-            const solarTime = document.getElementById('solarTime').value;
-            const gender = document.getElementById('gender').value;
-            
-            // 使用统一验证工具
-            if (typeof Validator !== 'undefined') {
-                try {
-                    Validator.required(solarDate, '出生日期');
-                    Validator.date(solarDate, '出生日期');
-                    Validator.required(solarTime, '出生时间');
-                    Validator.time(solarTime, '出生时间');
-                    Validator.required(gender, '性别');
-                    Validator.gender(gender, '性别');
-                } catch (error) {
-                    if (typeof ErrorHandler !== 'undefined') {
-                        ErrorHandler.showError(error.message);
-                    } else {
-                        alert(error.message);
-                    }
-                    return;
-                }
-            } else {
-                // 降级方案：简单验证
-                if (!solarDate || !solarTime) {
-                    if (typeof ErrorHandler !== 'undefined') {
-                        ErrorHandler.showError('请填写完整的八字信息');
-                    } else {
-                        alert('请填写完整的八字信息');
-                    }
-                    return;
-                }
-            }
-        }
-        
         // 显示加载状态
         this.setLoading(true);
         
@@ -193,15 +154,8 @@ class DeskFengshuiAnalyzer {
             const requestData = {
                 image_base64: imageBase64,
                 filename: this.selectedImage.name,
-                content_type: this.selectedImage.type || 'image/jpeg',
-                use_bazi: useBazi
+                content_type: this.selectedImage.type || 'image/jpeg'
             };
-            
-            if (useBazi) {
-                requestData.solar_date = document.getElementById('solarDate').value;
-                requestData.solar_time = document.getElementById('solarTime').value;
-                requestData.gender = document.getElementById('gender').value;
-            }
             
             // 使用 gRPC-Web 调用
             const result = await api.post('/api/v2/desk-fengshui/analyze', requestData);
@@ -264,15 +218,6 @@ class DeskFengshuiAnalyzer {
         
         // 显示评分
         this.displayScore(data.score, data.summary);
-        
-        // 显示八字信息
-        if (data.xishen || data.jishen) {
-            document.getElementById('baziInfo').style.display = 'block';
-            document.getElementById('xishen').textContent = data.xishen || '-';
-            document.getElementById('jishen').textContent = data.jishen || '-';
-        } else {
-            document.getElementById('baziInfo').style.display = 'none';
-        }
         
         // 显示检测到的物品
         this.displayItems(data.items || []);
@@ -699,6 +644,140 @@ class DeskFengshuiAnalyzer {
             item.innerHTML = content;
             list.appendChild(item);
         });
+    }
+    
+    async analyzeStream() {
+        if (!this.selectedImage) {
+            if (typeof ErrorHandler !== 'undefined') {
+                ErrorHandler.showError('请先上传照片');
+            } else {
+                alert('请先上传照片');
+            }
+            return;
+        }
+        
+        // 显示加载状态
+        this.setLoading(true);
+        
+        // 显示LLM分析区域
+        const llmCard = document.getElementById('llmAnalysisCard');
+        const llmContent = document.getElementById('llmAnalysisContent');
+        const llmStatus = document.getElementById('llmStatus');
+        llmCard.style.display = 'block';
+        llmContent.innerHTML = '';
+        llmContent.classList.add('streaming');
+        llmStatus.style.display = 'block';
+        llmStatus.textContent = '正在连接服务器...';
+        
+        try {
+            // 创建 FormData
+            const formData = new FormData();
+            formData.append('image', this.selectedImage);
+            
+            // 发送流式请求
+            // 确保使用正确的API地址
+            let baseUrl = this.apiBaseUrl || 'http://localhost:8001';
+            if (typeof API_CONFIG !== 'undefined' && API_CONFIG.baseURL) {
+                baseUrl = API_CONFIG.baseURL.replace('/api/v1', '');
+            }
+            const url = `${baseUrl}/api/v2/desk-fengshui/analyze/stream`;
+            console.log('发送流式请求到:', url);
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            // 读取流式响应
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let baseData = null;
+            let llmBuffer = '';
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) {
+                    break;
+                }
+                
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const dataStr = line.substring(6);
+                        if (dataStr.trim() === '') continue;
+                        
+                        try {
+                            const data = JSON.parse(dataStr);
+                            const type = data.type;
+                            
+                            if (type === 'data') {
+                                // 保存基础数据
+                                baseData = data.content;
+                                // 显示基础分析结果
+                                if (baseData && baseData.success) {
+                                    this.displayResult(baseData);
+                                }
+                                llmStatus.textContent = '基础分析完成，正在生成AI整合分析...';
+                            } else if (type === 'progress') {
+                                // 流式输出LLM内容
+                                if (data.content) {
+                                    llmBuffer += data.content;
+                                    llmContent.innerHTML = this.formatMarkdown(llmBuffer);
+                                    llmContent.scrollTop = llmContent.scrollHeight;
+                                }
+                                if (data.statusText) {
+                                    llmStatus.textContent = data.statusText;
+                                }
+                            } else if (type === 'complete') {
+                                // 完成
+                                if (data.content) {
+                                    llmBuffer += data.content;
+                                }
+                                llmContent.innerHTML = this.formatMarkdown(llmBuffer);
+                                llmContent.classList.remove('streaming');
+                                llmStatus.style.display = 'none';
+                                this.setLoading(false);
+                            } else if (type === 'error') {
+                                // 错误
+                                llmContent.innerHTML = `<div class="error">❌ ${data.content || '分析失败'}</div>`;
+                                llmContent.classList.remove('streaming');
+                                llmStatus.style.display = 'none';
+                                this.setLoading(false);
+                            }
+                        } catch (e) {
+                            console.warn('解析SSE数据失败:', e, dataStr);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('流式分析错误：', error);
+            llmContent.innerHTML = `<div class="error">❌ 流式分析失败: ${error.message}</div>`;
+            llmContent.classList.remove('streaming');
+            llmStatus.style.display = 'none';
+            this.setLoading(false);
+        }
+    }
+    
+    formatMarkdown(text) {
+        // 简单的 Markdown 格式化
+        return text
+            .replace(/\n\n/g, '</p><p>')
+            .replace(/\n/g, '<br>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/^# (.*$)/gm, '<h4>$1</h4>')
+            .replace(/^## (.*$)/gm, '<h5>$1</h5>')
+            .replace(/^### (.*$)/gm, '<h6>$1</h6>');
     }
 }
 
