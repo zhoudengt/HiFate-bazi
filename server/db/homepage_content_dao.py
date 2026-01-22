@@ -130,23 +130,28 @@ class HomepageContentDAO:
         """
         try:
             db = get_db_connection()
-            sql = """
-                INSERT INTO homepage_contents (title, tags, description, image_base64, sort_order, enabled)
-                VALUES (%s, %s, %s, %s, %s, 1)
-            """
             tags_json = json.dumps(tags, ensure_ascii=False)
-            result = db.execute_update(sql, (title, tags_json, description, image_base64, sort_order))
             
-            if result:
-                # 获取插入的ID
-                last_id_result = db.execute_query("SELECT LAST_INSERT_ID() as id")
-                if last_id_result and len(last_id_result) > 0:
-                    return last_id_result[0]['id']
+            # 使用同一个连接执行插入和获取ID
+            with db.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    sql = """
+                        INSERT INTO homepage_contents (title, tags, description, image_base64, sort_order, enabled)
+                        VALUES (%s, %s, %s, %s, %s, 1)
+                    """
+                    cursor.execute(sql, (title, tags_json, description, image_base64, sort_order))
+                    conn.commit()
+                    
+                    # 获取插入的ID（必须在同一个连接中）
+                    cursor.execute("SELECT LAST_INSERT_ID() as id")
+                    result = cursor.fetchone()
+                    if result:
+                        return result['id'] if isinstance(result, dict) else result[0]
             return None
         except Exception as e:
-            print(f"⚠ 创建首页内容失败: {e}")
-            import traceback
-            traceback.print_exc()
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"创建首页内容失败: {e}", exc_info=True)
             return None
     
     @staticmethod
