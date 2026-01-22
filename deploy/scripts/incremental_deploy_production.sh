@@ -743,14 +743,15 @@ echo -e "${GREEN}✅ Node1 语法验证通过${NC}"
 
 # 在 Node2 上验证语法
 echo "🔍 在 Node2 上验证代码语法..."
-ssh_exec_node2_via_node1 "cd $PROJECT_DIR && python3 << 'EOF'
+ssh_exec_node2_via_node1 "cd $PROJECT_DIR && python3 << 'EOFPY'
 import ast
 import sys
 import os
 import glob
 
 errors = []
-for pattern in ['server/**/*.py', 'src/**/*.py', 'services/**/*.py']:
+patterns = ['server/**/*.py', 'src/**/*.py', 'services/**/*.py']
+for pattern in patterns:
     for path in glob.glob(pattern, recursive=True):
         if os.path.isfile(path):
             try:
@@ -765,7 +766,7 @@ if errors:
         print(f'  - {err}')
     sys.exit(1)
 print('✅ 语法验证通过')
-EOF" || {
+EOFPY" || {
     echo -e "${RED}❌ Node2 语法验证失败${NC}"
     exit 1
 }
