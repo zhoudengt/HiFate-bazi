@@ -94,6 +94,27 @@ EOF
     fi
 }
 
+# 🔴 通过 Node1 连接 Node2 执行命令（Node2 所有操作都通过 Node1）
+ssh_exec_node2_via_node1() {
+    local cmd="$@"
+    # 在 Node1 上执行 ssh 命令连接 Node2，传递密码
+    if command -v sshpass &> /dev/null; then
+        ssh_exec $NODE1_PUBLIC_IP "sshpass -p '$SSH_PASSWORD' ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP '$cmd'"
+    else
+        # 如果没有 sshpass，通过 Node1 执行 expect
+        ssh_exec $NODE1_PUBLIC_IP "expect << 'EOF'
+spawn ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP '$cmd'
+expect {
+    \"password:\" {
+        send \"$SSH_PASSWORD\\r\"
+        exp_continue
+    }
+    eof
+}
+EOF"
+    fi
+}
+
 # 删除前端相关目录和文件函数（前端团队已独立部署，禁止同步）
 remove_frontend_files() {
     local host=$1
@@ -466,7 +487,7 @@ else
 fi
 
 echo "🔍 检查 Node2 连接..."
-if ssh_exec $NODE2_PUBLIC_IP "echo 'Node2 连接成功'" 2>/dev/null; then
+if ssh_exec_node2_via_node1 "echo 'Node2 连接成功'" 2>/dev/null; then
     echo -e "${GREEN}✅ Node2 连接成功${NC}"
 else
     echo -e "${RED}❌ 无法连接到 Node2 ($NODE2_PUBLIC_IP)${NC}"
@@ -528,7 +549,7 @@ echo -e "${GREEN}✅ Node1 代码拉取完成${NC}"
 # 🔴 重要：在 Node2 上拉取代码（通过 Node1 SSH 连接执行）
 echo "📥 在 Node2 上拉取代码（通过 Node1 SSH 连接）..."
 echo "⚠️  检查服务器本地更改（禁止直接在服务器上修改代码）..."
-LOCAL_CHANGES_NODE2=$(ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && git status --porcelain'" 2>/dev/null || echo "")
+LOCAL_CHANGES_NODE2=$(ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git status --porcelain" 2>/dev/null || echo "")
 if [ -n "$LOCAL_CHANGES_NODE2" ]; then
     echo -e "${YELLOW}⚠️  警告：Node2 上有本地未提交的更改：${NC}"
     echo "$LOCAL_CHANGES_NODE2" | sed 's/^/  /'
@@ -536,31 +557,31 @@ if [ -n "$LOCAL_CHANGES_NODE2" ]; then
     echo -e "${YELLOW}⚠️  如需保留这些更改，请在本地修改并提交到 GitHub${NC}"
 fi
 
-ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && \
+ssh_exec_node2_via_node1 "cd $PROJECT_DIR && \
     git fetch origin && \
     git checkout $GIT_BRANCH && \
     (git stash || true) && \
-    git pull origin $GIT_BRANCH'" || {
+    git pull origin $GIT_BRANCH" || {
     echo -e "${RED}❌ Node2 代码拉取失败${NC}"
     exit 1
 }
 
 # 🚫 删除前端相关目录和文件（前端团队已独立部署，禁止同步）
 # 通过 Node1 SSH 连接执行
-ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && rm -rf local_frontend frontend 2>/dev/null || true'"
+ssh_exec_node2_via_node1 "cd $PROJECT_DIR && rm -rf local_frontend frontend 2>/dev/null || true"
 
 # 验证 Node2 代码与 GitHub 一致（通过 Node1 SSH 连接）
-NODE2_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && git rev-parse HEAD'" 2>/dev/null)
+NODE2_COMMIT=$(ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
 if [ "$NODE2_COMMIT" != "$LOCAL_COMMIT" ]; then
     echo -e "${YELLOW}⚠️  警告：Node2 代码版本与本地不一致${NC}"
     echo "  Node2: $NODE2_COMMIT"
     echo "  本地:  $LOCAL_COMMIT"
     echo -e "${YELLOW}⚠️  请确保已推送到 GitHub：git push origin master${NC}"
     echo -e "${YELLOW}⚠️  重新拉取 Node2 代码以同步（通过 Node1 SSH 连接）...${NC}"
-    ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && git fetch origin && git pull origin $GIT_BRANCH'"
+    ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git fetch origin && git pull origin $GIT_BRANCH"
     # 🚫 删除前端相关目录和文件（通过 Node1 SSH 连接）
-    ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && rm -rf local_frontend frontend 2>/dev/null || true'"
-    NODE2_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && git rev-parse HEAD'" 2>/dev/null)
+    ssh_exec_node2_via_node1 "cd $PROJECT_DIR && rm -rf local_frontend frontend 2>/dev/null || true"
+    NODE2_COMMIT=$(ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
     if [ "$NODE2_COMMIT" != "$LOCAL_COMMIT" ]; then
         echo -e "${RED}❌ 错误：Node2 代码版本仍与本地不一致${NC}"
         echo -e "${RED}🔴 请确保已推送到 GitHub：git push origin master${NC}"
@@ -573,7 +594,7 @@ fi
 echo ""
 echo "🔍 严格执行：检查 Node1 与 Node2 Git 版本一致性（双机代码必须完全一致）..."
 NODE1_COMMIT_CHECK=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
-NODE2_COMMIT_CHECK=$(ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && git rev-parse HEAD'" 2>/dev/null)
+NODE2_COMMIT_CHECK=$(ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
 
 if [ "$NODE1_COMMIT_CHECK" != "$NODE2_COMMIT_CHECK" ]; then
     echo -e "${RED}❌ 错误：Node1 与 Node2 Git 版本不一致（违反双机代码一致性规范）${NC}"
@@ -605,7 +626,7 @@ echo "----------------------------------------"
 # 检查双机 Git 版本一致性
 echo "🔍 检查双机 Git 版本一致性..."
 NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
-NODE2_COMMIT=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
+NODE2_COMMIT=$(ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
 
 if [ -z "$NODE1_COMMIT" ] || [ -z "$NODE2_COMMIT" ]; then
     echo -e "${RED}❌ 错误：无法获取双机 Git 版本${NC}"
@@ -621,18 +642,18 @@ if [ "$NODE1_COMMIT" != "$NODE2_COMMIT" ]; then
     echo -e "${YELLOW}⚠️  正在强制同步 Node2 代码到与 Node1 一致...${NC}"
     
     # 强制同步 Node2 到与 Node1 一致
-    ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && \
+    ssh_exec_node2_via_node1 "cd $PROJECT_DIR && \
         git fetch origin && \
         git reset --hard $NODE1_COMMIT 2>/dev/null || \
         git reset --hard origin/$GIT_BRANCH" || {
         echo -e "${RED}❌ 错误：无法同步 Node2 代码${NC}"
         exit 1
     }
-    # 🚫 删除前端相关目录和文件
-    remove_frontend_files $NODE2_PUBLIC_IP "Node2"
+    # 🚫 删除前端相关目录和文件（通过 Node1 连接）
+    ssh_exec_node2_via_node1 "cd $PROJECT_DIR && rm -rf local_frontend frontend 2>/dev/null || true"
     
     # 再次验证
-    NODE2_COMMIT_AFTER=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
+    NODE2_COMMIT_AFTER=$(ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
     if [ "$NODE1_COMMIT" != "$NODE2_COMMIT_AFTER" ]; then
         echo -e "${RED}❌ 错误：同步后双机 Git 版本仍不一致（违反双机代码一致性规范）${NC}"
         echo -e "${RED}🔴 严格执行：停止部署，必须确保双机代码一致后才能继续${NC}"
@@ -656,7 +677,7 @@ KEY_FILES=(
 INCONSISTENT_FILES=()
 for file in "${KEY_FILES[@]}"; do
     NODE1_HASH=$(ssh_exec $NODE1_PUBLIC_IP "md5sum $PROJECT_DIR/$file 2>/dev/null | cut -d' ' -f1" || echo "")
-    NODE2_HASH=$(ssh_exec $NODE2_PUBLIC_IP "md5sum $PROJECT_DIR/$file 2>/dev/null | cut -d' ' -f1" || echo "")
+    NODE2_HASH=$(ssh_exec_node2_via_node1 "md5sum $PROJECT_DIR/$file 2>/dev/null | cut -d' ' -f1" || echo "")
     
     if [ -z "$NODE1_HASH" ] || [ -z "$NODE2_HASH" ]; then
         echo -e "${YELLOW}⚠️  警告：无法检查 $file${NC}"
@@ -734,7 +755,7 @@ echo -e "${GREEN}✅ Node1 语法验证通过${NC}"
 
 # 在 Node2 上验证语法
 echo "🔍 在 Node2 上验证代码语法..."
-ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && python3 << 'EOF'
+ssh_exec_node2_via_node1 "cd $PROJECT_DIR && python3 << 'EOF'
 import ast
 import sys
 import os
@@ -825,7 +846,7 @@ echo "----------------------------------------"
 echo ""
 echo "🔍 严格执行：最终验证 Node1 与 Node2 代码一致性（双机代码必须完全一致）..."
 FINAL_NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
-FINAL_NODE2_COMMIT=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+FINAL_NODE2_COMMIT=$(ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
 
 if [ "$FINAL_NODE1_COMMIT" != "$FINAL_NODE2_COMMIT" ]; then
     echo -e "${RED}❌ 错误：部署后双机 Git 版本不一致（违反双机代码一致性规范）${NC}"
@@ -923,7 +944,7 @@ echo "🔍 验证 Node1 与 Node2 代码一致性..."
 
 # 获取双机 Git 版本
 NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
-NODE2_COMMIT=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
+NODE2_COMMIT=$(ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
 
 if [ -z "$NODE1_COMMIT" ] || [ -z "$NODE2_COMMIT" ]; then
     echo -e "${RED}❌ 错误：无法获取双机 Git 版本${NC}"
@@ -966,7 +987,7 @@ KEY_FILES=(
 ALL_FILES_MATCH=true
 for file in "${KEY_FILES[@]}"; do
     NODE1_HASH=$(ssh_exec $NODE1_PUBLIC_IP "md5sum $PROJECT_DIR/$file 2>/dev/null | cut -d' ' -f1" || echo "")
-    NODE2_HASH=$(ssh_exec $NODE2_PUBLIC_IP "md5sum $PROJECT_DIR/$file 2>/dev/null | cut -d' ' -f1" || echo "")
+    NODE2_HASH=$(ssh_exec_node2_via_node1 "md5sum $PROJECT_DIR/$file 2>/dev/null | cut -d' ' -f1" || echo "")
     
     if [ -z "$NODE1_HASH" ] || [ -z "$NODE2_HASH" ]; then
         echo -e "${YELLOW}⚠️  无法验证 $file${NC}"
