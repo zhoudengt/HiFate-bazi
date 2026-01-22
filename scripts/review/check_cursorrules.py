@@ -210,6 +210,7 @@ def main():
     
     parser = argparse.ArgumentParser(description='开发规范符合性检查')
     parser.add_argument('files', nargs='*', help='要检查的文件路径')
+    parser.add_argument('--exit-on-error', action='store_true', help='发现错误时退出（用于 CI/CD）')
     
     args = parser.parse_args()
     
