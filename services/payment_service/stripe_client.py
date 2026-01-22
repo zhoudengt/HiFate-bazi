@@ -8,10 +8,18 @@ import os
 import logging
 from typing import Optional, Dict, Any
 
-try:
-    import stripe
-except ImportError:
-    stripe = None
+# 动态导入 stripe，支持运行时安装
+def _import_stripe():
+    """动态导入 stripe 库"""
+    try:
+        import stripe
+        return stripe
+    except ImportError:
+        return None
+
+# 首次导入尝试
+stripe = _import_stripe()
+if stripe is None:
     logging.warning("stripe库未安装，请运行: pip install stripe")
 
 logger = logging.getLogger(__name__)
@@ -26,8 +34,10 @@ class StripeClient:
         if not self.api_key:
             logger.warning("STRIPE_SECRET_KEY环境变量未设置")
         
-        if stripe:
-            stripe.api_key = self.api_key
+        # 初始化时尝试设置 API key
+        stripe_module = _import_stripe()
+        if stripe_module:
+            stripe_module.api_key = self.api_key
     
     def create_checkout_session(
         self,
@@ -54,7 +64,9 @@ class StripeClient:
         Returns:
             包含session_id和checkout_url的字典
         """
-        if not stripe:
+        # 动态检查 stripe 是否可用
+        stripe_module = _import_stripe()
+        if stripe_module is None:
             raise RuntimeError("stripe库未安装")
         
         if not self.api_key:
@@ -101,7 +113,9 @@ class StripeClient:
             if metadata:
                 session_params["metadata"] = metadata
             
-            session = stripe.checkout.Session.create(**session_params)
+            # 设置 API key（每次调用前确保设置）
+            stripe_module.api_key = self.api_key
+            session = stripe_module.checkout.Session.create(**session_params)
             
             logger.info(f"创建支付会话成功: session_id={session.id}")
             
@@ -110,7 +124,7 @@ class StripeClient:
                 "checkout_url": session.url,
                 "status": "created",
             }
-        except stripe.error.StripeError as e:
+        except stripe_module.error.StripeError as e:
             logger.error(f"创建支付会话失败: {e}")
             raise RuntimeError(f"Stripe支付会话创建失败: {str(e)}")
     
@@ -124,14 +138,18 @@ class StripeClient:
         Returns:
             会话信息字典
         """
-        if not stripe:
+        # 动态检查 stripe 是否可用
+        stripe_module = _import_stripe()
+        if stripe_module is None:
             raise RuntimeError("stripe库未安装")
         
         if not self.api_key:
             raise RuntimeError("STRIPE_SECRET_KEY未配置")
         
         try:
-            session = stripe.checkout.Session.retrieve(session_id)
+            # 设置 API key（每次调用前确保设置）
+            stripe_module.api_key = self.api_key
+            session = stripe_module.checkout.Session.retrieve(session_id)
             
             result = {
                 "status": session.payment_status,  # paid, unpaid, no_payment_required
@@ -157,7 +175,7 @@ class StripeClient:
                 result["status"] = "pending"
             
             return result
-        except stripe.error.StripeError as e:
+        except stripe_module.error.StripeError as e:
             logger.error(f"获取支付会话失败: {e}")
             raise RuntimeError(f"获取支付会话失败: {str(e)}")
     
