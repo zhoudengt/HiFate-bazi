@@ -45,8 +45,17 @@
 项目目录: /opt/HiFate-bazi
 
 # 连接命令（使用 sshpass）
-sshpass -p "${SSH_PASSWORD}" ssh -o StrictHostKeyChecking=no root@8.210.52.217  # Node1
-sshpass -p "${SSH_PASSWORD}" ssh -o StrictHostKeyChecking=no root@47.243.160.43  # Node2
+sshpass -p "${SSH_PASSWORD}" ssh -o StrictHostKeyChecking=no root@8.210.52.217  # Node1（直接连接）
+
+# 🔴 重要：Node2 通过 Node1 连接（标准部署流程）
+# Node2 的所有操作都通过 Node1 的 SSH 连接执行
+sshpass -p "${SSH_PASSWORD}" ssh -o StrictHostKeyChecking=no root@8.210.52.217 \
+  "ssh -o StrictHostKeyChecking=no root@172.18.121.223 '命令'"  # Node2（通过 Node1 连接）
+
+# 原因：
+# 1. 统一网络架构，便于管理和监控
+# 2. Node2 可能没有公网 IP 或安全策略限制
+# 3. 确保所有操作都经过 Node1 统一管理
 ```
 
 ### Git 仓库
@@ -119,11 +128,15 @@ bash deploy/scripts/incremental_deploy_production.sh
 ```
 
 **部署脚本执行内容**：
-1. 拉取最新代码到 Node1 和 Node2
-2. 验证双机代码一致性
-3. 触发热更新
-4. 执行健康检查
-5. 验证关键功能
+1. 拉取最新代码到 Node1（直接 SSH 连接）
+2. **拉取最新代码到 Node2（通过 Node1 SSH 连接执行）**
+   - 🔴 **重要规范**：Node2 的所有操作都通过 Node1 的 SSH 连接执行
+   - 命令格式：`ssh root@Node1 "ssh -o StrictHostKeyChecking=no root@Node2内网IP '命令'"`
+   - 原因：统一网络架构，便于管理和监控
+3. 验证双机代码一致性
+4. 触发热更新
+5. 执行健康检查
+6. 验证关键功能
 
 #### 5️⃣ 部署验证
 

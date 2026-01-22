@@ -546,20 +546,21 @@ ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && \
 }
 
 # 🚫 删除前端相关目录和文件（前端团队已独立部署，禁止同步）
-remove_frontend_files $NODE2_PUBLIC_IP "Node2"
+# 通过 Node1 SSH 连接执行
+ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && rm -rf local_frontend frontend 2>/dev/null || true'"
 
-# 验证 Node2 代码与 GitHub 一致
-NODE2_COMMIT=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+# 验证 Node2 代码与 GitHub 一致（通过 Node1 SSH 连接）
+NODE2_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && git rev-parse HEAD'" 2>/dev/null)
 if [ "$NODE2_COMMIT" != "$LOCAL_COMMIT" ]; then
     echo -e "${YELLOW}⚠️  警告：Node2 代码版本与本地不一致${NC}"
     echo "  Node2: $NODE2_COMMIT"
     echo "  本地:  $LOCAL_COMMIT"
     echo -e "${YELLOW}⚠️  请确保已推送到 GitHub：git push origin master${NC}"
-    echo -e "${YELLOW}⚠️  重新拉取 Node2 代码以同步...${NC}"
-    ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git fetch origin && git pull origin $GIT_BRANCH"
-    # 🚫 删除前端相关目录和文件
-    remove_frontend_files $NODE2_PUBLIC_IP "Node2"
-    NODE2_COMMIT=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+    echo -e "${YELLOW}⚠️  重新拉取 Node2 代码以同步（通过 Node1 SSH 连接）...${NC}"
+    ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && git fetch origin && git pull origin $GIT_BRANCH'"
+    # 🚫 删除前端相关目录和文件（通过 Node1 SSH 连接）
+    ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && rm -rf local_frontend frontend 2>/dev/null || true'"
+    NODE2_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && git rev-parse HEAD'" 2>/dev/null)
     if [ "$NODE2_COMMIT" != "$LOCAL_COMMIT" ]; then
         echo -e "${RED}❌ 错误：Node2 代码版本仍与本地不一致${NC}"
         echo -e "${RED}🔴 请确保已推送到 GitHub：git push origin master${NC}"
@@ -572,7 +573,7 @@ fi
 echo ""
 echo "🔍 严格执行：检查 Node1 与 Node2 Git 版本一致性（双机代码必须完全一致）..."
 NODE1_COMMIT_CHECK=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
-NODE2_COMMIT_CHECK=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+NODE2_COMMIT_CHECK=$(ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && git rev-parse HEAD'" 2>/dev/null)
 
 if [ "$NODE1_COMMIT_CHECK" != "$NODE2_COMMIT_CHECK" ]; then
     echo -e "${RED}❌ 错误：Node1 与 Node2 Git 版本不一致（违反双机代码一致性规范）${NC}"

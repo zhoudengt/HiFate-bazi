@@ -168,8 +168,9 @@ bash deploy/scripts/incremental_deploy_production.sh
 # 1. 在 Node1 上拉取代码
 ssh root@8.210.52.217 "cd /opt/HiFate-bazi && git pull origin master"
 
-# 2. 在 Node2 上拉取代码
-ssh root@47.243.160.43 "cd /opt/HiFate-bazi && git pull origin master"
+# 2. 在 Node2 上拉取代码（通过 Node1 SSH 连接执行）
+# 🔴 重要规范：Node2 的所有操作都通过 Node1 的 SSH 连接执行
+ssh root@8.210.52.217 "ssh -o StrictHostKeyChecking=no root@172.18.121.223 'cd /opt/HiFate-bazi && git pull origin master'"
 
 # 3. 在 Node1 上触发热更新（自动同步到 Node2）
 curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/sync
@@ -239,8 +240,10 @@ curl -X POST http://47.243.160.43:8001/api/v1/hot-reload/rollback
 - [ ] 配置同步后已验证（验证配置文件格式正确）
 
 #### 服务器连接检查
-- [ ] Node1 SSH 连接正常
-- [ ] Node2 SSH 连接正常
+- [ ] Node1 SSH 连接正常（直接连接）
+- [ ] Node2 SSH 连接正常（通过 Node1 连接）
+  - 🔴 **重要规范**：Node2 的所有操作都通过 Node1 的 SSH 连接执行
+  - 格式：`ssh root@Node1 "ssh root@Node2内网IP '命令'"`
 - [ ] Node1 服务可用（健康检查通过）
 - [ ] Node2 服务可用（健康检查通过）
 
