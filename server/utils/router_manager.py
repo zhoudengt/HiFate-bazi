@@ -72,6 +72,7 @@ class RouterManager:
         self.app = app
         self.registered_routers: Dict[str, RouterInfo] = {}
         self._route_signatures: Dict[str, Tuple[str, str]] = {}  # 路由签名：{name: (prefix, path)}
+        self._registered_route_paths: Dict[str, List[str]] = {}  # 记录每个路由名称对应的路径列表
     
     @classmethod
     def get_instance(cls) -> Optional['RouterManager']:
@@ -127,9 +128,52 @@ class RouterManager:
         
         return False
     
-    def _register_single_router(self, router_info: RouterInfo) -> bool:
+    def _remove_router_routes(self, router_name: str, router: APIRouter, prefix: str):
+        """
+        移除已注册的路由（用于热更新）
+        
+        注意：FastAPI 的 app.routes 是列表，可以通过修改列表来移除路由
+        """
+        if router_name not in self._registered_route_paths:
+            return
+        
+        # 获取要移除的路径列表
+        paths_to_remove = self._registered_route_paths[router_name]
+        
+        # 从 app.routes 中移除匹配的路由
+        routes_to_keep = []
+        for route in self.app.routes:
+            route_path = getattr(route, 'path', '')
+            # 检查是否是我们要移除的路由
+            should_remove = False
+            for path_to_remove in paths_to_remove:
+                full_path = (prefix.rstrip('/') + '/' + path_to_remove.lstrip('/')).replace('//', '/')
+                if route_path == full_path or route_path.startswith(full_path + '/'):
+                    should_remove = True
+                    break
+            
+            if not should_remove:
+                routes_to_keep.append(route)
+        
+        # 替换 app.routes（FastAPI 内部使用列表存储路由）
+        if hasattr(self.app, 'router'):
+            # FastAPI 使用 app.router.routes
+            self.app.router.routes[:] = routes_to_keep
+        else:
+            # 如果直接使用 app.routes
+            self.app.routes[:] = routes_to_keep
+        
+        # 清除记录的路径
+        del self._registered_route_paths[router_name]
+        logger.info(f"✓ 已移除路由: {router_name} (路径数: {len(paths_to_remove)})")
+    
+    def _register_single_router(self, router_info: RouterInfo, force: bool = False) -> bool:
         """
         注册单个路由
+        
+        Args:
+            router_info: 路由信息
+            force: 是否强制重新注册
         
         Returns:
             bool: 是否成功注册
@@ -140,15 +184,24 @@ class RouterManager:
                 logger.debug(f"路由 {router_info.name} 未启用，跳过注册")
                 return False
             
-            # 获取路由对象
+            # 获取路由对象（如果是force模式，确保获取的是最新的）
             router = router_info.get_router()
             if router is None:
                 logger.warning(f"路由 {router_info.name} 获取失败，跳过注册")
                 return False
             
-            # 检查路由是否已注册（避免重复注册）
-            # 注意：FastAPI 允许重复注册，但为了清晰起见，我们检查一下
-            # 由于 FastAPI 会忽略重复注册，这里主要记录日志
+            # 在force模式下，先移除旧路由，再注册新路由
+            if force and router_info._registered:
+                # 移除旧路由
+                self._remove_router_routes(router_info.name, router, router_info.prefix)
+                router_info._registered = False
+            
+            # 记录要注册的路径（用于后续移除）
+            router_paths = []
+            for route in router.routes:
+                if hasattr(route, 'path'):
+                    router_paths.append(route.path)
+            self._registered_route_paths[router_info.name] = router_paths
             
             # 注册路由
             self.app.include_router(
@@ -158,7 +211,7 @@ class RouterManager:
             )
             
             router_info._registered = True
-            logger.info(f"✓ 路由已注册: {router_info.name} (prefix: {router_info.prefix}, tags: {router_info.tags})")
+            logger.info(f"✓ 路由已注册: {router_info.name} (prefix: {router_info.prefix}, tags: {router_info.tags}, 路径数: {len(router_paths)})")
             return True
             
         except Exception as e:
@@ -191,8 +244,8 @@ class RouterManager:
             if force:
                 router_info._registered = False
             
-            # 注册路由
-            success = self._register_single_router(router_info)
+            # 注册路由（传递force参数）
+            success = self._register_single_router(router_info, force=force)
             results[name] = success
             
             if success:

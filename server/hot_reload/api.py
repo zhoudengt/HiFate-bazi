@@ -84,8 +84,27 @@ async def reload_routers():
     try:
         from server.main import router_manager
         import sys
+        import importlib
         
         old_count = len(router_manager.get_registered_routers())
+        
+        # ⭐ 重要：先重新加载相关路由模块，确保获取最新的路由对象
+        # 重新加载可能包含新路由的模块
+        modules_to_reload = [
+            'server.api.v2.face_analysis',
+            'server.api.v2.face_analysis_stream',
+            'server.api.v2.desk_fengshui_api',
+            'server.api.v2.desk_fengshui_stream',
+            'server.main'
+        ]
+        
+        for module_name in modules_to_reload:
+            if module_name in sys.modules:
+                try:
+                    importlib.reload(sys.modules[module_name])
+                    logger.info(f"✅ 已重新加载模块: {module_name}")
+                except Exception as e:
+                    logger.warning(f"⚠️  重新加载模块 {module_name} 失败: {e}")
         
         # ⭐ 重要：如果 server.main 模块已加载，重新执行 _register_all_routers_to_manager
         # 确保新添加的路由信息被注册到 RouterManager
