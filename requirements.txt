@@ -51,8 +51,8 @@ watchdog>=3.0.0  # 文件监控（用于自动化热更新）
 # langchain-openai==1.0.2
 
 # 支付（如需要）
-# stripe>=7.0.0
-# alipay-sdk-python>=3.7.0
+stripe>=7.0.0
+alipay-sdk-python>=3.7.0
 
 # 图像处理（面相/手相/风水分析必需）
 opencv-python-headless>=4.8.0
