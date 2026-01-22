@@ -18,6 +18,9 @@
 
 set -e
 
+# 🔴 临时：仅部署到 Node1，Node2 稍后统一处理
+SKIP_NODE2=${SKIP_NODE2:-true}
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -474,12 +477,18 @@ else
     exit 1
 fi
 
-echo "🔍 检查 Node2 连接..."
-if ssh_exec_node2_via_node1 "echo 'Node2 连接成功'" 2>/dev/null; then
-    echo -e "${GREEN}✅ Node2 连接成功${NC}"
+# 🔴 临时：只部署到 Node1，Node2 稍后统一处理
+if [ "$SKIP_NODE2" = "true" ]; then
+    echo "🔍 检查 Node2 连接（跳过，仅部署 Node1）..."
+    echo -e "${YELLOW}⚠️  本次部署仅到 Node1，Node2 稍后统一处理${NC}"
 else
-    echo -e "${RED}❌ 无法连接到 Node2 ($NODE2_PUBLIC_IP)${NC}"
-    exit 1
+    echo "🔍 检查 Node2 连接..."
+    if ssh_exec_node2_via_node1 "echo 'Node2 连接成功'" 2>/dev/null; then
+        echo -e "${GREEN}✅ Node2 连接成功${NC}"
+    else
+        echo -e "${RED}❌ 无法连接到 Node2 ($NODE2_PUBLIC_IP)${NC}"
+        exit 1
+    fi
 fi
 
 echo ""
@@ -534,8 +543,13 @@ fi
 
 echo -e "${GREEN}✅ Node1 代码拉取完成${NC}"
 
-# 🔴 重要：在 Node2 上拉取代码（通过 Node1 SSH 连接执行）
-echo "📥 在 Node2 上拉取代码（通过 Node1 SSH 连接）..."
+# 🔴 临时：跳过 Node2 部署
+if [ "$SKIP_NODE2" = "true" ]; then
+    echo "📥 Node2 部署已跳过（本次仅部署 Node1）..."
+    echo -e "${YELLOW}⚠️  本次部署仅到 Node1，Node2 稍后统一处理${NC}"
+else
+    # 🔴 重要：在 Node2 上拉取代码（通过 Node1 SSH 连接执行）
+    echo "📥 在 Node2 上拉取代码（通过 Node1 SSH 连接）..."
 echo "⚠️  检查服务器本地更改（禁止直接在服务器上修改代码）..."
 LOCAL_CHANGES_NODE2=$(ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git status --porcelain" 2>/dev/null || echo "")
 if [ -n "$LOCAL_CHANGES_NODE2" ]; then
@@ -603,7 +617,8 @@ echo -e "${GREEN}✅ Node1 与 Node2 Git 版本一致（${NODE1_COMMIT_CHECK:0:8
 
 # 🚫 注意：Nginx 配置由前端团队管理，后端部署脚本不再修改 Nginx 配置
 
-echo -e "${GREEN}✅ Node2 代码拉取完成${NC}"
+    echo -e "${GREEN}✅ Node2 代码拉取完成${NC}"
+fi
 
 echo ""
 
@@ -611,10 +626,17 @@ echo ""
 echo -e "${BLUE}🔍 第四步：验证双机代码一致性（强制检查）${NC}"
 echo "----------------------------------------"
 
-# 检查双机 Git 版本一致性
-echo "🔍 检查双机 Git 版本一致性..."
-NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
-NODE2_COMMIT=$(ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
+# 检查双机 Git 版本一致性（如果跳过 Node2，则只检查 Node1）
+if [ "$SKIP_NODE2" = "true" ]; then
+    echo "🔍 检查 Node1 Git 版本（Node2 已跳过）..."
+    NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
+    NODE2_COMMIT="$NODE1_COMMIT"  # 跳过 Node2 检查
+    echo -e "${GREEN}✅ Node1 Git 版本：${NODE1_COMMIT:0:8}${NC}"
+else
+    echo "🔍 检查双机 Git 版本一致性..."
+    NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
+    NODE2_COMMIT=$(ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
+fi
 
 if [ -z "$NODE1_COMMIT" ] || [ -z "$NODE2_COMMIT" ]; then
     echo -e "${RED}❌ 错误：无法获取双机 Git 版本${NC}"
@@ -741,8 +763,12 @@ EOF" || {
 
 echo -e "${GREEN}✅ Node1 语法验证通过${NC}"
 
-# 在 Node2 上验证语法
-echo "🔍 在 Node2 上验证代码语法..."
+# 在 Node2 上验证语法（如果跳过 Node2，则跳过验证）
+if [ "$SKIP_NODE2" = "true" ]; then
+    echo "🔍 Node2 语法验证已跳过（本次仅部署 Node1）..."
+    echo -e "${GREEN}✅ Node2 语法验证已跳过${NC}"
+else
+    echo "🔍 在 Node2 上验证代码语法..."
 ssh_exec_node2_via_node1 "cd $PROJECT_DIR && python3 << 'EOFPY'
 import ast
 import sys
