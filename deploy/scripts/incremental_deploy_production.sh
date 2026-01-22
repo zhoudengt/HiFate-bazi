@@ -859,18 +859,27 @@ echo "----------------------------------------"
 
 # 🔴 严格执行：最终验证 Node1 与 Node2 代码一致性（双机代码必须一致）
 echo ""
-echo "🔍 严格执行：最终验证 Node1 与 Node2 代码一致性（双机代码必须完全一致）..."
-FINAL_NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
-FINAL_NODE2_COMMIT=$(ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+# 🔴 最终验证（如果跳过 Node2，则只验证 Node1）
+if [ "$SKIP_NODE2" = "true" ]; then
+    echo ""
+    echo "🔍 最终验证 Node1 代码..."
+    FINAL_NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+    echo -e "${GREEN}✅ Node1 代码版本：${FINAL_NODE1_COMMIT:0:8}${NC}"
+else
+    echo ""
+    echo "🔍 严格执行：最终验证 Node1 与 Node2 代码一致性（双机代码必须完全一致）..."
+    FINAL_NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
+    FINAL_NODE2_COMMIT=$(ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
 
-if [ "$FINAL_NODE1_COMMIT" != "$FINAL_NODE2_COMMIT" ]; then
-    echo -e "${RED}❌ 错误：部署后双机 Git 版本不一致（违反双机代码一致性规范）${NC}"
-    echo "  Node1: ${FINAL_NODE1_COMMIT:0:8}"
-    echo "  Node2: ${FINAL_NODE2_COMMIT:0:8}"
-    echo -e "${RED}🔴 严格执行：Node1 与 Node2 代码必须完全一致，部署失败${NC}"
-    exit 1
+    if [ "$FINAL_NODE1_COMMIT" != "$FINAL_NODE2_COMMIT" ]; then
+        echo -e "${RED}❌ 错误：部署后双机 Git 版本不一致（违反双机代码一致性规范）${NC}"
+        echo "  Node1: ${FINAL_NODE1_COMMIT:0:8}"
+        echo "  Node2: ${FINAL_NODE2_COMMIT:0:8}"
+        echo -e "${RED}🔴 严格执行：Node1 与 Node2 代码必须完全一致，部署失败${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✅ 部署后双机 Git 版本一致（${FINAL_NODE1_COMMIT:0:8}）${NC}"
 fi
-echo -e "${GREEN}✅ 部署后双机 Git 版本一致（${FINAL_NODE1_COMMIT:0:8}）${NC}"
 echo ""
 echo "----------------------------------------"
 
