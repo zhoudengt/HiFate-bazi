@@ -98,21 +98,8 @@ EOF
 ssh_exec_node2_via_node1() {
     local cmd="$@"
     # 在 Node1 上执行 ssh 命令连接 Node2，传递密码
-    if command -v sshpass &> /dev/null; then
-        ssh_exec $NODE1_PUBLIC_IP "sshpass -p '$SSH_PASSWORD' ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP '$cmd'"
-    else
-        # 如果没有 sshpass，通过 Node1 执行 expect
-        ssh_exec $NODE1_PUBLIC_IP "expect << 'EOF'
-spawn ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP '$cmd'
-expect {
-    \"password:\" {
-        send \"$SSH_PASSWORD\\r\"
-        exp_continue
-    }
-    eof
-}
-EOF"
-    fi
+    # 注意：需要在 Node1 上执行 sshpass，所以需要先确保 Node1 有 sshpass
+    ssh_exec $NODE1_PUBLIC_IP "sshpass -p '$SSH_PASSWORD' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$NODE2_PRIVATE_IP '$cmd'"
 }
 
 # 删除前端相关目录和文件函数（前端团队已独立部署，禁止同步）
