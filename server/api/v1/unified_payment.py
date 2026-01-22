@@ -234,9 +234,13 @@ def create_unified_payment(request: CreatePaymentRequest):
             if transaction_id is not None:
                 transaction_id = str(transaction_id)
             
+            # 统一接口：将 transaction_id 映射到 payment_id（与其他支付渠道保持一致）
+            payment_id = transaction_id if transaction_id else result.get('order_id')
+            
             return CreatePaymentResponse(
                 success=result.get('success', False),
                 provider="linepay",
+                payment_id=payment_id,
                 transaction_id=transaction_id,
                 order_id=result.get('order_id'),
                 payment_url=result.get('payment_url'),
