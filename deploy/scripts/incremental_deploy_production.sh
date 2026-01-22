@@ -525,10 +525,10 @@ fi
 
 echo -e "${GREEN}✅ Node1 代码拉取完成${NC}"
 
-# 在 Node2 上拉取代码（确保与 GitHub 一致）
-echo "📥 在 Node2 上拉取代码..."
+# 🔴 重要：在 Node2 上拉取代码（通过 Node1 SSH 连接执行）
+echo "📥 在 Node2 上拉取代码（通过 Node1 SSH 连接）..."
 echo "⚠️  检查服务器本地更改（禁止直接在服务器上修改代码）..."
-LOCAL_CHANGES_NODE2=$(ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && git status --porcelain" 2>/dev/null || echo "")
+LOCAL_CHANGES_NODE2=$(ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && git status --porcelain'" 2>/dev/null || echo "")
 if [ -n "$LOCAL_CHANGES_NODE2" ]; then
     echo -e "${YELLOW}⚠️  警告：Node2 上有本地未提交的更改：${NC}"
     echo "$LOCAL_CHANGES_NODE2" | sed 's/^/  /'
@@ -536,11 +536,11 @@ if [ -n "$LOCAL_CHANGES_NODE2" ]; then
     echo -e "${YELLOW}⚠️  如需保留这些更改，请在本地修改并提交到 GitHub${NC}"
 fi
 
-ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && \
+ssh_exec $NODE1_PUBLIC_IP "ssh -o StrictHostKeyChecking=no root@$NODE2_PRIVATE_IP 'cd $PROJECT_DIR && \
     git fetch origin && \
     git checkout $GIT_BRANCH && \
     (git stash || true) && \
-    git pull origin $GIT_BRANCH" || {
+    git pull origin $GIT_BRANCH'" || {
     echo -e "${RED}❌ Node2 代码拉取失败${NC}"
     exit 1
 }
