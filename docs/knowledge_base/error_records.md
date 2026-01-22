@@ -2,7 +2,7 @@
 
 > **目的**：记录开发过程中遇到的问题及其解决方案，预防类似问题再次发生
 > **维护原则**：遇到新问题时主动更新，形成持续改进的知识积累
-> **最后更新**：2026-01-06（新增 ERR-COZE-001）
+> **最后更新**：2026-01-22（新增 ERR-DEPLOY-001）
 
 ---
 
@@ -13,7 +13,7 @@
 | [API 注册](#api-注册问题) | API 端点注册、路由配置相关 | 1 |
 | [gRPC 网关](#grpc-网关问题) | gRPC-Web 网关、端点映射相关 | 1 |
 | [Coze API 问题](#coze-api-问题) | Coze API 调用、Bot 配置相关 | 1 |
-| [部署问题](#部署问题) | 增量部署、热更新相关 | 0 |
+| [部署问题](#部署问题) | 增量部署、热更新相关 | 1 |
 | [环境问题](#环境问题) | SSH、网络、容器相关 | 0 |
 | [数据库问题](#数据库问题) | MySQL、Redis 相关 | 0 |
 
@@ -435,13 +435,85 @@ docker ps --format '{{.Names}}' | grep hifate
 
 ---
 
+## 🔴 部署问题
+
+### ERR-DEPLOY-001：违反代码修改流程规范，直接在服务器上修改代码
+
+**问题发生日期**：2026-01-22
+
+**问题描述**：
+AI 在修复 Stripe 支付问题时，违反了开发规范，直接在生产服务器上修改代码，而不是遵循标准的"本地开发 → Git提交 → 增量部署"流程。
+
+**现象**：
+```
+# 错误操作：
+1. 直接在服务器上使用 scp 上传文件
+   scp services/payment_service/stripe_client.py root@server:/opt/HiFate-bazi/...
+
+2. 直接在服务器上执行 git checkout 撤销修改
+   git checkout -- services/payment_service/stripe_client.py
+
+3. 直接在服务器上执行 git pull
+   git pull origin master
+```
+
+**根因分析**：
+1. **未遵循标准流程**：应该使用 `deploy/scripts/incremental_deploy_production.sh` 进行增量部署
+2. **未先读部署指南**：规范要求部署前必读 `docs/knowledge_base/deployment_guide.md`
+3. **未先读错误记录本**：规范要求开发前必读 `docs/knowledge_base/error_records.md`
+4. **急于解决问题**：为了快速修复问题，跳过了标准流程
+
+**影响范围**：
+- 破坏了代码版本管理的一致性
+- 可能导致服务器代码与 Git 仓库不一致
+- 违反了"禁止直接在服务器上修改代码"的核心原则
+
+**解决方案**：
+1. ✅ 撤销服务器上的直接修改：`git checkout -- <文件>`
+2. ✅ 通过 Git 同步代码：`git pull origin master`
+3. ✅ 使用增量部署脚本：`bash deploy/scripts/incremental_deploy_production.sh`
+4. ✅ 触发热更新：通过增量部署脚本自动执行
+
+**预防措施**：
+1. **开发前必读**：
+   - 先读 `docs/knowledge_base/error_records.md` 检查是否有类似问题
+   - 先读 `docs/knowledge_base/deployment_guide.md` 了解标准部署流程
+
+2. **严格遵循流程**：
+   ```
+   本地开发 → Git提交 → 推送远程 → 增量部署 → 验证
+   ```
+
+3. **禁止操作清单**：
+   - ❌ 禁止使用 `scp` 直接上传文件到服务器
+   - ❌ 禁止在服务器上直接执行 `git checkout`、`git pull` 等操作
+   - ❌ 禁止在服务器上直接修改代码文件
+   - ✅ 必须使用增量部署脚本：`bash deploy/scripts/incremental_deploy_production.sh`
+
+4. **检查清单**（部署前必须确认）：
+   - [ ] 代码已在本地测试通过
+   - [ ] 代码已提交到 Git
+   - [ ] 代码已推送到远程仓库（GitHub 和 Gitee）
+   - [ ] 已阅读部署指南和错误记录本
+   - [ ] 使用增量部署脚本进行部署
+   - [ ] 部署后验证功能正常
+
+**相关文件**：
+- `.cursorrules` - 核心原则 0：代码修改流程规范
+- `docs/knowledge_base/deployment_guide.md` - 增量部署指南
+- `deploy/scripts/incremental_deploy_production.sh` - 增量部署脚本
+
+**提交记录**：`57867ee` - fix(payment): 改进 Stripe 动态导入逻辑，支持运行时安装
+
+---
+
 ## 📊 统计信息
 
 | 指标 | 数量 |
 |------|------|
-| 总问题数 | 4 |
+| 总问题数 | 5 |
 | API 相关 | 1 |
-| 部署相关 | 2 |
+| 部署相关 | 3 |
 | 环境相关 | 1 |
 | 数据库相关 | 0 |
 
