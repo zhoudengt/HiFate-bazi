@@ -7,6 +7,7 @@
 
 import sys
 import os
+import time
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, Dict, Literal
@@ -155,41 +156,45 @@ def create_unified_payment(request: CreatePaymentRequest):
                 payment_id=result.get('payment_id'),
                 approval_url=result.get('approval_url'),
                 status=result.get('status'),
-                message=result.get('message')
+                message=result.get('message') or result.get('error', 'PayPal支付处理完成')
             )
         
         # 支付宝支付
         elif provider == PaymentProvider.ALIPAY:
+            # 生成订单号
+            out_trade_no = f"ALIPAY_{int(time.time() * 1000)}"
             result = alipay_client.create_payment(
+                out_trade_no=out_trade_no,
                 amount=request.amount,
-                product_name=request.product_name
+                subject=request.product_name
             )
             
             return CreatePaymentResponse(
                 success=result.get('success', False),
                 provider="alipay",
-                order_id=result.get('order_id'),
+                order_id=result.get('out_trade_no'),
                 payment_url=result.get('payment_url'),
                 status=result.get('status'),
-                message=result.get('message')
+                message=result.get('message') or result.get('error', '支付宝支付处理完成')
             )
         
         # 微信支付
         elif provider == PaymentProvider.WECHAT:
             # Native支付（扫码）
             if request.payment_type == "native":
-                result = wechat_client.create_native_payment(
-                    amount=request.amount,
-                    product_name=request.product_name
+                result = wechat_client.create_native_order(
+                    out_trade_no=f"WX_{int(time.time() * 1000)}",
+                    amount=float(request.amount),
+                    body=request.product_name
                 )
                 
                 return CreatePaymentResponse(
                     success=result.get('success', False),
                     provider="wechat",
-                    order_id=result.get('order_id'),
+                    order_id=result.get('out_trade_no'),
                     code_url=result.get('code_url'),
                     status=result.get('status'),
-                    message=result.get('message')
+                    message=result.get('message') or result.get('error', '微信支付处理完成')
                 )
             
             # JSAPI支付（公众号/小程序）
@@ -197,19 +202,20 @@ def create_unified_payment(request: CreatePaymentRequest):
                 if not request.openid:
                     raise HTTPException(status_code=400, detail="微信JSAPI支付需要提供openid")
                 
-                result = wechat_client.create_jsapi_payment(
-                    amount=request.amount,
-                    product_name=request.product_name,
+                result = wechat_client.create_jsapi_order(
+                    out_trade_no=f"WX_{int(time.time() * 1000)}",
+                    amount=float(request.amount),
+                    body=request.product_name,
                     openid=request.openid
                 )
                 
                 return CreatePaymentResponse(
                     success=result.get('success', False),
                     provider="wechat",
-                    order_id=result.get('order_id'),
+                    order_id=result.get('out_trade_no'),
                     jsapi_params=result.get('jsapi_params'),
                     status=result.get('status'),
-                    message=result.get('message')
+                    message=result.get('message') or result.get('error', '微信支付处理完成')
                 )
             
             else:
@@ -235,7 +241,7 @@ def create_unified_payment(request: CreatePaymentRequest):
                 order_id=result.get('order_id'),
                 payment_url=result.get('payment_url'),
                 status=result.get('status'),
-                message=result.get('message')
+                message=result.get('message') or result.get('error', 'Line Pay支付处理完成')
             )
         
         else:

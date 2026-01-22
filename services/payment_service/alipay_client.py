@@ -20,21 +20,41 @@ except ImportError:
     AliPay = None
     logging.warning("alipay-sdk-python库未安装，请运行: pip install alipay-sdk-python")
 
+# 导入支付配置加载器
+try:
+    from services.payment_service.payment_config_loader import get_payment_config, get_payment_environment
+except ImportError:
+    # 降级到环境变量
+    def get_payment_config(provider: str, config_key: str, environment: str = 'production', default: Optional[str] = None) -> Optional[str]:
+        return os.getenv(f"{provider.upper()}_{config_key.upper()}", default)
+    def get_payment_environment(default: str = 'production') -> str:
+        return os.getenv("PAYMENT_ENVIRONMENT", default)
+
 logger = logging.getLogger(__name__)
 
 
 class AlipayClient:
     """支付宝国际版客户端"""
     
-    def __init__(self):
-        """初始化支付宝客户端"""
-        self.app_id = os.getenv("ALIPAY_APP_ID")
-        self.private_key_path = os.getenv("ALIPAY_PRIVATE_KEY_PATH")
-        self.alipay_public_key_path = os.getenv("ALIPAY_PUBLIC_KEY_PATH")
-        self.gateway = os.getenv("ALIPAY_GATEWAY", "https://openapi.alipay.com/gateway.do")
+    def __init__(self, environment: Optional[str] = None):
+        """
+        初始化支付宝客户端
+        
+        Args:
+            environment: 环境（production/sandbox），如果为None则自动查找is_active=1的记录
+        """
+        self.environment = environment
+        
+        # 从数据库读取配置，自动查找is_active=1的记录
+        # 如果指定了environment，则优先匹配该环境且is_active=1的记录
+        self.app_id = get_payment_config('alipay', 'app_id', environment) or os.getenv("ALIPAY_APP_ID")
+        self.private_key_path = get_payment_config('alipay', 'private_key_path', environment) or os.getenv("ALIPAY_PRIVATE_KEY_PATH")
+        self.alipay_public_key_path = get_payment_config('alipay', 'public_key_path', environment) or os.getenv("ALIPAY_PUBLIC_KEY_PATH")
+        gateway_from_db = get_payment_config('alipay', 'gateway', environment)
+        self.gateway = gateway_from_db or os.getenv("ALIPAY_GATEWAY", "https://openapi.alipay.com/gateway.do")
         
         if not self.app_id:
-            logger.warning("ALIPAY_APP_ID环境变量未设置")
+            logger.warning("支付宝APP ID未配置（数据库或环境变量）")
         
         if not AliPay:
             logger.error("alipay-sdk-python库未安装")
@@ -43,16 +63,24 @@ class AlipayClient:
         
         # 读取私钥
         try:
-            with open(self.private_key_path, 'r') as f:
-                app_private_key = f.read()
+            if self.private_key_path and os.path.exists(self.private_key_path):
+                with open(self.private_key_path, 'r') as f:
+                    app_private_key = f.read()
+            else:
+                logger.warning("支付宝私钥路径未配置或文件不存在")
+                app_private_key = ""
         except Exception as e:
             logger.error(f"读取支付宝私钥失败: {e}")
             app_private_key = ""
         
         # 读取支付宝公钥
         try:
-            with open(self.alipay_public_key_path, 'r') as f:
-                alipay_public_key = f.read()
+            if self.alipay_public_key_path and os.path.exists(self.alipay_public_key_path):
+                with open(self.alipay_public_key_path, 'r') as f:
+                    alipay_public_key = f.read()
+            else:
+                logger.warning("支付宝公钥路径未配置或文件不存在")
+                alipay_public_key = ""
         except Exception as e:
             logger.error(f"读取支付宝公钥失败: {e}")
             alipay_public_key = ""
@@ -94,6 +122,31 @@ class AlipayClient:
         Returns:
             包含payment_url的字典
         """
+        # 如果初始化时没有配置，尝试重新加载（支持热更新）
+        if not self.client:
+            # 重新加载配置
+            self.app_id = get_payment_config('alipay', 'app_id', self.environment) or os.getenv("ALIPAY_APP_ID")
+            self.private_key_path = get_payment_config('alipay', 'private_key_path', self.environment) or os.getenv("ALIPAY_PRIVATE_KEY_PATH")
+            self.alipay_public_key_path = get_payment_config('alipay', 'public_key_path', self.environment) or os.getenv("ALIPAY_PUBLIC_KEY_PATH")
+            
+            # 重新初始化客户端
+            if self.app_id and self.private_key_path and self.alipay_public_key_path and AliPay:
+                try:
+                    with open(self.private_key_path, 'r') as f:
+                        app_private_key = f.read()
+                    with open(self.alipay_public_key_path, 'r') as f:
+                        alipay_public_key = f.read()
+                    self.client = AliPay(
+                        appid=self.app_id,
+                        app_notify_url=None,
+                        app_private_key_string=app_private_key,
+                        alipay_public_key_string=alipay_public_key,
+                        sign_type="RSA2",
+                        debug=os.getenv("ALIPAY_DEBUG", "false").lower() == "true"
+                    )
+                except Exception as e:
+                    logger.error(f"重新初始化支付宝客户端失败: {e}")
+        
         if not self.client:
             return {
                 "success": False,
@@ -102,12 +155,14 @@ class AlipayClient:
         
         try:
             # 设置默认URL
+            # 从数据库读取URL，如果数据库中没有则降级到环境变量
+            frontend_base = get_payment_config('shared', 'frontend_base_url') or os.getenv("FRONTEND_BASE_URL", "http://localhost:8001")
+            api_base = get_payment_config('shared', 'api_base_url') or os.getenv("API_BASE_URL", "http://localhost:8001")
+            
             if not return_url:
-                frontend_base = os.getenv("FRONTEND_BASE_URL", "http://localhost:8001")
                 return_url = f"{frontend_base}/frontend/payment-success.html?provider=alipay"
             
             if not notify_url:
-                api_base = os.getenv("API_BASE_URL", "http://localhost:8001")
                 notify_url = f"{api_base}/api/v1/payment/webhook/alipay"
             
             # 构建订单参数

@@ -18,22 +18,41 @@ except ImportError:
     WeChatPay = None
     logging.warning("wechatpy库未安装，请运行: pip install wechatpy")
 
+# 导入支付配置加载器
+try:
+    from services.payment_service.payment_config_loader import get_payment_config, get_payment_environment
+except ImportError:
+    # 降级到环境变量
+    def get_payment_config(provider: str, config_key: str, environment: str = 'production', default: Optional[str] = None) -> Optional[str]:
+        return os.getenv(f"{provider.upper()}_{config_key.upper()}", default)
+    def get_payment_environment(default: str = 'production') -> str:
+        return os.getenv("PAYMENT_ENVIRONMENT", default)
+
 logger = logging.getLogger(__name__)
 
 
 class WeChatPayClient:
     """微信支付客户端"""
     
-    def __init__(self):
-        """初始化微信支付客户端"""
-        self.app_id = os.getenv("WECHAT_APP_ID")
-        self.mch_id = os.getenv("WECHAT_MCH_ID")
-        self.api_key = os.getenv("WECHAT_API_KEY")
-        self.cert_path = os.getenv("WECHAT_CERT_PATH")
-        self.key_path = os.getenv("WECHAT_KEY_PATH")
+    def __init__(self, environment: Optional[str] = None):
+        """
+        初始化微信支付客户端
+        
+        Args:
+            environment: 环境（production/sandbox），如果为None则自动查找is_active=1的记录
+        """
+        self.environment = environment
+        
+        # 从数据库读取配置，自动查找is_active=1的记录
+        # 如果指定了environment，则优先匹配该环境且is_active=1的记录
+        self.app_id = get_payment_config('wechat', 'app_id', environment) or os.getenv("WECHAT_APP_ID")
+        self.mch_id = get_payment_config('wechat', 'mch_id', environment) or os.getenv("WECHAT_MCH_ID")
+        self.api_key = get_payment_config('wechat', 'api_key', environment) or os.getenv("WECHAT_API_KEY")
+        self.cert_path = get_payment_config('wechat', 'cert_path', environment) or os.getenv("WECHAT_CERT_PATH")
+        self.key_path = get_payment_config('wechat', 'key_path', environment) or os.getenv("WECHAT_KEY_PATH")
         
         if not self.app_id:
-            logger.warning("WECHAT_APP_ID环境变量未设置")
+            logger.warning("微信支付APP ID未配置（数据库或环境变量）")
         
         if not WeChatPay:
             logger.error("wechatpy库未安装")
@@ -71,6 +90,28 @@ class WeChatPayClient:
         Returns:
             包含code_url（二维码链接）的字典
         """
+        # 如果初始化时没有配置，尝试重新加载（支持热更新）
+        if not self.client:
+            # 重新加载配置
+            self.app_id = get_payment_config('wechat', 'app_id', self.environment) or os.getenv("WECHAT_APP_ID")
+            self.mch_id = get_payment_config('wechat', 'mch_id', self.environment) or os.getenv("WECHAT_MCH_ID")
+            self.api_key = get_payment_config('wechat', 'api_key', self.environment) or os.getenv("WECHAT_API_KEY")
+            self.cert_path = get_payment_config('wechat', 'cert_path', self.environment) or os.getenv("WECHAT_CERT_PATH")
+            self.key_path = get_payment_config('wechat', 'key_path', self.environment) or os.getenv("WECHAT_KEY_PATH")
+            
+            # 重新初始化客户端
+            if self.app_id and self.mch_id and self.api_key and WeChatPay:
+                try:
+                    self.client = WeChatPay(
+                        appid=self.app_id,
+                        api_key=self.api_key,
+                        mch_id=self.mch_id,
+                        mch_cert=self.cert_path if self.cert_path and os.path.exists(self.cert_path) else None,
+                        mch_key=self.key_path if self.key_path and os.path.exists(self.key_path) else None
+                    )
+                except Exception as e:
+                    logger.error(f"重新初始化微信支付客户端失败: {e}")
+        
         if not self.client:
             return {
                 "success": False,
@@ -79,8 +120,10 @@ class WeChatPayClient:
         
         try:
             # 设置默认通知URL
+            # 从数据库读取URL，如果数据库中没有则降级到环境变量
+            api_base = get_payment_config('shared', 'api_base_url') or os.getenv("API_BASE_URL", "http://localhost:8001")
+            
             if not notify_url:
-                api_base = os.getenv("API_BASE_URL", "http://localhost:8001")
                 notify_url = f"{api_base}/api/v1/payment/webhook/wechat"
             
             # 金额转为分

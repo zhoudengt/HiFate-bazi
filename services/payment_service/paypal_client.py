@@ -12,17 +12,37 @@ import base64
 import requests
 from typing import Optional, Dict, Any
 
+# 导入支付配置加载器
+try:
+    from services.payment_service.payment_config_loader import get_payment_config, get_payment_environment
+except ImportError:
+    # 降级到环境变量
+    def get_payment_config(provider: str, config_key: str, environment: str = 'production', default: Optional[str] = None) -> Optional[str]:
+        return os.getenv(f"{provider.upper()}_{config_key.upper()}", default)
+    def get_payment_environment(default: str = 'production') -> str:
+        return os.getenv("PAYMENT_ENVIRONMENT", default)
+
 logger = logging.getLogger(__name__)
 
 
 class PayPalClient:
     """PayPal支付客户端"""
     
-    def __init__(self):
-        """初始化PayPal客户端"""
-        self.client_id = os.getenv("PAYPAL_CLIENT_ID")
-        self.client_secret = os.getenv("PAYPAL_CLIENT_SECRET")
-        self.mode = os.getenv("PAYPAL_MODE", "sandbox")  # sandbox or live
+    def __init__(self, environment: Optional[str] = None):
+        """
+        初始化PayPal客户端
+        
+        Args:
+            environment: 环境（production/sandbox），如果为None则自动查找is_active=1的记录
+        """
+        self.environment = environment
+        
+        # 从数据库读取配置，自动查找is_active=1的记录
+        # 如果指定了environment，则优先匹配该环境且is_active=1的记录
+        self.client_id = get_payment_config('paypal', 'client_id', environment) or os.getenv("PAYPAL_CLIENT_ID")
+        self.client_secret = get_payment_config('paypal', 'client_secret', environment) or os.getenv("PAYPAL_CLIENT_SECRET")
+        mode_from_db = get_payment_config('paypal', 'mode', environment)
+        self.mode = mode_from_db or os.getenv("PAYPAL_MODE", "sandbox")  # sandbox or live
         
         # 设置API基础URL
         if self.mode == "live":
@@ -31,7 +51,7 @@ class PayPalClient:
             self.base_url = "https://api.sandbox.paypal.com"
         
         if not self.client_id or not self.client_secret:
-            logger.warning("PAYPAL_CLIENT_ID 或 PAYPAL_CLIENT_SECRET 环境变量未设置")
+            logger.warning("PayPal客户端ID或密钥未配置（数据库或环境变量）")
             self.access_token = None
         else:
             # 获取访问令牌
@@ -157,6 +177,13 @@ class PayPalClient:
         Returns:
             包含order_id和approval_url的字典
         """
+        # 如果初始化时没有配置，尝试重新加载（支持热更新）
+        if not self.access_token:
+            self.client_id = get_payment_config('paypal', 'client_id', self.environment) or os.getenv("PAYPAL_CLIENT_ID")
+            self.client_secret = get_payment_config('paypal', 'client_secret', self.environment) or os.getenv("PAYPAL_CLIENT_SECRET")
+            if self.client_id and self.client_secret:
+                self.access_token = self._get_access_token()
+        
         if not self.access_token:
             return {
                 "success": False,
@@ -165,12 +192,13 @@ class PayPalClient:
         
         try:
             # 设置默认URL
+            # 从数据库读取URL，如果数据库中没有则降级到环境变量
+            frontend_base = get_payment_config('shared', 'frontend_base_url') or os.getenv("FRONTEND_BASE_URL", "http://localhost:8001")
+            
             if not return_url:
-                frontend_base = os.getenv("FRONTEND_BASE_URL", "http://localhost:8001")
                 return_url = f"{frontend_base}/frontend/payment-success.html?provider=paypal"
             
             if not cancel_url:
-                frontend_base = os.getenv("FRONTEND_BASE_URL", "http://localhost:8001")
                 cancel_url = f"{frontend_base}/frontend/payment-cancel.html?provider=paypal"
             
             # 构建请求数据

@@ -31,15 +31,15 @@ if stripe is None:
 
 logger = logging.getLogger(__name__)
 
-# 延迟导入 payment_config_loader，避免循环依赖
-def _get_payment_config(provider: str, config_key: str, environment: Optional[str] = None, default: Optional[str] = None) -> Optional[str]:
-    """从数据库或环境变量获取支付配置"""
-    try:
-        from services.payment_service.payment_config_loader import get_payment_config
-        return get_payment_config(provider, config_key, environment, None, default)
-    except Exception as e:
-        logger.warning(f"⚠️ 从数据库加载配置失败，使用环境变量降级: {e}")
-        return None
+# 导入支付配置加载器（统一使用 LinePayClient/NewebPayClient 方式）
+try:
+    from services.payment_service.payment_config_loader import get_payment_config, get_payment_environment
+except ImportError:
+    # 降级到环境变量
+    def get_payment_config(provider: str, config_key: str, environment: str = 'production', default: Optional[str] = None) -> Optional[str]:
+        return os.getenv(f"{provider.upper()}_{config_key.upper()}", default)
+    def get_payment_environment(default: str = 'production') -> str:
+        return os.getenv("PAYMENT_ENVIRONMENT", default)
 
 
 class StripeClient:
@@ -53,13 +53,12 @@ class StripeClient:
         """
         self.environment = environment
         
-        # 优先从数据库读取配置，降级到环境变量
-        self.api_key = _get_payment_config('stripe', 'secret_key', environment) or os.getenv("STRIPE_SECRET_KEY")
+        # 从数据库读取配置，自动查找is_active=1的记录
+        # 如果指定了environment，则优先匹配该环境且is_active=1的记录
+        self.api_key = get_payment_config('stripe', 'secret_key', environment) or os.getenv("STRIPE_SECRET_KEY")
         
         if not self.api_key:
-            logger.warning("STRIPE_SECRET_KEY未配置（数据库和环境变量都未设置）")
-        else:
-            logger.info(f"✓ Stripe API Key 已加载（来源: {'数据库' if _get_payment_config('stripe', 'secret_key', environment) else '环境变量'}）")
+            logger.warning("STRIPE_SECRET_KEY未配置（数据库或环境变量）")
         
         # 初始化时尝试设置 API key
         stripe_module = _import_stripe()
@@ -98,7 +97,7 @@ class StripeClient:
         
         # 如果初始化时没有配置，尝试重新加载（支持热更新）
         if not self.api_key:
-            self.api_key = _get_payment_config('stripe', 'secret_key', self.environment) or os.getenv("STRIPE_SECRET_KEY")
+            self.api_key = get_payment_config('stripe', 'secret_key', self.environment) or os.getenv("STRIPE_SECRET_KEY")
         
         if not self.api_key:
             raise RuntimeError("STRIPE_SECRET_KEY未配置")
@@ -176,7 +175,7 @@ class StripeClient:
         
         # 如果初始化时没有配置，尝试重新加载（支持热更新）
         if not self.api_key:
-            self.api_key = _get_payment_config('stripe', 'secret_key', self.environment) or os.getenv("STRIPE_SECRET_KEY")
+            self.api_key = get_payment_config('stripe', 'secret_key', self.environment) or os.getenv("STRIPE_SECRET_KEY")
         
         if not self.api_key:
             raise RuntimeError("STRIPE_SECRET_KEY未配置")
