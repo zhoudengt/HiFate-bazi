@@ -95,10 +95,11 @@ EOF
 }
 
 # 🔴 通过 Node1 连接 Node2 执行命令（Node2 所有操作都通过 Node1）
+# 重要：Node2 的所有操作都必须通过 Node1 的 SSH 连接执行，禁止直接连接 Node2
 ssh_exec_node2_via_node1() {
     local cmd="$@"
-    # 在 Node1 上执行 ssh 命令连接 Node2，传递密码
-    # 注意：需要在 Node1 上执行 sshpass，所以需要先确保 Node1 有 sshpass
+    # 在 Node1 上执行 ssh 命令连接 Node2（使用内网 IP），传递密码
+    # 格式：ssh root@Node1 "sshpass -p '密码' ssh root@Node2内网IP '命令'"
     ssh_exec $NODE1_PUBLIC_IP "sshpass -p '$SSH_PASSWORD' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$NODE2_PRIVATE_IP '$cmd'"
 }
 
