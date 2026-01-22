@@ -72,6 +72,13 @@ class UTF8JSONResponse(Response):
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
+# 配置日志（必须在导入路由之前初始化，以便在导入失败时可以使用logger）
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # 优先加载 .env 文件（必须在导入其他模块之前）
 try:
     from dotenv import load_dotenv
@@ -104,13 +111,6 @@ except ImportError:
     logger.warning("⚠ python-dotenv 未安装，将使用系统环境变量")
 except Exception as e:
     logger.warning(f"⚠ 加载 .env 文件失败: {e}")
-
-# 配置日志（必须在导入路由之前初始化，以便在导入失败时可以使用logger）
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 from server.api.v1.bazi import router as bazi_router
 

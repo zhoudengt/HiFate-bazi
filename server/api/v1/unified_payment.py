@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 统一支付API接口
-支持：Stripe、PayPal、支付宝国际版、微信支付
+支持：Stripe、PayPal、支付宝国际版、微信支付、Line Pay
 """
 
 import sys
@@ -21,6 +21,7 @@ from services.payment_service.stripe_client import StripeClient
 from services.payment_service.paypal_client import PayPalClient
 from services.payment_service.alipay_client import AlipayClient
 from services.payment_service.wechat_client import WeChatPayClient
+from services.payment_service.linepay_client import LinePayClient
 
 router = APIRouter()
 
@@ -29,6 +30,7 @@ stripe_client = StripeClient()
 paypal_client = PayPalClient()
 alipay_client = AlipayClient()
 wechat_client = WeChatPayClient()
+linepay_client = LinePayClient()
 
 
 class PaymentProvider(str, Enum):
@@ -37,11 +39,12 @@ class PaymentProvider(str, Enum):
     PAYPAL = "paypal"
     ALIPAY = "alipay"
     WECHAT = "wechat"
+    LINEPAY = "linepay"
 
 
 class CreatePaymentRequest(BaseModel):
     """创建支付请求"""
-    provider: PaymentProvider = Field(..., description="支付渠道：stripe/paypal/alipay/wechat")
+    provider: PaymentProvider = Field(..., description="支付渠道：stripe/paypal/alipay/wechat/linepay")
     amount: str = Field(..., description="金额，格式：19.90", example="19.90")
     currency: str = Field(default="USD", description="货币代码")
     product_name: str = Field(..., description="产品名称", example="月订阅会员")
@@ -57,6 +60,7 @@ class CreatePaymentResponse(BaseModel):
     provider: str
     payment_id: Optional[str] = None
     order_id: Optional[str] = None
+    transaction_id: Optional[str] = None
     payment_url: Optional[str] = None
     checkout_url: Optional[str] = None
     approval_url: Optional[str] = None
@@ -72,6 +76,7 @@ class VerifyPaymentRequest(BaseModel):
     payment_id: Optional[str] = Field(None, description="支付ID（Stripe/PayPal）")
     order_id: Optional[str] = Field(None, description="订单号（支付宝/微信）")
     session_id: Optional[str] = Field(None, description="Stripe Session ID")
+    transaction_id: Optional[str] = Field(None, description="交易ID（Line Pay使用）")
 
 
 class VerifyPaymentResponse(BaseModel):
@@ -98,6 +103,7 @@ def create_unified_payment(request: CreatePaymentRequest):
     - **PayPal**: 全球认知度高，备选方案
     - **Alipay**: 支付宝国际版，适合中国客户
     - **WeChat**: 微信支付，适合中国客户
+    - **Line Pay**: 适合台湾、日本、泰国等地区
     
     **货币代码：**
     - USD: 美元（Stripe, PayPal）
@@ -105,6 +111,9 @@ def create_unified_payment(request: CreatePaymentRequest):
     - CNY: 人民币（Alipay, WeChat）
     - EUR: 欧元（Stripe, PayPal）
     - PHP: 菲律宾比索（Stripe）
+    - TWD: 台币（Line Pay，零小数货币，必须整数）
+    - JPY: 日元（Line Pay，零小数货币，必须整数）
+    - THB: 泰铢（Line Pay，零小数货币，必须整数）
     """
     try:
         provider = request.provider
@@ -206,6 +215,29 @@ def create_unified_payment(request: CreatePaymentRequest):
             else:
                 raise HTTPException(status_code=400, detail="不支持的微信支付类型")
         
+        # Line Pay支付
+        elif provider == PaymentProvider.LINEPAY:
+            result = linepay_client.create_payment(
+                amount=request.amount,
+                currency=request.currency,
+                product_name=request.product_name
+            )
+            
+            # 确保 transaction_id 是字符串类型
+            transaction_id = result.get('transaction_id')
+            if transaction_id is not None:
+                transaction_id = str(transaction_id)
+            
+            return CreatePaymentResponse(
+                success=result.get('success', False),
+                provider="linepay",
+                transaction_id=transaction_id,
+                order_id=result.get('order_id'),
+                payment_url=result.get('payment_url'),
+                status=result.get('status'),
+                message=result.get('message')
+            )
+        
         else:
             raise HTTPException(status_code=400, detail="不支持的支付渠道")
     
@@ -225,6 +257,7 @@ def verify_unified_payment(request: VerifyPaymentRequest):
     - **PayPal**: payment_id
     - **Alipay**: order_id
     - **WeChat**: order_id
+    - **Line Pay**: transaction_id
     """
     try:
         provider = request.provider
@@ -301,6 +334,28 @@ def verify_unified_payment(request: VerifyPaymentRequest):
                 message=result.get('message')
             )
         
+        # Line Pay验证
+        elif provider == PaymentProvider.LINEPAY:
+            if not request.transaction_id:
+                raise HTTPException(status_code=400, detail="Line Pay验证需要提供transaction_id")
+            
+            result = linepay_client.query_payment_status(request.transaction_id)
+            
+            # 确保 transaction_id 是字符串类型
+            transaction_id = result.get('transaction_id')
+            if transaction_id is not None:
+                transaction_id = str(transaction_id)
+            
+            return VerifyPaymentResponse(
+                success=result.get('success', False),
+                provider="linepay",
+                status=result.get('status'),
+                payment_id=transaction_id,
+                amount=result.get('amount'),
+                currency=result.get('currency'),
+                message=result.get('message')
+            )
+        
         else:
             raise HTTPException(status_code=400, detail="不支持的支付渠道")
     
@@ -351,6 +406,14 @@ def get_payment_providers():
                 "regions": ["中国", "香港", "澳门"],
                 "currencies": ["CNY", "HKD"],
                 "description": "中国用户常用支付方式"
+            },
+            {
+                "id": "linepay",
+                "name": "Line Pay",
+                "enabled": linepay_client.is_enabled,
+                "regions": ["台湾", "日本", "泰国"],
+                "currencies": ["TWD", "JPY", "THB", "USD"],
+                "description": "台湾、日本、泰国地区常用支付方式"
             }
         ]
     }
@@ -381,12 +444,16 @@ def recommend_payment_provider(
         recommendations = ["stripe", "alipay", "wechat", "paypal"]
     elif region == "china":
         recommendations = ["alipay", "wechat", "stripe"]
+    elif region in ["taiwan", "japan", "thailand"]:
+        recommendations = ["linepay", "stripe", "paypal"]
     else:  # global
-        recommendations = ["stripe", "paypal", "alipay", "wechat"]
+        recommendations = ["stripe", "paypal", "alipay", "wechat", "linepay"]
     
     # 根据货币调整
     if currency == "CNY":
         recommendations = ["alipay", "wechat"] + [p for p in recommendations if p not in ["alipay", "wechat"]]
+    elif currency in ["TWD", "JPY", "THB"]:
+        recommendations = ["linepay"] + [p for p in recommendations if p != "linepay"]
     
     return {
         "success": True,
