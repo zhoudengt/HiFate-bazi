@@ -133,12 +133,12 @@ def create_unified_payment(request: CreatePaymentRequest):
             )
             
             return CreatePaymentResponse(
-                success=result.get('success', False),
+                success=bool(result.get('session_id') or result.get('checkout_url')),
                 provider="stripe",
                 payment_id=result.get('session_id'),
                 checkout_url=result.get('checkout_url'),
-                status=result.get('status'),
-                message=result.get('message')
+                status=result.get('status', 'created'),
+                message=result.get('message') or 'Stripe支付会话创建成功'
             )
         
         # PayPal支付
