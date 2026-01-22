@@ -17,12 +17,16 @@ import ast
 import hashlib
 import importlib
 import threading
+import logging
 from typing import Dict, Optional, Callable, Any, List, Type
 from datetime import datetime
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 
 class MicroserviceReloader:

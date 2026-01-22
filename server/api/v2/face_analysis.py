@@ -15,6 +15,14 @@ from services.face_knowledge_v2.service import FaceKnowledgeService
 router = APIRouter(prefix="/api/v2/face", tags=["面相分析V2"])
 logger = logging.getLogger(__name__)
 
+# 导入流式接口路由
+try:
+    from server.api.v2.face_analysis_stream import router as face_stream_router
+    router.include_router(face_stream_router)
+    logger.info("✅ 面相分析流式接口路由已加载")
+except ImportError as e:
+    logger.warning(f"⚠️  面相分析流式接口路由导入失败（可选功能）: {e}")
+
 # 延迟初始化服务（避免启动时MediaPipe初始化失败）
 face_service = None
 knowledge_service = None
