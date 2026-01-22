@@ -160,4 +160,35 @@ class StripeClient:
         except stripe.error.StripeError as e:
             logger.error(f"获取支付会话失败: {e}")
             raise RuntimeError(f"获取支付会话失败: {str(e)}")
+    
+    def verify_payment(self, session_id: str) -> Dict[str, Any]:
+        """
+        验证支付状态（统一支付API接口）
+        
+        Args:
+            session_id: Stripe Session ID
+        
+        Returns:
+            包含success、status、amount等字段的字典
+        """
+        try:
+            result = self.retrieve_session(session_id)
+            
+            # 转换为统一格式
+            return {
+                "success": True,
+                "status": result.get("status"),  # success, pending, failed
+                "amount": result.get("amount"),
+                "currency": result.get("currency"),
+                "customer_email": result.get("customer_email"),
+                "created_at": result.get("created_at"),
+                "message": f"支付状态: {result.get('status')}"
+            }
+        except RuntimeError as e:
+            logger.error(f"验证支付失败: {e}")
+            return {
+                "success": False,
+                "status": "error",
+                "message": str(e)
+            }
 
