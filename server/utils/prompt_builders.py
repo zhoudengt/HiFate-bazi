@@ -688,6 +688,77 @@ def format_general_review_input_data_for_coze(input_data: Dict[str, Any]) -> str
 
 
 # ==============================================================================
+# 面相分析V2格式化函数
+# ==============================================================================
+
+def format_face_analysis_input_data_for_coze(input_data: Dict[str, Any]) -> str:
+    """
+    将面相分析结构化数据格式化为 JSON 字符串（用于 Coze Bot System Prompt 的 {{input}} 占位符）
+    
+    Args:
+        input_data: 面相分析响应数据（包含 success 和 data 字段）
+        
+    Returns:
+        str: JSON 格式的字符串，可以直接替换 {{input}} 占位符
+    """
+    # 提取 data 字段
+    data = input_data.get('data', {}) if isinstance(input_data, dict) else {}
+    
+    # 构建优化后的数据结构
+    optimized_data = {
+        'face_detected': data.get('face_detected', False),
+        'landmarks': data.get('landmarks', {}),
+        'santing_analysis': data.get('santing_analysis', {}),
+        'wuyan_analysis': data.get('wuyan_analysis', {}),
+        'gongwei_analysis': data.get('gongwei_analysis', []),
+        'liuqin_analysis': data.get('liuqin_analysis', []),
+        'shishen_analysis': data.get('shishen_analysis', []),
+        'overall_summary': data.get('overall_summary', ''),
+        'birth_info': data.get('birth_info')
+    }
+    
+    # 格式化为 JSON 字符串（美化格式，便于 Bot 理解）
+    return json.dumps(optimized_data, ensure_ascii=False, indent=2)
+
+
+# ==============================================================================
+# 办公桌风水分析格式化函数
+# ==============================================================================
+
+def format_desk_fengshui_input_data_for_coze(input_data: Dict[str, Any]) -> str:
+    """
+    将办公桌风水分析结构化数据格式化为 JSON 字符串（用于 Coze Bot System Prompt 的 {{input}} 占位符）
+    
+    Args:
+        input_data: 办公桌风水分析结果数据
+        
+    Returns:
+        str: JSON 格式的字符串，可以直接替换 {{input}} 占位符
+    """
+    # 如果输入数据包含 success 字段，提取 data
+    if isinstance(input_data, dict) and 'success' in input_data:
+        data = input_data.get('data', input_data)
+    else:
+        data = input_data
+    
+    # 构建优化后的数据结构
+    optimized_data = {
+        'success': data.get('success', True),
+        'items': data.get('items', []),
+        'item_analyses': data.get('item_analyses', []),
+        'recommendations': data.get('recommendations', {}),
+        'adjustments': data.get('adjustments', []),
+        'additions': data.get('additions', []),
+        'removals': data.get('removals', []),
+        'score': data.get('score', 0),
+        'summary': data.get('summary', '')
+    }
+    
+    # 格式化为 JSON 字符串（美化格式，便于 Bot 理解）
+    return json.dumps(optimized_data, ensure_ascii=False, indent=2)
+
+
+# ==============================================================================
 # 向后兼容别名（保持原有API文件的兼容性）
 # ==============================================================================
 
