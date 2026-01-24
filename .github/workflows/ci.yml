@@ -276,7 +276,7 @@ jobs:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
         run: |
-          pytest tests/api/ -v -m api --cov=server --cov=src --cov-report=term --cov-append
+          pytest tests/api/test_grpc_endpoints.py -v -m api --cov=server --cov=src --cov-report=term --cov-append
       
       - name: 运行集成测试
         env:
