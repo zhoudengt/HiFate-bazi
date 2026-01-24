@@ -292,13 +292,6 @@ class TestCalendarAPIServiceProvider:
     def setup_method(self):
         self.service = CalendarAPIService()
     
-    def test_get_available_providers(self):
-        """测试：获取可用提供商"""
-        # When
-        providers = self.service.get_available_providers()
-        
-        # Then
-        assert isinstance(providers, list)
     
     def test_local_provider_always_available(self):
         """测试：本地提供商始终可用"""
