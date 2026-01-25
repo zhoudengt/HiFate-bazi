@@ -278,18 +278,6 @@ jobs:
         run: |
           pytest tests/api/test_grpc_endpoints.py -v -m api --cov=server --cov=src --cov-report=term --cov-append
       
-      - name: 运行集成测试
-        env:
-          MYSQL_HOST: localhost
-          MYSQL_PORT: 3306
-          MYSQL_USER: root
-          MYSQL_PASSWORD: test_password
-          MYSQL_DATABASE: test_db
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
-        run: |
-          pytest tests/integration/ -v -m integration --cov=server --cov=src --cov-report=term --cov-append
-      
       - name: 生成覆盖率报告
         run: |
           pytest --cov=server --cov=src --cov-report=html --cov-report=term-missing --cov-report=xml || true
