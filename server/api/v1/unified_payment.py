@@ -8,30 +8,39 @@
 import sys
 import os
 import time
+import logging
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, Dict, Literal
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from services.payment_service.stripe_client import StripeClient
-from services.payment_service.paypal_client import PayPalClient
-from services.payment_service.alipay_client import AlipayClient
-from services.payment_service.wechat_client import WeChatPayClient
-from services.payment_service.linepay_client import LinePayClient
+# 导入新的插件化支付客户端
+from services.payment_service.client_factory import get_payment_client, payment_client_factory
+
+# 导入支付服务模块（触发客户端注册）
+import services.payment_service
+
+# 导入区域配置和白名单管理
+try:
+    from services.payment_service.payment_region_config_manager import get_region_config_manager
+    from services.payment_service.payment_whitelist_manager import get_whitelist_manager
+    from services.payment_service.currency_converter import CurrencyConverter
+except ImportError as e:
+    logger.warning(f"导入区域配置和白名单管理模块失败: {e}")
+    get_region_config_manager = None
+    get_whitelist_manager = None
+    CurrencyConverter = None
 
 router = APIRouter()
 
-# 初始化支付客户端
-stripe_client = StripeClient()
-paypal_client = PayPalClient()
-alipay_client = AlipayClient()
-wechat_client = WeChatPayClient()
-linepay_client = LinePayClient()
+# 支付客户端通过工厂模式动态获取，无需预初始化
 
 
 class PaymentProvider(str, Enum):
@@ -41,17 +50,20 @@ class PaymentProvider(str, Enum):
     ALIPAY = "alipay"
     WECHAT = "wechat"
     LINEPAY = "linepay"
+    PAYSSION = "payssion"
+    PAYERMAX = "payermax"
 
 
 class CreatePaymentRequest(BaseModel):
     """创建支付请求"""
-    provider: PaymentProvider = Field(..., description="支付渠道：stripe/paypal/alipay/wechat/linepay")
+    provider: PaymentProvider = Field(..., description="支付渠道：stripe/paypal/alipay/wechat/linepay/payssion/payermax")
     amount: str = Field(..., description="金额，格式：19.90", example="19.90")
     currency: str = Field(default="USD", description="货币代码")
     product_name: str = Field(..., description="产品名称", example="月订阅会员")
     customer_email: Optional[EmailStr] = Field(None, description="客户邮箱（Stripe必需）")
     openid: Optional[str] = Field(None, description="微信用户openid（微信JSAPI支付必需）")
     payment_type: Optional[str] = Field("native", description="微信支付类型：native/jsapi")
+    payment_method: Optional[str] = Field(None, description="具体支付方式（如linepay用于Payssion，card用于PayerMax）")
     metadata: Optional[Dict[str, str]] = Field(default=None, description="元数据")
 
 
@@ -95,283 +107,267 @@ class VerifyPaymentResponse(BaseModel):
 
 
 @router.post("/payment/unified/create", response_model=CreatePaymentResponse, summary="统一创建支付")
-def create_unified_payment(request: CreatePaymentRequest):
+def create_unified_payment(request: CreatePaymentRequest, http_request: Request):
     """
-    统一支付接口 - 根据provider路由到不同支付渠道
-    
-    **支付渠道适用场景：**
+    统一支付接口 - 基于插件化架构，支持快速扩展
+
+    **支持的支付渠道：**
     - **Stripe**: 全球通用，适合美洲、欧洲、香港、菲律宾等地区
     - **PayPal**: 全球认知度高，备选方案
+    - **Payssion**: LINE Pay 中转，适合台湾地区
+    - **PayerMax**: 全球多支付方式聚合
     - **Alipay**: 支付宝国际版，适合中国客户
     - **WeChat**: 微信支付，适合中国客户
-    - **Line Pay**: 适合台湾、日本、泰国等地区
-    
+    - **Line Pay**: 直接集成，适合台湾、日本、泰国等地区
+
     **货币代码：**
-    - USD: 美元（Stripe, PayPal）
-    - HKD: 港币（Stripe, PayPal, Alipay, WeChat）
-    - CNY: 人民币（Alipay, WeChat）
-    - EUR: 欧元（Stripe, PayPal）
-    - PHP: 菲律宾比索（Stripe）
-    - TWD: 台币（Line Pay，零小数货币，必须整数）
-    - JPY: 日元（Line Pay，零小数货币，必须整数）
-    - THB: 泰铢（Line Pay，零小数货币，必须整数）
+    - USD: 美元（Stripe, PayPal, Payssion, PayerMax）
+    - HKD: 港币（Stripe, PayPal, Alipay, WeChat, PayerMax）
+    - CNY: 人民币（Alipay, WeChat, PayerMax）
+    - EUR: 欧元（Stripe, PayPal, PayerMax）
+    - PHP: 菲律宾比索（Stripe, PayerMax）
+    - TWD: 台币（Line Pay, Payssion，零小数货币，必须整数）
+    - JPY: 日元（Line Pay, Payssion，零小数货币，必须整数）
+    - THB: 泰铢（Line Pay, Payssion，零小数货币，必须整数）
+
+    **区域限制：**
+    - 系统会根据用户所在区域检查是否开放支付
+    - 如果区域关闭，只有白名单用户可以使用支付功能
     """
     try:
         provider = request.provider
-        
-        # Stripe支付
-        if provider == PaymentProvider.STRIPE:
+
+        # 获取支付客户端
+        try:
+            payment_client = get_payment_client(provider)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        # 检查支付客户端是否启用
+        if not payment_client.is_enabled:
+            raise HTTPException(status_code=400, detail=f"支付渠道 {provider} 未启用，请检查配置")
+
+        # 生成订单号
+        import time
+        order_id = f"{provider.upper()}_{int(time.time() * 1000)}"
+
+        # 区域检查和白名单检查
+        user_region = None
+        region_open = True
+        is_whitelisted = False
+
+        if get_region_config_manager and get_whitelist_manager:
+            region_manager = get_region_config_manager()
+            whitelist_manager = get_whitelist_manager()
+
+            # 检测用户所在区域
+            client_ip = None
+            if http_request and hasattr(http_request, 'client') and http_request.client:
+                client_ip = http_request.client.host
+
+            user_region = region_manager.detect_user_region(
+                ip=client_ip,
+                email=request.customer_email,
+                phone=None,  # 可以从 request 中获取，如果有 phone 字段
+                user_id=None  # 可以从 request 中获取，如果有 user_id 字段
+            )
+
+            # 检查区域是否开放
+            region_open = region_manager.is_region_open(user_region)
+
+            # 如果区域关闭，检查白名单
+            if not region_open:
+                is_whitelisted = whitelist_manager.is_whitelisted(
+                    user_id=None,  # 可以从 request 中获取
+                    email=request.customer_email
+                )
+
+                if not is_whitelisted:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"区域 {user_region} 暂不支持支付，请联系客服或申请白名单"
+                    )
+
+        # 记录区域和白名单信息到 metadata
+        if not request.metadata:
+            request.metadata = {}
+        request.metadata["user_region"] = user_region or "UNKNOWN"
+        request.metadata["region_open"] = str(region_open)
+        request.metadata["is_whitelisted"] = str(is_whitelisted)
+        request.metadata["order_id"] = order_id
+
+        # 构建支付参数
+        payment_params = {
+            "amount": request.amount,
+            "currency": request.currency,
+            "product_name": request.product_name,
+            "order_id": order_id,
+            "customer_email": request.customer_email,
+            "metadata": request.metadata,
+        }
+
+        # 根据支付平台添加特定参数
+        if provider == "stripe":
             if not request.customer_email:
                 raise HTTPException(status_code=400, detail="Stripe支付需要提供customer_email")
-            
-            result = stripe_client.create_checkout_session(
-                amount=request.amount,
-                currency=request.currency,
-                product_name=request.product_name,
-                customer_email=request.customer_email,
-                metadata=request.metadata
+            payment_params.update({
+                "enable_adaptive_pricing": True,
+                "enable_link": True,
+            })
+        elif provider == "payssion":
+            payment_params["payment_method"] = request.payment_method or "linepay"
+        elif provider == "payermax":
+            payment_params["payment_method"] = request.payment_method
+        elif provider == "wechat":
+            if request.payment_type == "jsapi" and not request.openid:
+                raise HTTPException(status_code=400, detail="微信JSAPI支付需要提供openid")
+            payment_params.update({
+                "payment_type": request.payment_type,
+                "openid": request.openid,
+            })
+
+        # 调用支付客户端创建支付
+        result = payment_client.create_payment(**payment_params)
+
+        if not result.get('success', False):
+            raise HTTPException(
+                status_code=400,
+                detail=result.get('error', f'{provider} 支付创建失败')
             )
-            
-            return CreatePaymentResponse(
-                success=bool(result.get('session_id') or result.get('checkout_url')),
-                provider="stripe",
-                payment_id=result.get('session_id'),
-                checkout_url=result.get('checkout_url'),
-                status=result.get('status', 'created'),
-                message=result.get('message') or 'Stripe支付会话创建成功'
-            )
-        
-        # PayPal支付
-        elif provider == PaymentProvider.PAYPAL:
-            result = paypal_client.create_payment(
-                amount=request.amount,
-                currency=request.currency,
-                product_name=request.product_name,
-                description=request.product_name
-            )
-            
-            return CreatePaymentResponse(
-                success=result.get('success', False),
-                provider="paypal",
-                payment_id=result.get('payment_id'),
-                approval_url=result.get('approval_url'),
-                status=result.get('status'),
-                message=result.get('message') or result.get('error', 'PayPal支付处理完成')
-            )
-        
-        # 支付宝支付
-        elif provider == PaymentProvider.ALIPAY:
-            # 生成订单号
-            out_trade_no = f"ALIPAY_{int(time.time() * 1000)}"
-            result = alipay_client.create_payment(
-                out_trade_no=out_trade_no,
-                amount=request.amount,
-                subject=request.product_name
-            )
-            
-            return CreatePaymentResponse(
-                success=result.get('success', False),
-                provider="alipay",
-                order_id=result.get('out_trade_no'),
-                payment_url=result.get('payment_url'),
-                status=result.get('status'),
-                message=result.get('message') or result.get('error', '支付宝支付处理完成')
-            )
-        
-        # 微信支付
-        elif provider == PaymentProvider.WECHAT:
-            # Native支付（扫码）
-            if request.payment_type == "native":
-                result = wechat_client.create_native_order(
-                    out_trade_no=f"WX_{int(time.time() * 1000)}",
-                    amount=float(request.amount),
-                    body=request.product_name
-                )
-                
-                return CreatePaymentResponse(
-                    success=result.get('success', False),
-                    provider="wechat",
-                    order_id=result.get('out_trade_no'),
-                    code_url=result.get('code_url'),
-                    status=result.get('status'),
-                    message=result.get('message') or result.get('error', '微信支付处理完成')
-                )
-            
-            # JSAPI支付（公众号/小程序）
-            elif request.payment_type == "jsapi":
-                if not request.openid:
-                    raise HTTPException(status_code=400, detail="微信JSAPI支付需要提供openid")
-                
-                result = wechat_client.create_jsapi_order(
-                    out_trade_no=f"WX_{int(time.time() * 1000)}",
-                    amount=float(request.amount),
-                    body=request.product_name,
-                    openid=request.openid
-                )
-                
-                return CreatePaymentResponse(
-                    success=result.get('success', False),
-                    provider="wechat",
-                    order_id=result.get('out_trade_no'),
-                    jsapi_params=result.get('jsapi_params'),
-                    status=result.get('status'),
-                    message=result.get('message') or result.get('error', '微信支付处理完成')
-                )
-            
-            else:
-                raise HTTPException(status_code=400, detail="不支持的微信支付类型")
-        
-        # Line Pay支付
-        elif provider == PaymentProvider.LINEPAY:
-            result = linepay_client.create_payment(
-                amount=request.amount,
-                currency=request.currency,
-                product_name=request.product_name
-            )
-            
-            # 确保 transaction_id 是字符串类型
-            transaction_id = result.get('transaction_id')
-            if transaction_id is not None:
-                transaction_id = str(transaction_id)
-            
-            # 统一接口：将 transaction_id 映射到 payment_id（与其他支付渠道保持一致）
-            payment_id = transaction_id if transaction_id else result.get('order_id')
-            
-            return CreatePaymentResponse(
-                success=result.get('success', False),
-                provider="linepay",
-                payment_id=payment_id,
-                transaction_id=transaction_id,
-                order_id=result.get('order_id'),
-                payment_url=result.get('payment_url'),
-                status=result.get('status'),
-                message=result.get('message') or result.get('error', 'Line Pay支付处理完成')
-            )
-        
-        else:
-            raise HTTPException(status_code=400, detail="不支持的支付渠道")
-    
+
+        # 构建统一的响应格式
+        response_data = {
+            "success": True,
+            "provider": provider,
+            "status": result.get('status', 'created'),
+            "message": result.get('message', f'{provider} 支付创建成功'),
+        }
+
+        # 根据支付平台的返回结果设置相应的字段
+        if 'transaction_id' in result:
+            response_data['transaction_id'] = result['transaction_id']
+            # 统一接口：PayerMax 的 transaction_id 也映射到 payment_id（与其他支付渠道保持一致）
+            if provider == "payermax" and not response_data.get('payment_id'):
+                response_data['payment_id'] = result['transaction_id']
+        if 'order_id' in result:
+            response_data['order_id'] = result['order_id']
+        if 'payment_id' in result:
+            response_data['payment_id'] = result['payment_id']
+        if 'payment_url' in result:
+            response_data['payment_url'] = result['payment_url']
+        if 'checkout_url' in result:
+            response_data['checkout_url'] = result['checkout_url']
+        if 'approval_url' in result:
+            response_data['approval_url'] = result['approval_url']
+        if 'code_url' in result:
+            response_data['code_url'] = result['code_url']
+        if 'jsapi_params' in result:
+            response_data['jsapi_params'] = result['jsapi_params']
+
+        return CreatePaymentResponse(**response_data)
+
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"支付创建失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"支付创建失败: {str(e)}")
 
 
 @router.post("/payment/unified/verify", response_model=VerifyPaymentResponse, summary="统一验证支付")
 def verify_unified_payment(request: VerifyPaymentRequest):
     """
-    统一验证支付状态
-    
+    统一验证支付状态 - 基于插件化架构
+
     根据不同支付渠道，使用对应的ID进行验证：
     - **Stripe**: session_id
     - **PayPal**: payment_id
+    - **Payssion**: transaction_id
+    - **PayerMax**: transaction_id 或 order_id
     - **Alipay**: order_id
     - **WeChat**: order_id
     - **Line Pay**: transaction_id
     """
     try:
         provider = request.provider
-        
-        # Stripe验证
-        if provider == PaymentProvider.STRIPE:
+
+        # 获取支付客户端
+        try:
+            payment_client = get_payment_client(provider)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        # 检查支付客户端是否启用
+        if not payment_client.is_enabled:
+            raise HTTPException(status_code=400, detail=f"支付渠道 {provider} 未启用，请检查配置")
+
+        # 构建验证参数
+        verify_params = {}
+
+        # 根据支付平台设置验证参数
+        if provider == "stripe":
             if not request.session_id:
                 raise HTTPException(status_code=400, detail="Stripe验证需要提供session_id")
-            
-            result = stripe_client.verify_payment(request.session_id)
-            
-            return VerifyPaymentResponse(
-                success=result.get('success', False),
-                provider="stripe",
-                status=result.get('status'),
-                payment_id=request.session_id,
-                amount=result.get('amount'),
-                currency=result.get('currency'),
-                customer_email=result.get('customer_email'),
-                paid_time=str(result.get('created_at')) if result.get('created_at') else None,
-                message=result.get('message')
-            )
-        
-        # PayPal验证
-        elif provider == PaymentProvider.PAYPAL:
+            verify_params["session_id"] = request.session_id
+        elif provider == "paypal":
             if not request.payment_id:
                 raise HTTPException(status_code=400, detail="PayPal验证需要提供payment_id")
-            
-            result = paypal_client.verify_payment(request.payment_id)
-            
-            return VerifyPaymentResponse(
-                success=result.get('success', False),
-                provider="paypal",
-                status=result.get('status'),
-                payment_id=request.payment_id,
-                amount=result.get('amount'),
-                currency=result.get('currency'),
-                customer_email=result.get('payer_email'),
-                paid_time=result.get('update_time'),
-                message=result.get('message', '验证成功')
-            )
-        
-        # 支付宝验证
-        elif provider == PaymentProvider.ALIPAY:
-            if not request.order_id:
-                raise HTTPException(status_code=400, detail="支付宝验证需要提供order_id")
-            
-            result = alipay_client.verify_payment(request.order_id)
-            
-            return VerifyPaymentResponse(
-                success=result.get('success', False),
-                provider="alipay",
-                status=result.get('status'),
-                order_id=request.order_id,
-                amount=result.get('amount'),
-                paid_time=result.get('paid_time'),
-                message=result.get('message')
-            )
-        
-        # 微信验证
-        elif provider == PaymentProvider.WECHAT:
-            if not request.order_id:
-                raise HTTPException(status_code=400, detail="微信支付验证需要提供order_id")
-            
-            result = wechat_client.verify_payment(request.order_id)
-            
-            return VerifyPaymentResponse(
-                success=result.get('success', False),
-                provider="wechat",
-                status=result.get('status'),
-                order_id=request.order_id,
-                amount=result.get('amount'),
-                paid_time=result.get('paid_time'),
-                message=result.get('message')
-            )
-        
-        # Line Pay验证
-        elif provider == PaymentProvider.LINEPAY:
+            verify_params["payment_id"] = request.payment_id
+        elif provider == "payermax":
+            # PayerMax 支持 transaction_id 或 order_id 验证
+            if request.transaction_id:
+                verify_params["transaction_id"] = request.transaction_id
+            elif request.order_id:
+                verify_params["order_id"] = request.order_id
+            else:
+                raise HTTPException(status_code=400, detail="PayerMax验证需要提供transaction_id或order_id")
+        elif provider in ["payssion", "linepay"]:
             if not request.transaction_id:
-                raise HTTPException(status_code=400, detail="Line Pay验证需要提供transaction_id")
-            
-            result = linepay_client.query_payment_status(request.transaction_id)
-            
-            # 确保 transaction_id 是字符串类型
-            transaction_id = result.get('transaction_id')
-            if transaction_id is not None:
-                transaction_id = str(transaction_id)
-            
+                raise HTTPException(status_code=400, detail=f"{provider}验证需要提供transaction_id")
+            verify_params["transaction_id"] = request.transaction_id
+        elif provider in ["alipay", "wechat"]:
+            if not request.order_id:
+                raise HTTPException(status_code=400, detail=f"{provider}验证需要提供order_id")
+            verify_params["order_id"] = request.order_id
+
+        # 调用支付客户端验证支付
+        result = payment_client.verify_payment(**verify_params)
+
+        if not result.get('success', False):
             return VerifyPaymentResponse(
-                success=result.get('success', False),
-                provider="linepay",
-                status=result.get('status'),
-                payment_id=transaction_id,
-                amount=result.get('amount'),
-                currency=result.get('currency'),
-                message=result.get('message')
+                success=False,
+                provider=provider,
+                message=result.get('error', f'{provider} 验证失败')
             )
-        
-        else:
-            raise HTTPException(status_code=400, detail="不支持的支付渠道")
-    
+
+        # 构建统一的响应格式
+        response_data = {
+            "success": True,
+            "provider": provider,
+            "status": result.get('status'),
+            "paid": result.get('paid', False),
+            "message": result.get('message', '验证成功'),
+        }
+
+        # 设置相应的字段
+        if 'payment_id' in result:
+            response_data['payment_id'] = result['payment_id']
+        if 'order_id' in result:
+            response_data['order_id'] = result['order_id']
+        if 'amount' in result:
+            response_data['amount'] = result['amount']
+        if 'currency' in result:
+            response_data['currency'] = result['currency']
+        if 'customer_email' in result:
+            response_data['customer_email'] = result['customer_email']
+        if 'paid_time' in result:
+            response_data['paid_time'] = result['paid_time']
+
+        return VerifyPaymentResponse(**response_data)
+
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"支付验证失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"支付验证失败: {str(e)}")
 
 
@@ -379,53 +375,74 @@ def verify_unified_payment(request: VerifyPaymentRequest):
 def get_payment_providers():
     """
     获取所有可用的支付渠道及其状态
-    
+
     返回各支付渠道的配置状态和适用地区
     """
+    # 获取所有已注册的支付平台状态
+    available_providers = payment_client_factory.get_available_providers()
+
+    # 支付平台信息配置
+    provider_info = {
+        "stripe": {
+            "name": "Stripe",
+            "regions": ["美洲", "欧洲", "香港", "菲律宾", "新加坡", "日本", "中国", "全球"],
+            "currencies": ["USD", "EUR", "HKD", "PHP", "GBP", "AUD", "CAD", "SGD", "JPY", "CNY"],
+            "description": "全球领先的在线支付平台，支持信用卡和多种本地支付方式"
+        },
+        "paypal": {
+            "name": "PayPal",
+            "regions": ["全球"],
+            "currencies": ["USD", "EUR", "HKD", "GBP", "AUD"],
+            "description": "全球认知度最高的支付平台，支持多种支付方式"
+        },
+        "payssion": {
+            "name": "Payssion",
+            "regions": ["台湾", "日本", "泰国", "香港", "中国", "全球"],
+            "currencies": ["USD", "HKD", "TWD", "JPY", "THB", "CNY", "EUR"],
+            "description": "第三方支付聚合平台，香港公司可用于台湾 LINE Pay"
+        },
+        "payermax": {
+            "name": "PayerMax",
+            "regions": ["全球", "东南亚", "欧洲", "美洲", "中东", "非洲"],
+            "currencies": ["USD", "HKD", "EUR", "GBP", "SGD", "AUD", "CAD", "JPY", "CNY", "THB", "PHP", "MYR", "IDR", "VND"],
+            "description": "全球支付聚合平台，支持600+支付方式"
+        },
+        "alipay": {
+            "name": "支付宝国际版",
+            "regions": ["中国", "香港", "澳门"],
+            "currencies": ["CNY", "HKD", "USD"],
+            "description": "中国用户首选支付方式"
+        },
+        "wechat": {
+            "name": "微信支付",
+            "regions": ["中国", "香港", "澳门"],
+            "currencies": ["CNY", "HKD"],
+            "description": "中国用户常用支付方式"
+        },
+        "linepay": {
+            "name": "Line Pay",
+            "regions": ["台湾", "日本", "泰国"],
+            "currencies": ["TWD", "JPY", "THB", "USD"],
+            "description": "台湾、日本、泰国地区常用支付方式（需要台湾公司账号）"
+        }
+    }
+
+    providers = []
+    for provider_id, enabled in available_providers.items():
+        if provider_id in provider_info:
+            info = provider_info[provider_id]
+            providers.append({
+                "id": provider_id,
+                "name": info["name"],
+                "enabled": enabled,
+                "regions": info["regions"],
+                "currencies": info["currencies"],
+                "description": info["description"]
+            })
+
     return {
         "success": True,
-        "providers": [
-            {
-                "id": "stripe",
-                "name": "Stripe",
-                "enabled": bool(stripe_client.api_key),
-                "regions": ["美洲", "欧洲", "香港", "菲律宾", "全球"],
-                "currencies": ["USD", "EUR", "HKD", "PHP", "GBP", "AUD"],
-                "description": "全球领先的在线支付平台"
-            },
-            {
-                "id": "paypal",
-                "name": "PayPal",
-                "enabled": paypal_client.is_enabled,
-                "regions": ["全球"],
-                "currencies": ["USD", "EUR", "HKD", "GBP", "AUD"],
-                "description": "全球认知度最高的支付平台"
-            },
-            {
-                "id": "alipay",
-                "name": "支付宝国际版",
-                "enabled": bool(alipay_client.client),
-                "regions": ["中国", "香港", "澳门"],
-                "currencies": ["CNY", "HKD", "USD"],
-                "description": "中国用户首选支付方式"
-            },
-            {
-                "id": "wechat",
-                "name": "微信支付",
-                "enabled": bool(wechat_client.client),
-                "regions": ["中国", "香港", "澳门"],
-                "currencies": ["CNY", "HKD"],
-                "description": "中国用户常用支付方式"
-            },
-            {
-                "id": "linepay",
-                "name": "Line Pay",
-                "enabled": linepay_client.is_enabled,
-                "regions": ["台湾", "日本", "泰国"],
-                "currencies": ["TWD", "JPY", "THB", "USD"],
-                "description": "台湾、日本、泰国地区常用支付方式"
-            }
-        ]
+        "providers": providers
     }
 
 
@@ -436,7 +453,7 @@ def recommend_payment_provider(
 ):
     """
     根据地区和货币推荐最合适的支付渠道
-    
+
     **地区参数：**
     - global: 全球
     - americas: 美洲
@@ -444,32 +461,76 @@ def recommend_payment_provider(
     - hongkong: 香港
     - philippines: 菲律宾
     - china: 中国大陆
+    - taiwan: 台湾
+    - japan: 日本
+    - thailand: 泰国
     """
+    # 获取可用的支付平台
+    available_providers = payment_client_factory.get_available_providers()
+    enabled_providers = [p for p, enabled in available_providers.items() if enabled]
+
     recommendations = []
-    
-    # 地区推荐逻辑
-    if region in ["americas", "europe", "philippines"]:
-        recommendations = ["stripe", "paypal"]
-    elif region == "hongkong":
-        recommendations = ["stripe", "alipay", "wechat", "paypal"]
+
+    # 智能推荐逻辑
+    if region == "taiwan":
+        # 台湾优先推荐 LINE Pay（通过 Payssion）
+        if "payssion" in enabled_providers:
+            recommendations.append("payssion")
+        elif "linepay" in enabled_providers:
+            recommendations.append("linepay")
+        # 备选方案
+        recommendations.extend([p for p in ["stripe", "paypal", "payermax"] if p in enabled_providers])
+    elif region in ["japan", "thailand"]:
+        # 日本、泰国优先 LINE Pay
+        if "linepay" in enabled_providers:
+            recommendations.append("linepay")
+        elif "payssion" in enabled_providers:
+            recommendations.append("payssion")
+        recommendations.extend([p for p in ["stripe", "paypal", "payermax"] if p in enabled_providers])
     elif region == "china":
-        recommendations = ["alipay", "wechat", "stripe"]
-    elif region in ["taiwan", "japan", "thailand"]:
-        recommendations = ["linepay", "stripe", "paypal"]
-    else:  # global
-        recommendations = ["stripe", "paypal", "alipay", "wechat", "linepay"]
-    
-    # 根据货币调整
+        # 中国大陆优先本地支付
+        recommendations.extend([p for p in ["alipay", "wechat"] if p in enabled_providers])
+        recommendations.extend([p for p in ["stripe", "paypal", "payermax"] if p in enabled_providers])
+    elif region == "hongkong":
+        # 香港支持多种支付
+        recommendations.extend([p for p in ["stripe", "paypal", "alipay", "wechat", "payermax"] if p in enabled_providers])
+    elif region in ["americas", "europe"]:
+        # 美洲、欧洲优先 Stripe 和 PayPal
+        recommendations.extend([p for p in ["stripe", "paypal", "payermax"] if p in enabled_providers])
+    elif region == "philippines":
+        # 菲律宾优先 Stripe（支持PHP）
+        recommendations.extend([p for p in ["stripe", "paypal", "payermax"] if p in enabled_providers])
+    else:  # global 或其他地区
+        # 全局推荐所有可用支付
+        recommendations = enabled_providers.copy()
+
+    # 根据货币进一步优化推荐
     if currency == "CNY":
-        recommendations = ["alipay", "wechat"] + [p for p in recommendations if p not in ["alipay", "wechat"]]
+        # 人民币优先支付宝和微信
+        china_payments = [p for p in ["alipay", "wechat"] if p in recommendations]
+        other_payments = [p for p in recommendations if p not in ["alipay", "wechat"]]
+        recommendations = china_payments + other_payments
     elif currency in ["TWD", "JPY", "THB"]:
-        recommendations = ["linepay"] + [p for p in recommendations if p != "linepay"]
-    
+        # 亚洲货币优先 LINE Pay 相关
+        linepay_payments = [p for p in ["linepay", "payssion"] if p in recommendations]
+        other_payments = [p for p in recommendations if p not in ["linepay", "payssion"]]
+        recommendations = linepay_payments + other_payments
+    elif currency in ["HKD", "PHP"]:
+        # 特定货币优先支持的平台
+        currency_supported = [p for p in recommendations if currency in get_payment_client(p).get_supported_currencies()]
+        currency_supported.extend([p for p in recommendations if p not in currency_supported])
+        recommendations = currency_supported[:len(recommendations)]  # 保持原有长度
+
+    # 移除重复并保持顺序
+    seen = set()
+    recommendations = [p for p in recommendations if not (p in seen or seen.add(p))]
+
     return {
         "success": True,
         "region": region,
         "currency": currency,
         "recommended": recommendations,
-        "primary": recommendations[0] if recommendations else "stripe"
+        "primary": recommendations[0] if recommendations else "stripe",
+        "available_count": len(recommendations)
     }
 
