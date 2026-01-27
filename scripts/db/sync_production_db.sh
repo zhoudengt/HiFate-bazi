@@ -226,27 +226,13 @@ fi
 echo -e "${GREEN}✅ 使用生产环境 MySQL 配置: 数据库=$MYSQL_DATABASE${NC}"
 
 # 执行 SQL 脚本（通过 Docker 容器执行）
-# 查找 MySQL 容器名称
-MYSQL_CONTAINER=$(ssh_exec "docker ps --format '{{.Names}}' | grep -i mysql | head -1" || echo "")
-if [ -z "$MYSQL_CONTAINER" ]; then
-    echo -e "${YELLOW}⚠️  未找到 MySQL 容器，尝试直接连接 MySQL${NC}"
-    SYNC_OUTPUT=$(ssh_exec "cd $PROJECT_DIR && \
-        mysql -h\${MYSQL_HOST:-localhost} -P\${MYSQL_PORT:-3306} -u\${MYSQL_USER:-root} -p'$MYSQL_PASSWORD' $MYSQL_DATABASE < $REMOTE_SCRIPT 2>&1" || echo "failed")
-else
-    echo -e "${GREEN}✅ 找到 MySQL 容器: $MYSQL_CONTAINER${NC}"
-    # 通过 Docker 容器执行 MySQL 命令，使用环境变量传递密码
-    # 注意：密码需要转义特殊字符
-    ESCAPED_PASSWORD=$(echo "$MYSQL_PASSWORD" | sed "s/@/\\@/g")
-    SYNC_OUTPUT=$(ssh_exec "cd $PROJECT_DIR && \
-        docker exec -i -e MYSQL_PWD='$ESCAPED_PASSWORD' $MYSQL_CONTAINER mysql -uroot $MYSQL_DATABASE < $REMOTE_SCRIPT 2>&1" || echo "failed")
-    
-    # 如果使用环境变量失败，尝试直接在命令中传递密码（不推荐，但作为备选）
-    if echo "$SYNC_OUTPUT" | grep -q "Access denied"; then
-        echo -e "${YELLOW}⚠️  使用环境变量密码失败，尝试直接传递密码${NC}"
-        SYNC_OUTPUT=$(ssh_exec "cd $PROJECT_DIR && \
-            cat $REMOTE_SCRIPT | docker exec -i $MYSQL_CONTAINER mysql -uroot -p'$ESCAPED_PASSWORD' $MYSQL_DATABASE 2>&1" || echo "failed")
-    fi
-fi
+# 使用生产环境 MySQL 容器名称
+MYSQL_CONTAINER="hifate-mysql-master"
+echo -e "${GREEN}✅ 使用 MySQL 容器: $MYSQL_CONTAINER${NC}"
+
+# 通过 Docker 容器执行 MySQL 命令，使用环境变量传递密码
+SYNC_OUTPUT=$(ssh_exec "cd $PROJECT_DIR && \
+    docker exec -i -e MYSQL_PWD='$MYSQL_PASSWORD' $MYSQL_CONTAINER mysql -uroot $MYSQL_DATABASE < $REMOTE_SCRIPT 2>&1" || echo "failed")
 
 if echo "$SYNC_OUTPUT" | grep -q "failed\|error\|Error"; then
     echo -e "${RED}❌ 数据库同步失败${NC}"
