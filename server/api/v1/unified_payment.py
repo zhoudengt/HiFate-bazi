@@ -162,12 +162,15 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
         import time
         order_id = f"{provider_str.upper()}_{int(time.time() * 1000)}"
 
-        # 区域检查和白名单检查
+        # 区域检查和白名单检查（临时跳过，等正式支付时再启用）
+        # TODO: 正式支付时启用区域检查
+        SKIP_REGION_CHECK = os.getenv("SKIP_PAYMENT_REGION_CHECK", "true").lower() == "true"
+        
         user_region = None
         region_open = True
         is_whitelisted = False
 
-        if get_region_config_manager and get_whitelist_manager:
+        if not SKIP_REGION_CHECK and get_region_config_manager and get_whitelist_manager:
             region_manager = get_region_config_manager()
             whitelist_manager = get_whitelist_manager()
 
