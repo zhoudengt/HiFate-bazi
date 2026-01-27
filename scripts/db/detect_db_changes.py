@@ -210,7 +210,9 @@ class DatabaseComparator:
         
         changes = {
             'new_tables': [],
+            'dropped_tables': [],  # 删除表（生产环境存在但本地不存在）
             'new_columns': [],
+            'dropped_columns': [],  # 删除字段（生产环境存在但本地不存在）
             'modified_columns': [],
             'new_indexes': [],
             'data_changes': {
@@ -239,6 +241,15 @@ class DatabaseComparator:
                     'primary_keys': primary_keys
                 })
         
+        # 检测删除表（生产环境存在但本地不存在）
+        dropped_tables = prod_tables - local_tables
+        for table in dropped_tables:
+            prod_row_count = self.get_table_row_count(self.prod_conn, table)
+            changes['dropped_tables'].append({
+                'table': table,
+                'row_count': prod_row_count
+            })
+        
         # 检测每个表的字段变更和数据差异
         common_tables = local_tables & prod_tables
         for table in common_tables:
@@ -254,6 +265,15 @@ class DatabaseComparator:
                 changes['new_columns'].append({
                     'table': table,
                     'column': local_structure['columns'][col_name]
+                })
+            
+            # 检测删除字段（生产环境存在但本地不存在）
+            dropped_columns = prod_columns - local_columns
+            for col_name in dropped_columns:
+                changes['dropped_columns'].append({
+                    'table': table,
+                    'column': col_name,
+                    'column_info': prod_structure['columns'][col_name]
                 })
             
             # 检测修改字段（类型、长度等）
@@ -327,6 +347,19 @@ class DatabaseComparator:
         script_lines.append("START TRANSACTION;")
         script_lines.append("")
         
+        # 生成删除表的 SQL（危险操作，需要明确警告）
+        if changes['dropped_tables']:
+            script_lines.append("-- ==================== 删除表（⚠️ 危险操作，需要手动确认）====================")
+            script_lines.append("-- ⚠️  警告：删除表会永久删除所有数据，请先备份数据！")
+            script_lines.append("-- ⚠️  建议：在执行删除前，先备份表数据：mysqldump -u root -p database_name table_name > backup_table_name.sql")
+            script_lines.append("")
+            for table_info in changes['dropped_tables']:
+                table = table_info['table']
+                row_count = table_info['row_count']
+                script_lines.append(f"-- 删除表: {table} (包含 {row_count} 条数据)")
+                script_lines.append(f"-- DROP TABLE IF EXISTS `{table}`;")
+                script_lines.append("")
+        
         # 生成新增表的 SQL
         if changes['new_tables']:
             script_lines.append("-- ==================== 新增表 ====================")
@@ -340,6 +373,19 @@ class DatabaseComparator:
                     create_table_sql = result['Create Table']
                     script_lines.append(create_table_sql + ";")
                     script_lines.append("")
+        
+        # 生成删除字段的 SQL（危险操作，需要明确警告）
+        if changes['dropped_columns']:
+            script_lines.append("-- ==================== 删除字段（⚠️ 危险操作，需要手动确认）====================")
+            script_lines.append("-- ⚠️  警告：删除字段会永久删除该字段的所有数据，请先确认是否有外键依赖！")
+            script_lines.append("-- ⚠️  建议：在执行删除前，检查是否有其他表的外键引用此字段")
+            script_lines.append("")
+            for col_info in changes['dropped_columns']:
+                table = col_info['table']
+                col_name = col_info['column']
+                script_lines.append(f"-- 删除表 {table} 的字段 {col_name}")
+                script_lines.append(f"-- ALTER TABLE `{table}` DROP COLUMN `{col_name}`;")
+                script_lines.append("")
         
         # 生成新增字段的 SQL
         if changes['new_columns']:
@@ -462,6 +508,35 @@ class DatabaseComparator:
         script_lines.append("START TRANSACTION;")
         script_lines.append("")
         
+        # 生成恢复删除字段的 SQL（反向操作：重新添加被删除的字段）
+        if changes['dropped_columns']:
+            script_lines.append("-- ==================== 恢复删除的字段 ====================")
+            script_lines.append("-- ⚠️  注意：此操作会重新添加被删除的字段，但数据无法恢复")
+            for col_info in changes['dropped_columns']:
+                table = col_info['table']
+                col_name = col_info['column']
+                col = col_info['column_info']
+                col_type = col['COLUMN_TYPE']
+                nullable = "NULL" if col['IS_NULLABLE'] == 'YES' else "NOT NULL"
+                default = f"DEFAULT {col['COLUMN_DEFAULT']}" if col['COLUMN_DEFAULT'] is not None else ""
+                extra = col['EXTRA'] if col['EXTRA'] else ""
+                comment = f"COMMENT '{col['COLUMN_COMMENT']}'" if col['COLUMN_COMMENT'] else ""
+                
+                script_lines.append(f"-- 恢复表 {table} 的字段 {col_name}")
+                script_lines.append(f"ALTER TABLE `{table}` ADD COLUMN `{col_name}` {col_type} {nullable} {default} {extra} {comment};")
+                script_lines.append("")
+        
+        # 生成恢复删除表的 SQL（反向操作：重新创建被删除的表）
+        if changes['dropped_tables']:
+            script_lines.append("-- ==================== 恢复删除的表 ====================")
+            script_lines.append("-- ⚠️  注意：此操作会重新创建被删除的表，但数据无法恢复（需要从备份恢复）")
+            for table_info in changes['dropped_tables']:
+                table = table_info['table']
+                script_lines.append(f"-- 恢复表: {table}")
+                script_lines.append(f"-- ⚠️  警告：表结构可以恢复，但数据需要从备份恢复")
+                script_lines.append(f"-- 如果之前有备份，请使用：mysql -u root -p database_name < backup_{table}.sql")
+                script_lines.append("")
+        
         # 生成删除新增字段的 SQL（反向操作）
         if changes['new_columns']:
             script_lines.append("-- ==================== 删除新增字段 ====================")
@@ -574,12 +649,26 @@ def main():
         else:
             print("\n✅ 无新增表")
         
+        if changes['dropped_tables']:
+            print(f"\n⚠️  删除表 ({len(changes['dropped_tables'])} 个，生产环境存在但本地不存在):")
+            for table_info in changes['dropped_tables']:
+                print(f"  - {table_info['table']} (包含 {table_info['row_count']} 条数据)")
+        else:
+            print("\n✅ 无删除表")
+        
         if changes['new_columns']:
             print(f"\n📋 新增字段 ({len(changes['new_columns'])} 个):")
             for col_info in changes['new_columns']:
                 print(f"  - {col_info['table']}.{col_info['column']['COLUMN_NAME']}")
         else:
             print("\n✅ 无新增字段")
+        
+        if changes['dropped_columns']:
+            print(f"\n⚠️  删除字段 ({len(changes['dropped_columns'])} 个，生产环境存在但本地不存在):")
+            for col_info in changes['dropped_columns']:
+                print(f"  - {col_info['table']}.{col_info['column']}")
+        else:
+            print("\n✅ 无删除字段")
         
         if changes['modified_columns']:
             print(f"\n⚠️  修改字段 ({len(changes['modified_columns'])} 个，需要手动确认):")
