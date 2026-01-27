@@ -798,6 +798,7 @@ EOFPY" || {
 }
 
 echo -e "${GREEN}✅ Node2 语法验证通过${NC}"
+fi
 
 echo ""
 
