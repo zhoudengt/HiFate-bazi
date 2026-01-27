@@ -13,11 +13,16 @@ echo "  同步配置表数据到生产环境"
 echo "=========================================="
 echo ""
 
-# 检查 SQL 文件是否存在
+# 检查 SQL 文件是否存在，如果不存在则自动生成
 if [ ! -f "$SQL_FILE" ]; then
-    echo "❌ SQL 文件不存在: $SQL_FILE"
-    echo "   请先运行: python3 scripts/db/sync_config_tables_to_production.py"
-    exit 1
+    echo "📝 SQL 文件不存在，正在自动生成..."
+    python3 scripts/db/sync_config_tables_to_production.py --dry-run > /dev/null 2>&1
+    if [ ! -f "$SQL_FILE" ]; then
+        echo "❌ SQL 文件生成失败: $SQL_FILE"
+        echo "   请手动运行: python3 scripts/db/sync_config_tables_to_production.py"
+        exit 1
+    fi
+    echo "✅ SQL 文件已生成"
 fi
 
 echo "📤 上传 SQL 文件到生产服务器..."
