@@ -135,6 +135,21 @@ class PayerMaxClient(BasePaymentClient):
         """获取PayerMax支持的地区列表"""
         return ["全球", "东南亚", "欧洲", "美洲", "中东", "非洲"]
 
+    def _generate_user_id(self, customer_email: str) -> str:
+        """
+        生成符合 PayerMax 要求的 userId
+        只能包含字母数字和下划线，最大64字符
+        """
+        import re
+        if not customer_email:
+            # 生成匿名用户ID
+            return f"anon_{uuid.uuid4().hex[:16]}"
+        
+        # 将 email 转换为合法的 userId（移除 @ 和 . 替换为下划线）
+        user_id = re.sub(r'[^a-zA-Z0-9_]', '_', customer_email)
+        # 截断到最大64字符
+        return user_id[:64]
+
     def _generate_signature(self, data: Dict[str, Any]) -> str:
         """
         生成PayerMax RSA签名
@@ -290,10 +305,7 @@ class PayerMaxClient(BasePaymentClient):
                     "subject": product_name,
                     "notifyUrl": self._get_notify_url(),
                     "returnUrl": self._get_success_url(),
-                    "userInfo": {
-                        "userId": customer_email or "anonymous",
-                        "userEmail": customer_email
-                    }
+                    "userId": self._generate_user_id(customer_email)
                 }
             }
 
