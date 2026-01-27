@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field, validator
 from typing import Optional, Dict, Any
 
 from server.services.wuxing_proportion_service import WuxingProportionService
-from server.services.coze_stream_service import CozeStreamService
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.utils.api_cache_helper import (
@@ -25,9 +24,6 @@ from server.utils.api_cache_helper import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-# Coze Bot ID（五行占比分析专用）
-WUXING_PROPORTION_BOT_ID = "7585498208202473523"
 
 
 class WuxingProportionRequest(BaziBaseRequest):
@@ -127,6 +123,22 @@ async def wuxing_proportion_stream_generator(
         SSE格式的流式数据
     """
     import traceback
+    import time
+    
+    # 记录开始时间和前端输入
+    api_start_time = time.time()
+    frontend_input = {
+        'solar_date': request.solar_date,
+        'solar_time': request.solar_time,
+        'gender': request.gender,
+        'calendar_type': request.calendar_type,
+        'location': request.location,
+        'latitude': request.latitude,
+        'longitude': request.longitude
+    }
+    llm_first_token_time = None
+    llm_output_chunks = []
+    llm_start_time = None
     
     try:
         # 1. 处理农历输入和时区转换
@@ -139,57 +151,82 @@ async def wuxing_proportion_stream_generator(
             request.longitude
         )
         
-        # 2. 获取五行占比数据（异步执行，避免阻塞事件循环）
-        loop = asyncio.get_event_loop()
-        proportion_data = await loop.run_in_executor(
-            None,  # 使用默认线程池
-            WuxingProportionService.calculate_proportion,
-            final_solar_date, final_solar_time, request.gender
+        # 2. 发送进度提示
+        progress_msg = {
+            'type': 'progress',
+            'content': '正在获取数据...'
+        }
+        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
+        
+        # 3. 使用统一数据服务获取数据
+        from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
+        
+        modules = {
+            'bazi': True,
+            'wangshuai': True,
+            'wuxing_proportion': True  # 统一数据服务会自动组装
+        }
+        
+        unified_data = await BaziDataOrchestrator.fetch_data(
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
+            gender=request.gender,
+            modules=modules,
+            use_cache=True,
+            parallel=True,
+            calendar_type=request.calendar_type or "solar",
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude
         )
         
-        if not proportion_data.get('success'):
+        # 4. 提取已组装好的数据
+        proportion_data = unified_data.get('wuxing_proportion')
+        if not proportion_data or not proportion_data.get('success'):
             error_msg = {
                 'type': 'error',
-                'content': proportion_data.get('error', '计算失败')
+                'content': '获取五行占比数据失败'
             }
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 3. 添加转换信息到结果
+        # 5. 添加转换信息到结果
         if conversion_info.get('converted') or conversion_info.get('timezone_info'):
             proportion_data['conversion_info'] = conversion_info
         
-        # 4. 构建响应数据（与普通接口一致）
+        # 6. 构建响应数据（与普通接口一致）
         response_data = {
             'success': True,
             'data': proportion_data
         }
         
-        # 5. 先发送完整的五行占比数据（type: "data"）
+        # 7. 先发送完整的五行占比数据（type: "data"）
         data_msg = {
             'type': 'data',
             'content': response_data
         }
         yield f"data: {json.dumps(data_msg, ensure_ascii=False)}\n\n"
         
-        # 6. 构建大模型提示词
-        prompt = WuxingProportionService.build_llm_prompt(proportion_data)
+        # 8. 构建 input_data（结构化数据，传递给 Coze Bot）
+        input_data = {
+            "proportions": proportion_data.get('proportions', {}),
+            "element_relations": proportion_data.get('element_relations', {}),
+            "ten_gods": proportion_data.get('ten_gods', {}),
+            "wangshuai": proportion_data.get('wangshuai', {})
+        }
         
-        if not prompt:
-            # 没有提示词，直接返回完成
-            complete_msg = {
-                'type': 'complete',
-                'content': ''
-            }
-            yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
-            return
+        # 9. 格式化数据（JSON字符串，传递给 Coze Bot）
+        formatted_data = json.dumps(input_data, ensure_ascii=False, indent=2)
         
-        # 7. 确定使用的 bot_id
-        actual_bot_id = bot_id or WUXING_PROPORTION_BOT_ID
+        # 10. 确定使用的 bot_id（百炼平台不使用，但保留以兼容）
+        # 注意：现在通过数据库配置选择平台，bot_id 主要用于 Coze 平台
+        actual_bot_id = bot_id
         
-        # 8. 创建 LLM 流式服务（支持 Coze 和百炼平台）
+        # 11. 创建 LLM 流式服务（根据数据库配置选择平台：coze 或 bailian）
+        # 配置方式：在 service_configs 表中设置 WUXING_PROPORTION_LLM_PLATFORM = "bailian" 使用千问模型
         try:
             from server.services.llm_service_factory import LLMServiceFactory
+            from server.services.bailian_stream_service import BailianStreamService
             llm_service = LLMServiceFactory.get_service(scene="wuxing_proportion", bot_id=actual_bot_id)
         except ValueError as e:
             # 配置缺失，跳过大模型分析
@@ -207,21 +244,41 @@ async def wuxing_proportion_stream_generator(
             yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 9. 流式生成大模型分析
-        async for chunk in llm_service.stream_analysis(prompt):
+        # 12. 流式生成大模型分析（传递 formatted_data，根据配置的平台生成内容）
+        llm_start_time = time.time()
+        has_content = False
+        
+        # 百炼平台不需要 bot_id，Coze 平台需要
+        stream_kwargs = {}
+        if hasattr(llm_service, 'bot_id') and llm_service.bot_id:
+            stream_kwargs['bot_id'] = actual_bot_id
+        
+        async for chunk in llm_service.stream_analysis(formatted_data, **stream_kwargs):
             chunk_type = chunk.get('type', 'progress')
             
+            # 记录第一个token时间
+            if llm_first_token_time is None and chunk_type == 'progress':
+                llm_first_token_time = time.time()
+            
             if chunk_type == 'progress':
+                content = chunk.get('content', '')
+                if content:
+                    llm_output_chunks.append(content)
+                    has_content = True
                 msg = {
                     'type': 'progress',
-                    'content': chunk.get('content', '')
+                    'content': content
                 }
                 yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
                 await asyncio.sleep(0.05)
             elif chunk_type == 'complete':
+                complete_content = chunk.get('content', '')
+                if complete_content:
+                    llm_output_chunks.append(complete_content)
+                    has_content = True
                 msg = {
                     'type': 'complete',
-                    'content': chunk.get('content', '')
+                    'content': complete_content
                 }
                 yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
                 return
@@ -232,6 +289,34 @@ async def wuxing_proportion_stream_generator(
                 }
                 yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
                 return
+        
+        # 13. 记录交互数据到数据库（异步，不阻塞）
+        api_end_time = time.time()
+        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+        llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
+        llm_output = ''.join(llm_output_chunks)
+        
+        try:
+            from server.services.user_interaction_logger import get_user_interaction_logger
+            logger_instance = get_user_interaction_logger()
+            logger_instance.log_function_usage_async(
+                function_type='wuxing',
+                function_name='八字命理-五行占比分析',
+                frontend_api='/api/v1/bazi/wuxing-proportion/stream',
+                frontend_input=frontend_input,
+                input_data=input_data,
+                llm_output=llm_output,
+                api_response_time_ms=api_response_time_ms,
+                llm_first_token_time_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+                llm_total_time_ms=llm_total_time_ms,
+                round_number=1,
+                bot_id=actual_bot_id,
+                llm_api='bailian_api' if isinstance(llm_service, BailianStreamService) else 'coze_api',
+                status='success' if has_content else 'failed',
+                streaming=True
+            )
+        except Exception as e:
+            logger.warning(f"[五行占比流式] 数据库记录失败: {e}", exc_info=True)
                 
     except Exception as e:
         error_msg = {
@@ -239,6 +324,32 @@ async def wuxing_proportion_stream_generator(
             'content': f"流式生成五行占比分析失败: {str(e)}\n{traceback.format_exc()}"
         }
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+        
+        # 记录错误
+        try:
+            api_end_time = time.time()
+            api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+            from server.services.user_interaction_logger import get_user_interaction_logger
+            logger_instance = get_user_interaction_logger()
+            logger_instance.log_function_usage_async(
+                function_type='wuxing',
+                function_name='八字命理-五行占比分析',
+                frontend_api='/api/v1/bazi/wuxing-proportion/stream',
+                frontend_input=frontend_input,
+                input_data={},
+                llm_output='',
+                api_response_time_ms=api_response_time_ms,
+                llm_first_token_time_ms=None,
+                llm_total_time_ms=None,
+                round_number=1,
+                bot_id=actual_bot_id,
+                llm_api='coze_api',  # 默认值
+                status='failed',
+                error_message=str(e),
+                streaming=True
+            )
+        except Exception as log_error:
+            logger.warning(f"[五行占比流式] 错误记录失败: {log_error}", exc_info=True)
 
 
 @router.post("/bazi/wuxing-proportion/test", summary="测试接口：返回格式化后的数据（用于 Coze Bot）")
@@ -246,7 +357,7 @@ async def wuxing_proportion_test(request: WuxingProportionRequest):
     """
     测试接口：返回格式化后的数据（用于 Coze Bot）
     
-    返回与流式接口相同格式的 prompt，供评测脚本使用。
+    返回与流式接口相同格式的结构化数据（JSON），供评测脚本使用。
     确保 Coze 和百炼平台使用相同的输入数据。
     
     **参数说明**：
@@ -257,7 +368,8 @@ async def wuxing_proportion_test(request: WuxingProportionRequest):
     **返回格式**：
     {
         "success": true,
-        "formatted_data": "构建好的 prompt 字符串",
+        "input_data": {...},  # 结构化数据
+        "formatted_data": "JSON字符串",  # 格式化后的JSON字符串
         "formatted_data_length": 1234
     }
     """
@@ -272,40 +384,54 @@ async def wuxing_proportion_test(request: WuxingProportionRequest):
             request.longitude
         )
         
-        # 2. 获取五行占比数据（异步执行，避免阻塞事件循环）
-        loop = asyncio.get_event_loop()
-        proportion_data = await loop.run_in_executor(
-            None,  # 使用默认线程池
-            WuxingProportionService.calculate_proportion,
-            final_solar_date, final_solar_time, request.gender
+        # 2. 使用统一数据服务获取数据（与流式接口一致）
+        from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
+        
+        modules = {
+            'bazi': True,
+            'wangshuai': True,
+            'wuxing_proportion': True
+        }
+        
+        unified_data = await BaziDataOrchestrator.fetch_data(
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
+            gender=request.gender,
+            modules=modules,
+            use_cache=True,
+            parallel=True,
+            calendar_type=request.calendar_type or "solar",
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude
         )
         
-        if not proportion_data.get('success'):
+        proportion_data = unified_data.get('wuxing_proportion')
+        if not proportion_data or not proportion_data.get('success'):
             return {
                 "success": False,
-                "error": proportion_data.get('error', '计算失败')
+                "error": "获取五行占比数据失败"
             }
         
-        # 3. 添加转换信息到结果
-        if conversion_info.get('converted') or conversion_info.get('timezone_info'):
-            proportion_data['conversion_info'] = conversion_info
+        # 4. 构建 input_data（结构化数据，与流式接口一致）
+        input_data = {
+            "proportions": proportion_data.get('proportions', {}),
+            "element_relations": proportion_data.get('element_relations', {}),
+            "ten_gods": proportion_data.get('ten_gods', {}),
+            "wangshuai": proportion_data.get('wangshuai', {})
+        }
         
-        # 4. 构建大模型提示词（与流式接口相同）
-        prompt = WuxingProportionService.build_llm_prompt(proportion_data)
+        # 5. 格式化数据（JSON字符串，与流式接口一致）
+        formatted_data = json.dumps(input_data, ensure_ascii=False, indent=2)
         
-        if not prompt:
-            return {
-                "success": False,
-                "error": "无法构建 prompt"
-            }
-        
-        # 5. 返回格式化后的数据
+        # 6. 返回格式化后的数据
         return {
             "success": True,
-            "formatted_data": prompt,
-            "formatted_data_length": len(prompt),
+            "input_data": input_data,
+            "formatted_data": formatted_data,
+            "formatted_data_length": len(formatted_data),
             "usage": {
-                "description": "此接口返回的数据可以直接用于 Coze Bot 或百炼智能体的输入",
+                "description": "此接口返回的结构化数据可以直接用于 Coze Bot 或百炼智能体的输入（使用 {{input}} 占位符）",
                 "test_command": f'curl -X POST "http://localhost:8001/api/v1/bazi/wuxing-proportion/test" -H "Content-Type: application/json" -d \'{{"solar_date": "{request.solar_date}", "solar_time": "{request.solar_time}", "gender": "{request.gender}", "calendar_type": "{request.calendar_type or "solar"}"}}\''
             }
         }
