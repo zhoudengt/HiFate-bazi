@@ -177,7 +177,8 @@ async def wuxing_proportion_stream_generator(
             calendar_type=request.calendar_type or "solar",
             location=request.location,
             latitude=request.latitude,
-            longitude=request.longitude
+            longitude=request.longitude,
+            preprocessed=True
         )
         
         # 4. 提取已组装好的数据
@@ -270,7 +271,7 @@ async def wuxing_proportion_stream_generator(
                     'content': content
                 }
                 yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0)
             elif chunk_type == 'complete':
                 complete_content = chunk.get('content', '')
                 if complete_content:
@@ -403,7 +404,8 @@ async def wuxing_proportion_test(request: WuxingProportionRequest):
             calendar_type=request.calendar_type or "solar",
             location=request.location,
             latitude=request.latitude,
-            longitude=request.longitude
+            longitude=request.longitude,
+            preprocessed=True
         )
         
         proportion_data = unified_data.get('wuxing_proportion')

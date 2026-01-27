@@ -129,7 +129,8 @@ async def children_study_analysis_test(request: ChildrenStudyRequest):
             calendar_type=request.calendar_type,
             location=request.location,
             latitude=request.latitude,
-            longitude=request.longitude
+            longitude=request.longitude,
+            preprocessed=True
         )
         
         # 从统一接口结果中提取数据
@@ -347,7 +348,8 @@ async def children_study_analysis_debug(request: ChildrenStudyRequest):
             calendar_type=request.calendar_type,
             location=request.location,
             latitude=request.latitude,
-            longitude=request.longitude
+            longitude=request.longitude,
+            preprocessed=True
         )
         
         # 从统一接口结果中提取数据

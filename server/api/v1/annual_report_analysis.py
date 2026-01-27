@@ -112,7 +112,8 @@ async def annual_report_test(request: AnnualReportRequest):
             calendar_type="solar",
             location=None,
             latitude=None,
-            longitude=None
+            longitude=None,
+            preprocessed=True
         )
         
         # 4. 从统一接口结果中提取数据
@@ -302,7 +303,8 @@ async def annual_report_stream_generator(
                 calendar_type="solar",
                 location=None,
                 latitude=None,
-                longitude=None
+                longitude=None,
+                preprocessed=True
             )
             logger.info(f"[Annual Report Stream] ✅ 统一接口数据获取完成")
             

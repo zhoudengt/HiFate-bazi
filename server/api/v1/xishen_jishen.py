@@ -288,7 +288,8 @@ async def xishen_jishen_test(request: XishenJishenRequest):
             calendar_type=request.calendar_type or "solar",
             location=request.location,
             latitude=request.latitude,
-            longitude=request.longitude
+            longitude=request.longitude,
+            preprocessed=True
         )
         
         xishen_jishen_result = unified_data.get('xishen_jishen', {})
@@ -415,7 +416,8 @@ async def xishen_jishen_stream_generator(
             calendar_type=request.calendar_type or "solar",
             location=request.location,
             latitude=request.latitude,
-            longitude=request.longitude
+            longitude=request.longitude,
+            preprocessed=True
         )
         
         # 4. 提取已组装好的数据
@@ -603,7 +605,7 @@ async def xishen_jishen_stream_generator(
                         'content': result.get('content', '')
                     }
                     yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                    await asyncio.sleep(0.05)
+                    await asyncio.sleep(0)
                 elif result.get('type') == 'complete':
                     complete_content = result.get('content', '')
                     if complete_content:

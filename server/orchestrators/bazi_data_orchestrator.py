@@ -140,7 +140,8 @@ class BaziDataOrchestrator:
         calendar_type: Optional[str] = "solar",
         location: Optional[str] = None,
         latitude: Optional[float] = None,
-        longitude: Optional[float] = None
+        longitude: Optional[float] = None,
+        preprocessed: bool = False
     ) -> Dict[str, Any]:
         """
         根据模块配置获取数据（支持7个标准参数）
@@ -157,6 +158,7 @@ class BaziDataOrchestrator:
             location: 出生地点（可选，用于时区转换）
             latitude: 纬度（可选，用于时区转换）
             longitude: 经度（可选，用于时区转换和真太阳时计算）
+            preprocessed: 如果为True，表示solar_date和solar_time已经过process_input处理，跳过重复处理
         
         Returns:
             dict: 包含所有请求模块的数据
@@ -183,10 +185,13 @@ class BaziDataOrchestrator:
             except Exception as e:
                 logger.warning(f"[BaziDataOrchestrator] 缓存查询失败（降级到数据库）: {e}")
         
-        # 处理输入（农历转换和时区转换）
-        final_solar_date, final_solar_time, _ = BaziInputProcessor.process_input(
-            solar_date, solar_time, calendar_type or "solar", location, latitude, longitude
-        )
+        # 处理输入（农历转换和时区转换）- 如果已预处理则跳过
+        if preprocessed:
+            final_solar_date, final_solar_time = solar_date, solar_time
+        else:
+            final_solar_date, final_solar_time, _ = BaziInputProcessor.process_input(
+                solar_date, solar_time, calendar_type or "solar", location, latitude, longitude
+            )
         
         result = {}
         

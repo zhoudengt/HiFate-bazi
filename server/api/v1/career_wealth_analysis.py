@@ -840,7 +840,8 @@ async def career_wealth_analysis_test(request: CareerWealthRequest):
             calendar_type=request.calendar_type,
             location=request.location,
             latitude=request.latitude,
-            longitude=request.longitude
+            longitude=request.longitude,
+            preprocessed=True
         )
         
         # 从统一接口结果中提取数据
@@ -1509,7 +1510,7 @@ async def career_wealth_stream_generator(
                         has_content = True
                         msg = {'type': 'progress', 'content': content}
                         yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                        await asyncio.sleep(0.05)
+                        await asyncio.sleep(0)
                 elif result.get('type') == 'complete':
                     has_content = True
                     complete_content = result.get('content', '')

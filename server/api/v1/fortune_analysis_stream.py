@@ -151,7 +151,7 @@ async def analyze_hand_stream_generator(image_bytes: bytes, image_format: str,
             'showPlayButton': True
         }
         yield f"data: {json.dumps(start_msg, ensure_ascii=False)}\n\n"
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0)
         
         # 使用手相流式分析器（真正的流式响应）
         if HAND_STREAM_ANALYZER_AVAILABLE and hand_analyzer_stream:
@@ -179,7 +179,7 @@ async def analyze_hand_stream_generator(image_bytes: bytes, image_format: str,
                             'showPlayButton': True
                         }
                         yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(0)
                     elif result.get('type') == 'complete':
                         data = result.get('data', {})
                         logger.debug(f"📤 发送complete消息，data类型: {type(data)}, success: {data.get('success') if isinstance(data, dict) else 'N/A'}")
@@ -265,7 +265,7 @@ async def analyze_hand_stream_generator(image_bytes: bytes, image_format: str,
                 'showPlayButton': True
             }
             yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0)
             
             with grpc.insecure_channel(address) as channel:
                 stub = fortune_analysis_pb2_grpc.FortuneAnalysisServiceStub(channel)
@@ -350,7 +350,7 @@ async def analyze_face_stream_generator(image_bytes: bytes, image_format: str,
             'showPlayButton': True
         }
         yield f"data: {json.dumps(start_msg, ensure_ascii=False)}\n\n"
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0)
         
         # 使用面相流式分析器（真正的流式响应）
         if FACE_STREAM_ANALYZER_AVAILABLE and face_analyzer_stream:
@@ -378,7 +378,7 @@ async def analyze_face_stream_generator(image_bytes: bytes, image_format: str,
                             'showPlayButton': True
                         }
                         yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(0)
                     elif result.get('type') == 'complete':
                         data = result.get('data', {})
                         logger.debug(f"📤 发送complete消息，data类型: {type(data)}, success: {data.get('success') if isinstance(data, dict) else 'N/A'}")
@@ -464,7 +464,7 @@ async def analyze_face_stream_generator(image_bytes: bytes, image_format: str,
                 'showPlayButton': True
             }
             yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0)
             
             with grpc.insecure_channel(address) as channel:
                 stub = fortune_analysis_pb2_grpc.FortuneAnalysisServiceStub(channel)

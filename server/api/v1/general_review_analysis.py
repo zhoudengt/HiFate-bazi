@@ -126,7 +126,8 @@ async def general_review_analysis_test(request: GeneralReviewRequest):
             calendar_type=request.calendar_type,
             location=request.location,
             latitude=request.latitude,
-            longitude=request.longitude
+            longitude=request.longitude,
+            preprocessed=True
         )
         
         # 从统一接口结果中提取数据

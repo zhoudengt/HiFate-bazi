@@ -360,7 +360,7 @@ async def action_suggestions_stream_generator(
                     'content': result.get('content', '')
                 }
                 yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0)
             elif result.get('type') == 'complete':
                 # 完成消息
                 msg = {
@@ -592,7 +592,7 @@ async def daily_fortune_stream_generator(
                     'content': stream_result.get('content', '')
                 }
                 yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0)
             elif stream_result.get('type') == 'complete':
                 msg = {
                     'type': 'complete',
