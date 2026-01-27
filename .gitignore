@@ -103,3 +103,4 @@ models_cache/
 docs/import_shishen_12_rules.sql
 docs/未解析规则_*.json
 scripts/migration/import_shishen_12_rules.py
+scripts/db/sync_config_tables_temp.sql
