@@ -1,0 +1,44 @@
+{
+  "deployment_id": "20260127_125716",
+  "timestamp": "2026-01-27T12:57:16.040448",
+  "changes": {
+    "new_tables": [
+      "fx_rate_history",
+      "conversion_fee_history",
+      "payment_whitelist",
+      "payment_region_config",
+      "payment_api_call_logs",
+      "payment_transactions"
+    ],
+    "new_columns": [],
+    "modified_columns": [],
+    "new_tables_data": [
+      {
+        "table": "fx_rate_history",
+        "row_count": 2
+      },
+      {
+        "table": "payment_whitelist",
+        "row_count": 2
+      },
+      {
+        "table": "payment_region_config",
+        "row_count": 10
+      },
+      {
+        "table": "payment_transactions",
+        "row_count": 2
+      }
+    ],
+    "table_data_diff": [
+      {
+        "table": "payment_configs",
+        "diff_count": 4
+      },
+      {
+        "table": "homepage_contents",
+        "diff_count": 9
+      }
+    ]
+  }
+}
