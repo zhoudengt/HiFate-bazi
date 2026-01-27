@@ -255,7 +255,7 @@ class PayerMaxClient(BasePaymentClient):
             request_data = {
                 "version": "1.1",
                 "keyVersion": "1",
-                "requestTime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "requestTime": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000+00:00"),
                 "appId": self.app_id,
                 "merchantNo": self.merchant_no,
                 "data": {
@@ -405,7 +405,7 @@ class PayerMaxClient(BasePaymentClient):
             request_data = {
                 "version": "1.1",
                 "keyVersion": "1",
-                "requestTime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "requestTime": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000+00:00"),
                 "appId": self.app_id,
                 "merchantNo": self.merchant_no,
                 "data": {}
@@ -522,7 +522,7 @@ class PayerMaxClient(BasePaymentClient):
             request_data = {
                 "version": "1.1",
                 "keyVersion": "1",
-                "requestTime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "requestTime": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000+00:00"),
                 "appId": self.app_id,
                 "merchantNo": self.merchant_no,
                 "data": {
