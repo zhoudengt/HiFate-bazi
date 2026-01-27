@@ -73,13 +73,35 @@ else
     exit 1
 fi
 
-# SSH 执行函数
+# SSH 执行函数（优先使用密钥认证，降级到密码认证）
 ssh_exec() {
     local cmd="$@"
     
+    # 优先使用 SSH 密钥认证（通过 SSH config 配置的别名）
+    local ssh_alias=""
+    if [ "$TARGET_IP" = "$NODE1_PUBLIC_IP" ]; then
+        ssh_alias="hifate-node1"
+    elif [ "$TARGET_IP" = "$NODE2_PUBLIC_IP" ]; then
+        ssh_alias="hifate-node2"
+    fi
+    
+    # 如果配置了别名，优先使用密钥认证
+    if [ -n "$ssh_alias" ]; then
+        # 尝试使用密钥认证（静默失败，不显示错误）
+        if ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no $ssh_alias "$cmd" 2>/dev/null; then
+            return 0
+        fi
+        # 如果密钥认证失败，尝试使用IP地址和密钥
+        if ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa_hifate root@$TARGET_IP "$cmd" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    
+    # 降级到密码认证（如果密钥认证失败）
     if command -v sshpass &> /dev/null; then
         sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$TARGET_IP "$cmd"
     else
+        # 如果没有 sshpass，尝试使用 expect（如果可用）
         if command -v expect &> /dev/null; then
             expect << EOF
 spawn ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$TARGET_IP "$cmd"
@@ -92,6 +114,7 @@ expect {
 }
 EOF
         else
+            # 如果都没有，尝试直接 SSH（可能需要手动输入密码或已配置密钥）
             ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$TARGET_IP "$cmd"
         fi
     fi
@@ -136,10 +159,34 @@ fi
 # 执行模式
 echo "📤 上传同步脚本到 $NODE..."
 scp_exec() {
+    local src="$1"
+    local dst="$2"
+    
+    # 优先使用 SSH 密钥认证
+    local ssh_alias=""
+    if [ "$TARGET_IP" = "$NODE1_PUBLIC_IP" ]; then
+        ssh_alias="hifate-node1"
+    elif [ "$TARGET_IP" = "$NODE2_PUBLIC_IP" ]; then
+        ssh_alias="hifate-node2"
+    fi
+    
+    # 如果配置了别名，优先使用密钥认证
+    if [ -n "$ssh_alias" ]; then
+        # 尝试使用密钥认证（静默失败，不显示错误）
+        if scp -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no "$src" $ssh_alias:"$dst" 2>/dev/null; then
+            return 0
+        fi
+        # 如果密钥认证失败，尝试使用IP地址和密钥
+        if scp -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa_hifate "$src" root@$TARGET_IP:"$dst" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    
+    # 降级到密码认证
     if command -v sshpass &> /dev/null; then
-        sshpass -p "$SSH_PASSWORD" scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$1" root@$TARGET_IP:"$2"
+        sshpass -p "$SSH_PASSWORD" scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$src" root@$TARGET_IP:"$dst"
     else
-        scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$1" root@$TARGET_IP:"$2"
+        scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$src" root@$TARGET_IP:"$dst"
     fi
 }
 
