@@ -44,10 +44,10 @@ except ImportError:
 
 # 导入货币转换工具
 try:
-from services.payment_service.currency_converter import CurrencyConverter
-from services.payment_service.payment_api_logger import get_payment_api_logger
-from services.payment_service.fx_risk_monitor import get_fx_risk_monitor
-from server.db.payment_transaction_dao import PaymentTransactionDAO
+    from services.payment_service.currency_converter import CurrencyConverter
+    from services.payment_service.payment_api_logger import get_payment_api_logger
+    from services.payment_service.fx_risk_monitor import get_fx_risk_monitor
+    from server.db.payment_transaction_dao import PaymentTransactionDAO
 except ImportError as e:
     logger.warning(f"导入支付工具模块失败: {e}")
     CurrencyConverter = None
