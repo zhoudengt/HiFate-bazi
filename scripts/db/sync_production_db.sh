@@ -264,8 +264,10 @@ fi
 if [ ${#TABLE_NAMES[@]} -gt 0 ]; then
     for table in "${TABLE_NAMES[@]}"; do
         TABLE_EXISTS=$(ssh_exec "cd $PROJECT_DIR && \
-            mysql -h\${MYSQL_HOST:-localhost} -P\${MYSQL_PORT:-3306} -u\${MYSQL_USER:-root} -p\${MYSQL_PASSWORD:-Yuanqizhan@163} \${MYSQL_DATABASE:-hifate_bazi} -e \"SHOW TABLES LIKE '$table'\" 2>&1" | grep -c "$table" || echo "0")
-        if [ "$TABLE_EXISTS" -gt 0 ]; then
+            docker exec -i -e MYSQL_PWD='$MYSQL_PASSWORD' $MYSQL_CONTAINER mysql -uroot $MYSQL_DATABASE -e \"SHOW TABLES LIKE '$table'\" 2>&1" | grep -c "$table" || echo "0")
+        # 确保 TABLE_EXISTS 是数字
+        TABLE_EXISTS=$(echo "$TABLE_EXISTS" | tr -d '[:space:]' | grep -E '^[0-9]+$' || echo "0")
+        if [ "$TABLE_EXISTS" -gt 0 ] 2>/dev/null; then
             echo -e "  ✅ 表 $table 已创建"
         else
             echo -e "  ❌ 表 $table 创建失败"
