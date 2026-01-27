@@ -1,0 +1,56 @@
+#!/bin/bash
+# 同步配置表数据到生产环境并触发热更新
+
+set -e
+
+PROD_SERVER="root@123.57.216.15"
+PROD_DIR="/opt/HiFate-bazi"
+SQL_FILE="scripts/db/sync_config_tables_temp.sql"
+MYSQL_PASSWORD="HiFate_Prod_2024!"
+
+echo "=========================================="
+echo "  同步配置表数据到生产环境"
+echo "=========================================="
+echo ""
+
+# 检查 SQL 文件是否存在
+if [ ! -f "$SQL_FILE" ]; then
+    echo "❌ SQL 文件不存在: $SQL_FILE"
+    echo "   请先运行: python3 scripts/db/sync_config_tables_to_production.py"
+    exit 1
+fi
+
+echo "📤 上传 SQL 文件到生产服务器..."
+scp "$SQL_FILE" "$PROD_SERVER:/tmp/sync_config_tables_temp.sql" || {
+    echo "❌ 上传失败"
+    exit 1
+}
+echo "✅ 上传成功"
+
+echo ""
+echo "🔄 执行 SQL 脚本..."
+ssh "$PROD_SERVER" "cd $PROD_DIR && \
+    docker exec -i \$(docker ps --format '{{.Names}}' | grep -i mysql | head -1) \
+    mysql -uroot -p$MYSQL_PASSWORD hifate_bazi < /tmp/sync_config_tables_temp.sql && \
+    rm /tmp/sync_config_tables_temp.sql" || {
+    echo "❌ SQL 执行失败"
+    exit 1
+}
+echo "✅ SQL 执行成功"
+
+echo ""
+echo "🔄 触发热更新..."
+HOT_RELOAD_RESULT=$(ssh "$PROD_SERVER" "curl -s -X POST http://localhost:8001/api/v1/hot-reload/check" || echo "failed")
+
+if echo "$HOT_RELOAD_RESULT" | grep -q "failed\|error\|Error"; then
+    echo "⚠️  热更新可能失败，请手动检查"
+    echo "   结果: $HOT_RELOAD_RESULT"
+else
+    echo "✅ 热更新已触发"
+    echo "   结果: $HOT_RELOAD_RESULT"
+fi
+
+echo ""
+echo "=========================================="
+echo "✅ 部署完成"
+echo "=========================================="
