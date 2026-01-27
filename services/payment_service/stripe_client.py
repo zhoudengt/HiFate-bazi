@@ -275,13 +275,9 @@ class StripeClient(BasePaymentClient):
                 "cancel_url": cancel_url,
             }
             
-            # 启用 Stripe Link
-            if enable_link:
-                session_params["payment_method_options"] = {
-                    "link": {
-                        "enabled": True
-                    }
-                }
+            # 启用 Stripe Link（通过 payment_method_types 添加 link，不需要 payment_method_options）
+            # 注意：Stripe Link 已通过 payment_method_types 中的 "link" 启用
+            # 如果 enable_link 为 True，link 已经在 payment_method_types 中
             
             # 启用 Adaptive Pricing（通过配置，Stripe会自动处理货币转换）
             # 注意：Adaptive Pricing 需要在 Stripe Dashboard 中启用
