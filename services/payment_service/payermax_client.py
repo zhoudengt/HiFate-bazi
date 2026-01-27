@@ -161,6 +161,29 @@ class PayerMaxClient(BasePaymentClient):
         # Base64编码
         return base64.b64encode(signature).decode('utf-8')
 
+    def _generate_signature_from_string(self, data_string: str) -> str:
+        """
+        对字符串生成PayerMax RSA签名（用于对整个请求体签名）
+
+        Args:
+            data_string: 要签名的字符串
+
+        Returns:
+            Base64编码的签名
+        """
+        if not self.private_key:
+            raise ValueError("私钥未加载，无法生成签名")
+
+        # 使用SHA256WithRSA签名
+        signature = self.private_key.sign(
+            data_string.encode('utf-8'),
+            padding.PKCS1v15(),
+            hashes.SHA256()
+        )
+
+        # Base64编码
+        return base64.b64encode(signature).decode('utf-8')
+
     def _verify_signature(self, data: Dict[str, Any], signature: str) -> bool:
         """
         验证PayerMax响应签名
@@ -283,20 +306,24 @@ class PayerMaxClient(BasePaymentClient):
             
             api_path = "orderAndPay"
 
-            # 生成签名
-            signature = self._generate_signature(request_data["data"])
-            request_data["sign"] = signature
-
             # 发送请求
             url = f"{self.base_url}{api_path}"
+            
+            # 序列化请求体（用于签名）
+            request_body = json.dumps(request_data, separators=(',', ':'), sort_keys=False)
+            
+            # 对整个请求体生成签名，放在 Header 中
+            signature = self._generate_signature_from_string(request_body)
+            
             headers = {
                 "Content-Type": "application/json",
-                "User-Agent": "PayerMax-Client/1.0"
+                "User-Agent": "PayerMax-Client/1.0",
+                "sign": signature
             }
 
             logger.info(f"PayerMax请求URL: {url}")
-            logger.info(f"PayerMax请求数据: {json.dumps(request_data, ensure_ascii=False, indent=2)}")
-            response = requests.post(url, json=request_data, headers=headers, timeout=30)
+            logger.info(f"PayerMax请求数据: {request_body}")
+            response = requests.post(url, data=request_body, headers=headers, timeout=30)
             logger.info(f"PayerMax响应状态码: {response.status_code}")
             logger.info(f"PayerMax响应内容: {response.text[:500]}")
 
@@ -416,18 +443,22 @@ class PayerMaxClient(BasePaymentClient):
             if order_id:
                 request_data["data"]["merchantOrderNo"] = order_id
 
-            # 生成签名
-            signature = self._generate_signature(request_data["data"])
-            request_data["sign"] = signature
-
             # 发送请求
             url = f"{self.base_url}orderQuery"
+            
+            # 序列化请求体（用于签名）
+            request_body = json.dumps(request_data, separators=(',', ':'), sort_keys=False)
+            
+            # 对整个请求体生成签名，放在 Header 中
+            signature = self._generate_signature_from_string(request_body)
+            
             headers = {
                 "Content-Type": "application/json",
-                "User-Agent": "PayerMax-Client/1.0"
+                "User-Agent": "PayerMax-Client/1.0",
+                "sign": signature
             }
 
-            response = requests.post(url, json=request_data, headers=headers, timeout=30)
+            response = requests.post(url, data=request_body, headers=headers, timeout=30)
 
             if response.status_code == 200:
                 result = response.json()
@@ -537,18 +568,22 @@ class PayerMaxClient(BasePaymentClient):
                     "currency": "USD"  # 假设退款货币与原交易相同
                 }
 
-            # 生成签名
-            signature = self._generate_signature(request_data["data"])
-            request_data["sign"] = signature
-
             # 发送请求
             url = f"{self.base_url}refund"
+            
+            # 序列化请求体（用于签名）
+            request_body = json.dumps(request_data, separators=(',', ':'), sort_keys=False)
+            
+            # 对整个请求体生成签名，放在 Header 中
+            signature = self._generate_signature_from_string(request_body)
+            
             headers = {
                 "Content-Type": "application/json",
-                "User-Agent": "PayerMax-Client/1.0"
+                "User-Agent": "PayerMax-Client/1.0",
+                "sign": signature
             }
 
-            response = requests.post(url, json=request_data, headers=headers, timeout=30)
+            response = requests.post(url, data=request_body, headers=headers, timeout=30)
 
             if response.status_code == 200:
                 result = response.json()
