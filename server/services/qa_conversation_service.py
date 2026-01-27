@@ -19,7 +19,7 @@ import asyncio
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
-from server.services.coze_stream_service import CozeStreamService
+from server.services.llm_service_factory import LLMServiceFactory
 from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
 from server.services.qa_question_generator import QAQuestionGenerator
 from server.config.mysql_config import get_mysql_connection, return_mysql_connection
@@ -50,16 +50,17 @@ class QAConversationService:
         # 导入配置加载器（从数据库读取配置）
         from server.config.config_loader import get_config_from_db_only
         
-        # Coze 服务（主分析 Bot）
+        # LLM 服务（主分析 Bot）- 使用 LLMServiceFactory 支持百炼/Coze 切换
         # 只从数据库读取，不降级到环境变量
         self.analysis_bot_id = get_config_from_db_only("QA_ANALYSIS_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
         if not self.analysis_bot_id:
             raise ValueError("数据库配置缺失: QA_ANALYSIS_BOT_ID 或 COZE_BOT_ID，请在 service_configs 表中配置")
         try:
-            self.coze_service = CozeStreamService(bot_id=self.analysis_bot_id)
+            # 使用 LLMServiceFactory，scene="qa_analysis"，支持通过数据库配置切换百炼/Coze
+            self.llm_service = LLMServiceFactory.get_service(scene="qa_analysis", bot_id=self.analysis_bot_id)
         except Exception as e:
-            logger.warning(f"CozeStreamService 初始化失败（可选依赖）: {e}")
-            self.coze_service = None
+            logger.warning(f"LLMServiceFactory 初始化失败（可选依赖）: {e}")
+            self.llm_service = None
         
         # 意图识别客户端（延迟初始化）
         self.intent_client = None
@@ -474,7 +475,15 @@ class QAConversationService:
             questions_task = None  # 后台任务
             cached_questions = []  # 缓存的问题
             
-            async for chunk in self.coze_service.stream_custom_analysis(formatted_data, bot_id=self.analysis_bot_id):
+            # 使用 LLMServiceFactory 返回的服务（支持百炼/Coze）
+            if not self.llm_service:
+                yield {
+                    'type': 'error',
+                    'content': 'LLM 服务未初始化，请检查配置'
+                }
+                return
+            
+            async for chunk in self.llm_service.stream_analysis(formatted_data, bot_id=self.analysis_bot_id):
                 if chunk.get('type') == 'progress':
                     content = chunk.get('content', '')
                     if content:

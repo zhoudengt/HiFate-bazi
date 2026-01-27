@@ -21,18 +21,6 @@ logger = logging.getLogger(__name__)
 class LLMServiceFactory:
     """LLM 服务工厂 - 根据配置返回对应的 LLM 服务"""
     
-    # 场景名称到配置键前缀的映射
-    SCENE_CONFIG_MAP = {
-        "marriage": "MARRIAGE",
-        "career_wealth": "CAREER_WEALTH",
-        "health": "HEALTH",
-        "children_study": "CHILDREN_STUDY",
-        "general_review": "GENERAL_REVIEW",
-        "daily_fortune": "DAILY_FORTUNE",
-        "wuxing_proportion": "WUXING_PROPORTION",
-        "xishen_jishen": "XISHEN_JISHEN",
-    }
-    
     @classmethod
     def get_service(cls, scene: str, bot_id: Optional[str] = None) -> BaseLLMStreamService:
         """
@@ -74,9 +62,8 @@ class LLMServiceFactory:
         Returns:
             平台名称（"coze" 或 "bailian"）
         """
-        # 1. 先查场景级配置
-        config_prefix = cls.SCENE_CONFIG_MAP.get(scene, scene.upper())
-        scene_platform = get_config_from_db_only(f"{config_prefix}_LLM_PLATFORM")
+        # 1. 先查场景级配置（直接从配置表读取，使用统一的命名规则）
+        scene_platform = get_config_from_db_only(f"{scene.upper()}_LLM_PLATFORM")
         if scene_platform:
             platform = scene_platform.lower().strip()
             logger.debug(f"场景 {scene} 使用场景级配置: {platform}")

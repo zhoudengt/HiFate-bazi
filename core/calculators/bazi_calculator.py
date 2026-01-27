@@ -42,6 +42,7 @@ def _ensure_venv():
 _ensure_venv()
 
 import json
+import logging
 from lunar_python import Solar, Lunar
 from datetime import datetime, timedelta
 
@@ -90,6 +91,47 @@ from core.data.relations import (
     BRANCH_SANHE_GROUPS,
     BRANCH_SANHUI_GROUPS,
 )
+
+# 安全的 StreamHandler，捕获 Broken pipe 异常
+class SafeStreamHandler(logging.StreamHandler):
+    """安全的 StreamHandler，捕获 Broken pipe 异常"""
+    def emit(self, record):
+        try:
+            super().emit(record)
+        except (BrokenPipeError, OSError):
+            # 忽略 Broken pipe 错误，这在客户端断开连接时是正常的
+            pass
+
+# 配置日志记录器
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    # 使用安全的 StreamHandler，避免 Broken pipe 错误
+    handler = SafeStreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+
+def safe_log(level, message):
+    """
+    安全的日志输出函数，捕获 Broken pipe 等异常
+    在 Web 服务环境中，客户端断开连接时可能触发 Broken pipe 错误
+    """
+    try:
+        if level == 'info':
+            logger.info(message)
+        elif level == 'warning':
+            logger.warning(message)
+        elif level == 'error':
+            logger.error(message)
+        elif level == 'debug':
+            logger.debug(message)
+        else:
+            logger.info(message)
+    except (BrokenPipeError, OSError) as e:
+        # 忽略 Broken pipe 错误，这在客户端断开连接时是正常的
+        # 完全忽略，不尝试任何输出，避免再次触发 Broken pipe
+        pass
 
 
 
@@ -195,10 +237,10 @@ class WenZhenBazi:
             if service_result is not None:
                 return service_result
         except Exception as e:
-            print(f"⚠️  微服务调用跳过: {e}", flush=True)
+            safe_log('warning', f"⚠️  微服务调用跳过: {e}")
 
         # 使用本地计算
-        print("ℹ️  使用本地计算", flush=True)
+        safe_log('info', "ℹ️  使用本地计算")
         try:
             # 1. 使用lunar-python计算四柱和农历（包含子时处理）
             self._calculate_with_lunar()
@@ -225,9 +267,13 @@ class WenZhenBazi:
             self.last_result = result
             return result
         except Exception as e:
-            print(f"本地计算也失败: {e}")
+            safe_log('error', f"本地计算也失败: {e}")
             import traceback
-            traceback.print_exc()
+            try:
+                traceback.print_exc()
+            except (BrokenPipeError, OSError):
+                # 忽略 Broken pipe 错误
+                pass
             raise RuntimeError(f"微服务调用失败，本地计算也失败: {e}") from e
 
     def _calculate_with_lunar(self):
@@ -453,7 +499,7 @@ class WenZhenBazi:
 
         import datetime
         request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{request_time}] 🔵 bazi_calculator.py: 强制调用 bazi-core-service (gRPC): {service_url}", flush=True)
+        safe_log('info', f"[{request_time}] 🔵 bazi_calculator.py: 强制调用 bazi-core-service (gRPC): {service_url}")
 
         strict = os.getenv("BAZI_CORE_SERVICE_STRICT", "0") == "1"
         try:
@@ -462,7 +508,7 @@ class WenZhenBazi:
             # 使用30秒超时，确保有足够时间处理复杂计算
             client = BaziCoreClient(base_url=service_url, timeout=30.0)
             result = client.calculate_bazi(self.solar_date, self.solar_time, self.gender)
-            print(f"[{request_time}] ✅ bazi_calculator.py: bazi-core-service 调用成功", flush=True)
+            safe_log('info', f"[{request_time}] ✅ bazi_calculator.py: bazi-core-service 调用成功")
             self._apply_remote_core_result(result)
             return result
         except Exception as exc:
@@ -472,16 +518,16 @@ class WenZhenBazi:
             if "DEADLINE_EXCEEDED" in str(exc):
                 if is_port_listening:
                     error_msg = f"微服务调用超时（服务在运行但响应慢，端口 {port} 正在监听）: {exc}"
-                    print(f"[{request_time}] ⚠️  bazi_calculator.py: {error_msg}", flush=True)
+                    safe_log('warning', f"[{request_time}] ⚠️  bazi_calculator.py: {error_msg}")
                 else:
                     error_msg = f"微服务调用超时（服务可能已挂，端口 {port} 未在监听）: {exc}"
-                    print(f"[{request_time}] ❌ bazi_calculator.py: {error_msg}", flush=True)
+                    safe_log('error', f"[{request_time}] ❌ bazi_calculator.py: {error_msg}")
             elif "Connection refused" in str(exc) or isinstance(exc, ConnectionError):
                 error_msg = f"微服务连接被拒绝（服务已挂，端口 {port} 未在监听）: {exc}"
-                print(f"[{request_time}] ❌ bazi_calculator.py: {error_msg}", flush=True)
+                safe_log('error', f"[{request_time}] ❌ bazi_calculator.py: {error_msg}")
             else:
                 error_msg = f"微服务调用失败: {exc}"
-                print(f"[{request_time}] ❌ bazi_calculator.py: {error_msg}", flush=True)
+                safe_log('error', f"[{request_time}] ❌ bazi_calculator.py: {error_msg}")
             
             if strict:
                 raise RuntimeError(f"微服务调用失败（严格模式）: {exc}") from exc
@@ -496,9 +542,9 @@ class WenZhenBazi:
             
             if is_connection_error:
                 if is_port_listening:
-                    print(f"[{request_time}] ⚠️  服务响应超时但端口在监听，允许回退到本地计算", flush=True)
+                    safe_log('warning', f"[{request_time}] ⚠️  服务响应超时但端口在监听，允许回退到本地计算")
                 else:
-                    print(f"[{request_time}] ⚠️  服务端口未监听，允许回退到本地计算", flush=True)
+                    safe_log('warning', f"[{request_time}] ⚠️  服务端口未监听，允许回退到本地计算")
                 return None
             else:
                 # 其他错误（如数据格式错误）直接抛出
@@ -574,7 +620,7 @@ class WenZhenBazi:
 
         import datetime
         request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{request_time}] 🔵 bazi_calculator.py: 强制调用 bazi-fortune-service (gRPC): {service_url}", flush=True)
+        safe_log('info', f"[{request_time}] 🔵 bazi_calculator.py: 强制调用 bazi-fortune-service (gRPC): {service_url}")
 
         detail = None
         strict = os.getenv("BAZI_FORTUNE_SERVICE_STRICT", "0") == "1"
@@ -589,7 +635,7 @@ class WenZhenBazi:
                 self.gender,
                 current_time=current_time_str,
             )
-            print(f"[{request_time}] ✅ bazi_calculator.py: bazi-fortune-service 调用成功", flush=True)
+            safe_log('info', f"[{request_time}] ✅ bazi_calculator.py: bazi-fortune-service 调用成功")
         except Exception as exc:
             # 检查服务是否真的在运行
             is_port_listening = self._check_service_port(host, port)
@@ -597,16 +643,16 @@ class WenZhenBazi:
             if "DEADLINE_EXCEEDED" in str(exc):
                 if is_port_listening:
                     error_msg = f"微服务调用超时（服务在运行但响应慢，端口 {port} 正在监听）: {exc}"
-                    print(f"[{request_time}] ⚠️  bazi_calculator.py: {error_msg}", flush=True)
+                    safe_log('warning', f"[{request_time}] ⚠️  bazi_calculator.py: {error_msg}")
                 else:
                     error_msg = f"微服务调用超时（服务可能已挂，端口 {port} 未在监听）: {exc}"
-                    print(f"[{request_time}] ❌ bazi_calculator.py: {error_msg}", flush=True)
+                    safe_log('error', f"[{request_time}] ❌ bazi_calculator.py: {error_msg}")
             elif "Connection refused" in str(exc) or isinstance(exc, ConnectionError):
                 error_msg = f"微服务连接被拒绝（服务已挂，端口 {port} 未在监听）: {exc}"
-                print(f"[{request_time}] ❌ bazi_calculator.py: {error_msg}", flush=True)
+                safe_log('error', f"[{request_time}] ❌ bazi_calculator.py: {error_msg}")
             else:
                 error_msg = f"微服务调用失败: {exc}"
-                print(f"[{request_time}] ❌ bazi_calculator.py: {error_msg}", flush=True)
+                safe_log('error', f"[{request_time}] ❌ bazi_calculator.py: {error_msg}")
             
             if strict:
                 raise RuntimeError(f"微服务调用失败（严格模式）: {exc}") from exc
@@ -621,9 +667,9 @@ class WenZhenBazi:
             
             if is_connection_error:
                 if is_port_listening:
-                    print(f"[{request_time}] ⚠️  服务响应超时但端口在监听，允许回退到本地计算", flush=True)
+                    safe_log('warning', f"[{request_time}] ⚠️  服务响应超时但端口在监听，允许回退到本地计算")
                 else:
-                    print(f"[{request_time}] ⚠️  服务端口未监听，允许回退到本地计算", flush=True)
+                    safe_log('warning', f"[{request_time}] ⚠️  服务端口未监听，允许回退到本地计算")
                 # 允许回退到本地计算
                 from core.calculators.helpers import compute_local_detail
                 detail = compute_local_detail(
@@ -747,7 +793,7 @@ class WenZhenBazi:
         import datetime
         request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         rule_types_str = ", ".join(rule_types) if rule_types else "全部"
-        print(f"[{request_time}] 🔵 bazi_calculator.py: 强制调用 bazi-rule-service (gRPC): {service_url}, rule_types=[{rule_types_str}]", flush=True)
+        safe_log('info', f"[{request_time}] 🔵 bazi_calculator.py: 强制调用 bazi-rule-service (gRPC): {service_url}, rule_types=[{rule_types_str}]")
 
         strict = os.getenv("BAZI_RULE_SERVICE_STRICT", "0") == "1"
         try:
@@ -766,7 +812,7 @@ class WenZhenBazi:
                 use_cache=use_cache_optimized,
             )
             matched_count = len(response.get("matched", []))
-            print(f"[{request_time}] ✅ bazi_calculator.py: bazi-rule-service 调用成功，匹配 {matched_count} 条规则", flush=True)
+            safe_log('info', f"[{request_time}] ✅ bazi_calculator.py: bazi-rule-service 调用成功，匹配 {matched_count} 条规则")
             
             matched = response.get("matched", [])
             unmatched = response.get("unmatched", [])
@@ -786,16 +832,16 @@ class WenZhenBazi:
             if "DEADLINE_EXCEEDED" in str(exc):
                 if is_port_listening:
                     error_msg = f"微服务调用超时（服务在运行但响应慢，端口 {port} 正在监听）: {exc}"
-                    print(f"[{request_time}] ⚠️  bazi_calculator.py: {error_msg}", flush=True)
+                    safe_log('warning', f"[{request_time}] ⚠️  bazi_calculator.py: {error_msg}")
                 else:
                     error_msg = f"微服务调用超时（服务可能已挂，端口 {port} 未在监听）: {exc}"
-                    print(f"[{request_time}] ❌ bazi_calculator.py: {error_msg}", flush=True)
+                    safe_log('error', f"[{request_time}] ❌ bazi_calculator.py: {error_msg}")
             elif "Connection refused" in str(exc) or isinstance(exc, ConnectionError):
                 error_msg = f"微服务连接被拒绝（服务已挂，端口 {port} 未在监听）: {exc}"
-                print(f"[{request_time}] ❌ bazi_calculator.py: {error_msg}", flush=True)
+                safe_log('error', f"[{request_time}] ❌ bazi_calculator.py: {error_msg}")
             else:
                 error_msg = f"微服务调用失败: {exc}"
-                print(f"[{request_time}] ❌ bazi_calculator.py: {error_msg}", flush=True)
+                safe_log('error', f"[{request_time}] ❌ bazi_calculator.py: {error_msg}")
             
             if strict:
                 raise RuntimeError(f"微服务调用失败（严格模式）: {exc}") from exc
@@ -810,9 +856,9 @@ class WenZhenBazi:
             
             if is_connection_error:
                 if is_port_listening:
-                    print(f"[{request_time}] ⚠️  服务响应超时但端口在监听，允许回退到本地规则匹配", flush=True)
+                    safe_log('warning', f"[{request_time}] ⚠️  服务响应超时但端口在监听，允许回退到本地规则匹配")
                 else:
-                    print(f"[{request_time}] ⚠️  服务端口未监听，允许回退到本地规则匹配", flush=True)
+                    safe_log('warning', f"[{request_time}] ⚠️  服务端口未监听，允许回退到本地规则匹配")
                 # 回退到本地规则匹配
                 return self._match_rules_locally(rule_types)
             else:
@@ -1152,14 +1198,14 @@ class WenZhenBazi:
         except RuntimeError as exc:
             # 如果是环境变量未设置等错误，继续使用本地匹配
             if "未设置" in str(exc):
-                print(f"⚠️  bazi_calculator.py: {exc}", flush=True)
+                safe_log('warning', f"⚠️  bazi_calculator.py: {exc}")
             else:
                 raise
         except Exception as exc:
             # 如果是连接错误，已经在 _match_rules_via_service 中处理了回退
             # 这里捕获其他异常，继续使用本地匹配
             import traceback
-            print(f"⚠️  bazi_calculator.py: 微服务规则匹配失败，使用本地匹配: {exc}", flush=True)
+            safe_log('warning', f"⚠️  bazi_calculator.py: 微服务规则匹配失败，使用本地匹配: {exc}")
 
         # 回退到本地规则匹配
         return self._match_rules_locally(rule_types=rule_types, use_cache=use_cache)
@@ -1175,7 +1221,7 @@ class WenZhenBazi:
         try:
             bazi_data = self.build_rule_input()
         except Exception as e:
-            print(f"❌ build_rule_input 失败: {e}", flush=True)
+            safe_log('error', f"❌ build_rule_input 失败: {e}")
             import traceback
             traceback.print_exc()
             return [], []
@@ -1187,21 +1233,21 @@ class WenZhenBazi:
                 use_cache=use_cache
             )
         except Exception as e:
-            print(f"❌ RuleService.match_rules 调用失败: {e}", flush=True)
+            safe_log('error', f"❌ RuleService.match_rules 调用失败: {e}")
             import traceback
             traceback.print_exc()
             return [], []
         
         # 确保 matched 是列表，且每个元素都是字典
         if not isinstance(matched, list):
-            print(f"⚠️  RuleService.match_rules 返回了非列表类型: {type(matched)}, 值: {matched}", flush=True)
+            safe_log('warning', f"⚠️  RuleService.match_rules 返回了非列表类型: {type(matched)}, 值: {matched}")
             matched = []
         
         # 过滤掉非字典元素，并打印详细信息
         filtered_matched = []
         for idx, rule in enumerate(matched):
             if not isinstance(rule, dict):
-                print(f"⚠️  匹配规则列表中的第 {idx} 个元素不是字典: {type(rule)}, 值: {repr(rule)[:100]}", flush=True)
+                safe_log('warning', f"⚠️  匹配规则列表中的第 {idx} 个元素不是字典: {type(rule)}, 值: {repr(rule)[:100]}")
                 continue
             filtered_matched.append(rule)
         matched = filtered_matched
@@ -1210,40 +1256,40 @@ class WenZhenBazi:
         try:
             engine = RuleService.get_engine()
         except Exception as e:
-            print(f"❌ RuleService.get_engine 失败: {e}", flush=True)
+            safe_log('error', f"❌ RuleService.get_engine 失败: {e}")
             import traceback
             traceback.print_exc()
             return matched, []
         
         # 确保 engine.rules 是列表，且每个元素都是字典
         if not isinstance(engine.rules, list):
-            print(f"⚠️  engine.rules 不是列表类型: {type(engine.rules)}", flush=True)
+            safe_log('warning', f"⚠️  engine.rules 不是列表类型: {type(engine.rules)}")
             engine.rules = []
         
         relevant_rules = []
         for idx, rule in enumerate(engine.rules):
             if not isinstance(rule, dict):
-                print(f"⚠️  engine.rules 中第 {idx} 个元素不是字典: {type(rule)}, 值: {repr(rule)[:100]}", flush=True)
+                safe_log('warning', f"⚠️  engine.rules 中第 {idx} 个元素不是字典: {type(rule)}, 值: {repr(rule)[:100]}")
                 continue
             try:
                 rule_type = rule.get('rule_type')
                 if not rule_types or rule_type in rule_types:
                     relevant_rules.append(rule)
             except Exception as e:
-                print(f"⚠️  处理规则时出错 (索引 {idx}): {e}", flush=True)
+                safe_log('warning', f"⚠️  处理规则时出错 (索引 {idx}): {e}")
                 continue
         
         matched_ids = set()
         for idx, rule in enumerate(matched):
             if not isinstance(rule, dict):
-                print(f"⚠️  匹配规则列表中第 {idx} 个元素不是字典: {type(rule)}, 值: {repr(rule)[:100]}", flush=True)
+                safe_log('warning', f"⚠️  匹配规则列表中第 {idx} 个元素不是字典: {type(rule)}, 值: {repr(rule)[:100]}")
                 continue
             try:
                 rule_id = rule.get('rule_code') or rule.get('rule_id')
                 if rule_id:
                     matched_ids.add(rule_id)
             except Exception as e:
-                print(f"⚠️  获取规则 ID 时出错 (索引 {idx}): {e}, 规则: {repr(rule)[:100]}", flush=True)
+                safe_log('warning', f"⚠️  获取规则 ID 时出错 (索引 {idx}): {e}, 规则: {repr(rule)[:100]}")
                 continue
 
         def explain(condition, path=""):
@@ -1281,7 +1327,7 @@ class WenZhenBazi:
         for idx, rule in enumerate(relevant_rules):
             try:
                 if not isinstance(rule, dict):
-                    print(f"⚠️  relevant_rules 中第 {idx} 个元素不是字典: {type(rule)}, 值: {repr(rule)[:100]}", flush=True)
+                    safe_log('warning', f"⚠️  relevant_rules 中第 {idx} 个元素不是字典: {type(rule)}, 值: {repr(rule)[:100]}")
                     continue
                 
                 rule_id = rule.get('rule_id') or rule.get('rule_code')
@@ -1294,12 +1340,12 @@ class WenZhenBazi:
                         try:
                             context_map[rule_id] = self._collect_condition_values(conditions, bazi_data)
                         except Exception as e:
-                            print(f"⚠️  收集条件值时出错 (规则 {rule_id}): {e}", flush=True)
+                            safe_log('warning', f"⚠️  收集条件值时出错 (规则 {rule_id}): {e}")
                     continue
                 
                 conditions = rule.get('conditions', {})
                 if not isinstance(conditions, dict):
-                    print(f"⚠️  规则 {rule_id} 的 conditions 不是字典类型: {type(conditions)}, 值: {repr(conditions)[:100]}", flush=True)
+                    safe_log('warning', f"⚠️  规则 {rule_id} 的 conditions 不是字典类型: {type(conditions)}, 值: {repr(conditions)[:100]}")
                     conditions = {}
                 
                 try:
@@ -1307,10 +1353,10 @@ class WenZhenBazi:
                         try:
                             context_map[rule_id] = self._collect_condition_values(conditions, bazi_data)
                         except Exception as e:
-                            print(f"⚠️  收集条件值时出错 (规则 {rule_id}): {e}", flush=True)
+                            safe_log('warning', f"⚠️  收集条件值时出错 (规则 {rule_id}): {e}")
                         continue
                 except Exception as e:
-                    print(f"⚠️  匹配规则 {rule_id} 时出错: {e}", flush=True)
+                    safe_log('warning', f"⚠️  匹配规则 {rule_id} 时出错: {e}")
                     import traceback
                     traceback.print_exc()
                     continue
@@ -1322,7 +1368,7 @@ class WenZhenBazi:
                         for key in ('rule_id', 'rule_code', 'rule_name', 'rule_type', 'conditions', 'content')
                     }
                 except Exception as e:
-                    print(f"⚠️  构建 rule_snapshot 时出错 (规则 {rule_id}): {e}", flush=True)
+                    safe_log('warning', f"⚠️  构建 rule_snapshot 时出错 (规则 {rule_id}): {e}")
                     rule_snapshot = {}
                 
                 unmatched.append({
@@ -1336,9 +1382,9 @@ class WenZhenBazi:
                 try:
                     context_map[rule_id] = self._collect_condition_values(conditions, bazi_data)
                 except Exception as e:
-                    print(f"⚠️  收集条件值时出错 (规则 {rule_id}): {e}", flush=True)
+                    safe_log('warning', f"⚠️  收集条件值时出错 (规则 {rule_id}): {e}")
             except Exception as e:
-                print(f"❌ 处理规则时发生未捕获的异常 (索引 {idx}): {e}", flush=True)
+                safe_log('error', f"❌ 处理规则时发生未捕获的异常 (索引 {idx}): {e}")
                 import traceback
                 traceback.print_exc()
                 continue

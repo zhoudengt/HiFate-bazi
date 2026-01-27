@@ -396,8 +396,9 @@
             errorMsg.textContent = '';
             
             try {
-                // 创建支付会话
-                const response = await api.post('/payment/create-session', {
+                // 使用统一支付接口创建支付
+                const response = await api.post('/payment/unified/create', {
+                    provider: 'stripe',
                     amount: parseFloat(amount).toFixed(2),
                     currency: currency,
                     product_name: productName.trim(),
@@ -408,13 +409,32 @@
                     }
                 });
                 
-                if (response.success && response.checkout_url) {
+                if (response.success) {
                     // 清除保存的表单数据（因为即将跳转）
                     sessionStorage.removeItem('paymentFormData');
-                    // 跳转到Stripe支付页面
-                    window.location.href = response.checkout_url;
+                    
+                    // 获取支付URL（可能是 checkout_url 或 payment_url）
+                    const paymentUrl = response.checkout_url || response.payment_url;
+                    
+                    if (!paymentUrl) {
+                        throw new Error('支付链接不存在');
+                    }
+                    
+                    // 构建待支付页面URL参数
+                    const pendingParams = new URLSearchParams({
+                        order_id: response.order_id || '',
+                        payment_url: paymentUrl,
+                        expires_at: response.expires_at || '',
+                        created_at: response.created_at || '',
+                        product_name: productName.trim(),
+                        amount: parseFloat(amount).toFixed(2),
+                        currency: currency
+                    });
+                    
+                    // 跳转到待支付页面
+                    window.location.href = `payment-pending.html?${pendingParams.toString()}`;
                 } else {
-                    throw new Error(response.message || '创建支付会话失败');
+                    throw new Error(response.message || response.detail || '创建支付失败');
                 }
             } catch (error) {
                 console.error('Payment error:', error);

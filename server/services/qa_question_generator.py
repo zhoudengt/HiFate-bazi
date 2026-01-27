@@ -16,7 +16,7 @@ import asyncio
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
-from server.services.coze_stream_service import CozeStreamService
+from server.services.llm_service_factory import LLMServiceFactory
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,8 @@ class QAQuestionGenerator:
         self.question_bot_id = get_config_from_db_only("QA_QUESTION_GENERATOR_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
         if not self.question_bot_id:
             raise ValueError("数据库配置缺失: QA_QUESTION_GENERATOR_BOT_ID 或 COZE_BOT_ID，请在 service_configs 表中配置")
-        self.coze_service = CozeStreamService(bot_id=self.question_bot_id)
+        # 使用 LLMServiceFactory，scene="qa_question_generate"，支持通过数据库配置切换百炼/Coze
+        self.llm_service = LLMServiceFactory.get_service(scene="qa_question_generate", bot_id=self.question_bot_id)
     
     async def generate_questions_after_answer(
         self,
@@ -151,7 +152,8 @@ class QAQuestionGenerator:
             questions_text = ""
             
             # 调用 Coze Bot（流式，提示词在 Coze Bot 中）
-            async for chunk in self.coze_service.stream_custom_analysis(formatted_data, bot_id=self.question_bot_id):
+            # 使用 LLMServiceFactory 返回的服务（支持百炼/Coze）
+            async for chunk in self.llm_service.stream_analysis(formatted_data, bot_id=self.question_bot_id):
                 if chunk.get('type') == 'progress':
                     questions_text += chunk.get('content', '')
                 elif chunk.get('type') == 'complete':

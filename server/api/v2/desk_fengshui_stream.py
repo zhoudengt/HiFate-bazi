@@ -59,9 +59,13 @@ async def desk_fengshui_test(
         image_bytes = await image.read()
         
         # 调用分析服务
-        # 确保从正确的路径导入
+        # 确保从正确的路径导入（需要支持相对导入）
         import sys
-        desk_fengshui_path = os.path.join(project_root, 'services', 'desk_fengshui')
+        desk_fengshui_path = os.path.abspath(os.path.join(project_root, 'services', 'desk_fengshui'))
+        # 清理可能存在的其他 analyzer 模块
+        modules_to_remove = [name for name in sys.modules.keys() if name == 'analyzer']
+        for name in modules_to_remove:
+            del sys.modules[name]
         # 确保desk_fengshui路径在最前面，这样相对导入才能工作
         if desk_fengshui_path in sys.path:
             sys.path.remove(desk_fengshui_path)
@@ -187,9 +191,13 @@ async def desk_fengshui_stream_generator(
         
         # 5. 调用基础分析服务（异步，带超时）
         try:
-            # 确保从正确的路径导入
+            # 确保从正确的路径导入（需要支持相对导入）
             import sys
-            desk_fengshui_path = os.path.join(project_root, 'services', 'desk_fengshui')
+            desk_fengshui_path = os.path.abspath(os.path.join(project_root, 'services', 'desk_fengshui'))
+            # 清理可能存在的其他 analyzer 模块
+            modules_to_remove = [name for name in sys.modules.keys() if name == 'analyzer']
+            for name in modules_to_remove:
+                del sys.modules[name]
             # 确保desk_fengshui路径在最前面，这样相对导入才能工作
             if desk_fengshui_path in sys.path:
                 sys.path.remove(desk_fengshui_path)
@@ -245,8 +253,17 @@ async def desk_fengshui_stream_generator(
         except ImportError as e:
             error_msg = {
                 'type': 'error',
-                'content': "服务未就绪，请稍后重试"
+                'content': f"服务导入失败: {str(e)}。请检查服务模块是否正确安装。"
             }
+            logger.error(f"DeskFengshuiAnalyzer 导入失败: {e}", exc_info=True)
+            yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+            return
+        except Exception as e:
+            error_msg = {
+                'type': 'error',
+                'content': f"分析服务异常: {str(e)}"
+            }
+            logger.error(f"办公桌风水分析异常: {e}", exc_info=True)
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         

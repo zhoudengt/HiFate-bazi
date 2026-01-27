@@ -90,6 +90,41 @@
             text-align: center;
             padding: 40px;
         }
+        
+        .retry-info {
+            margin: 20px 0;
+            padding: 15px;
+            background: #fff3cd;
+            border-radius: 5px;
+            color: #856404;
+            font-size: 14px;
+        }
+        
+        .btn-retry {
+            display: inline-block;
+            padding: 12px 30px;
+            background: #ffc107;
+            color: #333;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: all 0.3s;
+            margin: 10px;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .btn-retry:hover {
+            background: #e0a800;
+            transform: translateY(-2px);
+        }
+        
+        .btn-retry:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
     </style>
 </head>
 <body>
@@ -129,6 +164,8 @@
             <div class="success-icon" style="background: #dc3545;">✗</div>
             <h1 class="success-title">支付验证失败</h1>
             <p class="success-message" id="errorMessage">无法验证支付状态，请稍后重试</p>
+            <div id="retryInfo" class="retry-info" style="display: none;"></div>
+            <button id="btnRetry" class="btn-retry" onclick="retryVerify()">再次验证</button>
             <a href="payment.html" class="btn-back">返回支付页面</a>
         </div>
     </div>
@@ -143,9 +180,10 @@
         
         const api = new ApiClient(API_CONFIG.baseURL);
         
-        // 从URL参数获取session_id
+        // 从URL参数获取session_id和provider
         const urlParams = new URLSearchParams(window.location.search);
         const sessionId = urlParams.get('session_id');
+        const provider = urlParams.get('provider') || 'stripe';
         
         if (!sessionId) {
             document.getElementById('loading').style.display = 'none';
@@ -154,35 +192,97 @@
             return;
         }
         
-        // 验证支付状态
-        async function verifyPayment() {
+        // 重试配置
+        const MAX_RETRIES = 3;
+        let retryCount = 0;
+        let isVerifying = false;
+        
+        // 验证支付状态（带自动重试）
+        async function verifyPayment(showRetryInfo = false) {
+            if (isVerifying) {
+                return; // 防止重复调用
+            }
+            
+            isVerifying = true;
+            
+            // 显示加载状态
+            if (retryCount === 0) {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('successContent').style.display = 'none';
+                document.getElementById('errorContent').style.display = 'none';
+            }
+            
+            // 显示重试信息
+            if (showRetryInfo && retryCount > 0) {
+                const retryInfo = document.getElementById('retryInfo');
+                retryInfo.textContent = `正在重试第 ${retryCount} 次...`;
+                retryInfo.style.display = 'block';
+            }
+            
             try {
-                const response = await api.post('/payment/verify', {
-                    session_id: sessionId
-                });
+                // 使用统一支付接口验证
+                const verifyPayload = provider === 'stripe' 
+                    ? { provider: 'stripe', session_id: sessionId }
+                    : { provider: provider, payment_id: sessionId };
+                
+                const response = await api.post('/payment/unified/verify', verifyPayload);
                 
                 if (response.success) {
                     // 显示成功信息
                     document.getElementById('loading').style.display = 'none';
+                    document.getElementById('errorContent').style.display = 'none';
                     document.getElementById('successContent').style.display = 'block';
+                    document.getElementById('retryInfo').style.display = 'none';
                     
                     document.getElementById('sessionId').textContent = sessionId.substring(0, 20) + '...';
-                    document.getElementById('amount').textContent = response.currency + response.amount;
-                    document.getElementById('status').textContent = response.status === 'success' ? '已支付' : response.status;
+                    if (response.amount && response.currency) {
+                        document.getElementById('amount').textContent = `${response.currency} ${response.amount}`;
+                    }
+                    document.getElementById('status').textContent = response.status === 'success' || response.paid ? '已支付' : (response.status || '待确认');
                     
-                    if (response.created_at) {
-                        const date = new Date(response.created_at * 1000);
+                    if (response.paid_time) {
+                        const date = new Date(response.paid_time);
+                        document.getElementById('createdAt').textContent = date.toLocaleString('zh-CN');
+                    } else if (response.created_at) {
+                        const date = new Date(response.created_at);
                         document.getElementById('createdAt').textContent = date.toLocaleString('zh-CN');
                     }
                 } else {
                     throw new Error(response.message || '支付验证失败');
                 }
             } catch (error) {
-                console.error('Verify payment error:', error);
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('errorContent').style.display = 'block';
-                document.getElementById('errorMessage').textContent = error.message || '支付验证失败，请稍后重试';
+                console.error(`Verify payment error (attempt ${retryCount + 1}):`, error);
+                
+                retryCount++;
+                
+                // 如果还有重试次数，自动重试
+                if (retryCount < MAX_RETRIES) {
+                    // 重试间隔递增：第1次1秒，第2次2秒，第3次3秒
+                    const delay = retryCount * 1000;
+                    
+                    setTimeout(() => {
+                        isVerifying = false;
+                        verifyPayment(true);
+                    }, delay);
+                } else {
+                    // 重试次数用完，显示错误
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('errorContent').style.display = 'block';
+                    document.getElementById('errorMessage').textContent = error.message || '支付验证失败，请稍后重试';
+                    document.getElementById('retryInfo').textContent = `已重试 ${MAX_RETRIES} 次，仍未成功。您可以点击"再次验证"手动重试。`;
+                    document.getElementById('retryInfo').style.display = 'block';
+                    isVerifying = false;
+                }
             }
+        }
+        
+        // 手动重试函数
+        function retryVerify() {
+            retryCount = 0; // 重置重试计数
+            document.getElementById('btnRetry').disabled = true;
+            verifyPayment(true).finally(() => {
+                document.getElementById('btnRetry').disabled = false;
+            });
         }
         
         // 页面加载后验证支付

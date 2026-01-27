@@ -188,7 +188,17 @@ class BaziDisplayService:
             dict: 前端友好的排盘数据
         """
         # 调用现有服务（不修改）
-        bazi_result = BaziService.calculate_bazi_full(solar_date, solar_time, gender)
+        try:
+            bazi_result = BaziService.calculate_bazi_full(solar_date, solar_time, gender)
+        except (BrokenPipeError, OSError) as e:
+            # 处理 Broken pipe 错误（客户端断开连接）
+            if isinstance(e, BrokenPipeError) or (isinstance(e, OSError) and e.errno == 32):
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning("客户端断开连接，计算中断")
+                return {"success": False, "error": "客户端连接已断开", "error_type": "client_disconnected"}
+            raise  # 其他 OSError 继续抛出
+        
         if not bazi_result:
             return {"success": False, "error": "八字计算失败"}
         

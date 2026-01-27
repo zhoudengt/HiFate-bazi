@@ -34,18 +34,6 @@ logger = logging.getLogger(__name__)
 class BailianStreamService(BaseLLMStreamService):
     """百炼流式服务 - 包装 BailianClient 为统一接口"""
     
-    # 场景名称到配置键的映射
-    SCENE_CONFIG_MAP = {
-        "marriage": "BAILIAN_MARRIAGE_APP_ID",
-        "career_wealth": "BAILIAN_CAREER_WEALTH_APP_ID",
-        "health": "BAILIAN_HEALTH_APP_ID",
-        "children_study": "BAILIAN_CHILDREN_STUDY_APP_ID",
-        "general_review": "BAILIAN_GENERAL_REVIEW_APP_ID",
-        "daily_fortune": "BAILIAN_DAILY_FORTUNE_APP_ID",
-        "wuxing_proportion": "BAILIAN_WUXING_PROPORTION_APP_ID",
-        "xishen_jishen": "BAILIAN_XISHEN_JISHEN_APP_ID",
-    }
-    
     def __init__(self, scene: str, api_key: Optional[str] = None):
         """
         初始化百炼流式服务
@@ -67,20 +55,19 @@ class BailianStreamService(BaseLLMStreamService):
         # 创建配置（使用默认的 app_ids 映射）
         config = BailianConfig(api_key=api_key)
         
-        # 根据场景从数据库读取 app_id（如果配置了则覆盖默认值）
-        app_id_config_key = self.SCENE_CONFIG_MAP.get(scene)
-        if app_id_config_key:
-            app_id = get_config_from_db_only(app_id_config_key)
-            if app_id:
-                config.app_ids[scene] = app_id
-                logger.info(f"使用数据库配置的 App ID: {scene} -> {app_id}")
+        # 根据场景从数据库读取 app_id（统一命名规则：BAILIAN_{SCENE.upper()}_APP_ID）
+        app_id_config_key = f"BAILIAN_{scene.upper()}_APP_ID"
+        app_id = get_config_from_db_only(app_id_config_key)
+        if app_id:
+            config.app_ids[scene] = app_id
+            logger.info(f"使用数据库配置的 App ID: {scene} -> {app_id}")
+        else:
+            # 如果数据库没有配置，尝试使用默认配置中的 app_id
+            default_app_id = config.get_app_id(scene)
+            if default_app_id:
+                logger.info(f"使用默认配置的 App ID: {scene} -> {default_app_id}")
             else:
-                # 使用默认配置中的 app_id
-                default_app_id = config.get_app_id(scene)
-                if default_app_id:
-                    logger.info(f"使用默认配置的 App ID: {scene} -> {default_app_id}")
-                else:
-                    logger.warning(f"未找到 {scene} 场景的 App ID 配置")
+                logger.warning(f"未找到 {scene} 场景的 App ID 配置（数据库配置键: {app_id_config_key}）")
         
         self.client = BailianClient(config)
         self.scene = scene
@@ -107,7 +94,7 @@ class BailianStreamService(BaseLLMStreamService):
         """
         app_id = self.client.config.get_app_id(self.scene)
         if not app_id:
-            error_msg = f'百炼平台未配置 {self.scene} 场景的 App ID，请配置 {self.SCENE_CONFIG_MAP.get(self.scene, "BAILIAN_APP_ID")}'
+            error_msg = f'百炼平台未配置 {self.scene} 场景的 App ID，请在 service_configs 表中配置 BAILIAN_{self.scene.upper()}_APP_ID'
             logger.error(error_msg)
             yield {
                 'type': 'error',

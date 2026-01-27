@@ -124,13 +124,32 @@ async def get_pan_display(request: BaziDisplayRequest):
         # >>> 缓存检查结束 <<<
         
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            executor,
-            BaziDisplayService.get_pan_display,
-            final_solar_date,
-            final_solar_time,
-            request.gender
-        )
+        try:
+            result = await loop.run_in_executor(
+                executor,
+                BaziDisplayService.get_pan_display,
+                final_solar_date,
+                final_solar_time,
+                request.gender
+            )
+        except BrokenPipeError:
+            # 客户端断开连接，返回友好的错误响应
+            logger.warning("客户端断开连接，计算中断")
+            return {
+                "success": False,
+                "error": "客户端连接已断开",
+                "error_type": "client_disconnected"
+            }
+        except OSError as e:
+            # 处理其他可能的 Broken pipe 相关错误
+            if e.errno == 32:  # Broken pipe
+                logger.warning("客户端断开连接，计算中断")
+                return {
+                    "success": False,
+                    "error": "客户端连接已断开",
+                    "error_type": "client_disconnected"
+                }
+            raise  # 其他 OSError 继续抛出
         
         if result.get('success'):
             # >>> 缓存写入 <<<

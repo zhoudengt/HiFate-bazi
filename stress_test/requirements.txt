@@ -1,0 +1,20 @@
+# HiFate-bazi 压力测试依赖
+# 安装命令: pip install -r requirements.txt
+
+# Locust 压测框架
+locust>=2.20.0
+
+# HTTP 客户端（Locust 内置，但显式声明版本）
+requests>=2.31.0
+
+# 数据处理
+faker>=22.0.0
+
+# 报告生成
+jinja2>=3.1.0
+
+# 命令行参数解析（Python 内置，无需安装）
+# argparse
+
+# 可选：更好的进度显示
+rich>=13.0.0

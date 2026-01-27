@@ -55,9 +55,16 @@ class BaziService:
 
         # 2. 如未调用远程或失败，则使用本地计算
         if bazi_result is None:
-            calculator = BaziCalculator(solar_date, solar_time, gender)
-            bazi_result = calculator.calculate()
-            calculator = None
+            try:
+                calculator = BaziCalculator(solar_date, solar_time, gender)
+                bazi_result = calculator.calculate()
+                calculator = None
+            except (BrokenPipeError, OSError) as e:
+                # 处理 Broken pipe 错误（客户端断开连接）
+                if isinstance(e, BrokenPipeError) or (isinstance(e, OSError) and e.errno == 32):
+                    logger.warning("客户端断开连接，计算中断")
+                    return None  # 返回 None，让上层处理
+                raise  # 其他 OSError 继续抛出
         else:
             # ✅ 修复：如果 gRPC 服务返回的数据缺少某些字段，使用本地计算补充
             try:

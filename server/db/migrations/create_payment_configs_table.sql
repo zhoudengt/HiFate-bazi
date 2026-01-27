@@ -11,7 +11,7 @@ USE `hifate_bazi`;
 -- ========================================
 CREATE TABLE IF NOT EXISTS `payment_configs` (
     `id` INT PRIMARY KEY AUTO_INCREMENT COMMENT '配置ID',
-    `provider` VARCHAR(50) NOT NULL COMMENT '支付渠道：stripe/paypal/alipay/wechat/linepay/newebpay/shared',
+    `provider` VARCHAR(50) NOT NULL COMMENT '支付渠道：stripe/paypal/payssion/payermax/alipay/wechat/linepay/newebpay/shared',
     `config_key` VARCHAR(100) NOT NULL COMMENT '配置键（如：secret_key, client_id等）',
     `config_value` TEXT COMMENT '配置值（敏感信息建议加密存储）',
     `config_type` VARCHAR(20) DEFAULT 'string' COMMENT '配置类型：string/int/bool/json',
@@ -34,22 +34,26 @@ CREATE TABLE IF NOT EXISTS `payment_configs` (
 -- 配置说明
 -- ========================================
 -- provider 支持的支付渠道：
---   - stripe: Stripe支付
---   - paypal: PayPal支付
---   - alipay: 支付宝国际版
---   - wechat: 微信支付
---   - linepay: Line Pay支付
---   - newebpay: 蓝新金流支付
+--   - stripe: Stripe支付（全球信用卡）
+--   - paypal: PayPal支付（全球电子钱包）
+--   - payssion: Payssion支付聚合（LINE Pay 中转，香港公司适用）
+--   - payermax: PayerMax支付聚合（全球600+支付方式）
+--   - alipay: 支付宝国际版（中国用户）
+--   - wechat: 微信支付（中国用户）
+--   - linepay: Line Pay直接集成（台湾、日本、泰国）
+--   - newebpay: 蓝新金流支付（台湾本地）
 --   - shared: 共享配置（如前端URL、API URL等）
 --
 -- environment 支持的环境：
 --   - production: 生产环境
---   - sandbox: 沙箱/测试环境（Stripe, PayPal, Line Pay）
---   - test: 测试环境（NewebPay）
+--   - sandbox: 沙箱/测试环境（Stripe, PayPal, Line Pay, Payssion）
+--   - test: 测试环境（PayerMax, NewebPay）
 --
 -- config_key 配置键示例：
 --   Stripe: secret_key, public_key
 --   PayPal: client_id, client_secret, mode
+--   Payssion: api_key, secret, merchant_id
+--   PayerMax: app_id, merchant_no, private_key_path, public_key_path
 --   Alipay: app_id, private_key_path, public_key_path, gateway
 --   WeChat: app_id, mch_id, api_key, cert_path, key_path
 --   Line Pay: channel_id, channel_secret, mode, sandbox_url, production_url

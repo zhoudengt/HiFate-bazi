@@ -2,7 +2,7 @@
 
 > **目的**：记录开发过程中遇到的问题及其解决方案，预防类似问题再次发生
 > **维护原则**：遇到新问题时主动更新，形成持续改进的知识积累
-> **最后更新**：2026-01-22（新增 ERR-CICD-001）
+> **最后更新**：2026-01-26（新增 ERR-API-002）
 
 ---
 
@@ -10,7 +10,7 @@
 
 | 分类 | 说明 | 问题数量 |
 |------|------|----------|
-| [API 注册](#api-注册问题) | API 端点注册、路由配置相关 | 1 |
+| [API 注册](#api-注册问题) | API 端点注册、路由配置相关 | 2 |
 | [gRPC 网关](#grpc-网关问题) | gRPC-Web 网关、端点映射相关 | 1 |
 | [Coze API 问题](#coze-api-问题) | Coze API 调用、Bot 配置相关 | 1 |
 | [部署问题](#部署问题) | 增量部署、热更新相关 | 1 |
@@ -72,6 +72,83 @@ grpc-message: Unsupported endpoint: /bazi/wuxing-proportion/stream
 - `server/api/v1/*.py` - API 实现
 
 **提交记录**：`68fb76e` - feat(grpc): 注册所有流式端点到 gRPC 网关
+
+---
+
+### ERR-API-002：Broken pipe 错误（print 语句导致）
+
+**问题发生日期**：2026-01-26
+
+**问题描述**：
+在 Web 服务环境中，当客户端提前断开连接时，`bazi_calculator.py` 中的 `print(..., flush=True)` 语句会触发 `BrokenPipeError: [Errno 32] Broken pipe` 错误，导致计算失败。
+
+**现象**：
+```
+计算异常: [Errno 32] Broken pipe
+Traceback (most recent call last):
+  File "core/calculators/bazi_calculator.py", line 201, in calculate
+    print("ℹ️  使用本地计算", flush=True)
+BrokenPipeError: [Errno 32] Broken pipe
+```
+
+**根因分析**：
+1. **Web 服务环境特性**：在 Web 服务中，stdout 可能被重定向到管道或日志系统
+2. **客户端断开连接**：当客户端提前断开连接时，管道会被关闭
+3. **print 语句问题**：`print(..., flush=True)` 尝试写入已关闭的管道，触发 Broken pipe 错误
+4. **影响范围**：所有使用 `print(..., flush=True)` 的地方（共 46 处）
+
+**影响范围**：
+- `core/calculators/bazi_calculator.py` - 八字计算核心逻辑
+- 所有通过 Web API 调用八字计算的接口
+- 客户端断开连接时的错误处理
+
+**解决方案**：
+1. **添加 logging 支持**：
+   - 在 `bazi_calculator.py` 中导入 `logging` 模块
+   - 创建 logger 实例
+   
+2. **创建安全的日志输出函数**：
+   ```python
+   def safe_log(level, message):
+       """安全的日志输出函数，捕获 Broken pipe 等异常"""
+       try:
+           if level == 'info':
+               logger.info(message)
+           elif level == 'warning':
+               logger.warning(message)
+           elif level == 'error':
+               logger.error(message)
+           # ...
+       except (BrokenPipeError, OSError) as e:
+           # 忽略 Broken pipe 错误，这在客户端断开连接时是正常的
+           try:
+               print(f"[日志输出失败] {message}", file=sys.stderr)
+           except:
+               pass  # 如果 stderr 也关闭了，则完全忽略
+   ```
+
+3. **替换所有 print 语句**：
+   - 将所有 `print(..., flush=True)` 替换为 `safe_log('info', ...)` 或 `safe_log('warning', ...)` 等
+   - 根据日志级别选择合适的日志方法
+
+**预防措施**：
+1. ✅ **使用 logging 而不是 print**：在 Web 服务代码中，始终使用 logging 模块而不是 print 语句
+2. ✅ **捕获 Broken pipe 异常**：在日志输出函数中捕获并忽略 Broken pipe 错误
+3. ✅ **代码审查检查**：在代码审查时检查是否有 print 语句，特别是在 Web 服务相关的代码中
+4. ✅ **使用统一的日志系统**：考虑使用项目中的统一日志系统（`server/utils/unified_logger.py`）
+
+**检查清单**：
+- [ ] Web 服务代码中是否使用了 print 语句？
+- [ ] 是否使用了 logging 模块进行日志输出？
+- [ ] 日志输出函数是否捕获了 Broken pipe 异常？
+- [ ] 是否在客户端断开连接时测试了错误处理？
+
+**相关文件**：
+- `core/calculators/bazi_calculator.py` - 八字计算核心逻辑（已修复）
+- `server/api/v1/bazi_display.py` - 八字显示 API
+- `server/services/bazi_display_service.py` - 八字显示服务
+
+**提交记录**：待提交 - fix(bazi): 修复 Broken pipe 错误，将 print 语句替换为安全的日志输出
 
 ---
 

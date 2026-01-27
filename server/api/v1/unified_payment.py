@@ -38,6 +38,13 @@ except ImportError as e:
     get_whitelist_manager = None
     CurrencyConverter = None
 
+# 导入支付交易 DAO（用于过期检查）
+try:
+    from server.db.payment_transaction_dao import PaymentTransactionDAO
+except ImportError as e:
+    logger.warning(f"导入支付交易DAO失败: {e}")
+    PaymentTransactionDAO = None
+
 router = APIRouter()
 
 # 支付客户端通过工厂模式动态获取，无需预初始化
@@ -81,6 +88,8 @@ class CreatePaymentResponse(BaseModel):
     jsapi_params: Optional[Dict] = None
     status: Optional[str] = None
     message: Optional[str] = None
+    expires_at: Optional[str] = None  # 订单过期时间（ISO 8601格式）
+    created_at: Optional[str] = None  # 订单创建时间（ISO 8601格式）
 
 
 class VerifyPaymentRequest(BaseModel):
@@ -235,12 +244,43 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
                 detail=result.get('error', f'{provider} 支付创建失败')
             )
 
+        # 计算过期时间（30分钟后）和创建时间
+        from datetime import datetime, timedelta
+        created_at = datetime.now()
+        expires_at = created_at + timedelta(minutes=30)
+        created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
+        expires_at_str = expires_at.strftime('%Y-%m-%d %H:%M:%S')
+
+        # 统一更新数据库中的 expires_at（确保所有支付渠道都保存过期时间）
+        if PaymentTransactionDAO and order_id:
+            try:
+                # 查找交易记录并更新 expires_at
+                transaction = PaymentTransactionDAO.get_transaction_by_order_id(order_id)
+                if transaction:
+                    # 如果交易记录存在但没有 expires_at，更新它
+                    from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+                    conn = get_mysql_connection()
+                    try:
+                        with conn.cursor() as cursor:
+                            cursor.execute(
+                                "UPDATE payment_transactions SET expires_at = %s WHERE order_id = %s",
+                                (expires_at_str, order_id)
+                            )
+                            conn.commit()
+                            logger.info(f"已更新订单过期时间: order_id={order_id}, expires_at={expires_at_str}")
+                    finally:
+                        return_mysql_connection(conn)
+            except Exception as e:
+                logger.warning(f"更新订单过期时间失败: {e}")
+
         # 构建统一的响应格式
         response_data = {
             "success": True,
             "provider": provider,
             "status": result.get('status', 'created'),
             "message": result.get('message', f'{provider} 支付创建成功'),
+            "created_at": result.get('created_at', created_at_str),  # 优先使用客户端返回的时间
+            "expires_at": result.get('expires_at', expires_at_str),  # 优先使用客户端返回的过期时间
         }
 
         # 根据支付平台的返回结果设置相应的字段
@@ -304,30 +344,75 @@ def verify_unified_payment(request: VerifyPaymentRequest):
         verify_params = {}
 
         # 根据支付平台设置验证参数
+        order_id_for_check = None
         if provider == "stripe":
             if not request.session_id:
                 raise HTTPException(status_code=400, detail="Stripe验证需要提供session_id")
             verify_params["session_id"] = request.session_id
+            # Stripe 通过 session_id 查找 order_id（从数据库）
+            if PaymentTransactionDAO:
+                transaction = PaymentTransactionDAO.get_transaction_by_provider_payment_id(
+                    provider_payment_id=request.session_id,
+                    provider='stripe'
+                )
+                if transaction:
+                    order_id_for_check = transaction.get('order_id')
         elif provider == "paypal":
             if not request.payment_id:
                 raise HTTPException(status_code=400, detail="PayPal验证需要提供payment_id")
             verify_params["payment_id"] = request.payment_id
+            # PayPal 通过 payment_id 查找 order_id
+            if PaymentTransactionDAO:
+                transaction = PaymentTransactionDAO.get_transaction_by_provider_payment_id(
+                    provider_payment_id=request.payment_id,
+                    provider='paypal'
+                )
+                if transaction:
+                    order_id_for_check = transaction.get('order_id')
         elif provider == "payermax":
             # PayerMax 支持 transaction_id 或 order_id 验证
             if request.transaction_id:
                 verify_params["transaction_id"] = request.transaction_id
+                # 通过 transaction_id 查找 order_id
+                if PaymentTransactionDAO:
+                    transaction = PaymentTransactionDAO.get_transaction_by_provider_payment_id(
+                        provider_payment_id=request.transaction_id,
+                        provider='payermax'
+                    )
+                    if transaction:
+                        order_id_for_check = transaction.get('order_id')
             elif request.order_id:
                 verify_params["order_id"] = request.order_id
+                order_id_for_check = request.order_id
             else:
                 raise HTTPException(status_code=400, detail="PayerMax验证需要提供transaction_id或order_id")
         elif provider in ["payssion", "linepay"]:
             if not request.transaction_id:
                 raise HTTPException(status_code=400, detail=f"{provider}验证需要提供transaction_id")
             verify_params["transaction_id"] = request.transaction_id
+            # 通过 transaction_id 查找 order_id
+            if PaymentTransactionDAO:
+                transaction = PaymentTransactionDAO.get_transaction_by_provider_payment_id(
+                    provider_payment_id=request.transaction_id,
+                    provider=provider
+                )
+                if transaction:
+                    order_id_for_check = transaction.get('order_id')
         elif provider in ["alipay", "wechat"]:
             if not request.order_id:
                 raise HTTPException(status_code=400, detail=f"{provider}验证需要提供order_id")
             verify_params["order_id"] = request.order_id
+            order_id_for_check = request.order_id
+
+        # 检查订单是否过期（后端强制检查）
+        if PaymentTransactionDAO and order_id_for_check:
+            is_expired = PaymentTransactionDAO.check_expired(order_id_for_check)
+            if is_expired:
+                return VerifyPaymentResponse(
+                    success=False,
+                    provider=provider,
+                    message="订单已过期，请重新创建订单"
+                )
 
         # 调用支付客户端验证支付
         result = payment_client.verify_payment(**verify_params)

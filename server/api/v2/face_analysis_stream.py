@@ -236,12 +236,47 @@ async def face_analysis_stream_generator(
             }
         
         # 5. 调用基础分析服务
-        service = FaceAnalysisService()
-        result = service.analyze_face_features(
-            image_data,
-            image_format='jpg',
-            birth_info=birth_info
-        )
+        try:
+            service = FaceAnalysisService()
+        except ImportError as e:
+            error_msg = {
+                'type': 'error',
+                'content': f"服务初始化失败: 缺少依赖模块。请安装依赖: pip install -r services/face_analysis_v2/requirements.txt。错误详情: {str(e)}"
+            }
+            logger.error(f"FaceAnalysisService 初始化失败（依赖缺失）: {e}", exc_info=True)
+            yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+            return
+        except Exception as e:
+            error_msg = {
+                'type': 'error',
+                'content': f"服务初始化失败: {str(e)}"
+            }
+            logger.error(f"FaceAnalysisService 初始化失败: {e}", exc_info=True)
+            yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+            return
+        
+        try:
+            result = service.analyze_face_features(
+                image_data,
+                image_format='jpg',
+                birth_info=birth_info
+            )
+        except BrokenPipeError as e:
+            error_msg = {
+                'type': 'error',
+                'content': "面相分析失败: 连接中断。请重试。"
+            }
+            logger.error(f"面相分析 Broken pipe 错误: {e}", exc_info=True)
+            yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+            return
+        except Exception as e:
+            error_msg = {
+                'type': 'error',
+                'content': f"面相分析失败: {str(e)}"
+            }
+            logger.error(f"面相分析异常: {e}", exc_info=True)
+            yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+            return
         
         if not result['success']:
             error_msg = {

@@ -35,6 +35,12 @@ from server.utils.bazi_input_processor import BaziInputProcessor
 from server.utils.data_validator import validate_bazi_data
 from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
 from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
+from server.services.config_service import ConfigService
+from server.services.mingge_extractor import extract_mingge_names_from_rules
+from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
+from server.services.config_service import ConfigService
+from server.services.mingge_extractor import extract_mingge_names_from_rules
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -359,27 +365,24 @@ class BaziDataOrchestrator:
             logger.info(f"[DEBUG 基础数据提取] bazi_data keys={list(bazi_data.keys()) if isinstance(bazi_data, dict) else 'Not dict'}")
             bazi_data = validate_bazi_data(bazi_data)
             logger.info(f"[DEBUG 基础数据提取] validate后 bazi_data keys={list(bazi_data.keys()) if isinstance(bazi_data, dict) else 'Not dict'}")
-            result['bazi'] = bazi_data
+            # 处理嵌套结构：bazi_data 可能是 {bazi: {...}, rizhu: "...", matched_rules: [...]}
+            if isinstance(bazi_data, dict) and 'bazi' in bazi_data:
+                result['bazi'] = bazi_data
+                # 提取内部 bazi 数据用于后续组装
+                inner_bazi_data = bazi_data.get('bazi', {})
+            else:
+                result['bazi'] = bazi_data
+                inner_bazi_data = bazi_data
+        else:
+            inner_bazi_data = None
         
         wangshuai_data = task_data.get('wangshuai')
         if wangshuai_data:
             result['wangshuai'] = wangshuai_data
         
-        xishen_jishen_data = task_data.get('xishen_jishen')
-        if xishen_jishen_data:
-            # ✅ 修复：确保 XishenJishenResponse 转换为字典
-            # 双重保险：即使 gather 时已转换，这里再次检查
-            if isinstance(xishen_jishen_data, dict):
-                result['xishen_jishen'] = xishen_jishen_data
-            else:
-                # 如果仍然是 Pydantic 模型，立即转换
-                if hasattr(xishen_jishen_data, 'model_dump'):
-                    result['xishen_jishen'] = xishen_jishen_data.model_dump()
-                elif hasattr(xishen_jishen_data, 'dict'):
-                    result['xishen_jishen'] = xishen_jishen_data.dict()
-                else:
-                    # 如果都不是，尝试直接使用（可能是其他类型）
-                    result['xishen_jishen'] = xishen_jishen_data
+        # 注意：喜神忌神模块的处理需要在 rules 处理之后，因为需要 rules 数据
+        # 所以这里先保存接口调用结果，在 rules 处理后再进行组装
+        xishen_jishen_data_from_task = task_data.get('xishen_jishen')
         
         # 提取五行数据
         if modules.get('wuxing') and bazi_data:
@@ -568,6 +571,54 @@ class BaziDataOrchestrator:
                 
                 result['rules'] = matched_rules
         
+        # 处理喜神忌神模块（优先使用组装数据，需要在 rules 处理之后）
+        if modules.get('xishen_jishen'):
+            # 如果所需数据已获取，自动组装
+            rules_module_data = result.get('rules', [])
+            
+            if inner_bazi_data and wangshuai_data:
+                xishen_jishen_data = BaziDataOrchestrator._assemble_xishen_jishen_complete_data(
+                    bazi_data=inner_bazi_data,
+                    wangshuai_data=wangshuai_data,
+                    rules_data=rules_module_data,
+                    solar_date=final_solar_date,
+                    solar_time=final_solar_time,
+                    gender=gender,
+                    calendar_type=calendar_type or "solar",
+                    location=location,
+                    latitude=latitude,
+                    longitude=longitude
+                )
+                if xishen_jishen_data:
+                    result['xishen_jishen'] = xishen_jishen_data
+                    logger.info("[BaziDataOrchestrator] ✅ 喜神忌神数据已自动组装")
+                else:
+                    # 组装失败，降级到接口调用结果
+                    if xishen_jishen_data_from_task:
+                        # ✅ 修复：确保 XishenJishenResponse 转换为字典
+                        if isinstance(xishen_jishen_data_from_task, dict):
+                            result['xishen_jishen'] = xishen_jishen_data_from_task
+                        elif hasattr(xishen_jishen_data_from_task, 'model_dump'):
+                            result['xishen_jishen'] = xishen_jishen_data_from_task.model_dump()
+                        elif hasattr(xishen_jishen_data_from_task, 'dict'):
+                            result['xishen_jishen'] = xishen_jishen_data_from_task.dict()
+                        else:
+                            result['xishen_jishen'] = xishen_jishen_data_from_task
+                    logger.warning("[BaziDataOrchestrator] ⚠️ 喜神忌神数据组装失败，使用接口调用结果")
+            else:
+                # 数据不完整，使用接口调用结果
+                if xishen_jishen_data_from_task:
+                    # ✅ 修复：确保 XishenJishenResponse 转换为字典
+                    if isinstance(xishen_jishen_data_from_task, dict):
+                        result['xishen_jishen'] = xishen_jishen_data_from_task
+                    elif hasattr(xishen_jishen_data_from_task, 'model_dump'):
+                        result['xishen_jishen'] = xishen_jishen_data_from_task.model_dump()
+                    elif hasattr(xishen_jishen_data_from_task, 'dict'):
+                        result['xishen_jishen'] = xishen_jishen_data_from_task.dict()
+                    else:
+                        result['xishen_jishen'] = xishen_jishen_data_from_task
+                logger.info("[BaziDataOrchestrator] 使用接口调用的喜神忌神数据")
+        
         # 处理分析模块
         if modules.get('health'):
             result['health'] = task_data.get('health')
@@ -606,8 +657,28 @@ class BaziDataOrchestrator:
                 logger.warning(f"[DEBUG rizhu模块] rizhu为空，跳过")
                 result['rizhu'] = None
         
+        # 处理五行占比模块（优先使用组装数据）
         if modules.get('wuxing_proportion'):
-            result['wuxing_proportion'] = task_data.get('wuxing_proportion')
+            # 如果 bazi 和 wangshuai 数据已获取，自动组装
+            if inner_bazi_data and wangshuai_data:
+                wuxing_proportion_data = BaziDataOrchestrator._assemble_wuxing_proportion_from_data(
+                    bazi_data=inner_bazi_data,
+                    wangshuai_data=wangshuai_data,
+                    solar_date=final_solar_date,
+                    solar_time=final_solar_time,
+                    gender=gender
+                )
+                if wuxing_proportion_data:
+                    result['wuxing_proportion'] = wuxing_proportion_data
+                    logger.info("[BaziDataOrchestrator] ✅ 五行占比数据已自动组装")
+                else:
+                    # 组装失败，降级到服务调用结果
+                    result['wuxing_proportion'] = task_data.get('wuxing_proportion')
+                    logger.warning("[BaziDataOrchestrator] ⚠️ 五行占比数据组装失败，使用服务调用结果")
+            else:
+                # 数据不完整，使用服务调用结果
+                result['wuxing_proportion'] = task_data.get('wuxing_proportion')
+                logger.info("[BaziDataOrchestrator] 使用服务调用的五行占比数据")
         
         # 处理辅助模块（从基础数据中提取）
         if modules.get('deities') and bazi_data:
@@ -717,4 +788,312 @@ class BaziDataOrchestrator:
                 logger.warning(f"[BaziDataOrchestrator] 缓存写入失败（不影响业务）: {e}")
         
         return result
+    
+    @staticmethod
+    def _assemble_wuxing_proportion_from_data(
+        bazi_data: Dict[str, Any],
+        wangshuai_data: Dict[str, Any],
+        solar_date: str,
+        solar_time: str,
+        gender: str
+    ) -> Dict[str, Any]:
+        """
+        从已有数据组装五行占比数据（避免重复计算）
+        
+        使用已有数据：
+        - bazi_data: 包含 bazi_pillars, details, element_counts
+        - wangshuai_data: 包含 wangshuai, total_score, xi_ji, final_xi_ji
+        
+        计算生成：
+        - proportions: 从 bazi_pillars 计算五行占比
+        - element_relations: 从 proportions 分析相生相克关系
+        - ten_gods: 从 details 提取四柱十神信息
+        
+        Returns:
+            dict: 与 WuxingProportionService.calculate_proportion() 格式完全一致
+        """
+        try:
+            # 1. 提取基础数据
+            bazi_pillars = bazi_data.get('bazi_pillars', {})
+            details = bazi_data.get('details', {})
+            
+            if not bazi_pillars or not isinstance(bazi_pillars, dict):
+                logger.warning("[BaziDataOrchestrator] bazi_pillars 数据无效，降级到服务调用")
+                return None
+            
+            # 2. 统计五行占比（天干+地支，8个位置）
+            element_counts = {'金': 0, '木': 0, '水': 0, '火': 0, '土': 0}
+            element_details = {'金': [], '木': [], '水': [], '火': [], '土': []}
+            
+            # 统计天干五行（4个位置）
+            for pillar_name in ['year', 'month', 'day', 'hour']:
+                pillar = bazi_pillars.get(pillar_name, {})
+                stem = pillar.get('stem', '')
+                if stem and stem in STEM_ELEMENTS:
+                    element = STEM_ELEMENTS[stem]
+                    element_counts[element] += 1
+                    element_details[element].append(stem)
+            
+            # 统计地支五行（4个位置）
+            for pillar_name in ['year', 'month', 'day', 'hour']:
+                pillar = bazi_pillars.get(pillar_name, {})
+                branch = pillar.get('branch', '')
+                if branch and branch in BRANCH_ELEMENTS:
+                    element = BRANCH_ELEMENTS[branch]
+                    element_counts[element] += 1
+                    element_details[element].append(branch)
+            
+            # 3. 计算占比（保留两位小数）
+            total = 8
+            proportions = {}
+            for element in ['金', '木', '水', '火', '土']:
+                count = element_counts[element]
+                percentage = round(count / total * 100, 2) if total > 0 else 0.0
+                proportions[element] = {
+                    'count': count,
+                    'percentage': percentage,
+                    'details': element_details[element]
+                }
+            
+            # 4. 提取四柱十神信息（从 details）
+            ten_gods_info = {}
+            for pillar_name in ['year', 'month', 'day', 'hour']:
+                pillar_detail = details.get(pillar_name, {})
+                if not isinstance(pillar_detail, dict):
+                    pillar_detail = {}
+                
+                main_star = pillar_detail.get('main_star', '')
+                hidden_stars = pillar_detail.get('hidden_stars', [])
+                if not isinstance(hidden_stars, list):
+                    hidden_stars = []
+                
+                ten_gods_info[pillar_name] = {
+                    'main_star': main_star,
+                    'hidden_stars': hidden_stars
+                }
+            
+            # 5. 分析相生相克关系（从 proportions）
+            element_relations = BaziDataOrchestrator._calculate_element_relations(proportions)
+            
+            # 6. 提取旺衰数据
+            wangshuai_result = wangshuai_data.get('data', wangshuai_data) if isinstance(wangshuai_data, dict) and 'data' in wangshuai_data else wangshuai_data
+            
+            # 7. 组装完整数据（与 WuxingProportionService.calculate_proportion() 格式一致）
+            return {
+                "success": True,
+                "bazi_pillars": bazi_pillars,
+                "proportions": proportions,
+                "ten_gods": ten_gods_info,
+                "wangshuai": wangshuai_result,
+                "element_relations": element_relations,
+                "bazi_data": bazi_data
+            }
+        except Exception as e:
+            logger.error(f"[BaziDataOrchestrator] 组装五行占比数据失败: {e}", exc_info=True)
+            return None
+    
+    @staticmethod
+    def _calculate_element_relations(proportions: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        分析五行相生相克关系
+        
+        Args:
+            proportions: 五行占比数据
+            
+        Returns:
+            dict: 相生相克关系分析
+        """
+        # 五行生克关系
+        element_relations_map = {
+            '木': {'produces': '火', 'controls': '土', 'produced_by': '水', 'controlled_by': '金'},
+            '火': {'produces': '土', 'controls': '金', 'produced_by': '木', 'controlled_by': '水'},
+            '土': {'produces': '金', 'controls': '水', 'produced_by': '火', 'controlled_by': '木'},
+            '金': {'produces': '水', 'controls': '木', 'produced_by': '土', 'controlled_by': '火'},
+            '水': {'produces': '木', 'controls': '火', 'produced_by': '金', 'controlled_by': '土'}
+        }
+        
+        relations = {
+            'produces': [],  # 生
+            'controls': [],  # 克
+            'produced_by': [],  # 被生
+            'controlled_by': []  # 被克
+        }
+        
+        # 分析每个五行与其他五行的关系
+        for element, data in proportions.items():
+            if data.get('count', 0) == 0:
+                continue
+            
+            element_relation = element_relations_map.get(element, {})
+            
+            # 检查生（我生）
+            produces = element_relation.get('produces', '')
+            if produces and proportions.get(produces, {}).get('count', 0) > 0:
+                relations['produces'].append({
+                    'from': element,
+                    'to': produces,
+                    'from_count': data['count'],
+                    'to_count': proportions[produces]['count']
+                })
+            
+            # 检查克（我克）
+            controls = element_relation.get('controls', '')
+            if controls and proportions.get(controls, {}).get('count', 0) > 0:
+                relations['controls'].append({
+                    'from': element,
+                    'to': controls,
+                    'from_count': data['count'],
+                    'to_count': proportions[controls]['count']
+                })
+            
+            # 检查被生（生我）
+            produced_by = element_relation.get('produced_by', '')
+            if produced_by and proportions.get(produced_by, {}).get('count', 0) > 0:
+                relations['produced_by'].append({
+                    'from': produced_by,
+                    'to': element,
+                    'from_count': proportions[produced_by]['count'],
+                    'to_count': data['count']
+                })
+            
+            # 检查被克（克我）
+            controlled_by = element_relation.get('controlled_by', '')
+            if controlled_by and proportions.get(controlled_by, {}).get('count', 0) > 0:
+                relations['controlled_by'].append({
+                    'from': controlled_by,
+                    'to': element,
+                    'from_count': proportions[controlled_by]['count'],
+                    'to_count': data['count']
+                })
+        
+        return relations
+    
+    @staticmethod
+    def _assemble_xishen_jishen_complete_data(
+        bazi_data: Dict[str, Any],
+        wangshuai_data: Dict[str, Any],
+        rules_data: List[Dict[str, Any]],
+        solar_date: str,
+        solar_time: str,
+        gender: str,
+        calendar_type: Optional[str] = "solar",
+        location: Optional[str] = None,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        从已有数据组装喜神忌神完整数据（避免重复计算）
+        
+        使用已有数据：
+        - bazi_data: 包含 bazi_pillars, ten_gods, element_counts, details
+        - wangshuai_data: 包含 xi_shen_elements, ji_shen_elements, wangshuai, total_score, final_xi_ji
+        - rules_data: 包含 shishen 类型的规则
+        
+        Returns:
+            dict: 与 get_xishen_jishen() 格式一致，但包含扩展字段
+        """
+        try:
+            # 1. 提取旺衰数据
+            wangshuai_data_inner = wangshuai_data.get('data', wangshuai_data) if isinstance(wangshuai_data, dict) and 'data' in wangshuai_data else wangshuai_data
+            
+            # 2. 提取喜神五行和忌神五行（优先使用final_xi_ji中的综合结果）
+            final_xi_ji = wangshuai_data_inner.get('final_xi_ji', {})
+            
+            if final_xi_ji and final_xi_ji.get('xi_shen_elements'):
+                # 使用综合调候后的最终结果
+                xi_shen_elements_raw = final_xi_ji.get('xi_shen_elements', [])
+                ji_shen_elements_raw = final_xi_ji.get('ji_shen_elements', [])
+            else:
+                # 使用原始旺衰结果
+                xi_shen_elements_raw = wangshuai_data_inner.get('xi_shen_elements', [])
+                ji_shen_elements_raw = wangshuai_data_inner.get('ji_shen_elements', [])
+            
+            # 3. 从规则数据中提取十神命格
+            shishen_mingge_names = []
+            if rules_data:
+                # 筛选 shishen 类型的规则
+                shishen_rules = []
+                for rule in rules_data:
+                    rule_type = rule.get('rule_type', '')
+                    if rule_type == 'shishen':
+                        shishen_rules.append(rule)
+                
+                if shishen_rules:
+                    shishen_mingge_names = extract_mingge_names_from_rules(shishen_rules)
+            
+            # 4. 映射ID
+            xi_shen_elements = ConfigService.map_elements_to_ids(xi_shen_elements_raw)
+            ji_shen_elements = ConfigService.map_elements_to_ids(ji_shen_elements_raw)
+            shishen_mingge = ConfigService.map_mingge_to_ids(shishen_mingge_names)
+            
+            # 5. 提取八字数据（用于LLM分析）
+            bazi_pillars = bazi_data.get('bazi_pillars', {})
+            day_stem = bazi_pillars.get('day', {}).get('stem', '')
+            
+            # 提取十神数据
+            ten_gods = bazi_data.get('ten_gods', {})
+            if not ten_gods:
+                # 如果 ten_gods 不存在，从 details 中提取
+                details = bazi_data.get('details', {})
+                ten_gods = {}
+                for pillar_name in ['year', 'month', 'day', 'hour']:
+                    pillar_detail = details.get(pillar_name, {})
+                    if isinstance(pillar_detail, dict):
+                        ten_gods[pillar_name] = {
+                            'main_star': pillar_detail.get('main_star', ''),
+                            'hidden_stars': pillar_detail.get('hidden_stars', [])
+                        }
+            
+            # 提取五行统计
+            element_counts = bazi_data.get('element_counts', {})
+            
+            # 提取神煞数据
+            deities = {}
+            details = bazi_data.get('details', {})
+            for pillar_name in ['year', 'month', 'day', 'hour']:
+                pillar_detail = details.get(pillar_name, {})
+                if isinstance(pillar_detail, dict):
+                    deities[pillar_name] = pillar_detail.get('deities', [])
+            
+            # 提取旺衰详细数据
+            wangshuai_detail = {
+                'wangshuai': wangshuai_data_inner.get('wangshuai', ''),
+                'total_score': wangshuai_data_inner.get('total_score', 0)
+            }
+            # 如果有得令、得地、得助信息，也提取
+            if 'de_ling' in wangshuai_data_inner:
+                wangshuai_detail['de_ling'] = wangshuai_data_inner.get('de_ling')
+            if 'de_di' in wangshuai_data_inner:
+                wangshuai_detail['de_di'] = wangshuai_data_inner.get('de_di')
+            if 'de_zhu' in wangshuai_data_inner:
+                wangshuai_detail['de_zhu'] = wangshuai_data_inner.get('de_zhu')
+            
+            # 6. 构建响应数据（与普通接口格式一致，但包含扩展字段）
+            response_data = {
+                # 基础字段（与普通接口一致）
+                'solar_date': solar_date,
+                'solar_time': solar_time,
+                'gender': gender,
+                'xi_shen_elements': xi_shen_elements,
+                'ji_shen_elements': ji_shen_elements,
+                'shishen_mingge': shishen_mingge,
+                'wangshuai': wangshuai_data_inner.get('wangshuai', ''),
+                'total_score': wangshuai_data_inner.get('total_score', 0),
+                
+                # 扩展字段（用于LLM分析，不影响普通接口）
+                'bazi_pillars': bazi_pillars,
+                'day_stem': day_stem,
+                'ten_gods': ten_gods,
+                'element_counts': element_counts,
+                'deities': deities,
+                'wangshuai_detail': wangshuai_detail
+            }
+            
+            return {
+                "success": True,
+                "data": response_data
+            }
+        except Exception as e:
+            logger.error(f"[BaziDataOrchestrator] 组装喜神忌神数据失败: {e}", exc_info=True)
+            return None
 

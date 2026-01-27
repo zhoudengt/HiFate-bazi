@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>待支付 - 魔方西元</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fatetell-style.css">
+    <style>
+        .pending-container {
+            max-width: 600px;
+            margin: 80px auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .pending-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 20px;
+            background: #ffc107;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            color: white;
+        }
+        
+        .pending-title {
+            font-size: 28px;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .pending-message {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .order-details {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 30px 0;
+            text-align: left;
+        }
+        
+        .order-detail-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .order-detail-item:last-child {
+            border-bottom: none;
+        }
+        
+        .order-detail-label {
+            color: #666;
+        }
+        
+        .order-detail-value {
+            color: #333;
+            font-weight: 500;
+        }
+        
+        .countdown-section {
+            margin: 30px 0;
+            padding: 20px;
+            background: #fff3cd;
+            border-radius: 8px;
+            border: 1px solid #ffc107;
+        }
+        
+        .countdown-label {
+            font-size: 14px;
+            color: #856404;
+            margin-bottom: 10px;
+        }
+        
+        .countdown-time {
+            font-size: 32px;
+            font-weight: bold;
+            color: #856404;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .countdown-expired {
+            color: #dc3545;
+            background: #f8d7da;
+            border-color: #dc3545;
+        }
+        
+        .btn-pay {
+            display: inline-block;
+            padding: 15px 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 18px;
+            font-weight: bold;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+            margin: 20px 10px;
+        }
+        
+        .btn-pay:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-pay:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        
+        .btn-back {
+            display: inline-block;
+            padding: 12px 30px;
+            background: #6c757d;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: all 0.3s;
+            margin: 10px;
+        }
+        
+        .btn-back:hover {
+            background: #5a6268;
+        }
+        
+        .expired-message {
+            color: #dc3545;
+            font-size: 16px;
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8d7da;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="pending-container">
+        <div class="pending-icon">⏱</div>
+        <h1 class="pending-title">待支付</h1>
+        <p class="pending-message">请尽快完成支付，订单将在倒计时结束后过期</p>
+        
+        <div class="order-details">
+            <div class="order-detail-item">
+                <span class="order-detail-label">订单号</span>
+                <span class="order-detail-value" id="orderId">-</span>
+            </div>
+            <div class="order-detail-item">
+                <span class="order-detail-label">产品名称</span>
+                <span class="order-detail-value" id="productName">-</span>
+            </div>
+            <div class="order-detail-item">
+                <span class="order-detail-label">支付金额</span>
+                <span class="order-detail-value" id="amount">-</span>
+            </div>
+        </div>
+        
+        <div class="countdown-section" id="countdownSection">
+            <div class="countdown-label">剩余支付时间</div>
+            <div class="countdown-time" id="countdownTime">--:--:--</div>
+        </div>
+        
+        <div id="expiredMessage" class="expired-message" style="display: none;">
+            订单已过期，请重新创建订单
+        </div>
+        
+        <button id="btnPay" class="btn-pay" onclick="goToPayment()">去支付</button>
+        <a href="index.html" class="btn-back">返回首页</a>
+    </div>
+
+    <script src="config.js"></script>
+    <script>
+        // 从URL参数获取订单信息
+        const urlParams = new URLSearchParams(window.location.search);
+        const orderId = urlParams.get('order_id');
+        const paymentUrl = urlParams.get('payment_url') || urlParams.get('checkout_url');
+        const expiresAt = urlParams.get('expires_at');
+        const productName = urlParams.get('product_name') || '产品';
+        const amount = urlParams.get('amount') || '0.00';
+        const currency = urlParams.get('currency') || 'USD';
+        
+        // 显示订单信息
+        document.getElementById('orderId').textContent = orderId || '-';
+        document.getElementById('productName').textContent = productName;
+        document.getElementById('amount').textContent = `${currency} ${amount}`;
+        
+        // 倒计时逻辑
+        let countdownInterval = null;
+        let isExpired = false;
+        
+        function updateCountdown() {
+            if (!expiresAt) {
+                document.getElementById('countdownTime').textContent = '--:--:--';
+                return;
+            }
+            
+            const now = new Date().getTime();
+            const expires = new Date(expiresAt).getTime();
+            const remaining = expires - now;
+            
+            if (remaining <= 0) {
+                // 已过期
+                isExpired = true;
+                document.getElementById('countdownTime').textContent = '00:00:00';
+                document.getElementById('countdownSection').classList.add('countdown-expired');
+                document.getElementById('btnPay').disabled = true;
+                document.getElementById('expiredMessage').style.display = 'block';
+                
+                if (countdownInterval) {
+                    clearInterval(countdownInterval);
+                    countdownInterval = null;
+                }
+                return;
+            }
+            
+            // 计算剩余时间
+            const hours = Math.floor(remaining / (1000 * 60 * 60));
+            const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+            
+            // 格式化显示
+            const timeString = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            document.getElementById('countdownTime').textContent = timeString;
+        }
+        
+        function goToPayment() {
+            if (isExpired) {
+                alert('订单已过期，请重新创建订单');
+                return;
+            }
+            
+            if (!paymentUrl) {
+                alert('支付链接不存在');
+                return;
+            }
+            
+            // 跳转到支付页面
+            window.location.href = paymentUrl;
+        }
+        
+        // 初始化倒计时
+        if (expiresAt) {
+            updateCountdown();
+            // 每秒更新一次
+            countdownInterval = setInterval(updateCountdown, 1000);
+        } else {
+            document.getElementById('countdownTime').textContent = '--:--:--';
+        }
+        
+        // 页面卸载时清理定时器
+        window.addEventListener('beforeunload', () => {
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+            }
+        });
+    </script>
+</body>
+</html>

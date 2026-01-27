@@ -31,6 +31,21 @@ class ExceptionHandlerMiddleware(BaseHTTPMiddleware):
         except HTTPException as e:
             # FastAPI的HTTPException直接返回
             raise e
+        except (BrokenPipeError, OSError) as e:
+            # 客户端断开连接，这是正常情况，不需要记录为错误
+            # 检查是否是 Broken pipe 错误（errno 32）
+            if isinstance(e, BrokenPipeError) or (isinstance(e, OSError) and e.errno == 32):
+                # 静默处理，不记录错误日志
+                return JSONResponse(
+                    status_code=200,  # 返回 200，因为这是客户端主动断开
+                    content={
+                        "success": False,
+                        "error": "客户端连接已断开",
+                        "error_type": "client_disconnected"
+                    }
+                )
+            # 其他 OSError 继续抛出
+            raise
         except ValueError as e:
             # 参数验证错误
             logger.warning(f"参数验证错误: {str(e)}")

@@ -1,0 +1,22 @@
+# Face Analysis V2 Service Dependencies
+# 注意：版本需要与主 requirements.txt 兼容
+
+# Core dependencies（与主依赖保持一致）
+grpcio>=1.60.0
+grpcio-tools>=1.60.0
+protobuf>=4.25.3,<5  # 与主依赖保持一致
+
+# Image processing
+opencv-python-headless>=4.8.0  # headless 版本适用于 Docker 环境（无 GUI）
+Pillow>=10.0.0
+numpy>=1.26.0,<2  # 与主依赖保持一致
+
+# MediaPipe for face landmark detection
+mediapipe>=0.10.0
+
+# Database
+PyMySQL>=1.1.0
+redis>=7.0.0
+
+# Utilities
+python-dotenv>=1.0.0

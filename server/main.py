@@ -348,6 +348,33 @@ except ImportError as e:
     unified_payment_router = None
     UNIFIED_PAYMENT_ROUTER_AVAILABLE = False
 
+# 新增：支付 Webhook 路由（Stripe Webhook等）
+try:
+    from server.api.v1.payment_webhook import router as payment_webhook_router
+    PAYMENT_WEBHOOK_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"支付Webhook路由导入失败（可选功能）: {e}")
+    payment_webhook_router = None
+    PAYMENT_WEBHOOK_ROUTER_AVAILABLE = False
+
+# 新增：支付区域配置管理路由
+try:
+    from server.api.v1.payment_region_config import router as payment_region_config_router
+    PAYMENT_REGION_CONFIG_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"支付区域配置路由导入失败（可选功能）: {e}")
+    payment_region_config_router = None
+    PAYMENT_REGION_CONFIG_ROUTER_AVAILABLE = False
+
+# 新增：支付白名单管理路由
+try:
+    from server.api.v1.payment_whitelist import router as payment_whitelist_router
+    PAYMENT_WHITELIST_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"支付白名单路由导入失败（可选功能）: {e}")
+    payment_whitelist_router = None
+    PAYMENT_WHITELIST_ROUTER_AVAILABLE = False
+
 # 新增：模型微调路由
 try:
     from server.api.v1.model_tuning import router as model_tuning_router
@@ -874,6 +901,33 @@ def _register_all_routers_to_manager():
         prefix="/api/v1",
         tags=["统一支付"],
         enabled_getter=lambda: UNIFIED_PAYMENT_ROUTER_AVAILABLE and unified_payment_router is not None
+    )
+    
+    # 支付 Webhook 路由（条件可用）
+    router_manager.register_router(
+        "payment_webhook",
+        lambda: payment_webhook_router,
+        prefix="/api/v1",
+        tags=["支付Webhook"],
+        enabled_getter=lambda: PAYMENT_WEBHOOK_ROUTER_AVAILABLE and payment_webhook_router is not None
+    )
+    
+    # 支付区域配置管理路由
+    router_manager.register_router(
+        "payment_region_config",
+        lambda: payment_region_config_router,
+        prefix="/api/v1",
+        tags=["支付区域配置"],
+        enabled_getter=lambda: PAYMENT_REGION_CONFIG_ROUTER_AVAILABLE and payment_region_config_router is not None
+    )
+    
+    # 支付白名单管理路由
+    router_manager.register_router(
+        "payment_whitelist",
+        lambda: payment_whitelist_router,
+        prefix="/api/v1",
+        tags=["支付白名单"],
+        enabled_getter=lambda: PAYMENT_WHITELIST_ROUTER_AVAILABLE and payment_whitelist_router is not None
     )
     
     # 模型微调路由（条件可用）

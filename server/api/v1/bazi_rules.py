@@ -54,7 +54,7 @@ def check_rate_limit_dependency(http_request: Request):
     """限流检查依赖函数"""
     from slowapi.util import get_remote_address
     key = get_remote_address(http_request)
-    limit_count = 30  # 每分钟30次
+    limit_count = 60  # 每分钟60次
     limit_seconds = 60  # 60秒
     
     if RATE_LIMIT_AVAILABLE and hasattr(http_request.app.state, 'limiter'):
@@ -68,7 +68,7 @@ def check_rate_limit_dependency(http_request: Request):
             _check(http_request)
             return  # 成功检查，返回
         except RateLimitExceeded:
-            raise HTTPException(status_code=429, detail="请求过于频繁，每分钟最多30次，请稍后再试")
+            raise HTTPException(status_code=429, detail="请求过于频繁，每分钟最多60次，请稍后再试")
         except Exception as e:
             # slowapi 失败，降级到简单限流
             import logging
@@ -100,7 +100,7 @@ def check_rate_limit_dependency(http_request: Request):
         
         if current_count >= limit_count:
             logger.warning(f"触发限流: key={key}, count={current_count}")
-            raise HTTPException(status_code=429, detail="请求过于频繁，每分钟最多30次，请稍后再试")
+            raise HTTPException(status_code=429, detail="请求过于频繁，每分钟最多60次，请稍后再试")
         
         # 增加计数
         _rate_limit_storage[key].append((current_time, 1))
@@ -237,7 +237,7 @@ async def curated_bazi_rules(
     - 多样化（按 tags 配额）
     可选返回 NLG 拼装文本，便于直出用户端。
     
-    **限流策略**: 每分钟30次/IP（如果 slowapi 可用）
+    **限流策略**: 每分钟60次/IP（如果 slowapi 可用）
     """
     # 限流检查（在函数开始处直接调用）
     check_rate_limit_dependency(http_request)
