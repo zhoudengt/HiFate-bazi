@@ -216,14 +216,14 @@ MYSQL_USER=$(echo "$DB_RESULT" | grep "MYSQL_USER=" | cut -d'=' -f2)
 MYSQL_PASSWORD=$(echo "$DB_RESULT" | grep "MYSQL_PASSWORD=" | cut -d'=' -f2)
 MYSQL_DATABASE=$(echo "$DB_RESULT" | grep "MYSQL_DATABASE=" | cut -d'=' -f2)
 
-# 如果从环境变量获取失败，尝试从 Docker Compose 文件获取
-if [ -z "$MYSQL_PASSWORD" ] || [ "$MYSQL_PASSWORD" = "Yuanqizhan@163" ]; then
-    DOCKER_MYSQL_PASSWORD=$(ssh_exec "cd $PROJECT_DIR && docker exec $MYSQL_CONTAINER printenv MYSQL_ROOT_PASSWORD 2>/dev/null || echo 'HiFate_Prod_2024!'" || echo "HiFate_Prod_2024!")
-    if [ -n "$DOCKER_MYSQL_PASSWORD" ] && [ "$DOCKER_MYSQL_PASSWORD" != "Yuanqizhan@163" ]; then
-        MYSQL_PASSWORD="$DOCKER_MYSQL_PASSWORD"
-        echo -e "${GREEN}✅ 从 Docker 容器获取 MySQL 密码${NC}"
-    fi
+# 确保使用正确的生产环境密码和数据库名
+if [ -z "$MYSQL_PASSWORD" ]; then
+    MYSQL_PASSWORD="Yuanqizhan@163"
 fi
+if [ -z "$MYSQL_DATABASE" ]; then
+    MYSQL_DATABASE="hifate_bazi"
+fi
+echo -e "${GREEN}✅ 使用生产环境 MySQL 配置: 数据库=$MYSQL_DATABASE${NC}"
 
 # 执行 SQL 脚本（通过 Docker 容器执行）
 # 查找 MySQL 容器名称
@@ -231,12 +231,12 @@ MYSQL_CONTAINER=$(ssh_exec "docker ps --format '{{.Names}}' | grep -i mysql | he
 if [ -z "$MYSQL_CONTAINER" ]; then
     echo -e "${YELLOW}⚠️  未找到 MySQL 容器，尝试直接连接 MySQL${NC}"
     SYNC_OUTPUT=$(ssh_exec "cd $PROJECT_DIR && \
-        mysql -h\${MYSQL_HOST:-localhost} -P\${MYSQL_PORT:-3306} -u\${MYSQL_USER:-root} -p\${MYSQL_PASSWORD:-Yuanqizhan@163} \${MYSQL_DATABASE:-hifate_bazi} < $REMOTE_SCRIPT 2>&1" || echo "failed")
+        mysql -h\${MYSQL_HOST:-localhost} -P\${MYSQL_PORT:-3306} -u\${MYSQL_USER:-root} -p'$MYSQL_PASSWORD' $MYSQL_DATABASE < $REMOTE_SCRIPT 2>&1" || echo "failed")
 else
     echo -e "${GREEN}✅ 找到 MySQL 容器: $MYSQL_CONTAINER${NC}"
     # 通过 Docker 容器执行 MySQL 命令，使用环境变量传递密码
     SYNC_OUTPUT=$(ssh_exec "cd $PROJECT_DIR && \
-        docker exec -i -e MYSQL_PWD='$MYSQL_PASSWORD' $MYSQL_CONTAINER mysql -uroot \${MYSQL_DATABASE:-hifate_bazi} < $REMOTE_SCRIPT 2>&1" || echo "failed")
+        docker exec -i -e MYSQL_PWD='$MYSQL_PASSWORD' $MYSQL_CONTAINER mysql -uroot $MYSQL_DATABASE < $REMOTE_SCRIPT 2>&1" || echo "failed")
 fi
 
 if echo "$SYNC_OUTPUT" | grep -q "failed\|error\|Error"; then
