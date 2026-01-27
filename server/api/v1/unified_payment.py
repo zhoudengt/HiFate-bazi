@@ -246,7 +246,7 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
         if not result.get('success', False):
             raise HTTPException(
                 status_code=400,
-                detail=result.get('error', f'{provider} 支付创建失败')
+                detail=result.get('error', f'{provider_str} 支付创建失败')
             )
 
         # 计算过期时间（30分钟后）和创建时间
@@ -281,9 +281,9 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
         # 构建统一的响应格式
         response_data = {
             "success": True,
-            "provider": provider,
+            "provider": provider_str,
             "status": result.get('status', 'created'),
-            "message": result.get('message', f'{provider} 支付创建成功'),
+            "message": result.get('message', f'{provider_str} 支付创建成功'),
             "created_at": result.get('created_at', created_at_str),  # 优先使用客户端返回的时间
             "expires_at": result.get('expires_at', expires_at_str),  # 优先使用客户端返回的过期时间
         }
