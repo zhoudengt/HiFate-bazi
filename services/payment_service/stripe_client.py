@@ -101,6 +101,38 @@ class StripeClient(BasePaymentClient):
             return get_payment_api_logger()
         return None
     
+    def create_payment(self, **kwargs) -> Dict[str, Any]:
+        """
+        创建支付订单（统一接口，实现抽象方法）
+        
+        Args:
+            amount: 金额（字符串）
+            currency: 货币代码
+            product_name: 产品名称
+            order_id: 订单号（可选）
+            customer_email: 客户邮箱（可选）
+            metadata: 元数据（可选）
+            success_url: 支付成功后的跳转URL（可选）
+            cancel_url: 支付取消后的跳转URL（可选）
+            enable_adaptive_pricing: 是否启用 Adaptive Pricing（可选）
+            enable_link: 是否启用 Stripe Link（可选）
+        
+        Returns:
+            包含支付信息的字典
+        """
+        return self.create_checkout_session(
+            amount=kwargs.get('amount', '0'),
+            currency=kwargs.get('currency', 'USD'),
+            product_name=kwargs.get('product_name', ''),
+            customer_email=kwargs.get('customer_email', ''),
+            metadata=kwargs.get('metadata'),
+            success_url=kwargs.get('success_url'),
+            cancel_url=kwargs.get('cancel_url'),
+            enable_adaptive_pricing=kwargs.get('enable_adaptive_pricing', True),
+            enable_link=kwargs.get('enable_link', True),
+            order_id=kwargs.get('order_id')
+        )
+    
     def create_checkout_session(
         self,
         amount: str,
