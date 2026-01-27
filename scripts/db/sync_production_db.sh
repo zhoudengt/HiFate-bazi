@@ -169,9 +169,18 @@ MYSQL_USER=$(echo "$DB_RESULT" | grep "MYSQL_USER=" | cut -d'=' -f2)
 MYSQL_PASSWORD=$(echo "$DB_RESULT" | grep "MYSQL_PASSWORD=" | cut -d'=' -f2)
 MYSQL_DATABASE=$(echo "$DB_RESULT" | grep "MYSQL_DATABASE=" | cut -d'=' -f2)
 
-# 执行 SQL 脚本
-SYNC_OUTPUT=$(ssh_exec "cd $PROJECT_DIR && \
-    mysql -h\${MYSQL_HOST:-localhost} -P\${MYSQL_PORT:-3306} -u\${MYSQL_USER:-root} -p\${MYSQL_PASSWORD:-Yuanqizhan@163} \${MYSQL_DATABASE:-hifate_bazi} < $REMOTE_SCRIPT 2>&1" || echo "failed")
+# 执行 SQL 脚本（通过 Docker 容器执行）
+# 查找 MySQL 容器名称
+MYSQL_CONTAINER=$(ssh_exec "docker ps --format '{{.Names}}' | grep -i mysql | head -1" || echo "")
+if [ -z "$MYSQL_CONTAINER" ]; then
+    echo -e "${YELLOW}⚠️  未找到 MySQL 容器，尝试直接连接 MySQL${NC}"
+    SYNC_OUTPUT=$(ssh_exec "cd $PROJECT_DIR && \
+        mysql -h\${MYSQL_HOST:-localhost} -P\${MYSQL_PORT:-3306} -u\${MYSQL_USER:-root} -p\${MYSQL_PASSWORD:-Yuanqizhan@163} \${MYSQL_DATABASE:-hifate_bazi} < $REMOTE_SCRIPT 2>&1" || echo "failed")
+else
+    echo -e "${GREEN}✅ 找到 MySQL 容器: $MYSQL_CONTAINER${NC}"
+    SYNC_OUTPUT=$(ssh_exec "cd $PROJECT_DIR && \
+        docker exec -i $MYSQL_CONTAINER mysql -uroot -p\${MYSQL_PASSWORD:-Yuanqizhan@163} \${MYSQL_DATABASE:-hifate_bazi} < $REMOTE_SCRIPT 2>&1" || echo "failed")
+fi
 
 if echo "$SYNC_OUTPUT" | grep -q "failed\|error\|Error"; then
     echo -e "${RED}❌ 数据库同步失败${NC}"
