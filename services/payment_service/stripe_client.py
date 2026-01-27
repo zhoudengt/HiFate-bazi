@@ -335,6 +335,7 @@ class StripeClient(BasePaymentClient):
             logger.info(f"创建支付会话成功: session_id={session.id}, currency={currency_to_use}, needs_conversion={needs_conversion}")
             
             return {
+                "success": True,
                 "session_id": session.id,
                 "checkout_url": session.url,
                 "status": "created",
