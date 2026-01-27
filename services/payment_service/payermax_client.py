@@ -289,23 +289,24 @@ class PayerMaxClient(BasePaymentClient):
             }
 
         try:
-            # 构建请求数据
+            # 构建请求数据（根据 PayerMax 官方 API 文档格式）
             request_data = {
-                "version": "1.1",
+                "version": "1.4",
                 "keyVersion": "1",
                 "requestTime": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000+00:00"),
                 "appId": self.app_id,
                 "merchantNo": self.merchant_no,
                 "data": {
-                    "merchantOrderNo": order_id,
-                    "amount": {
-                        "value": amount,
-                        "currency": currency.upper()
-                    },
+                    "outTradeNo": order_id,
                     "subject": product_name,
+                    "totalAmount": float(amount),
+                    "currency": currency.upper(),
+                    "country": "US",  # 默认美国，可根据需求扩展
+                    "userId": self._generate_user_id(customer_email),
+                    "language": "en",
+                    "frontCallbackUrl": self._get_success_url(),
                     "notifyUrl": self._get_notify_url(),
-                    "returnUrl": self._get_success_url(),
-                    "userId": self._generate_user_id(customer_email)
+                    "integrate": "Hosted_Checkout"
                 }
             }
 
@@ -349,13 +350,17 @@ class PayerMaxClient(BasePaymentClient):
                     logger.warning("PayerMax响应签名验证失败")
 
                 if result.get("code") == "APPLY_SUCCESS":
+                    # 根据官方 API 响应格式获取字段
+                    trade_token = response_data.get("tradeToken")
+                    redirect_url = response_data.get("redirectUrl")
+                    
                     # 记录到数据库
                     if PaymentTransactionDAO:
                         try:
                             PaymentTransactionDAO().create_transaction(
                                 order_id=order_id,
                                 provider="payermax",
-                                payment_id=response_data.get("transactionNo"),
+                                payment_id=trade_token,
                                 amount=amount,
                                 currency=currency,
                                 status="pending",
@@ -365,19 +370,18 @@ class PayerMaxClient(BasePaymentClient):
                         except Exception as e:
                             logger.warning(f"记录PayerMax交易到数据库失败: {e}")
 
-                    payment_url = response_data.get("paymentUrl") or response_data.get("cashierUrl")
-
                     return {
                         "success": True,
-                        "transaction_id": response_data.get("transactionNo"),
+                        "transaction_id": trade_token,
                         "order_id": order_id,
-                        "payment_url": payment_url,
+                        "payment_url": redirect_url,
                         "status": "created",
                         "payment_method": payment_method,
                         "message": "PayerMax支付订单创建成功"
                     }
                 else:
-                    error_msg = result.get("message", "创建订单失败")
+                    # 根据官方 API，错误消息字段是 msg
+                    error_msg = result.get("msg", result.get("message", "创建订单失败"))
                     error_code = result.get("code", "UNKNOWN")
                     logger.error(f"创建PayerMax订单失败: code={error_code}, message={error_msg}, full_response={result}")
                     return {
