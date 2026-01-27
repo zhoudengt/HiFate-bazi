@@ -61,6 +61,10 @@ class PayerMaxClient(BasePaymentClient):
         Args:
             environment: 环境（production/sandbox），如果为None则自动查找is_active=1的记录
         """
+        # 如果未指定环境，自动推断
+        if environment is None:
+            environment = get_payment_environment('payermax', 'production')
+        
         super().__init__(environment)
 
         # 从数据库读取配置
@@ -283,7 +287,11 @@ class PayerMaxClient(BasePaymentClient):
                 "User-Agent": "PayerMax-Client/1.0"
             }
 
+            logger.info(f"PayerMax请求URL: {url}")
+            logger.info(f"PayerMax请求数据: {json.dumps(request_data, ensure_ascii=False, indent=2)}")
             response = requests.post(url, json=request_data, headers=headers, timeout=30)
+            logger.info(f"PayerMax响应状态码: {response.status_code}")
+            logger.info(f"PayerMax响应内容: {response.text[:500]}")
 
             if response.status_code == 200:
                 result = response.json()
@@ -324,7 +332,8 @@ class PayerMaxClient(BasePaymentClient):
                     }
                 else:
                     error_msg = result.get("message", "创建订单失败")
-                    logger.error(f"创建PayerMax订单失败: {error_msg}")
+                    error_code = result.get("code", "UNKNOWN")
+                    logger.error(f"创建PayerMax订单失败: code={error_code}, message={error_msg}, full_response={result}")
                     return {
                         "success": False,
                         "error": error_msg
