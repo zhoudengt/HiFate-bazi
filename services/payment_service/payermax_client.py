@@ -102,11 +102,17 @@ class PayerMaxClient(BasePaymentClient):
             except Exception as e:
                 logger.error(f"加载PayerMax公钥失败: {e}")
 
-        # 设置API基础URL
-        if self.environment == "production":
+        # 设置API基础URL（根据实际环境或 mode 配置）
+        # 检查是否有 mode 配置（sandbox/production）
+        mode = get_payment_config('payermax', 'mode', environment) or os.getenv("PAYERMAX_MODE", "")
+        if mode and mode.lower() == "sandbox":
+            self.base_url = "https://pay-gate-uat.payermax.com/aggregate-pay/api/gateway/"
+        elif self.environment == "production":
             self.base_url = "https://pay-gate.payermax.com/aggregate-pay/api/gateway/"
         else:
             self.base_url = "https://pay-gate-uat.payermax.com/aggregate-pay/api/gateway/"
+        
+        logger.info(f"PayerMax API URL: {self.base_url} (environment={self.environment}, mode={mode})")
 
         if not all([self.app_id, self.merchant_no, self.private_key]):
             logger.warning("PayerMax配置不完整（数据库或环境变量）")
