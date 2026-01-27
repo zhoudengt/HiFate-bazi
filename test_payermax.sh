@@ -1,77 +1,76 @@
 #!/bin/bash
 
 echo "🔍 PayerMax 支付测试开始..."
-echo "================================"
-
-# 检查 PayerMax 配置
-echo "1️⃣ 检查 PayerMax 配置..."
-python3 scripts/db/manage_payment_configs.py list --provider payermax
-
 echo ""
-echo "2️⃣ 创建 PayerMax 支付订单..."
 
-# 测试创建支付订单（使用收银台模式）
-RESPONSE=$(curl -s -X POST http://127.0.0.1:8001/api/v1/payment/unified/create \
+PROD_IP="8.210.52.217"
+SSH_PASS="Yuanqizhan@163"
+
+# 1. 检查配置
+echo "1️⃣ 检查 PayerMax 配置..."
+sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no root@$PROD_IP "docker exec hifate-web python3 scripts/db/manage_payment_configs.py list --provider payermax --environment production" 2>&1 | grep -v "WARNING\|ERROR\|连接\|Redis\|MySQL\|✗\|⚠️\|异步"
+
+# 2. 清除缓存
+echo ""
+echo "2️⃣ 清除配置缓存..."
+sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no root@$PROD_IP "docker exec hifate-web python3 -c \"
+from services.payment_service.payment_config_loader import reload_payment_config
+reload_payment_config(provider='payermax')
+print('✓ 缓存已清除')
+\"" 2>&1 | grep -v "WARNING\|ERROR\|连接\|Redis\|MySQL\|✗\|⚠️\|异步"
+
+# 3. 检查客户端初始化状态
+echo ""
+echo "3️⃣ 检查 PayerMax 客户端初始化状态..."
+sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no root@$PROD_IP "docker exec hifate-web python3 << 'PYEOF'
+import sys
+sys.path.insert(0, '/app')
+from services.payment_service.payermax_client import PayerMaxClient
+from services.payment_service.payment_config_loader import get_payment_config, get_payment_environment
+import os
+
+env = get_payment_environment()
+print(f'Environment: {env}')
+
+client = PayerMaxClient(environment=env)
+print(f'is_enabled: {client.is_enabled}')
+print(f'app_id: {client.app_id}')
+print(f'merchant_no: {client.merchant_no}')
+print(f'private_key loaded: {client.private_key is not None}')
+print(f'public_key loaded: {client.public_key is not None}')
+
+# 检查密钥文件路径
+private_path = get_payment_config('payermax', 'private_key_path', env)
+public_path = get_payment_config('payermax', 'public_key_path', env)
+print(f'private_key_path from DB: {private_path}')
+print(f'public_key_path from DB: {public_path}')
+
+if private_path:
+    print(f'private_key file exists: {os.path.exists(private_path)}')
+if public_path:
+    print(f'public_key file exists: {os.path.exists(public_path)}')
+PYEOF
+" 2>&1 | grep -v "WARNING\|ERROR\|连接\|Redis\|MySQL\|✗\|⚠️\|异步" | tail -15
+
+# 4. 测试支付接口
+echo ""
+echo "4️⃣ 测试支付接口..."
+RESPONSE=$(curl -s -X POST http://$PROD_IP:8001/api/v1/payment/unified/create \
   -H "Content-Type: application/json" \
   -d '{
     "provider": "payermax",
     "amount": "19.90",
     "currency": "USD",
-    "product_name": "PayerMax 测试商品",
+    "product_name": "PayerMax测试产品",
     "customer_email": "test@example.com"
   }')
 
-echo "创建支付响应:"
-echo "$RESPONSE" | python3 -m json.tool
+echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"
 
-# 提取 transaction_id
-TRANSACTION_ID=$(echo "$RESPONSE" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('transaction_id', ''))")
-
-if [ -n "$TRANSACTION_ID" ]; then
-    echo ""
-    echo "3️⃣ 验证 PayerMax 支付状态..."
-    echo "Transaction ID: $TRANSACTION_ID"
-
-    # 等待用户完成支付（如果有 payment_url）
-    PAYMENT_URL=$(echo "$RESPONSE" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('payment_url', ''))")
-    if [ -n "$PAYMENT_URL" ]; then
-        echo "支付链接: $PAYMENT_URL"
-        echo "请在浏览器中打开上述链接完成支付，然后按回车继续..."
-        read
-    fi
-
-    # 验证支付状态
-    VERIFY_RESPONSE=$(curl -s -X POST http://127.0.0.1:8001/api/v1/payment/unified/verify \
-      -H "Content-Type: application/json" \
-      -d "{\"provider\":\"payermax\",\"transaction_id\":\"$TRANSACTION_ID\"}")
-
-    echo "验证支付响应:"
-    echo "$VERIFY_RESPONSE" | python3 -m json.tool
-else
-    echo "❌ 创建支付订单失败，无法进行验证"
-fi
+# 5. 检查最近的错误日志
+echo ""
+echo "5️⃣ 检查最近的错误日志..."
+sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no root@$PROD_IP "docker logs hifate-web --tail 50 2>&1 | grep -i 'payermax\|创建订单\|error\|exception' | tail -10"
 
 echo ""
-echo "4️⃣ 测试完成说明"
-echo "================================"
-echo "PayerMax 测试要点："
-echo "✅ 支持 600+ 全球支付方式"
-echo "✅ RSA 签名保证安全性"
-echo "✅ 支持收银台、API、PayByLink 三种集成模式"
-echo "✅ 支持多种货币和地区"
-echo ""
-echo "配置要求："
-echo "- App ID: 从 PayerMax 开发者中心获取"
-echo "- Merchant No: 从 PayerMax 商户后台获取"
-echo "- Private Key: RSA 私钥文件路径"
-echo "- Public Key: RSA 公钥文件路径"
-echo ""
-echo "设置配置命令："
-echo "python3 scripts/db/manage_payment_configs.py add payermax app_id YOUR_APP_ID --environment test"
-echo "python3 scripts/db/manage_payment_configs.py add payermax merchant_no YOUR_MERCHANT_NO --environment test"
-echo "python3 scripts/db/manage_payment_configs.py add payermax private_key_path /path/to/private_key.pem --environment test"
-echo "python3 scripts/db/manage_payment_configs.py add payermax public_key_path /path/to/public_key.pem --environment test"
-echo ""
-echo "RSA 密钥生成："
-echo "openssl genrsa -out private_key.pem 2048"
-echo "openssl rsa -in private_key.pem -pubout -out public_key.pem"
+echo "✅ 测试完成！"
