@@ -274,13 +274,14 @@ class PayerMaxClient(BasePaymentClient):
                 }
             }
 
-            # 如果指定了支付方式，使用直接支付
+            # PayerMax 统一使用 orderAndPay 端点（收银台模式）
+            # 如果指定了支付方式，添加到请求数据中
             if payment_method:
-                request_data["data"]["paymentMethod"] = payment_method
-                api_path = "orderAndPay"
-            else:
-                # 使用收银台模式
-                api_path = "cashierPayment"
+                request_data["data"]["paymentDetail"] = {
+                    "paymentMethodType": payment_method
+                }
+            
+            api_path = "orderAndPay"
 
             # 生成签名
             signature = self._generate_signature(request_data["data"])
