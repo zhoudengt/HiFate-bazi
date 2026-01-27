@@ -148,11 +148,24 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
         # 确保 provider 是字符串（如果是枚举，转换为值）
         provider_str = provider.value if hasattr(provider, 'value') else str(provider)
 
-        # 获取支付客户端
+        # 获取支付客户端（如果失败，尝试重新加载模块）
         try:
             payment_client = get_payment_client(provider_str)
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            # 如果客户端未注册，尝试重新加载支付服务模块
+            if "不支持的支付平台" in str(e):
+                try:
+                    import importlib
+                    import sys
+                    if 'services.payment_service' in sys.modules:
+                        importlib.reload(sys.modules['services.payment_service'])
+                    # 再次尝试获取客户端
+                    payment_client = get_payment_client(provider_str)
+                except Exception as reload_error:
+                    logger.warning(f"重新加载支付服务模块失败: {reload_error}")
+                    raise HTTPException(status_code=400, detail=str(e))
+            else:
+                raise HTTPException(status_code=400, detail=str(e))
 
         # 检查支付客户端是否启用
         if not payment_client.is_enabled:
@@ -337,11 +350,24 @@ def verify_unified_payment(request: VerifyPaymentRequest):
         # 确保 provider 是字符串（如果是枚举，转换为值）
         provider_str = provider.value if hasattr(provider, 'value') else str(provider)
 
-        # 获取支付客户端
+        # 获取支付客户端（如果失败，尝试重新加载模块）
         try:
             payment_client = get_payment_client(provider_str)
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            # 如果客户端未注册，尝试重新加载支付服务模块
+            if "不支持的支付平台" in str(e):
+                try:
+                    import importlib
+                    import sys
+                    if 'services.payment_service' in sys.modules:
+                        importlib.reload(sys.modules['services.payment_service'])
+                    # 再次尝试获取客户端
+                    payment_client = get_payment_client(provider_str)
+                except Exception as reload_error:
+                    logger.warning(f"重新加载支付服务模块失败: {reload_error}")
+                    raise HTTPException(status_code=400, detail=str(e))
+            else:
+                raise HTTPException(status_code=400, detail=str(e))
 
         # 检查支付客户端是否启用
         if not payment_client.is_enabled:
