@@ -44,10 +44,10 @@ except ImportError:
 
 # 导入货币转换工具
 try:
-    from services.payment_service.currency_converter import CurrencyConverter
-    from services.payment_service.payment_api_logger import get_payment_api_logger
-    from services.payment_service.fx_risk_monitor import get_fx_risk_monitor
-    from server.db.payment_transaction_dao import PaymentTransactionDAO
+from services.payment_service.currency_converter import CurrencyConverter
+from services.payment_service.payment_api_logger import get_payment_api_logger
+from services.payment_service.fx_risk_monitor import get_fx_risk_monitor
+from server.db.payment_transaction_dao import PaymentTransactionDAO
 except ImportError as e:
     logger.warning(f"导入支付工具模块失败: {e}")
     CurrencyConverter = None
@@ -55,8 +55,12 @@ except ImportError as e:
     get_fx_risk_monitor = None
     PaymentTransactionDAO = None
 
+from .base_client import BasePaymentClient
+from .client_factory import register_payment_client
 
-class StripeClient:
+
+@register_payment_client("stripe")
+class StripeClient(BasePaymentClient):
     """Stripe支付客户端"""
     
     def __init__(self, environment: Optional[str] = None):
@@ -65,7 +69,7 @@ class StripeClient:
         Args:
             environment: 支付环境（production/sandbox/test），如果为None则自动查找is_active=1的记录
         """
-        self.environment = environment
+        super().__init__(environment)
         
         # 从数据库读取配置，自动查找is_active=1的记录
         # 如果指定了environment，则优先匹配该环境且is_active=1的记录
@@ -78,6 +82,17 @@ class StripeClient:
         stripe_module = _import_stripe()
         if stripe_module and self.api_key:
             stripe_module.api_key = self.api_key
+    
+    @property
+    def provider_name(self) -> str:
+        """支付平台名称"""
+        return "stripe"
+    
+    @property
+    def is_enabled(self) -> bool:
+        """检查Stripe客户端是否已启用"""
+        stripe_module = _import_stripe()
+        return bool(self.api_key and stripe_module)
     
     @staticmethod
     def _get_payment_api_logger():
