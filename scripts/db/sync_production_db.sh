@@ -235,8 +235,17 @@ if [ -z "$MYSQL_CONTAINER" ]; then
 else
     echo -e "${GREEN}✅ 找到 MySQL 容器: $MYSQL_CONTAINER${NC}"
     # 通过 Docker 容器执行 MySQL 命令，使用环境变量传递密码
+    # 注意：密码需要转义特殊字符
+    ESCAPED_PASSWORD=$(echo "$MYSQL_PASSWORD" | sed "s/@/\\@/g")
     SYNC_OUTPUT=$(ssh_exec "cd $PROJECT_DIR && \
-        docker exec -i -e MYSQL_PWD='$MYSQL_PASSWORD' $MYSQL_CONTAINER mysql -uroot $MYSQL_DATABASE < $REMOTE_SCRIPT 2>&1" || echo "failed")
+        docker exec -i -e MYSQL_PWD='$ESCAPED_PASSWORD' $MYSQL_CONTAINER mysql -uroot $MYSQL_DATABASE < $REMOTE_SCRIPT 2>&1" || echo "failed")
+    
+    # 如果使用环境变量失败，尝试直接在命令中传递密码（不推荐，但作为备选）
+    if echo "$SYNC_OUTPUT" | grep -q "Access denied"; then
+        echo -e "${YELLOW}⚠️  使用环境变量密码失败，尝试直接传递密码${NC}"
+        SYNC_OUTPUT=$(ssh_exec "cd $PROJECT_DIR && \
+            cat $REMOTE_SCRIPT | docker exec -i $MYSQL_CONTAINER mysql -uroot -p'$ESCAPED_PASSWORD' $MYSQL_DATABASE 2>&1" || echo "failed")
+    fi
 fi
 
 if echo "$SYNC_OUTPUT" | grep -q "failed\|error\|Error"; then
