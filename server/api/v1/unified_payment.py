@@ -145,20 +145,22 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
     """
     try:
         provider = request.provider
+        # 确保 provider 是字符串（如果是枚举，转换为值）
+        provider_str = provider.value if hasattr(provider, 'value') else str(provider)
 
         # 获取支付客户端
         try:
-            payment_client = get_payment_client(provider)
+            payment_client = get_payment_client(provider_str)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
         # 检查支付客户端是否启用
         if not payment_client.is_enabled:
-            raise HTTPException(status_code=400, detail=f"支付渠道 {provider} 未启用，请检查配置")
+            raise HTTPException(status_code=400, detail=f"支付渠道 {provider_str} 未启用，请检查配置")
 
         # 生成订单号
         import time
-        order_id = f"{provider.upper()}_{int(time.time() * 1000)}"
+        order_id = f"{provider_str.upper()}_{int(time.time() * 1000)}"
 
         # 区域检查和白名单检查
         user_region = None
@@ -216,18 +218,18 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
         }
 
         # 根据支付平台添加特定参数
-        if provider == "stripe":
+        if provider_str == "stripe":
             if not request.customer_email:
                 raise HTTPException(status_code=400, detail="Stripe支付需要提供customer_email")
             payment_params.update({
                 "enable_adaptive_pricing": True,
                 "enable_link": True,
             })
-        elif provider == "payssion":
+        elif provider_str == "payssion":
             payment_params["payment_method"] = request.payment_method or "linepay"
-        elif provider == "payermax":
+        elif provider_str == "payermax":
             payment_params["payment_method"] = request.payment_method
-        elif provider == "wechat":
+        elif provider_str == "wechat":
             if request.payment_type == "jsapi" and not request.openid:
                 raise HTTPException(status_code=400, detail="微信JSAPI支付需要提供openid")
             payment_params.update({
@@ -287,7 +289,7 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
         if 'transaction_id' in result:
             response_data['transaction_id'] = result['transaction_id']
             # 统一接口：PayerMax 的 transaction_id 也映射到 payment_id（与其他支付渠道保持一致）
-            if provider == "payermax" and not response_data.get('payment_id'):
+            if provider_str == "payermax" and not response_data.get('payment_id'):
                 response_data['payment_id'] = result['transaction_id']
         if 'order_id' in result:
             response_data['order_id'] = result['order_id']
@@ -329,23 +331,25 @@ def verify_unified_payment(request: VerifyPaymentRequest):
     """
     try:
         provider = request.provider
+        # 确保 provider 是字符串（如果是枚举，转换为值）
+        provider_str = provider.value if hasattr(provider, 'value') else str(provider)
 
         # 获取支付客户端
         try:
-            payment_client = get_payment_client(provider)
+            payment_client = get_payment_client(provider_str)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
         # 检查支付客户端是否启用
         if not payment_client.is_enabled:
-            raise HTTPException(status_code=400, detail=f"支付渠道 {provider} 未启用，请检查配置")
+            raise HTTPException(status_code=400, detail=f"支付渠道 {provider_str} 未启用，请检查配置")
 
         # 构建验证参数
         verify_params = {}
 
         # 根据支付平台设置验证参数
         order_id_for_check = None
-        if provider == "stripe":
+        if provider_str == "stripe":
             if not request.session_id:
                 raise HTTPException(status_code=400, detail="Stripe验证需要提供session_id")
             verify_params["session_id"] = request.session_id
@@ -357,7 +361,7 @@ def verify_unified_payment(request: VerifyPaymentRequest):
                 )
                 if transaction:
                     order_id_for_check = transaction.get('order_id')
-        elif provider == "paypal":
+        elif provider_str == "paypal":
             if not request.payment_id:
                 raise HTTPException(status_code=400, detail="PayPal验证需要提供payment_id")
             verify_params["payment_id"] = request.payment_id
@@ -369,7 +373,7 @@ def verify_unified_payment(request: VerifyPaymentRequest):
                 )
                 if transaction:
                     order_id_for_check = transaction.get('order_id')
-        elif provider == "payermax":
+        elif provider_str == "payermax":
             # PayerMax 支持 transaction_id 或 order_id 验证
             if request.transaction_id:
                 verify_params["transaction_id"] = request.transaction_id
@@ -410,7 +414,7 @@ def verify_unified_payment(request: VerifyPaymentRequest):
             if is_expired:
                 return VerifyPaymentResponse(
                     success=False,
-                    provider=provider,
+                    provider=provider_str,
                     message="订单已过期，请重新创建订单"
                 )
 
@@ -427,7 +431,7 @@ def verify_unified_payment(request: VerifyPaymentRequest):
         # 构建统一的响应格式
         response_data = {
             "success": True,
-            "provider": provider,
+            "provider": provider_str,
             "status": result.get('status'),
             "paid": result.get('paid', False),
             "message": result.get('message', '验证成功'),
