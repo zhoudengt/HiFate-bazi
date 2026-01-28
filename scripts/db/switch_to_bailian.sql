@@ -47,6 +47,7 @@ VALUES
   
   -- 综合分析
   ('BAILIAN_GENERAL_REVIEW_APP_ID', '75d9a46f55374ea2be1ea28db10c8d03', 'string', '百炼-总评分析 App ID', 'bailian', 1, 'production'),
+  ('BAILIAN_ANNUAL_REPORT_APP_ID', 'a2a45b93d4c04ee1b363bdaa8cd26d35', 'string', '百炼-年运报告 App ID', 'bailian', 1, 'production'),
   ('BAILIAN_DAILY_FORTUNE_APP_ID', 'df11520293eb479a985916d977904a8a', 'string', '百炼-每日运势 App ID', 'bailian', 1, 'production'),
   
   -- 面相和风水

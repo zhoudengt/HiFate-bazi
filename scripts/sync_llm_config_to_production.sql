@@ -71,6 +71,19 @@ ON DUPLICATE KEY UPDATE
   updated_at = CURRENT_TIMESTAMP;
 
 -- ============================================
+-- 5.5. 年运报告 (Annual Report)
+-- ============================================
+INSERT INTO service_configs (config_key, config_value, config_type, description, category, is_active, environment)
+VALUES 
+  ('ANNUAL_REPORT_LLM_PLATFORM', 'bailian', 'string', '年运报告接口使用的 LLM 平台: coze 或 bailian', 'llm', 1, 'production'),
+  ('ANNUAL_REPORT_BOT_ID', '7593296393016508450', 'string', '年运报告 Coze Bot ID', 'coze', 1, 'production'),
+  ('BAILIAN_ANNUAL_REPORT_APP_ID', 'a2a45b93d4c04ee1b363bdaa8cd26d35', 'string', '百炼-年运报告 App ID', 'bailian', 1, 'production')
+ON DUPLICATE KEY UPDATE 
+  config_value = VALUES(config_value),
+  description = VALUES(description),
+  updated_at = CURRENT_TIMESTAMP;
+
+-- ============================================
 -- 6. 每日运势 (Daily Fortune)
 -- ============================================
 INSERT INTO service_configs (config_key, config_value, config_type, description, category, is_active, environment)

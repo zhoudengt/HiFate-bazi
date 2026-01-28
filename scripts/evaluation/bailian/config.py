@@ -24,6 +24,7 @@ BAILIAN_APP_IDS = {
     
     # 综合分析
     "general_review": "75d9a46f55374ea2be1ea28db10c8d03",         # 总评分析
+    "annual_report": "a2a45b93d4c04ee1b363bdaa8cd26d35",          # 年运报告
     "daily_fortune": "df11520293eb479a985916d977904a8a",          # 每日运势
     
     # QA 问答

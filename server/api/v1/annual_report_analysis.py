@@ -239,20 +239,7 @@ async def annual_report_stream_generator(
 ):
     """流式生成年运报告的生成器（一级接口）"""
     try:
-        # 1. 确定使用的 bot_id（优先级：参数 > 数据库配置）
-        used_bot_id = bot_id
-        if not used_bot_id:
-            # 只从数据库读取，不降级到环境变量
-            used_bot_id = get_config_from_db_only("ANNUAL_REPORT_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
-            if not used_bot_id:
-                error_msg = {
-                    'type': 'error',
-                    'content': "数据库配置缺失: ANNUAL_REPORT_BOT_ID 或 COZE_BOT_ID，请在 service_configs 表中配置。"
-                }
-                yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
-                return
-        
-        logger.info(f"年运报告请求: solar_date={solar_date}, solar_time={solar_time}, gender={gender}, bot_id={used_bot_id}")
+        logger.info(f"年运报告请求: solar_date={solar_date}, solar_time={solar_time}, gender={gender}")
         
         # 2. 处理输入（农历转换等）
         final_solar_date, final_solar_time, _ = BaziInputProcessor.process_input(
@@ -386,31 +373,60 @@ async def annual_report_stream_generator(
         logger.info(f"[Annual Report Stream] 格式化数据长度: {len(formatted_data)} 字符")
         logger.debug(f"[Annual Report Stream] 格式化数据前500字符: {formatted_data[:500]}")
         
-        # 9. 调用 LLM API（支持 Coze 和百炼平台）
+        # 9. 创建 LLM 流式服务（支持 Coze 和百炼平台）
         try:
             from server.services.llm_service_factory import LLMServiceFactory
-            llm_service = LLMServiceFactory.get_service(scene="general_review", bot_id=used_bot_id)
-            async for chunk in llm_service.stream_analysis(formatted_data, bot_id=used_bot_id):
-                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-                if chunk.get('type') in ['complete', 'error']:
-                    break
-                    
+            
+            # 确保 bot_id 已设置（优先级：参数 > 数据库配置）
+            used_bot_id = bot_id
+            if not used_bot_id:
+                used_bot_id = get_config_from_db_only("ANNUAL_REPORT_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
+            
+            logger.info(f"使用 Bot ID: {used_bot_id}")
+            
+            # 使用工厂获取 LLM 服务（根据配置自动选择 Coze 或百炼）
+            llm_service = LLMServiceFactory.get_service(scene="annual_report", bot_id=used_bot_id)
+            
+            # 如果是 Coze 服务，获取实际的 bot_id
+            if hasattr(llm_service, 'bot_id'):
+                actual_bot_id = used_bot_id or llm_service.bot_id
+                logger.info(f"实际使用的 Bot ID: {actual_bot_id}")
+            else:
+                actual_bot_id = used_bot_id
+                logger.info(f"使用百炼平台，场景: annual_report")
+            
         except ValueError as e:
-            # 配置错误
+            logger.error(f"LLM 服务配置错误: {e}")
             error_msg = {
                 'type': 'error',
-                'content': f"Coze API 配置缺失: {str(e)}"
+                'content': f"LLM 服务配置缺失: {str(e)}。请检查数据库配置 COZE_ACCESS_TOKEN 和 ANNUAL_REPORT_BOT_ID（或 COZE_BOT_ID），或 BAILIAN_API_KEY 和 BAILIAN_ANNUAL_REPORT_APP_ID。"
             }
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         except Exception as e:
-            # 其他错误
+            logger.error(f"初始化 LLM 服务失败: {e}", exc_info=True)
+            error_msg = {
+                'type': 'error',
+                'content': f"初始化 LLM 服务失败: {str(e)}"
+            }
+            yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
+            return
+        
+        # 10. 流式生成（直接发送格式化后的数据）
+        logger.info(f"开始流式生成，Bot ID: {actual_bot_id}, 数据长度: {len(formatted_data)}")
+        
+        try:
+            async for chunk in llm_service.stream_analysis(formatted_data, bot_id=actual_bot_id):
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                if chunk.get('type') in ['complete', 'error']:
+                    break
+        except Exception as e:
             import traceback
             error_msg = {
                 'type': 'error',
-                'content': f"Coze API 调用失败: {str(e)}"
+                'content': f"LLM API 调用失败: {str(e)}"
             }
-            logger.error(f"[Annual Report Stream] Coze API 调用失败: {e}\n{traceback.format_exc()}")
+            logger.error(f"[Annual Report Stream] LLM API 调用失败: {e}\n{traceback.format_exc()}")
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
             
