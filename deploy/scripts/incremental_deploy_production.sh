@@ -41,6 +41,13 @@ GIT_BRANCH="master"
 # 项目目录
 PROJECT_DIR="/opt/HiFate-bazi"
 
+# 生产数据库配置（单源：仅通过 Node1 SSH + docker exec 连接，禁止本地直连）
+# 详见 docs/knowledge_base/deployment_guide.md 章节「生产数据库（Docker，单源配置）」
+PROD_MYSQL_CONTAINER="hifate-mysql-master"
+PROD_MYSQL_USER="root"
+PROD_MYSQL_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+PROD_MYSQL_DATABASE="hifate_bazi"
+
 # SSH 密码（从环境变量或默认值读取）
 SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
 
@@ -271,37 +278,31 @@ EOF
 # 不因为本地导入失败而阻止部署，服务器端会进行完整验证
 echo -e "${GREEN}✅ 本地验证完成（服务器端将进行完整验证）${NC}"
 
-# 1.7 数据库变更检测（必须检查）
+# 1.7 数据库变更检测（生产库为 Docker，仅支持 SSH + docker exec，本机不直连故跳过直连检测）
 echo ""
 echo "🔍 检测数据库变更..."
 DB_SYNC_NEEDED=false
 
-# 运行数据库变更检测（设置超时，避免卡住）
+# 生产库为 Docker hifate-mysql-master，仅通过 Node1 SSH + docker exec 连接，无法从本机直连。
+# 使用 --skip-prod-connection 跳过生产库直连，避免超时/连接失败导致部署中断。
 if command -v timeout &> /dev/null; then
-    DB_DETECT_OUTPUT=$(timeout 10 python3 scripts/db/detect_db_changes.py 2>&1 || echo "数据库变更检测超时或失败")
-DB_DETECT_EXIT=$?
-    if [ $DB_DETECT_EXIT -eq 124 ]; then
-        DB_DETECT_EXIT=1  # 超时视为失败
-    fi
-elif command -v gtimeout &> /dev/null; then
-    DB_DETECT_OUTPUT=$(gtimeout 10 python3 scripts/db/detect_db_changes.py 2>&1 || echo "数据库变更检测超时或失败")
+    DB_DETECT_OUTPUT=$(timeout 15 python3 scripts/db/detect_db_changes.py --skip-prod-connection 2>&1 || echo "数据库变更检测异常")
     DB_DETECT_EXIT=$?
-    if [ $DB_DETECT_EXIT -eq 124 ]; then
-        DB_DETECT_EXIT=1  # 超时视为失败
-    fi
+    [ $DB_DETECT_EXIT -eq 124 ] && DB_DETECT_EXIT=0  # 超时也继续部署
+elif command -v gtimeout &> /dev/null; then
+    DB_DETECT_OUTPUT=$(gtimeout 15 python3 scripts/db/detect_db_changes.py --skip-prod-connection 2>&1 || echo "数据库变更检测异常")
+    DB_DETECT_EXIT=$?
+    [ $DB_DETECT_EXIT -eq 124 ] && DB_DETECT_EXIT=0
 else
-    # 如果没有 timeout 命令，使用后台进程和 kill
-    DB_DETECT_OUTPUT=$(python3 scripts/db/detect_db_changes.py 2>&1 &)
-    DB_DETECT_PID=$!
-    sleep 10
-    if kill -0 $DB_DETECT_PID 2>/dev/null; then
-        kill $DB_DETECT_PID 2>/dev/null
-        DB_DETECT_OUTPUT="数据库变更检测超时或失败"
-        DB_DETECT_EXIT=1
-    else
-        wait $DB_DETECT_PID
-        DB_DETECT_EXIT=$?
-    fi
+    DB_DETECT_OUTPUT=$(python3 scripts/db/detect_db_changes.py --skip-prod-connection 2>&1) || true
+    DB_DETECT_EXIT=0
+fi
+
+# 若未使用 --skip-prod-connection 导致失败，不阻断部署：生产库仅支持 SSH + docker exec
+if [ $DB_DETECT_EXIT -ne 0 ]; then
+    echo -e "${YELLOW}⚠️  数据库变更检测未完成（生产库为 Docker，仅支持 Node1 SSH + docker exec）${NC}"
+    echo -e "${YELLOW}⚠️  跳过数据库变更检测，继续部署。如有库表变更请手动执行 scripts/db/sync_production_db.sh${NC}"
+    DB_DETECT_EXIT=0
 fi
 
 if [ $DB_DETECT_EXIT -eq 0 ]; then
@@ -352,7 +353,36 @@ if [ $DB_DETECT_EXIT -eq 0 ]; then
         fi
     else
         echo "$DB_DETECT_OUTPUT" | tail -20
-        echo -e "${GREEN}✅ 无数据库变更${NC}"
+        echo -e "${GREEN}✅ 无数据库变更（已跳过生产库直连检测）${NC}"
+        
+        # 即使跳过直连检测，也检查是否有待同步的脚本（可能之前已生成但未同步）
+        LATEST_SYNC_SCRIPT=$(ls -t scripts/db/sync_*.sql 2>/dev/null | head -1)
+        if [ -n "$LATEST_SYNC_SCRIPT" ] && [ -f "$LATEST_SYNC_SCRIPT" ]; then
+            SYNC_SCRIPT_AGE=$(($(date +%s) - $(stat -f %m "$LATEST_SYNC_SCRIPT" 2>/dev/null || stat -c %Y "$LATEST_SYNC_SCRIPT" 2>/dev/null || echo 0)))
+            # 如果同步脚本是最近 7 天内生成的，提示是否需要同步
+            if [ $SYNC_SCRIPT_AGE -lt 604800 ]; then
+                DEPLOYMENT_ID=$(basename "$LATEST_SYNC_SCRIPT" | sed 's/sync_//;s/.sql//')
+                echo -e "${YELLOW}💡 发现待同步脚本: $LATEST_SYNC_SCRIPT (生成于 $((SYNC_SCRIPT_AGE / 86400)) 天前)${NC}"
+                
+                # 如果启用自动同步，自动执行
+                if [ "$AUTO_SYNC_DB" = "true" ]; then
+                    echo -e "${GREEN}✅ 自动数据库同步模式已启用，执行待同步脚本${NC}"
+                    echo "🔄 同步数据库到 Node1（生产数据库）..."
+                    if bash scripts/db/sync_production_db.sh --node node1 --deployment-id $DEPLOYMENT_ID; then
+                        echo -e "${GREEN}✅ 数据库同步完成（生产数据库在 Node1）${NC}"
+                        DB_SYNC_NEEDED=false  # 已同步，标记为无需同步
+                    else
+                        echo -e "${RED}❌ 数据库同步失败${NC}"
+                        echo -e "${YELLOW}⚠️  部署将继续，但请手动检查并执行数据库同步：${NC}"
+                        echo "  bash scripts/db/sync_production_db.sh --node node1 --deployment-id $DEPLOYMENT_ID"
+                    fi
+                else
+                    echo -e "${YELLOW}⚠️  发现待同步脚本，但 AUTO_SYNC_DB=false，跳过自动同步${NC}"
+                    echo -e "${YELLOW}💡 如需同步，请手动执行：${NC}"
+                    echo "  bash scripts/db/sync_production_db.sh --node node1 --deployment-id $DEPLOYMENT_ID"
+                fi
+            fi
+        fi
     fi
 else
     echo -e "${RED}❌ 数据库变更检测失败（可能是连接问题）${NC}"

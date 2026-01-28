@@ -2,6 +2,10 @@
 # 数据库同步脚本
 # 执行数据库变更并自动生成回滚脚本
 #
+# 生产数据库类型：Docker 容器，仅通过 Node1 SSH + docker exec 连接（禁止本机直连）。
+# 详见 docs/knowledge_base/deployment_guide.md 章节「生产数据库（Docker，单源配置）」。
+# 本脚本固定使用容器名 hifate-mysql-master，与增量部署脚本中的 PROD_MYSQL_CONTAINER 一致。
+#
 # 使用方法：
 #   bash scripts/db/sync_production_db.sh --node node1 --deployment-id 20250115_143000
 #

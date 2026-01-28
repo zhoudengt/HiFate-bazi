@@ -36,6 +36,34 @@
 | MySQL | 3306 | 数据库（主从） |
 | Redis | 6379 | 缓存（主从） |
 
+### 生产数据库（Docker，单源配置）
+
+**重要**：生产 MySQL 跑在 Node1 的 Docker 内，**本地无法直连**（无公网 3306 或防火墙限制）。所有生产 DB 操作必须通过 **SSH 登录 Node1 后使用 docker exec**。
+
+| 项 | 值 | 说明 |
+|----|-----|------|
+| 类型 | Docker 容器 | 非独立主机 MySQL |
+| 所在节点 | Node1（8.210.52.217） | 主库 |
+| 容器名 | `hifate-mysql-master` | 固定，见 deploy/docker/docker-compose.node1.yml |
+| 用户名 | `root` | |
+| 密码 | `Yuanqizhan@163` | 与 SSH 密码一致，也可用环境变量 MYSQL_PASSWORD |
+| 数据库名 | `hifate_bazi` | |
+| 连接方式 | 仅 SSH + docker exec | 本地禁止直连 8.210.52.217:3306 |
+
+**执行 SQL 的正确方式**（在 Node1 上或通过 SSH 到 Node1 后执行）：
+
+```bash
+# 在 Node1 上执行 SQL 文件
+docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < scripts/db/setup_annual_report_config.sql
+
+# 或通过 SSH 从本机执行（推荐）
+ssh root@8.210.52.217 "cd /opt/HiFate-bazi && docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < scripts/db/setup_annual_report_config.sql"
+```
+
+**错误做法**：在本地运行 `mysql -h 8.210.52.217 -P 3306 ...` 会超时或失败，因生产 MySQL 不对外暴露 3306。
+
+增量部署与 CI/CD 中涉及生产 DB 的步骤（如数据库同步）均按上述方式执行，参见 `deploy/scripts/incremental_deploy_production.sh` 顶部「生产数据库配置」及 `scripts/db/sync_production_db.sh`。
+
 ### SSH 连接信息
 
 ```bash

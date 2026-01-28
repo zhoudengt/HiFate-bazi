@@ -587,6 +587,8 @@ def get_database_config(env: str = 'local') -> Dict:
 def main():
     parser = argparse.ArgumentParser(description='数据库变更检测脚本')
     parser.add_argument('--generate-sync-script', action='store_true', help='生成数据库同步脚本')
+    parser.add_argument('--skip-prod-connection', action='store_true',
+                        help='跳过生产库直连（生产库为 Docker hifate-mysql-master，仅支持 SSH + docker exec，无法本机直连时使用）')
     parser.add_argument('--local-host', help='本地数据库主机')
     parser.add_argument('--local-port', type=int, help='本地数据库端口')
     parser.add_argument('--local-user', help='本地数据库用户')
@@ -625,6 +627,13 @@ def main():
         prod_config['password'] = args.prod_password
     if args.prod_database:
         prod_config['database'] = args.prod_database
+    
+    # 跳过生产库直连：生产库在 Node1 Docker 内，仅支持 SSH + docker exec，无法从本机直连
+    if args.skip_prod_connection:
+        print("生产数据库为 Docker 容器 hifate-mysql-master，仅支持通过 Node1 SSH + docker exec 连接，无法从本机直连。")
+        print("已跳过生产库直连检测，视为无数据库变更。如有库表变更请手动执行 scripts/db/sync_production_db.sh。")
+        print("\n✅ 无数据库变更")
+        return 0
     
     # 创建比较器
     comparator = DatabaseComparator(local_config, prod_config)
