@@ -31,7 +31,7 @@ class HomepageContentItem(BaseModel):
     title: str = Field(..., description="标题")
     tags: List[str] = Field(default_factory=list, description="标签列表")
     description: str = Field(..., description="详细描述")
-    image_url: str = Field(..., description="图片OSS地址")
+    image_url: Optional[str] = Field(None, description="图片OSS地址")
     sort_order: int = Field(0, description="排序字段")
     enabled: bool = Field(True, description="是否启用")
     created_at: Optional[str] = Field(None, description="创建时间")
