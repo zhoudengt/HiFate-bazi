@@ -8,8 +8,9 @@
 import sys
 import os
 import logging
+import re
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import List, Optional
 
 # 添加项目根目录到路径
@@ -30,7 +31,7 @@ class HomepageContentItem(BaseModel):
     title: str = Field(..., description="标题")
     tags: List[str] = Field(default_factory=list, description="标签列表")
     description: str = Field(..., description="详细描述")
-    image_base64: str = Field(..., description="图片Base64编码")
+    image_url: str = Field(..., description="图片OSS地址")
     sort_order: int = Field(0, description="排序字段")
     enabled: bool = Field(True, description="是否启用")
     created_at: Optional[str] = Field(None, description="创建时间")
@@ -56,8 +57,25 @@ class HomepageContentRequest(BaseModel):
     title: str = Field(..., description="标题", min_length=1, max_length=200)
     tags: List[str] = Field(default_factory=list, description="标签列表")
     description: str = Field(..., description="详细描述")
-    image_base64: str = Field(..., description="图片Base64编码（包含data:image前缀）")
+    image_url: str = Field(..., description="图片OSS地址（如：https://destiny-ducket.oss-cn-hongkong.aliyuncs.com/xxx.jpeg）")
     sort_order: int = Field(0, description="排序字段（数字越小越靠前）")
+    
+    @validator('image_url')
+    def validate_image_url(cls, v):
+        """验证OSS URL格式"""
+        if not v:
+            raise ValueError('图片地址不能为空')
+        # 验证是否为有效的HTTP/HTTPS URL
+        url_pattern = re.compile(
+            r'^https?://'  # http:// or https://
+            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
+            r'localhost|'  # localhost...
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
+            r'(?::\d+)?'  # optional port
+            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+        if not url_pattern.match(v):
+            raise ValueError('图片地址格式不正确，必须是有效的HTTP/HTTPS URL')
+        return v
 
 
 class SortOrderRequest(BaseModel):
@@ -70,9 +88,26 @@ class HomepageContentUpdateRequest(BaseModel):
     title: Optional[str] = Field(None, description="标题", min_length=1, max_length=200)
     tags: Optional[List[str]] = Field(None, description="标签列表")
     description: Optional[str] = Field(None, description="详细描述")
-    image_base64: Optional[str] = Field(None, description="图片Base64编码")
+    image_url: Optional[str] = Field(None, description="图片OSS地址（如：https://destiny-ducket.oss-cn-hongkong.aliyuncs.com/xxx.jpeg）")
     sort_order: Optional[int] = Field(None, description="排序字段")
     enabled: Optional[bool] = Field(None, description="是否启用")
+    
+    @validator('image_url')
+    def validate_image_url(cls, v):
+        """验证OSS URL格式（可选字段）"""
+        if v is None:
+            return v
+        # 验证是否为有效的HTTP/HTTPS URL
+        url_pattern = re.compile(
+            r'^https?://'  # http:// or https://
+            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
+            r'localhost|'  # localhost...
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
+            r'(?::\d+)?'  # optional port
+            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+        if not url_pattern.match(v):
+            raise ValueError('图片地址格式不正确，必须是有效的HTTP/HTTPS URL')
+        return v
 
 
 # ==================== 查询接口（前端调用） ====================
@@ -96,7 +131,7 @@ async def get_homepage_contents(enabled_only: bool = True):
           "title": "AI守护神",
           "tags": ["科技", "精准"],
           "description": "详细描述...",
-          "image_base64": "data:image/jpeg;base64,...",
+          "image_url": "https://destiny-ducket.oss-cn-hongkong.aliyuncs.com/xxx.jpeg",
           "sort_order": 1,
           "enabled": true
         }
@@ -124,7 +159,7 @@ async def get_homepage_contents(enabled_only: bool = True):
                 title=content['title'],
                 tags=content.get('tags', []),
                 description=content.get('description', ''),
-                image_base64=content.get('image_base64', ''),
+                image_url=content.get('image_url', ''),
                 sort_order=content.get('sort_order', 0),
                 enabled=bool(content.get('enabled', True)),
                 created_at=created_at,
@@ -170,7 +205,7 @@ async def get_homepage_content_detail(content_id: int):
             title=content['title'],
             tags=content.get('tags', []),
             description=content.get('description', ''),
-            image_base64=content.get('image_base64', ''),
+            image_url=content.get('image_url', ''),
             sort_order=content.get('sort_order', 0),
             enabled=bool(content.get('enabled', True)),
             created_at=created_at,
@@ -201,7 +236,7 @@ async def create_homepage_content(request: HomepageContentRequest):
     - **title**: 标题
     - **tags**: 标签列表
     - **description**: 详细描述
-    - **image_base64**: 图片Base64编码
+    - **image_url**: 图片OSS地址（如：https://destiny-ducket.oss-cn-hongkong.aliyuncs.com/xxx.jpeg）
     - **sort_order**: 排序字段
     """
     try:
@@ -209,7 +244,7 @@ async def create_homepage_content(request: HomepageContentRequest):
             title=request.title,
             tags=request.tags,
             description=request.description,
-            image_base64=request.image_base64,
+            image_url=request.image_url,
             sort_order=request.sort_order
         )
         
@@ -253,7 +288,7 @@ async def update_homepage_content(content_id: int, request: HomepageContentUpdat
             title=request.title,
             tags=request.tags,
             description=request.description,
-            image_base64=request.image_base64,
+            image_url=request.image_url,
             sort_order=request.sort_order,
             enabled=request.enabled
         )

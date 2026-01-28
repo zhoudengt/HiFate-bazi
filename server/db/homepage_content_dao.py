@@ -35,7 +35,7 @@ class HomepageContentDAO:
             db = get_db_connection()
             if enabled_only:
                 sql = """
-                    SELECT id, title, tags, description, image_base64, sort_order, enabled,
+                    SELECT id, title, tags, description, image_url, sort_order, enabled,
                            created_at, updated_at
                     FROM homepage_contents
                     WHERE enabled = 1
@@ -43,7 +43,7 @@ class HomepageContentDAO:
                 """
             else:
                 sql = """
-                    SELECT id, title, tags, description, image_base64, sort_order, enabled,
+                    SELECT id, title, tags, description, image_url, sort_order, enabled,
                            created_at, updated_at
                     FROM homepage_contents
                     ORDER BY sort_order ASC, id ASC
@@ -82,7 +82,7 @@ class HomepageContentDAO:
         try:
             db = get_db_connection()
             sql = """
-                SELECT id, title, tags, description, image_base64, sort_order, enabled,
+                SELECT id, title, tags, description, image_url, sort_order, enabled,
                        created_at, updated_at
                 FROM homepage_contents
                 WHERE id = %s
@@ -112,7 +112,7 @@ class HomepageContentDAO:
         title: str,
         tags: List[str],
         description: str,
-        image_base64: str,
+        image_url: str,
         sort_order: int = 0
     ) -> Optional[int]:
         """
@@ -122,7 +122,7 @@ class HomepageContentDAO:
             title: 标题
             tags: 标签列表
             description: 详细描述
-            image_base64: 图片Base64编码
+            image_url: 图片OSS地址
             sort_order: 排序字段
             
         Returns:
@@ -136,10 +136,10 @@ class HomepageContentDAO:
             with db.get_connection() as conn:
                 with conn.cursor() as cursor:
                     sql = """
-                        INSERT INTO homepage_contents (title, tags, description, image_base64, sort_order, enabled)
+                        INSERT INTO homepage_contents (title, tags, description, image_url, sort_order, enabled)
                         VALUES (%s, %s, %s, %s, %s, 1)
                     """
-                    cursor.execute(sql, (title, tags_json, description, image_base64, sort_order))
+                    cursor.execute(sql, (title, tags_json, description, image_url, sort_order))
                     conn.commit()
                     
                     # 获取插入的ID（必须在同一个连接中）
@@ -160,7 +160,7 @@ class HomepageContentDAO:
         title: Optional[str] = None,
         tags: Optional[List[str]] = None,
         description: Optional[str] = None,
-        image_base64: Optional[str] = None,
+        image_url: Optional[str] = None,
         sort_order: Optional[int] = None,
         enabled: Optional[bool] = None
     ) -> bool:
@@ -172,7 +172,7 @@ class HomepageContentDAO:
             title: 标题（可选）
             tags: 标签列表（可选）
             description: 详细描述（可选）
-            image_base64: 图片Base64编码（可选）
+            image_url: 图片OSS地址（可选）
             sort_order: 排序字段（可选）
             enabled: 是否启用（可选）
             
@@ -198,9 +198,9 @@ class HomepageContentDAO:
                 updates.append("description = %s")
                 params.append(description)
             
-            if image_base64 is not None:
-                updates.append("image_base64 = %s")
-                params.append(image_base64)
+            if image_url is not None:
+                updates.append("image_url = %s")
+                params.append(image_url)
             
             if sort_order is not None:
                 updates.append("sort_order = %s")
