@@ -5,6 +5,7 @@ LLM 服务工厂
 
 根据数据库配置返回对应的 LLM 服务实例（Coze 或百炼）。
 支持全局配置和场景级配置。
+可选：返回带 ELK 流式日志的包装器（静默失败，不影响业务）。
 """
 
 import logging
@@ -16,6 +17,18 @@ from server.services.bailian_stream_service import BailianStreamService
 from server.config.config_loader import get_config_from_db_only
 
 logger = logging.getLogger(__name__)
+
+
+def _wrap_with_stream_logging(service: BaseLLMStreamService, scene: str) -> BaseLLMStreamService:
+    """可选包装：为流式调用记录 prompt/response 到 ELK。静默失败，不影响业务。"""
+    try:
+        from server.observability.stream_flow_logger import STREAM_FLOW_LOGGING_ENABLED
+        from server.observability.llm_logging_wrapper import LoggingLLMWrapper
+        if STREAM_FLOW_LOGGING_ENABLED:
+            return LoggingLLMWrapper(service, scene=scene)
+    except Exception as e:
+        logger.debug("流式日志包装未启用或失败（静默）: %s", e)
+    return service
 
 
 class LLMServiceFactory:
@@ -39,13 +52,14 @@ class LLMServiceFactory:
         
         if platform == "bailian":
             try:
-                return BailianStreamService(scene=scene)
+                service = BailianStreamService(scene=scene)
             except Exception as e:
                 logger.error(f"创建百炼服务失败: {e}，回退到 Coze")
-                # 如果百炼服务创建失败，回退到 Coze
-                return CozeStreamService(bot_id=bot_id)
+                service = CozeStreamService(bot_id=bot_id)
         else:
-            return CozeStreamService(bot_id=bot_id)
+            service = CozeStreamService(bot_id=bot_id)
+
+        return _wrap_with_stream_logging(service, scene)
     
     @classmethod
     def _get_platform_for_scene(cls, scene: str) -> str:
