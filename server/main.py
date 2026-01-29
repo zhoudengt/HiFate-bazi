@@ -1192,6 +1192,21 @@ async def health_check_api():
     return await health_check()
 
 
+# 生产诊断：流式问题排查用，立即返回，不经过流式逻辑
+@app.get("/api/v1/diagnose-stream")
+async def diagnose_stream():
+    """
+    流式问题诊断端点：立即返回 JSON，用于区分「直连 8001 可达」与「经 Nginx 无响应」。
+    不写业务逻辑，仅返回当前环境信息。
+    """
+    return {
+        "ok": True,
+        "endpoint": "diagnose-stream",
+        "message": "stream diagnostic endpoint reachable",
+        "timestamp": time.time(),
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(

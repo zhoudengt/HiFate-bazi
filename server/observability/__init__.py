@@ -14,7 +14,6 @@ from .structured_logger import StructuredLogger, get_logger, LogLevel
 from .metrics_collector import MetricsCollector, get_metrics, Counter, Gauge, Histogram
 from .tracer import Tracer, get_tracer, Span, TraceContext
 from .alert_manager import AlertManager, get_alert_manager, Alert, AlertSeverity
-from .stream_flow_logger import StreamFlowLogger, get_stream_flow_logger, STREAM_FLOW_LOGGING_ENABLED
 
 __all__ = [
     # 日志
@@ -37,8 +36,4 @@ __all__ = [
     'get_alert_manager',
     'Alert',
     'AlertSeverity',
-    # 流式 ELK 日志
-    'StreamFlowLogger',
-    'get_stream_flow_logger',
-    'STREAM_FLOW_LOGGING_ENABLED',
 ]

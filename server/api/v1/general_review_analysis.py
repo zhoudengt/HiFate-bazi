@@ -9,7 +9,6 @@ import logging
 import os
 import sys
 import time
-import uuid
 from typing import Dict, Any, Optional, List, Tuple
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -305,13 +304,6 @@ async def general_review_analysis_stream(request: GeneralReviewRequest):
     """
     logger.info(f"[General Review API] 收到请求: solar_date={request.solar_date}, solar_time={request.solar_time}")
     
-    _flow_logger = None
-    try:
-        from server.observability.stream_flow_logger import get_stream_flow_logger, STREAM_FLOW_LOGGING_ENABLED
-        if STREAM_FLOW_LOGGING_ENABLED:
-            _flow_logger = get_stream_flow_logger()
-    except Exception:
-        pass
     return StreamingResponse(
         general_review_analysis_stream_generator(
             request.solar_date,
@@ -321,8 +313,7 @@ async def general_review_analysis_stream(request: GeneralReviewRequest):
             request.location,
             request.latitude,
             request.longitude,
-            request.bot_id,
-            _flow_logger=_flow_logger,
+            request.bot_id
         ),
         media_type="text/event-stream"
     )
@@ -560,8 +551,7 @@ async def general_review_analysis_stream_generator(
     location: Optional[str] = None,
     latitude: Optional[float] = None,
     longitude: Optional[float] = None,
-    bot_id: Optional[str] = None,
-    _flow_logger: Optional[Any] = None,
+    bot_id: Optional[str] = None
 ):
     """
     流式生成总评分析的生成器
@@ -576,7 +566,6 @@ async def general_review_analysis_stream_generator(
         longitude: 经度（用于时区转换和真太阳时计算，优先级2）
         bot_id: Coze Bot ID（可选）
     """
-    trace_id = str(uuid.uuid4())[:8]
     # 记录开始时间和前端输入
     api_start_time = time.time()
     frontend_input = {
@@ -590,17 +579,6 @@ async def general_review_analysis_stream_generator(
     }
     llm_first_token_time = None
     llm_output_chunks = []
-    
-    # ELK 流式日志：记录请求（静默失败，不影响业务）
-    if _flow_logger:
-        try:
-            _flow_logger.log_request(
-                trace_id=trace_id,
-                endpoint="/general-review/stream",
-                input_params=frontend_input,
-            )
-        except Exception:
-            pass
     
     # 调试：确认生成器被调用
     logger.debug(f"[General Review Stream DEBUG] 生成器开始执行: solar_date={solar_date}")
@@ -898,17 +876,6 @@ async def general_review_analysis_stream_generator(
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # ELK 流式日志：记录 input_data（静默失败，不影响业务）
-        if _flow_logger:
-            try:
-                _flow_logger.log_input_data(
-                    trace_id=trace_id,
-                    input_data=input_data,
-                    endpoint="/general-review/stream",
-                )
-            except Exception:
-                pass
-        
         # 8. ⚠️ 方案2：格式化数据为 Coze Bot 输入格式
         formatted_data = format_input_data_for_coze(input_data)
         logger.info(f"[General Review Stream] 格式化数据长度: {len(formatted_data)} 字符")
@@ -994,7 +961,7 @@ async def general_review_analysis_stream_generator(
         total_content_length = 0
         has_content = False
         
-        async for chunk in llm_service.stream_analysis(formatted_data, trace_id=trace_id, bot_id=used_bot_id):
+        async for chunk in llm_service.stream_analysis(formatted_data, bot_id=used_bot_id):
             chunk_type = chunk.get('type', 'unknown')
             
             # 记录第一个token时间

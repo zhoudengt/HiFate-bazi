@@ -8,7 +8,6 @@
 import logging
 import os
 import sys
-import uuid
 from typing import Dict, Any, Optional, List
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -79,13 +78,6 @@ async def children_study_analysis_stream(request: ChildrenStudyRequest):
     Returns:
         StreamingResponse: SSE 流式响应
     """
-    _flow_logger = None
-    try:
-        from server.observability.stream_flow_logger import get_stream_flow_logger, STREAM_FLOW_LOGGING_ENABLED
-        if STREAM_FLOW_LOGGING_ENABLED:
-            _flow_logger = get_stream_flow_logger()
-    except Exception:
-        pass
     return StreamingResponse(
         children_study_analysis_stream_generator(
             request.solar_date,
@@ -95,8 +87,7 @@ async def children_study_analysis_stream(request: ChildrenStudyRequest):
             request.location,
             request.latitude,
             request.longitude,
-            request.bot_id,
-            _flow_logger=_flow_logger,
+            request.bot_id
         ),
         media_type="text/event-stream"
     )
@@ -486,8 +477,7 @@ async def children_study_analysis_stream_generator(
     location: Optional[str] = None,
     latitude: Optional[float] = None,
     longitude: Optional[float] = None,
-    bot_id: Optional[str] = None,
-    _flow_logger: Optional[Any] = None,
+    bot_id: Optional[str] = None
 ):
     """
     流式生成子女学习分析
@@ -502,7 +492,6 @@ async def children_study_analysis_stream_generator(
         longitude: 经度（用于时区转换和真太阳时计算，优先级2）
         bot_id: Coze Bot ID（可选）
     """
-    trace_id = str(uuid.uuid4())[:8]
     # 记录开始时间和前端输入
     api_start_time = time.time()
     frontend_input = {
@@ -516,17 +505,6 @@ async def children_study_analysis_stream_generator(
     }
     llm_first_token_time = None
     llm_output_chunks = []
-    
-    # ELK 流式日志：记录请求（静默失败，不影响业务）
-    if _flow_logger:
-        try:
-            _flow_logger.log_request(
-                trace_id=trace_id,
-                endpoint="/children-study/stream",
-                input_params=frontend_input,
-            )
-        except Exception:
-            pass
     
     try:
         # 1. Bot ID 配置检查（优先级：参数 > 数据库配置 > 环境变量）
@@ -795,17 +773,6 @@ async def children_study_analysis_stream_generator(
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # ELK 流式日志：记录 input_data（静默失败，不影响业务）
-        if _flow_logger:
-            try:
-                _flow_logger.log_input_data(
-                    trace_id=trace_id,
-                    input_data=input_data,
-                    endpoint="/children-study/stream",
-                )
-            except Exception:
-                pass
-        
         # 9. 格式化数据为 Coze Bot 输入格式（阶段4：数据格式化）
         # ⚠️ 方案2：使用占位符模板，数据不重复，节省 Token
         # 提示词模板已配置在 Coze Bot 的 System Prompt 中，代码只发送数据
@@ -841,7 +808,7 @@ async def children_study_analysis_stream_generator(
         has_content = False
         complete_content = ""
         
-        async for chunk in llm_service.stream_analysis(formatted_data, trace_id=trace_id, bot_id=used_bot_id):
+        async for chunk in llm_service.stream_analysis(formatted_data, bot_id=used_bot_id):
             # 记录第一个token时间
             if llm_first_token_time is None and chunk.get('type') == 'progress':
                 llm_first_token_time = time.time()

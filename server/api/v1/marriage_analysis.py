@@ -467,8 +467,7 @@ async def marriage_analysis_stream_generator(
     latitude: Optional[float] = None,
     longitude: Optional[float] = None,
     bot_id: Optional[str] = None,
-    trace_id: Optional[str] = None,
-    _flow_logger: Optional[Any] = None,
+    trace_id: Optional[str] = None
 ):
     """
     流式生成感情婚姻分析
@@ -500,17 +499,6 @@ async def marriage_analysis_stream_generator(
     }
     llm_first_token_time = None
     llm_output_chunks = []
-    
-    # ELK 流式日志：记录请求（静默失败，不影响业务）
-    if _flow_logger:
-        try:
-            _flow_logger.log_request(
-                trace_id=trace_id,
-                endpoint="/bazi/marriage-analysis/stream",
-                input_params=frontend_input,
-            )
-        except Exception:
-            pass
     
     logger.info(f"[{trace_id}] 🚀 开始婚姻分析: solar_date={solar_date}, solar_time={solar_time}, gender={gender}")
     
@@ -828,17 +816,6 @@ async def marriage_analysis_stream_generator(
             return
         
         logger.info("✓ 数据完整性验证通过")
-        
-        # ELK 流式日志：记录 input_data（静默失败，不影响业务）
-        if _flow_logger:
-            try:
-                _flow_logger.log_input_data(
-                    trace_id=trace_id,
-                    input_data=input_data,
-                    endpoint="/bazi/marriage-analysis/stream",
-                )
-            except Exception:
-                pass
         
         # 7. ⚠️ 方案2：格式化数据为 Coze Bot 输入格式
         formatted_data = format_input_data_for_coze(input_data)
@@ -1624,15 +1601,6 @@ async def marriage_analysis_stream(request: MarriageAnalysisRequest):
         trace_id = str(uuid.uuid4())[:8]
         logger.info(f"[{trace_id}] 📥 收到婚姻分析请求: solar_date={request.solar_date}, gender={request.gender}")
         
-        # ELK 流式日志：传入 logger（可选，静默失败）
-        _flow_logger = None
-        try:
-            from server.observability.stream_flow_logger import get_stream_flow_logger, STREAM_FLOW_LOGGING_ENABLED
-            if STREAM_FLOW_LOGGING_ENABLED:
-                _flow_logger = get_stream_flow_logger()
-        except Exception:
-            pass
-        
         return StreamingResponse(
             marriage_analysis_stream_generator(
                 request.solar_date,
@@ -1643,8 +1611,7 @@ async def marriage_analysis_stream(request: MarriageAnalysisRequest):
                 request.latitude,
                 request.longitude,
                 request.bot_id,
-                trace_id=trace_id,
-                _flow_logger=_flow_logger,
+                trace_id=trace_id
             ),
             media_type="text/event-stream",
             headers={

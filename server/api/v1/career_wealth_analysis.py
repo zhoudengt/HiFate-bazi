@@ -1078,13 +1078,6 @@ async def career_wealth_analysis_stream(request: CareerWealthRequest):
     
     基于用户的八字数据，调用 Coze Bot 流式生成事业财富分析内容。
     """
-    _flow_logger = None
-    try:
-        from server.observability.stream_flow_logger import get_stream_flow_logger, STREAM_FLOW_LOGGING_ENABLED
-        if STREAM_FLOW_LOGGING_ENABLED:
-            _flow_logger = get_stream_flow_logger()
-    except Exception:
-        pass
     return StreamingResponse(
         career_wealth_stream_generator(
             request.solar_date,
@@ -1094,8 +1087,7 @@ async def career_wealth_analysis_stream(request: CareerWealthRequest):
             request.location,
             request.latitude,
             request.longitude,
-            request.bot_id,
-            _flow_logger=_flow_logger,
+            request.bot_id
         ),
         media_type="text/event-stream"
     )
@@ -1109,8 +1101,7 @@ async def career_wealth_stream_generator(
     location: Optional[str] = None,
     latitude: Optional[float] = None,
     longitude: Optional[float] = None,
-    bot_id: Optional[str] = None,
-    _flow_logger: Optional[Any] = None,
+    bot_id: Optional[str] = None
 ):
     """
     流式生成事业财富分析的生成器
@@ -1141,17 +1132,6 @@ async def career_wealth_stream_generator(
     }
     llm_first_token_time = None
     llm_output_chunks = []
-    
-    # ELK 流式日志：记录请求（静默失败，不影响业务）
-    if _flow_logger:
-        try:
-            _flow_logger.log_request(
-                trace_id=trace_id,
-                endpoint="/career-wealth/stream",
-                input_params=frontend_input,
-            )
-        except Exception:
-            pass
     
     try:
         # 1. 确定使用的 bot_id（优先级：参数 > 数据库配置 > 环境变量）
@@ -1444,17 +1424,6 @@ async def career_wealth_stream_generator(
         
         logger.info("✓ 数据完整性验证通过")
         
-        # ELK 流式日志：记录 input_data（静默失败，不影响业务）
-        if _flow_logger:
-            try:
-                _flow_logger.log_input_data(
-                    trace_id=trace_id,
-                    input_data=input_data,
-                    endpoint="/career-wealth/stream",
-                )
-            except Exception:
-                pass
-        
         # 8. ⚠️ 方案2：格式化数据为 Coze Bot 输入格式
         formatted_data = format_input_data_for_coze(input_data)
         logger.info(f"格式化数据长度: {len(formatted_data)} 字符")
@@ -1524,7 +1493,7 @@ async def career_wealth_stream_generator(
             has_content = False
             llm_start_time = time.time()
             
-            async for result in llm_service.stream_analysis(formatted_data, trace_id=trace_id, bot_id=actual_bot_id):
+            async for result in llm_service.stream_analysis(formatted_data, bot_id=actual_bot_id):
                 chunk_count += 1
                 
                 # 记录第一个token时间
