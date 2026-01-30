@@ -56,6 +56,7 @@ from server.utils.prompt_builders import (
     format_general_review_input_data_for_coze as format_input_data_for_coze,
     _simplify_dayun
 )
+from server.services.user_interaction_logger import get_user_interaction_logger
 
 # 配置日志
 logger = logging.getLogger(__name__)
