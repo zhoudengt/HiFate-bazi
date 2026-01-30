@@ -516,10 +516,13 @@ class BaziDataOrchestrator:
                     special_count = special_config.get('count', 8) if isinstance(special_config, dict) else 8
                 
                 # ✅ 获取特殊流年（确保每个大运都完整获取，不去重）
-                logger.info(f"[DEBUG] 调用get_special_liunians_batch: target_dayuns长度={len(target_dayuns)}, 大运步数={[d.get('step') for d in target_dayuns]}, special_count={special_count}")
+                # ✅ 架构规范：传入已计算的 liunian_sequence，避免 SpecialLiunianService 重复计算
+                # 详见：docs/standards/08_数据编排架构规范.md
+                logger.info(f"[DEBUG] 调用get_special_liunians_batch: target_dayuns长度={len(target_dayuns)}, 大运步数={[d.get('step') for d in target_dayuns]}, special_count={special_count}, liunian_sequence长度={len(liunian_sequence)}")
                 special_liunians = await SpecialLiunianService.get_special_liunians_batch(
                     final_solar_date, final_solar_time, gender,
-                    target_dayuns, special_count, current_time
+                    target_dayuns, special_count, current_time,
+                    liunian_sequence=liunian_sequence  # ✅ 传入已计算的流年序列
                 )
                 logger.info(f"[DEBUG] get_special_liunians_batch返回: 特殊流年数量={len(special_liunians)}, 大运步数={set(l.get('dayun_step') for l in special_liunians)}")
                 

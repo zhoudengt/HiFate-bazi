@@ -32,12 +32,16 @@ class SpecialLiunianService:
         gender: str,
         dayun_sequence: List[Dict[str, Any]],
         dayun_count: int = 8,
-        current_time: Optional[datetime] = None
+        current_time: Optional[datetime] = None,
+        liunian_sequence: List[Dict[str, Any]] = None  # ✅ 新增：接收已计算的流年序列
     ) -> List[Dict[str, Any]]:
         """
         批量获取多个大运的特殊流年（有 relations 的流年）
         
         ⚠️ 不去重：同一年可能有多个关系，保留所有流年
+        
+        ✅ 架构规范：优先使用传入的 liunian_sequence，避免重复计算
+        详见：docs/standards/08_数据编排架构规范.md
         
         Args:
             solar_date: 阳历日期
@@ -46,6 +50,7 @@ class SpecialLiunianService:
             dayun_sequence: 大运序列（已计算好的）
             dayun_count: 要查询的大运数量（默认8个）
             current_time: 当前时间（可选）
+            liunian_sequence: 已计算的流年序列（由 BaziDataOrchestrator 传入，避免重复计算）
             
         Returns:
             List[Dict]: 所有特殊流年列表（不去重，按大运和年份排序）
@@ -90,32 +95,37 @@ class SpecialLiunianService:
         import time
         start_time = time.time()
         
-        # ✅ 优化：一次性调用 calculate_detail_full() 获取所有大运和流年数据（利用缓存）
-        # 这样可以减少计算次数：从 13次 减少到 1次（如果缓存命中，则0次计算）
-        loop = asyncio.get_event_loop()
-        executor = None
-        
-        logger.info(f"⏱️ [性能优化] 一次性调用 calculate_detail_full() 获取所有大运和流年数据...")
-        
-        # 调用 calculate_detail_full()（不指定 dayun_index，获取所有大运和流年）
-        detail_result = await loop.run_in_executor(
-            executor,
-            BaziDetailService.calculate_detail_full,
-            solar_date,
-            solar_time,
-            gender,
-            current_time,
-            None,  # dayun_index（不指定，获取所有大运）
-            None   # target_year
-        )
-        
-        if not detail_result:
-            logger.warning("calculate_detail_full() 返回空结果，无法获取特殊流年")
-            return []
-        
-        # 从结果中提取所有流年数据
-        details = detail_result.get('details', {})
-        liunian_sequence = details.get('liunian_sequence', [])
+        # ✅ 架构规范：优先使用传入的 liunian_sequence，避免重复计算
+        # 详见：docs/standards/08_数据编排架构规范.md
+        if liunian_sequence is not None and len(liunian_sequence) > 0:
+            # ✅ 使用传入的数据（由 BaziDataOrchestrator 传入）
+            logger.info(f"✅ [架构优化] 使用传入的 liunian_sequence，共 {len(liunian_sequence)} 个流年，避免重复计算")
+        else:
+            # ⚠️ 降级：只有在没有传入数据时才计算（应该避免这种情况）
+            logger.warning("⚠️ [架构警告] liunian_sequence 未传入，降级到重新计算（违反架构规范，请检查调用方）")
+            
+            loop = asyncio.get_event_loop()
+            executor = None
+            
+            # 调用 calculate_detail_full()（不指定 dayun_index，获取所有大运和流年）
+            detail_result = await loop.run_in_executor(
+                executor,
+                BaziDetailService.calculate_detail_full,
+                solar_date,
+                solar_time,
+                gender,
+                current_time,
+                None,  # dayun_index（不指定，获取所有大运）
+                None   # target_year
+            )
+            
+            if not detail_result:
+                logger.warning("calculate_detail_full() 返回空结果，无法获取特殊流年")
+                return []
+            
+            # 从结果中提取所有流年数据
+            details = detail_result.get('details', {})
+            liunian_sequence = details.get('liunian_sequence', [])
         
         logger.info(f"✅ [性能优化] 获取到 {len(liunian_sequence)} 个流年数据")
         

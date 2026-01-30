@@ -14,6 +14,7 @@
 | [testing.md](testing.md) | 测试开发详细规范 | 测试开发规范 |
 | [llm-development.md](llm-development.md) | 基于大模型的开发流程详细规范 | 基于大模型的开发流程与规范 |
 | [performance-monitoring.md](performance-monitoring.md) | 性能监控详细规范 | 智能运势分析性能监控规范 |
+| **[08_数据编排架构规范.md](08_数据编排架构规范.md)** | **🔴 数据编排架构规范（最高优先级）** | **数据编排架构原则** |
 
 ## 使用说明
 

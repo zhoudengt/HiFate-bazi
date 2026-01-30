@@ -379,11 +379,8 @@ async def xishen_jishen_stream_generator(
     try:
         # ✅ 性能优化：立即返回首条消息，让用户感知到连接已建立
         # 这个优化将首次响应时间从 24秒 降低到 <1秒
-        init_msg = {
-            'type': 'progress',
-            'content': '正在连接服务...'
-        }
-        yield f"data: {json.dumps(init_msg, ensure_ascii=False)}\n\n"
+        # ✅ 架构优化：移除无意义的进度消息，直接开始数据处理
+        # 详见：docs/standards/08_数据编排架构规范.md
         
         # 1. 处理农历输入和时区转换
         final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
