@@ -392,13 +392,6 @@ async def xishen_jishen_stream_generator(
             request.longitude
         )
         
-        # 2. 发送进度提示
-        progress_msg = {
-            'type': 'progress',
-            'content': '正在获取数据...'
-        }
-        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-        
         # 3. 使用统一数据服务获取数据
         from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
         

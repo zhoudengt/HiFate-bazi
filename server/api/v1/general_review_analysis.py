@@ -610,14 +610,6 @@ async def general_review_analysis_stream_generator(
             solar_date, solar_time, calendar_type or "solar", location, latitude, longitude
         )
         
-        # ✅ 性能优化：提前 yield 进度，让客户端更快看到响应
-        # 发送初始进度提示
-        progress_msg = {
-            'type': 'progress',
-            'content': '正在获取八字数据...'
-        }
-        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-        
         # 3. 使用统一接口获取数据（阶段2：数据获取与并行优化）
         # ✅ 性能优化：在数据获取开始时就 yield，减少客户端等待时间
         try:
@@ -648,13 +640,6 @@ async def general_review_analysis_stream_generator(
             }
             
             logger.info(f"[General Review Stream] 开始调用统一接口获取数据")
-            # ✅ 性能优化：在数据获取开始时就 yield 进度，减少客户端等待时间
-            # 发送数据获取进度提示（提前 yield）
-            progress_msg = {
-                'type': 'progress',
-                'content': '正在获取大运流年数据...'
-            }
-            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
             
             unified_data = await BaziDataOrchestrator.fetch_data(
                 solar_date=final_solar_date,
@@ -733,13 +718,6 @@ async def general_review_analysis_stream_generator(
             current_time=None,
             detail_result=detail_data  # ✅ 性能优化：复用已获取的 detail_data
         )
-        
-        # 发送大运流年数据获取完成进度提示
-        progress_msg = {
-            'type': 'progress',
-            'content': '正在构建分析数据...'
-        }
-        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
         
         # ✅ 性能优化：使用列表推导式批量转换，减少循环开销
         # 从统一数据服务获取大运序列和特殊流年
@@ -886,13 +864,6 @@ async def general_review_analysis_stream_generator(
         formatted_data = format_input_data_for_coze(input_data)
         logger.info(f"[General Review Stream] 格式化数据长度: {len(formatted_data)} 字符")
         logger.debug(f"[General Review Stream] 格式化数据前500字符: {formatted_data[:500]}")
-        
-        # 发送数据构建完成进度提示
-        progress_msg = {
-            'type': 'progress',
-            'content': '正在调用AI分析...'
-        }
-        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
         
         # 8.1 保存参数到文件（用于数据减枝分析）
         try:

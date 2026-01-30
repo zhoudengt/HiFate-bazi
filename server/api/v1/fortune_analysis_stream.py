@@ -257,16 +257,6 @@ async def analyze_hand_stream_generator(image_bytes: bytes, image_format: str,
             # 调用 gRPC 服务
             address = get_grpc_client()
             
-            progress_msg = {
-                'type': 'progress',
-                'statusText': '正在分析...',
-                'showGrid': True,
-                'showStatus': True,
-                'showPlayButton': True
-            }
-            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-            await asyncio.sleep(0)
-            
             with grpc.insecure_channel(address) as channel:
                 stub = fortune_analysis_pb2_grpc.FortuneAnalysisServiceStub(channel)
                 response = stub.AnalyzeHand(request, timeout=60.0)
@@ -455,16 +445,6 @@ async def analyze_face_stream_generator(image_bytes: bytes, image_format: str,
             
             # 调用 gRPC 服务
             address = get_grpc_client()
-            
-            progress_msg = {
-                'type': 'progress',
-                'statusText': '正在分析...',
-                'showGrid': True,
-                'showStatus': True,
-                'showPlayButton': True
-            }
-            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-            await asyncio.sleep(0)
             
             with grpc.insecure_channel(address) as channel:
                 stub = fortune_analysis_pb2_grpc.FortuneAnalysisServiceStub(channel)

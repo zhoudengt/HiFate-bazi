@@ -170,13 +170,6 @@ async def desk_fengshui_stream_generator(
         
         logger.info(f"办公桌风水流式请求: filename={image.filename}, bot_id={used_bot_id}")
         
-        # 2. 发送进度提示
-        progress_msg = {
-            'type': 'progress',
-            'content': '正在分析办公桌风水...'
-        }
-        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-        
         # 3. 验证图片
         if not image.content_type.startswith('image/'):
             error_msg = {

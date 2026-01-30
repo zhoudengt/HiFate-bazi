@@ -530,13 +530,6 @@ async def marriage_analysis_stream_generator(
             longitude
         )
         
-        # 发送初始进度提示
-        progress_msg = {
-            'type': 'progress',
-            'content': '正在获取八字数据...'
-        }
-        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-        
         # 2. 并行获取基础数据（带容错处理）
         loop = asyncio.get_event_loop()
         executor = None
@@ -578,13 +571,6 @@ async def marriage_analysis_stream_generator(
             
             data_duration = time.time() - data_start_time
             logger.info(f"[{trace_id}] 📊 并行数据获取完成: 耗时={data_duration:.2f}s")
-            
-            # 发送数据获取完成进度提示
-            progress_msg = {
-                'type': 'progress',
-                'content': '正在获取大运流年数据...'
-            }
-            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
             
             # 处理八字数据（核心数据，必须成功）
             if isinstance(bazi_result, Exception):
@@ -713,13 +699,6 @@ async def marriage_analysis_stream_generator(
                 for special_liunian in fortune_data.special_liunians
             ]
             
-            # 发送大运流年数据获取完成进度提示
-            progress_msg = {
-                'type': 'progress',
-                'content': '正在构建分析数据...'
-            }
-            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-            
         except Exception as e:
             import traceback
             error_msg = {
@@ -833,12 +812,6 @@ async def marriage_analysis_stream_generator(
         
         if cached_llm_content:
             logger.info(f"[{trace_id}] ✅ LLM 缓存命中: marriage")
-            # 发送缓存的内容（模拟流式响应）
-            progress_msg = {
-                'type': 'progress',
-                'content': '正在调用AI分析...'
-            }
-            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
             
             complete_msg = {
                 'type': 'complete',
@@ -850,13 +823,6 @@ async def marriage_analysis_stream_generator(
             return
         
         logger.info(f"[{trace_id}] ❌ LLM 缓存未命中: marriage")
-        
-        # 发送数据构建完成进度提示
-        progress_msg = {
-            'type': 'progress',
-            'content': '正在调用AI分析...'
-        }
-        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
         
         # 8. 创建 LLM 流式服务（支持 Coze 和百炼平台）
         try:

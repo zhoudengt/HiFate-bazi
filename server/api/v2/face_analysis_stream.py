@@ -214,13 +214,6 @@ async def face_analysis_stream_generator(
         
         logger.info(f"面相分析流式请求: filename={image.filename}, bot_id={used_bot_id}")
         
-        # 2. 发送进度提示
-        progress_msg = {
-            'type': 'progress',
-            'content': '正在分析面相...'
-        }
-        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-        
         # 3. 读取图片数据
         image_data = await image.read()
         

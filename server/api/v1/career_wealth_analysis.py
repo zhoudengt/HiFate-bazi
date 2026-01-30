@@ -1163,13 +1163,6 @@ async def career_wealth_stream_generator(
             longitude
         )
         
-        # 发送初始进度提示
-        progress_msg = {
-            'type': 'progress',
-            'content': '正在获取八字数据...'
-        }
-        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
-        
         # 3. 并行获取基础数据
         loop = asyncio.get_event_loop()
         executor = None
@@ -1202,13 +1195,6 @@ async def career_wealth_stream_generator(
             )
             
             bazi_result, wangshuai_result, detail_result = await asyncio.gather(bazi_task, wangshuai_task, detail_task)
-            
-            # 发送数据获取完成进度提示
-            progress_msg = {
-                'type': 'progress',
-                'content': '正在获取大运流年数据...'
-            }
-            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
             
             # 提取八字数据
             if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
@@ -1331,13 +1317,6 @@ async def career_wealth_stream_generator(
                 }
                 for special_liunian in fortune_data.special_liunians
             ]
-            
-            # 发送大运流年数据获取完成进度提示
-            progress_msg = {
-                'type': 'progress',
-                'content': '正在构建分析数据...'
-            }
-            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
                 
         except Exception as e:
             import traceback
@@ -1440,12 +1419,6 @@ async def career_wealth_stream_generator(
         
         if cached_llm_content:
             logger.info(f"[{trace_id}] ✅ LLM 缓存命中: career_wealth")
-            # 发送缓存的内容（模拟流式响应）
-            progress_msg = {
-                'type': 'progress',
-                'content': '正在调用AI分析...'
-            }
-            yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
             
             complete_msg = {
                 'type': 'complete',
@@ -1457,13 +1430,6 @@ async def career_wealth_stream_generator(
             return
         
         logger.info(f"[{trace_id}] ❌ LLM 缓存未命中: career_wealth")
-        
-        # 发送数据构建完成进度提示
-        progress_msg = {
-            'type': 'progress',
-            'content': '正在调用AI分析...'
-        }
-        yield f"data: {json.dumps(progress_msg, ensure_ascii=False)}\n\n"
         
         # 9. 创建 LLM 流式服务（支持 Coze 和百炼平台）
         try:
