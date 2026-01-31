@@ -20,6 +20,7 @@ from server.services.calendar_api_service import CalendarAPIService
 from server.utils.api_cache_helper import (
     generate_cache_key, get_cached_result, set_cached_result, L2_TTL, get_current_date_str
 )
+from server.utils.api_error_handler import api_error_handler
 
 router = APIRouter()
 
@@ -59,6 +60,7 @@ class CalendarResponse(BaseModel):
 
 
 @router.post("/calendar/query", response_model=CalendarResponse, summary="查询万年历")
+@api_error_handler
 async def query_calendar(request: CalendarRequest):
     """
     查询万年历信息
@@ -87,55 +89,38 @@ async def query_calendar(request: CalendarRequest):
     
     返回万年历信息
     """
-    try:
-        # >>> 缓存检查（万年历按日期缓存，高复用）<<<
-        query_date = request.date or get_current_date_str()
-        provider = request.provider or "default"
-        cache_key = generate_cache_key("wannianli", query_date, provider)
-        cached = get_cached_result(cache_key, "calendar")
-        if cached:
-            return CalendarResponse(**cached)
-        # >>> 缓存检查结束 <<<
-        
-        service = CalendarAPIService(provider=request.provider)
-        result = service.get_calendar(date=request.date)
-        
-        if result.get('success'):
-            response_dict = {
-                'success': True,
-                'provider': result.get('provider'),
-                'date': result.get('date'),
-                'solar_date': result.get('solar_date'),
-                'weekday': result.get('weekday'),
-                'weekday_en': result.get('weekday_en'),
-                'lunar_date': result.get('lunar_date'),
-                'ganzhi': result.get('ganzhi'),
-                'yi': result.get('yi', []),
-                'ji': result.get('ji', []),
-                'luck_level': result.get('luck_level'),
-                'deities': result.get('deities'),
-                'chong_he_sha': result.get('chong_he_sha')
-            }
-            
-            # >>> 缓存写入 <<<
-            set_cached_result(cache_key, response_dict, L2_TTL)
-            # >>> 缓存写入结束 <<<
-            
-            return CalendarResponse(**response_dict)
-        else:
-            return CalendarResponse(
-                success=False,
-                error=result.get('error', '获取万年历失败')
-            )
-            
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        import traceback
-        raise HTTPException(
-            status_code=500,
-            detail=f"查询万年历异常: {str(e)}\n{traceback.format_exc()}"
-        )
+    query_date = request.date or get_current_date_str()
+    provider = request.provider or "default"
+    cache_key = generate_cache_key("wannianli", query_date, provider)
+    cached = get_cached_result(cache_key, "calendar")
+    if cached:
+        return CalendarResponse(**cached)
+
+    service = CalendarAPIService(provider=request.provider)
+    result = service.get_calendar(date=request.date)
+
+    if result.get('success'):
+        response_dict = {
+            'success': True,
+            'provider': result.get('provider'),
+            'date': result.get('date'),
+            'solar_date': result.get('solar_date'),
+            'weekday': result.get('weekday'),
+            'weekday_en': result.get('weekday_en'),
+            'lunar_date': result.get('lunar_date'),
+            'ganzhi': result.get('ganzhi'),
+            'yi': result.get('yi', []),
+            'ji': result.get('ji', []),
+            'luck_level': result.get('luck_level'),
+            'deities': result.get('deities'),
+            'chong_he_sha': result.get('chong_he_sha')
+        }
+        set_cached_result(cache_key, response_dict, L2_TTL)
+        return CalendarResponse(**response_dict)
+    return CalendarResponse(
+        success=False,
+        error=result.get('error', '获取万年历失败')
+    )
 
 
 @router.get("/calendar/providers", summary="获取可用的API提供商")

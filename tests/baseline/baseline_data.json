@@ -1,0 +1,20 @@
+{
+  "bazi_calculate": [
+    {
+      "request": {
+        "solar_date": "1990-01-15",
+        "solar_time": "12:00",
+        "gender": "male"
+      },
+      "expected_data": null
+    },
+    {
+      "request": {
+        "solar_date": "1985-06-20",
+        "solar_time": "08:30",
+        "gender": "female"
+      },
+      "expected_data": null
+    }
+  ]
+}

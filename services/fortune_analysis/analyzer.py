@@ -6,6 +6,9 @@
 """
 
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 import sys
 from typing import Dict, Any, Optional
 import json
@@ -30,7 +33,7 @@ try:
     BAZI_CLIENT_AVAILABLE = True
 except ImportError:
     BAZI_CLIENT_AVAILABLE = False
-    print("⚠️  八字客户端未找到，八字融合功能将受限")
+    logger.info("⚠️  八字客户端未找到，八字融合功能将受限")
 
 
 class FortuneAnalyzer:
@@ -113,7 +116,7 @@ class FortuneAnalyzer:
                 if ai_result:
                     ai_enhanced_insights = ai_result.get("enhanced_insights", [])
             except Exception as e:
-                print(f"⚠️  Coze API 调用失败: {e}")
+                logger.info(f"⚠️  Coze API 调用失败: {e}")
             
             # 7. 合并所有洞察（去重）
             all_insights = hand_insights + integrated_insights + ai_enhanced_insights
@@ -142,7 +145,7 @@ class FortuneAnalyzer:
         except Exception as e:
             import traceback
             error_msg = f"手相分析失败: {str(e)}\n{traceback.format_exc()}"
-            print(f"❌ {error_msg}")
+            logger.info(f"❌ {error_msg}")
             return {
                 "success": False,
                 "error": str(e)
@@ -169,43 +172,43 @@ class FortuneAnalyzer:
             import datetime
             request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            print("\n" + "="*80)
-            print("🔮 面相分析流程开始")
-            print("="*80)
-            print(f"[{request_time}] 📸 开始面相分析", flush=True)
+            logger.info("\n" + "="*80)
+            logger.info("🔮 面相分析流程开始")
+            logger.info("="*80)
+            logger.info(f"[{request_time}] 📸 开始面相分析", flush=True)
             
             # 1. 提取面部特征（性能优化：默认关闭特殊特征检测）
-            print(f"[{request_time}] 📋 步骤1: 提取面部特征...", flush=True)
+            logger.info(f"[{request_time}] 📋 步骤1: 提取面部特征...", flush=True)
             face_result = self.face_analyzer.analyze(image_bytes, image_format, enable_special_features=False)
             
             if not face_result.get("success"):
-                print(f"[{request_time}] ❌ 面部特征提取失败: {face_result.get('error', '未知错误')}", flush=True)
+                logger.info(f"[{request_time}] ❌ 面部特征提取失败: {face_result.get('error', '未知错误')}", flush=True)
                 return face_result
             
             face_features = face_result.get("features", {})
-            print(f"[{request_time}] ✅ 面部特征提取完成", flush=True)
-            print(f"[{request_time}] 📊 提取的特征:", flush=True)
+            logger.info(f"[{request_time}] ✅ 面部特征提取完成", flush=True)
+            logger.info(f"[{request_time}] 📊 提取的特征:", flush=True)
             san_ting = face_features.get("san_ting_ratio", {})
             measurements = face_features.get("feature_measurements", {})
-            print(f"   三停比例: 上停={san_ting.get('upper', 0):.2%}, 中停={san_ting.get('middle', 0):.2%}, 下停={san_ting.get('lower', 0):.2%}", flush=True)
+            logger.info(f"   三停比例: 上停={san_ting.get('upper', 0):.2%}, 中停={san_ting.get('middle', 0):.2%}, 下停={san_ting.get('lower', 0):.2%}", flush=True)
             if measurements:
-                print(f"   五官特征:", flush=True)
+                logger.info(f"   五官特征:", flush=True)
                 if measurements.get("forehead_width", 0) > 0:
-                    print(f"     额头: 宽度={measurements.get('forehead_width', 0):.1f}, 比例={measurements.get('forehead_ratio', 0):.2f}", flush=True)
+                    logger.info(f"     额头: 宽度={measurements.get('forehead_width', 0):.1f}, 比例={measurements.get('forehead_ratio', 0):.2f}", flush=True)
                 if measurements.get("nose_height", 0) > 0:
-                    print(f"     鼻子: 高度={measurements.get('nose_height', 0):.1f}, 比例={measurements.get('nose_ratio', 0):.2f}", flush=True)
+                    logger.info(f"     鼻子: 高度={measurements.get('nose_height', 0):.1f}, 比例={measurements.get('nose_ratio', 0):.2f}", flush=True)
                 if measurements.get("eye_width", 0) > 0:
-                    print(f"     眼睛: 宽度={measurements.get('eye_width', 0):.1f}, 对称性={measurements.get('eye_symmetry', 0):.2f}", flush=True)
+                    logger.info(f"     眼睛: 宽度={measurements.get('eye_width', 0):.1f}, 对称性={measurements.get('eye_symmetry', 0):.2f}", flush=True)
                 if measurements.get("mouth_width", 0) > 0:
-                    print(f"     嘴巴: 宽度={measurements.get('mouth_width', 0):.1f}", flush=True)
+                    logger.info(f"     嘴巴: 宽度={measurements.get('mouth_width', 0):.1f}", flush=True)
                 if measurements.get("face_ratio", 0) > 0:
-                    print(f"     面部: 宽高比={measurements.get('face_ratio', 0):.2f}", flush=True)
+                    logger.info(f"     面部: 宽高比={measurements.get('face_ratio', 0):.2f}", flush=True)
             special_features = face_features.get("special_features", [])
             if special_features:
-                print(f"   特殊特征: {len(special_features)}个", flush=True)
+                logger.info(f"   特殊特征: {len(special_features)}个", flush=True)
             
             # 2. 规则匹配和八字融合（调用 fortune_rule 微服务）
-            print(f"\n[{request_time}] 📋 步骤2: 规则匹配和八字融合...", flush=True)
+            logger.info(f"\n[{request_time}] 📋 步骤2: 规则匹配和八字融合...", flush=True)
             bazi_info_dict = None
             if bazi_info and bazi_info.use_bazi:
                 bazi_info_dict = {
@@ -214,12 +217,12 @@ class FortuneAnalyzer:
                     "gender": bazi_info.gender,
                     "use_bazi": True
                 }
-                print(f"[{request_time}] 📅 八字信息: {bazi_info.solar_date} {bazi_info.solar_time} {bazi_info.gender}", flush=True)
+                logger.info(f"[{request_time}] 📅 八字信息: {bazi_info.solar_date} {bazi_info.solar_time} {bazi_info.gender}", flush=True)
             else:
-                print(f"[{request_time}] ⚠️  未提供八字信息，仅进行面相规则匹配", flush=True)
+                logger.info(f"[{request_time}] ⚠️  未提供八字信息，仅进行面相规则匹配", flush=True)
             
             # 调用 fortune_rule 微服务
-            print(f"[{request_time}] 🔍 调用 fortune_rule 微服务进行规则匹配...", flush=True)
+            logger.info(f"[{request_time}] 🔍 调用 fortune_rule 微服务进行规则匹配...", flush=True)
             rule_result = self.rule_client.match_face_rules(
                 face_features=face_features,
                 bazi_info=bazi_info_dict,
@@ -227,7 +230,7 @@ class FortuneAnalyzer:
             )
             
             if not rule_result.get("success"):
-                print(f"[{request_time}] ❌ 规则匹配失败: {rule_result.get('error', '未知错误')}", flush=True)
+                logger.info(f"[{request_time}] ❌ 规则匹配失败: {rule_result.get('error', '未知错误')}", flush=True)
                 return {
                     "success": False,
                     "error": rule_result.get("error", "规则匹配失败")
@@ -238,11 +241,11 @@ class FortuneAnalyzer:
             recommendations = rule_result.get("recommendations", [])
             bazi_data = rule_result.get("bazi_data")
             
-            print(f"[{request_time}] ✅ 规则匹配完成", flush=True)
-            print(f"[{request_time}] 📊 匹配结果:", flush=True)
-            print(f"   面相规则洞察: {len(face_insights)}条", flush=True)
-            print(f"   八字融合洞察: {len(integrated_insights)}条", flush=True)
-            print(f"   建议: {len(recommendations)}条", flush=True)
+            logger.info(f"[{request_time}] ✅ 规则匹配完成", flush=True)
+            logger.info(f"[{request_time}] 📊 匹配结果:", flush=True)
+            logger.info(f"   面相规则洞察: {len(face_insights)}条", flush=True)
+            logger.info(f"   八字融合洞察: {len(integrated_insights)}条", flush=True)
+            logger.info(f"   建议: {len(recommendations)}条", flush=True)
             
             # 打印八字信息（如果有）
             if bazi_data:
@@ -257,7 +260,7 @@ class FortuneAnalyzer:
             # 如果需要AI增强，可以通过环境变量启用：ENABLE_AI_ENHANCEMENT=true
             enable_ai = os.getenv("ENABLE_AI_ENHANCEMENT", "false").lower() == "true"
             if enable_ai:
-                print(f"\n[{request_time}] 📋 步骤3: AI 增强分析...", flush=True)
+                logger.info(f"\n[{request_time}] 📋 步骤3: AI 增强分析...", flush=True)
                 try:
                     # 准备数据
                     analysis_data = {
@@ -268,20 +271,20 @@ class FortuneAnalyzer:
                     }
                     
                     # 调用 Coze API
-                    print(f"[{request_time}] 🤖 调用 Coze API 进行AI增强...", flush=True)
+                    logger.info(f"[{request_time}] 🤖 调用 Coze API 进行AI增强...", flush=True)
                     ai_result = self.coze_integration.enhance_analysis(analysis_data)
                     if ai_result:
                         ai_enhanced_insights = ai_result.get("enhanced_insights", [])
-                        print(f"[{request_time}] ✅ AI增强完成，新增 {len(ai_enhanced_insights)} 条洞察", flush=True)
+                        logger.info(f"[{request_time}] ✅ AI增强完成，新增 {len(ai_enhanced_insights)} 条洞察", flush=True)
                     else:
-                        print(f"[{request_time}] ⚠️  AI增强未返回结果", flush=True)
+                        logger.info(f"[{request_time}] ⚠️  AI增强未返回结果", flush=True)
                 except Exception as e:
-                    print(f"[{request_time}] ⚠️  Coze API 调用失败: {e}", flush=True)
+                    logger.info(f"[{request_time}] ⚠️  Coze API 调用失败: {e}", flush=True)
             else:
-                print(f"[{request_time}] ⏭️  跳过AI增强（默认关闭以提升性能）", flush=True)
+                logger.info(f"[{request_time}] ⏭️  跳过AI增强（默认关闭以提升性能）", flush=True)
             
             # 4. 合并所有洞察（去重）
-            print(f"\n[{request_time}] 📋 步骤4: 合并所有洞察并去重...", flush=True)
+            logger.info(f"\n[{request_time}] 📋 步骤4: 合并所有洞察并去重...", flush=True)
             all_insights = face_insights + integrated_insights + ai_enhanced_insights
             
             # 对合并后的insights进行去重和提炼
@@ -289,15 +292,15 @@ class FortuneAnalyzer:
             rule_engine = FortuneRuleEngine()
             all_insights = rule_engine._merge_and_refine_insights(all_insights)
             
-            print(f"[{request_time}] ✅ 合并完成，共 {len(all_insights)} 条洞察（已去重）", flush=True)
+            logger.info(f"[{request_time}] ✅ 合并完成，共 {len(all_insights)} 条洞察（已去重）", flush=True)
             
             # 5. 计算置信度
-            print(f"[{request_time}] 📋 步骤5: 计算置信度...", flush=True)
+            logger.info(f"[{request_time}] 📋 步骤5: 计算置信度...", flush=True)
             confidence = self._calculate_confidence(face_features, len(all_insights))
-            print(f"[{request_time}] ✅ 置信度计算完成: {confidence:.2%}", flush=True)
+            logger.info(f"[{request_time}] ✅ 置信度计算完成: {confidence:.2%}", flush=True)
             
             # 6. 构建完整报告
-            print(f"\n[{request_time}] 📋 步骤6: 构建完整报告...", flush=True)
+            logger.info(f"\n[{request_time}] 📋 步骤6: 构建完整报告...", flush=True)
             report = {
                 "success": True,
                 "features": face_features,
@@ -308,19 +311,19 @@ class FortuneAnalyzer:
                 "confidence": confidence
             }
             
-            print(f"[{request_time}] ✅ 面相分析完成！", flush=True)
-            print(f"[{request_time}] 📊 最终结果:", flush=True)
-            print(f"   总洞察数: {len(all_insights)}", flush=True)
-            print(f"   建议数: {len(recommendations)}", flush=True)
-            print(f"   置信度: {confidence:.2%}", flush=True)
-            print("="*80 + "\n", flush=True)
+            logger.info(f"[{request_time}] ✅ 面相分析完成！", flush=True)
+            logger.info(f"[{request_time}] 📊 最终结果:", flush=True)
+            logger.info(f"   总洞察数: {len(all_insights)}", flush=True)
+            logger.info(f"   建议数: {len(recommendations)}", flush=True)
+            logger.info(f"   置信度: {confidence:.2%}", flush=True)
+            logger.info("="*80 + "\n", flush=True)
             
             return report
             
         except Exception as e:
             import traceback
             error_msg = f"面相分析失败: {str(e)}\n{traceback.format_exc()}"
-            print(f"❌ {error_msg}")
+            logger.info(f"❌ {error_msg}")
             return {
                 "success": False,
                 "error": str(e)
@@ -334,7 +337,7 @@ class FortuneAnalyzer:
             solar_time = bazi_info.solar_time
             gender = bazi_info.gender
             
-            print(f"📊 获取八字数据: {solar_date} {solar_time} {gender}")
+            logger.info(f"📊 获取八字数据: {solar_date} {solar_time} {gender}")
             
             # 优先使用 BaziService（更完整的数据）
             try:
@@ -342,7 +345,7 @@ class FortuneAnalyzer:
                 bazi_result = BaziService.calculate_bazi_full(solar_date, solar_time, gender)
                 
                 if bazi_result:
-                    print(f"✅ 使用 BaziService 获取八字数据成功")
+                    logger.info(f"✅ 使用 BaziService 获取八字数据成功")
                     # BaziService 返回的数据格式是 {"bazi": {...}, "rizhu": "...", "matched_rules": [...]}
                     # 需要提取 bazi 字段
                     if isinstance(bazi_result, dict) and "bazi" in bazi_result:
@@ -361,9 +364,9 @@ class FortuneAnalyzer:
                         self._print_bazi_info(bazi_result, solar_date, solar_time, gender)
                         return bazi_result
             except ImportError:
-                print("⚠️  BaziService 不可用，使用 BaziCoreClient")
+                logger.info("⚠️  BaziService 不可用，使用 BaziCoreClient")
             except Exception as e:
-                print(f"⚠️  BaziService 调用失败: {e}，尝试使用 BaziCoreClient")
+                logger.info(f"⚠️  BaziService 调用失败: {e}，尝试使用 BaziCoreClient")
             
             # 降级方案：使用 BaziCoreClient
             if BAZI_CLIENT_AVAILABLE:
@@ -380,7 +383,7 @@ class FortuneAnalyzer:
                     "five_elements": bazi_result.get("elements", {})  # 兼容字段
                 }
                 
-                print(f"✅ 使用 BaziCoreClient 获取八字数据成功")
+                logger.info(f"✅ 使用 BaziCoreClient 获取八字数据成功")
                 
                 # 打印详细的八字信息到日志
                 self._print_bazi_info(bazi_data, solar_date, solar_time, gender)
@@ -391,27 +394,27 @@ class FortuneAnalyzer:
             
         except Exception as e:
             import traceback
-            print(f"⚠️  获取八字数据失败: {e}")
-            print(f"详细错误: {traceback.format_exc()}")
+            logger.info(f"⚠️  获取八字数据失败: {e}")
+            logger.info(f"详细错误: {traceback.format_exc()}")
             return None
     
     def _print_bazi_info(self, bazi_data: Dict[str, Any], solar_date: str, solar_time: str, gender: str):
         """打印详细的八字信息到日志"""
         try:
-            print("\n" + "="*80)
-            print("📋 八字详细信息")
-            print("="*80)
-            print(f"出生日期: {solar_date} {solar_time}")
-            print(f"性别: {gender}")
-            print("-"*80)
+            logger.info("\n" + "="*80)
+            logger.info("📋 八字详细信息")
+            logger.info("="*80)
+            logger.info(f"出生日期: {solar_date} {solar_time}")
+            logger.info(f"性别: {gender}")
+            logger.info("-"*80)
             
             # 基本信息
             basic_info = bazi_data.get("basic_info", {})
             if basic_info:
-                print("【基本信息】")
-                print(f"  农历日期: {basic_info.get('lunar_date', '未知')}")
-                print(f"  时辰: {basic_info.get('time_ganzhi', '未知')}")
-                print()
+                logger.info("【基本信息】")
+                logger.info(f"  农历日期: {basic_info.get('lunar_date', '未知')}")
+                logger.info(f"  时辰: {basic_info.get('time_ganzhi', '未知')}")
+                logger.info("")
             
             # 八字四柱（优先从 bazi_pillars 获取，如果为空则从 elements 中提取）
             bazi_pillars = bazi_data.get("bazi_pillars", {})
@@ -455,7 +458,7 @@ class FortuneAnalyzer:
                         }
             
             if bazi_pillars and isinstance(bazi_pillars, dict):
-                print("【八字四柱】")
+                logger.info("【八字四柱】")
                 year = bazi_pillars.get("year", {})
                 month = bazi_pillars.get("month", {})
                 day = bazi_pillars.get("day", {})
@@ -482,56 +485,56 @@ class FortuneAnalyzer:
                 hour_gan_elem = hour.get('gan_element') or hour.get('stem_element', '')
                 hour_zhi_elem = hour.get('zhi_element') or hour.get('branch_element', '')
                 
-                print(f"  年柱: {year_gan}{year_zhi} ({year_gan_elem}{year_zhi_elem})")
-                print(f"  月柱: {month_gan}{month_zhi} ({month_gan_elem}{month_zhi_elem})")
-                print(f"  日柱: {day_gan}{day_zhi} ({day_gan_elem}{day_zhi_elem})")
-                print(f"  时柱: {hour_gan}{hour_zhi} ({hour_gan_elem}{hour_zhi_elem})")
-                print()
+                logger.info(f"  年柱: {year_gan}{year_zhi} ({year_gan_elem}{year_zhi_elem})")
+                logger.info(f"  月柱: {month_gan}{month_zhi} ({month_gan_elem}{month_zhi_elem})")
+                logger.info(f"  日柱: {day_gan}{day_zhi} ({day_gan_elem}{day_zhi_elem})")
+                logger.info(f"  时柱: {hour_gan}{hour_zhi} ({hour_gan_elem}{hour_zhi_elem})")
+                logger.info("")
             
             # 五行统计
             element_counts = bazi_data.get("element_counts", {})
             if element_counts:
-                print("【五行统计】")
+                logger.info("【五行统计】")
                 elements = ["木", "火", "土", "金", "水"]
                 for elem in elements:
                     count = element_counts.get(elem, 0)
                     bar = "█" * count if count > 0 else ""
-                    print(f"  {elem}: {count} {bar}")
-                print()
+                    logger.info(f"  {elem}: {count} {bar}")
+                logger.info("")
             
             # 十神统计
             ten_gods = bazi_data.get("ten_gods_stats", {})
             if ten_gods:
-                print("【十神统计】")
+                logger.info("【十神统计】")
                 ten_gods_list = ["比肩", "劫财", "食神", "伤官", "偏财", "正财", "七杀", "正官", "偏印", "正印"]
                 for god in ten_gods_list:
                     count = ten_gods.get(god, 0)
                     if count > 0:
-                        print(f"  {god}: {count}")
-                print()
+                        logger.info(f"  {god}: {count}")
+                logger.info("")
             
             # 日主信息
             rizhu = bazi_data.get("rizhu", "")
             if rizhu:
-                print(f"【日主】{rizhu}")
-                print()
+                logger.info(f"【日主】{rizhu}")
+                logger.info("")
             
             # 五行元素详情
             elements = bazi_data.get("elements", {}) or bazi_data.get("five_elements", {})
             if elements:
-                print("【五行元素详情】")
+                logger.info("【五行元素详情】")
                 for key, value in elements.items():
                     if isinstance(value, dict):
-                        print(f"  {key}: {value}")
+                        logger.info(f"  {key}: {value}")
                     else:
-                        print(f"  {key}: {value}")
-                print()
+                        logger.info(f"  {key}: {value}")
+                logger.info("")
             
-            print("="*80 + "\n")
+            logger.info("="*80 + "\n")
         except Exception as e:
-            print(f"⚠️  打印八字信息时出错: {e}")
+            logger.info(f"⚠️  打印八字信息时出错: {e}")
             import traceback
-            print(traceback.format_exc())
+            logger.error("", exc_info=True)
     
     def _calculate_confidence(self, features: Dict[str, Any], insight_count: int) -> float:
         """计算置信度"""

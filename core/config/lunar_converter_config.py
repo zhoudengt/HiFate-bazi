@@ -2,9 +2,12 @@
 
 try:
     from zhdate import ZhDate
+import logging
+
+logger = logging.getLogger(__name__)
     from datetime import datetime
 except ImportError:
-    print("请安装zhdate库: pip install zhdate")
+    logger.info("请安装zhdate库: pip install zhdate")
     ZhDate = None
 
 class LunarConverter:
@@ -34,7 +37,7 @@ class LunarConverter:
                 'leap_month': zh_date.leap_month
             }
         except Exception as e:
-            print(f"农历转换错误: {e}")
+            logger.info(f"农历转换错误: {e}")
             return self._simple_solar_to_lunar(solar_date, solar_time)
 
     def _simple_solar_to_lunar(self, solar_date, solar_time):

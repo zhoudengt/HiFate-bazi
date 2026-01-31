@@ -506,7 +506,7 @@ async def marriage_analysis_stream_generator(
         # ✅ 性能优化：立即返回首条消息，让用户感知到连接已建立
         # 这个优化将首次响应时间从 24秒 降低到 <1秒
         # ✅ 架构优化：移除无意义的进度消息，直接开始数据处理
-        # 详见：docs/standards/08_数据编排架构规范.md
+        # 详见：standards/08_数据编排架构规范.md
         
         # 确定使用的 bot_id（优先级：参数 > 数据库配置 > 环境变量）
         if not bot_id:
@@ -530,174 +530,57 @@ async def marriage_analysis_stream_generator(
             longitude
         )
         
-        # 2. 并行获取基础数据（带容错处理）
-        loop = asyncio.get_event_loop()
-        executor = None
+        # 2. 通过 BaziDataOrchestrator 统一获取数据（主路径统一）
         data_start_time = time.time()
-        
         try:
-            # 并行获取基础数据，使用 return_exceptions=True 实现容错
-            bazi_task = loop.run_in_executor(
-                executor,
-                lambda: BaziService.calculate_bazi_full(
-                    final_solar_date,
-                    final_solar_time,
-                    gender
-                )
-            )
-            wangshuai_task = loop.run_in_executor(
-                executor,
-                lambda: WangShuaiService.calculate_wangshuai(
-                    final_solar_date,
-                    final_solar_time,
-                    gender
-                )
-            )
-            detail_task = loop.run_in_executor(
-                executor,
-                lambda: BaziDetailService.calculate_detail_full(
-                    final_solar_date,
-                    final_solar_time,
-                    gender
-                )
-            )
+            from server.utils.analysis_stream_helpers import get_modules_config
+            from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
             
-            # 使用 return_exceptions=True，即使某个任务失败也不会影响其他任务
-            results = await asyncio.gather(
-                bazi_task, wangshuai_task, detail_task,
-                return_exceptions=True
-            )
-            bazi_result, wangshuai_result, detail_result = results
-            
-            data_duration = time.time() - data_start_time
-            logger.info(f"[{trace_id}] 📊 并行数据获取完成: 耗时={data_duration:.2f}s")
-            
-            # 处理八字数据（核心数据，必须成功）
-            if isinstance(bazi_result, Exception):
-                logger.error(f"[{trace_id}] ❌ 八字计算失败: {bazi_result}")
-                raise ValueError(f"八字计算失败: {bazi_result}")
-            
-            # 提取八字数据（BaziService.calculate_bazi_full 返回的结构是 {bazi: {...}, rizhu: {...}, matched_rules: [...]}）
-            if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
-                bazi_data = bazi_result['bazi']
-            else:
-                bazi_data = bazi_result
-            
-            # 验证数据类型
-            bazi_data = validate_bazi_data(bazi_data)
-            if not bazi_data:
-                raise ValueError("八字计算失败，返回数据为空")
-            
-            # 处理旺衰数据（非核心数据，失败时使用默认值）
-            if isinstance(wangshuai_result, Exception):
-                logger.warning(f"[{trace_id}] ⚠️ 旺衰分析异常（使用默认值）: {wangshuai_result}")
-                wangshuai_data = {}
-            elif not wangshuai_result.get('success'):
-                logger.warning(f"[{trace_id}] ⚠️ 旺衰分析失败（使用默认值）: {wangshuai_result.get('error')}")
-                wangshuai_data = {}
-            else:
-                wangshuai_data = wangshuai_result.get('data', {})
-            
-            # 处理详情数据（非核心数据，失败时使用默认值）
-            if isinstance(detail_result, Exception):
-                logger.warning(f"[{trace_id}] ⚠️ 详情计算异常（使用默认值）: {detail_result}")
-                detail_result = {'success': False, 'data': {}}
-            
-            # ✅ 使用统一数据服务获取大运流年、特殊流年数据（确保数据一致性）
-            from server.orchestrators.bazi_data_service import BaziDataService
-            
-            # ✅ 性能优化：并行获取运势数据和规则匹配（减少首次响应时间）
-            # 创建并行任务
-            fortune_task = BaziDataService.get_fortune_data(
+            modules = get_modules_config('marriage')
+            unified_data = await BaziDataOrchestrator.fetch_data(
                 solar_date=final_solar_date,
                 solar_time=final_solar_time,
                 gender=gender,
+                modules=modules,
+                use_cache=True,
+                parallel=True,
                 calendar_type=calendar_type or "solar",
                 location=location,
                 latitude=latitude,
                 longitude=longitude,
-                include_dayun=True,
-                include_liunian=True,
-                include_special_liunian=True,
-                dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,  # 统一的大运模式
-                target_years=BaziDataService.DEFAULT_TARGET_YEARS,  # 统一的年份范围
-                current_time=None,
-                detail_result=detail_result  # ✅ 性能优化：复用已获取的 detail_result
+                preprocessed=True
             )
             
-            rules_task = loop.run_in_executor(
-                executor,
-                RuleService.match_rules,
-                bazi_data,
-                ['marriage', 'peach_blossom', 'marriage_match', 'zhengyuan'],
-                True  # use_cache
-            )
+            data_duration = time.time() - data_start_time
+            logger.info(f"[{trace_id}] 📊 BaziDataOrchestrator 数据获取完成: 耗时={data_duration:.2f}s")
             
-            # 并行执行运势数据获取和规则匹配
-            fortune_data, matched_rules = await asyncio.gather(fortune_task, rules_task, return_exceptions=True)
+            # 提取八字数据
+            bazi_module_data = unified_data.get('bazi', {})
+            if isinstance(bazi_module_data, dict) and 'bazi' in bazi_module_data:
+                bazi_data = bazi_module_data.get('bazi', {})
+            else:
+                bazi_data = bazi_module_data
+            bazi_data = validate_bazi_data(bazi_data)
+            if not bazi_data:
+                raise ValueError("八字计算失败，返回数据为空")
             
-            # 处理异常结果
-            if isinstance(fortune_data, Exception):
-                logger.error(f"[{trace_id}] ❌ 运势数据获取失败: {fortune_data}")
-                raise fortune_data
+            # 提取旺衰数据（build 函数接收原始格式）
+            wangshuai_result = unified_data.get('wangshuai', {})
+            if isinstance(wangshuai_result, dict) and not wangshuai_result.get('success'):
+                wangshuai_result = {'success': False, 'data': wangshuai_result.get('data', {})}
             
-            # 处理规则匹配结果（非核心，失败时使用空列表）
-            if isinstance(matched_rules, Exception):
-                logger.warning(f"[{trace_id}] ⚠️ 规则匹配异常（使用空列表）: {matched_rules}")
-                matched_rules = []
+            # 提取 detail
+            detail_result = unified_data.get('detail', {}) or {}
             
-            # 从统一数据服务获取大运序列和特殊流年
-            dayun_sequence = []
-            special_liunians = []
+            # 提取大运序列和特殊流年
+            dayun_sequence = detail_result.get('dayun_sequence', [])
+            special_liunians_data = unified_data.get('special_liunians', {})
+            if isinstance(special_liunians_data, dict) and 'list' in special_liunians_data:
+                special_liunians = special_liunians_data.get('list', [])
+            else:
+                special_liunians = []
             
-            # ✅ 性能优化：使用列表推导式批量转换，减少循环开销
-            # 转换为字典格式（兼容现有代码）- 使用列表推导式优化性能
-            dayun_sequence = [
-                {
-                    'step': dayun.step,
-                    'stem': dayun.stem,
-                    'branch': dayun.branch,
-                    'year_start': dayun.year_start,
-                    'year_end': dayun.year_end,
-                    'age_range': dayun.age_range,
-                    'age_display': dayun.age_display,
-                    'nayin': dayun.nayin,
-                    'main_star': dayun.main_star,
-                    'hidden_stems': dayun.hidden_stems or [],
-                    'hidden_stars': dayun.hidden_stars or [],
-                    'star_fortune': dayun.star_fortune,
-                    'self_sitting': dayun.self_sitting,
-                    'kongwang': dayun.kongwang,
-                    'deities': dayun.deities or [],
-                    'details': dayun.details or {}
-                }
-                for dayun in fortune_data.dayun_sequence
-            ]
-            
-            # 转换为字典格式（兼容现有代码）- 使用列表推导式优化性能
-            special_liunians = [
-                {
-                    'year': special_liunian.year,
-                    'stem': special_liunian.stem,
-                    'branch': special_liunian.branch,
-                    'ganzhi': special_liunian.ganzhi,
-                    'age': special_liunian.age,
-                    'age_display': special_liunian.age_display,
-                    'nayin': special_liunian.nayin,
-                    'main_star': special_liunian.main_star,
-                    'hidden_stems': special_liunian.hidden_stems or [],
-                    'hidden_stars': special_liunian.hidden_stars or [],
-                    'star_fortune': special_liunian.star_fortune,
-                    'self_sitting': special_liunian.self_sitting,
-                    'kongwang': special_liunian.kongwang,
-                    'deities': special_liunian.deities or [],
-                    'relations': special_liunian.relations or [],
-                    'dayun_step': special_liunian.dayun_step,
-                    'dayun_ganzhi': special_liunian.dayun_ganzhi,
-                    'details': special_liunian.details or {}
-                }
-                for special_liunian in fortune_data.special_liunians
-            ]
+            matched_rules = unified_data.get('rules', [])
             
         except Exception as e:
             import traceback
@@ -1033,67 +916,44 @@ async def extract_marriage_analysis_data(
             None
         )
         
-        # 2. 并行获取八字排盘、旺衰数据和详细八字数据（包含大运数据）
-        loop = asyncio.get_event_loop()
-        bazi_task = loop.run_in_executor(
-            None,
-            lambda: BaziService.calculate_bazi_full(
-                final_solar_date,
-                final_solar_time,
-                gender
-            )
+        # 2. 通过编排层统一获取数据（与流式主路径一致）
+        from server.utils.analysis_stream_helpers import get_modules_config
+        from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
+        modules = get_modules_config('marriage')
+        unified_data = await BaziDataOrchestrator.fetch_data(
+            final_solar_date,
+            final_solar_time,
+            gender,
+            modules=modules,
+            preprocessed=True,
+            calendar_type="solar",
+            location=None,
+            latitude=None,
+            longitude=None,
         )
-        wangshuai_task = loop.run_in_executor(
-            None,
-            lambda: WangShuaiService.calculate_wangshuai(
-                final_solar_date,
-                final_solar_time,
-                gender
-            )
-        )
-        detail_task = loop.run_in_executor(
-            None,
-            lambda: BaziDetailService.calculate_detail_full(
-                final_solar_date,
-                final_solar_time,
-                gender
-            )
-        )
-        
-        bazi_result, wangshuai_result, detail_result = await asyncio.gather(bazi_task, wangshuai_task, detail_task)
-        
-        # ⚠️ 关键修复：提取八字数据（BaziService.calculate_bazi_full 返回的结构是 {bazi: {...}, rizhu: {...}, matched_rules: [...]}）
-        if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
-            bazi_data = bazi_result['bazi']
+        bazi_module_data = unified_data.get('bazi', {})
+        if isinstance(bazi_module_data, dict) and 'bazi' in bazi_module_data:
+            bazi_data = bazi_module_data.get('bazi', {})
         else:
-            bazi_data = bazi_result
-        
-        # 验证数据类型
-        bazi_data = validate_bazi_data(bazi_data)
+            bazi_data = bazi_module_data
+        bazi_data = validate_bazi_data(bazi_data) if bazi_data else {}
         if not bazi_data:
             raise ValueError("八字计算失败，返回数据为空")
-        
-        # ⚠️ 修复：从 wangshuai_result 中提取旺衰数据
-        if isinstance(wangshuai_result, Exception):
-            logger.warning(f"⚠️ 旺衰分析异常（使用默认值）: {wangshuai_result}")
-            wangshuai_data = {}
-        elif not wangshuai_result.get('success'):
-            logger.warning(f"⚠️ 旺衰分析失败（使用默认值）: {wangshuai_result.get('error')}")
+        wangshuai_result = unified_data.get('wangshuai', {})
+        if isinstance(wangshuai_result, dict) and not wangshuai_result.get('success'):
             wangshuai_data = {}
         else:
-            wangshuai_data = wangshuai_result.get('data', {})
+            wangshuai_data = wangshuai_result.get('data', wangshuai_result) if isinstance(wangshuai_result, dict) else {}
+        detail_result = unified_data.get('detail', {}) or {}
+        matched_rules = unified_data.get('rules', []) or []
         
-        # 3. 获取规则匹配数据
+        # 3. 从编排层结果解析规则判词
         marriage_judgments = []
         peach_blossom_judgments = []
         matchmaking_judgments = []
         zhengyuan_judgments = []
         
         try:
-            matched_rules = RuleService.match_rules(
-                bazi_data,
-                rule_types=['marriage', 'peach_blossom', 'marriage_match', 'zhengyuan']
-            )
             
             for rule in matched_rules:
                 rule_type = rule.get('rule_type', '')
@@ -1500,7 +1360,7 @@ async def marriage_analysis_test(request: MarriageAnalysisRequest):
             },
             "usage": {
                 "description": "此接口返回的数据可以直接用于 Coze Bot 的 {{input}} 占位符",
-                "coze_bot_setup": "1. 登录 Coze 平台\n2. 找到'感情婚姻分析' Bot\n3. 进入 Bot 设置 → System Prompt\n4. 复制 docs/需求/Coze_Bot_System_Prompt_感情婚姻分析.md 中的提示词\n5. 粘贴到 System Prompt 中\n6. 保存设置",
+                "coze_bot_setup": "1. 登录 Coze 平台\n2. 找到'感情婚姻分析' Bot\n3. 进入 Bot 设置 → System Prompt\n4. 配置提示词并保存",
                 "test_command": f'curl -X POST "http://localhost:8001/api/v1/marriage-analysis/test" -H "Content-Type: application/json" -d \'{{"solar_date": "{request.solar_date}", "solar_time": "{request.solar_time}", "gender": "{request.gender}", "calendar_type": "{request.calendar_type or "solar"}"}}\''
             }
         }

@@ -64,5 +64,5 @@ COMMIT;
 ## 📚 相关文档
 
 - [数据库迁移指南](../README.md)
-- [部署文档](../../../docs/Docker生产部署完整指南.md)
+- [部署文档](../../../deploy/docs/)、[standards/deployment.md](../../../standards/deployment.md)
 

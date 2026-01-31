@@ -14,6 +14,7 @@ from server.utils.feature_flag import (
     FeatureFlag,
     FlagType
 )
+from server.utils.api_error_handler import api_error_handler
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -40,36 +41,28 @@ class CheckFlagRequest(BaseModel):
 
 
 @router.post("/feature-flags")
+@api_error_handler
 async def create_feature_flag(request: FeatureFlagCreateRequest):
     """创建功能开关"""
-    try:
-        manager = get_feature_flag_manager()
-        
-        flag = FeatureFlag(
-            name=request.name,
-            description=request.description,
-            enabled=request.enabled,
-            flag_type=FlagType(request.flag_type),
-            value=request.value
-        )
-        
-        success = manager.create_flag(flag)
-        if not success:
-            raise HTTPException(status_code=400, detail="创建功能开关失败")
-        
-        return {
-            "success": True,
-            "flag": {
-                "name": flag.name,
-                "enabled": flag.enabled,
-                "flag_type": flag.flag_type.value
-            }
+    manager = get_feature_flag_manager()
+    flag = FeatureFlag(
+        name=request.name,
+        description=request.description,
+        enabled=request.enabled,
+        flag_type=FlagType(request.flag_type),
+        value=request.value
+    )
+    success = manager.create_flag(flag)
+    if not success:
+        raise HTTPException(status_code=400, detail="创建功能开关失败")
+    return {
+        "success": True,
+        "flag": {
+            "name": flag.name,
+            "enabled": flag.enabled,
+            "flag_type": flag.flag_type.value
         }
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"无效的参数: {e}")
-    except Exception as e:
-        logger.error(f"创建功能开关失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    }
 
 
 @router.get("/feature-flags/{flag_name}")

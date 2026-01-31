@@ -6,6 +6,9 @@
 """
 
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 import sys
 import time
 import hashlib
@@ -28,10 +31,10 @@ class FileMonitor:
         初始化文件监控器
         
         Args:
-            watch_directories: 监控的目录列表，默认监控 src 和 server
+            watch_directories: 监控的目录列表，默认监控 core、server、services
             exclude_patterns: 排除的文件模式
         """
-        self.watch_directories = watch_directories or ['src', 'server', 'services']
+        self.watch_directories = watch_directories or ['core', 'server', 'services']
         self.exclude_patterns = exclude_patterns or [
             '__pycache__', '.pyc', '.pyo', '.pyd',
             '.mypy_cache', '.pytest_cache', '.git',
@@ -65,14 +68,14 @@ class FileMonitor:
         self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._thread.start()
         
-        print(f"✓ 文件监控器已启动（检查间隔: {self._check_interval}秒）")
+        logger.info(f"✓ 文件监控器已启动（检查间隔: {self._check_interval}秒）")
     
     def stop(self):
         """停止文件监控"""
         self._running = False
         if self._thread:
             self._thread.join(timeout=2)
-        print("✓ 文件监控器已停止")
+        logger.info("✓ 文件监控器已停止")
     
     def register_callback(self, callback: Callable):
         """
@@ -144,7 +147,7 @@ class FileMonitor:
             return state
             
         except Exception as e:
-            print(f"⚠ 无法读取文件 {file_path}: {e}")
+            logger.info(f"⚠ 无法读取文件 {file_path}: {e}")
             return None
     
     def _check_syntax(self, file_path: str) -> bool:
@@ -165,10 +168,10 @@ class FileMonitor:
             ast.parse(source, filename=file_path)
             return True
         except SyntaxError as e:
-            print(f"❌ 语法错误 {file_path}: {e}")
+            logger.info(f"❌ 语法错误 {file_path}: {e}")
             return False
         except Exception as e:
-            print(f"⚠ 检查语法失败 {file_path}: {e}")
+            logger.info(f"⚠ 检查语法失败 {file_path}: {e}")
             return False
     
     def _monitor_loop(self):
@@ -177,7 +180,7 @@ class FileMonitor:
             try:
                 self._check_files()
             except Exception as e:
-                print(f"⚠ 文件监控检查失败: {e}")
+                logger.info(f"⚠ 文件监控检查失败: {e}")
             
             time.sleep(self._check_interval)
     
@@ -251,7 +254,7 @@ class FileMonitor:
                     try:
                         callback(file_path, change_type, state)
                     except Exception as e:
-                        print(f"⚠ 回调执行失败: {e}")
+                        logger.info(f"⚠ 回调执行失败: {e}")
     
     def get_file_status(self, file_path: str) -> Optional[Dict]:
         """获取文件状态"""

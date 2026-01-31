@@ -293,6 +293,8 @@ class FortuneContextService:
         intent_types: List[str],  # ["wealth", "health", ...]
         time_range: dict = None,  # ⚠️ 已废弃，使用 target_years 代替
         target_years: List[int] = None,  # 目标年份列表（推荐使用）
+        detail_result: Optional[Dict[str, Any]] = None,  # 编排层传入，避免重复计算
+        wangshuai_result: Optional[Dict[str, Any]] = None,  # 编排层传入，避免重复计算
     ) -> Optional[Dict[str, Any]]:
         """
         获取流年大运上下文信息
@@ -304,6 +306,8 @@ class FortuneContextService:
             intent_types: 用户关心的方面
             time_range: ⚠️ 已废弃，为了向后兼容保留
             target_years: 目标年份列表，如 [2025, 2026, 2027]（推荐使用）
+            detail_result: 编排层传入的 detail 数据，传入时跳过 calculate_detail_full
+            wangshuai_result: 编排层传入的旺衰数据（{success, data} 或 analyzer 格式），传入时跳过 WangShuaiAnalyzer
             
         Returns:
             {
@@ -349,8 +353,6 @@ class FortuneContextService:
                 return None
             
             # 根据时间类型调用不同的服务
-            # time_type = time_range.get("time_type")  # 已废弃
-            
             if time_type == "today":
                 # 调用日运服务
                 daily_fortune = DailyFortuneService.calculate_daily_fortune(
@@ -413,38 +415,31 @@ class FortuneContextService:
                     logger.debug("target_years为空，返回None")
                     return None
                 
-                # ⭐ 性能优化：只调用一次 calculate_detail_full，复用结果
-                # 原因：calculate_detail_full 会计算所有流年，我们只需要从结果中提取特定年份
-                logger.debug(f"开始计算流年大运，目标年份: {target_years}")
-                start_time = time.time()
-                
-                # ⭐ 性能优化：先检查缓存
-                current_time = datetime(target_years[0], 1, 1)
-                cached_result = FortuneContextService._get_cached_detail(
-                    solar_date, solar_time, gender, current_time
-                )
-                
-                if cached_result:
-                    logger.debug(f"[FortuneContextService] 缓存命中，跳过 calculate_detail_full")
-                    detail_result = cached_result
-                    calc_time = 0
-                else:
-                    # 只调用一次，使用第一个年份（结果包含所有流年）
-                    detail_result = BaziDetailService.calculate_detail_full(
-                        solar_date=solar_date,
-                        solar_time=solar_time,
-                        gender=gender,
-                        current_time=current_time
+                # ⭐ 编排层接入：优先使用传入的 detail_result，避免重复计算
+                if detail_result is None:
+                    logger.debug(f"开始计算流年大运，目标年份: {target_years}")
+                    start_time = time.time()
+                    current_time = datetime(target_years[0], 1, 1)
+                    cached_result = FortuneContextService._get_cached_detail(
+                        solar_date, solar_time, gender, current_time
                     )
                     
-                    calc_time = (time.time() - start_time) * 1000
-                    logger.info(f"[FortuneContextService] calculate_detail_full 耗时: {calc_time:.0f}ms")
-                    
-                    # 缓存结果
-                    if detail_result:
-                        FortuneContextService._set_cached_detail(
-                            solar_date, solar_time, gender, current_time, detail_result
+                    if cached_result:
+                        logger.debug(f"[FortuneContextService] 缓存命中，跳过 calculate_detail_full")
+                        detail_result = cached_result
+                    else:
+                        detail_result = BaziDetailService.calculate_detail_full(
+                            solar_date=solar_date,
+                            solar_time=solar_time,
+                            gender=gender,
+                            current_time=current_time
                         )
+                        if detail_result:
+                            FortuneContextService._set_cached_detail(
+                                solar_date, solar_time, gender, current_time, detail_result
+                            )
+                else:
+                    logger.debug(f"[FortuneContextService] 使用编排层传入的 detail_result")
                 
                 if not detail_result:
                     logger.warning("calculate_detail_full 返回空结果")
@@ -525,15 +520,22 @@ class FortuneContextService:
                     logger.debug(f"获取到{len(liunian_list)}个流年")
                     is_multi = time_range.get("is_multi_year", False)
                     
-                    # ⭐ 新增：深度分析（喜忌神、五行平衡、关系分析）
+                    # ⭐ 编排层接入：优先使用传入的 wangshuai_result
                     try:
                         logger.debug("开始深度分析...")
                         
-                        # 1. 获取喜忌神分析
-                        wangshuai_analyzer = WangShuaiAnalyzer()
-                        wangshuai_result = wangshuai_analyzer.analyze(solar_date, solar_time, gender)
-                        xi_ji = wangshuai_result.get('xi_ji', {})
-                        xi_ji_elements = wangshuai_result.get('xi_ji_elements', {})
+                        # 1. 获取喜忌神分析（编排层传入时复用，避免重复计算）
+                        if wangshuai_result is not None:
+                            ws_data = wangshuai_result.get('data', wangshuai_result) if isinstance(wangshuai_result, dict) and 'data' in wangshuai_result else wangshuai_result
+                            xi_ji = ws_data.get('xi_ji', {})
+                            xi_ji_elements = ws_data.get('xi_ji_elements', {})
+                            wangshuai_for_fortune = ws_data.get('wangshuai', '')
+                        else:
+                            wangshuai_analyzer = WangShuaiAnalyzer()
+                            _ws_result = wangshuai_analyzer.analyze(solar_date, solar_time, gender)
+                            xi_ji = _ws_result.get('xi_ji', {})
+                            xi_ji_elements = _ws_result.get('xi_ji_elements', {})
+                            wangshuai_for_fortune = _ws_result.get('wangshuai', '')
                         logger.debug(f"喜神（十神）: {xi_ji.get('xi_shen', [])}, 喜神（五行）: {xi_ji_elements.get('xi_shen', [])}")
                         
                         # 2. 获取八字五行统计（从detail_result，避免重复调用）
@@ -570,7 +572,7 @@ class FortuneContextService:
                                     relation_analysis=relation_result,
                                     xi_ji=xi_ji,
                                     shishen_stats=shishen_stats,
-                                    wangshuai=wangshuai_result.get('wangshuai', ''),
+                                    wangshuai=wangshuai_for_fortune,
                                     gender=gender
                                 )
                                 liunian['fortune_scores'] = fortune_scores
@@ -580,7 +582,7 @@ class FortuneContextService:
                         # 4. 添加喜忌神信息到结果
                         result["xi_ji"] = xi_ji
                         result["xi_ji_elements"] = xi_ji_elements
-                        result["wangshuai"] = wangshuai_result.get('wangshuai', '')
+                        result["wangshuai"] = wangshuai_for_fortune
                         logger.debug("深度分析完成，喜忌神已添加到result")
                         
                     except Exception as e:

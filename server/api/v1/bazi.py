@@ -21,17 +21,24 @@ from server.services.bazi_service import BaziService
 from server.utils.data_validator import validate_bazi_data
 from server.services.bazi_interface_service import BaziInterfaceService
 from server.services.bazi_detail_service import BaziDetailService
+from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
+from server.orchestrators.modules_config import get_modules_config
 from server.services.shensha_sort_service import sort_shensha
 from server.utils import bazi_cache
 from core.calculators.LunarConverter import LunarConverter
 from server.utils.timezone_converter import convert_local_to_solar_time, format_datetime_for_bazi
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
+from server.utils.api_error_handler import api_error_handler
 
 router = APIRouter()
 
 # 使用统一的异步执行器（性能优化）
-from server.utils.async_executor import run_in_executor
+from server.utils.async_executor import run_in_executor, get_executor
+
+# 双轨并行：编排层开关，默认关闭，验证后可通过环境变量开启
+USE_ORCHESTRATOR_BAZI = os.environ.get("USE_ORCHESTRATOR_BAZI", "false").lower() == "true"
+USE_ORCHESTRATOR_BAZI_DETAIL = os.environ.get("USE_ORCHESTRATOR_BAZI_DETAIL", "false").lower() == "true"
 
 
 # 向后兼容：保留原函数，内部调用公共方法
@@ -112,6 +119,7 @@ class BaziResponse(BaseModel):
 
 
 @router.post("/bazi/calculate", response_model=BaziResponse, summary="计算生辰八字")
+@api_error_handler
 async def calculate_bazi(request: BaziRequest, http_request: Request):
     """
     计算生辰八字（带缓存优化）
@@ -126,7 +134,6 @@ async def calculate_bazi(request: BaziRequest, http_request: Request):
     
     返回完整的八字信息和匹配的规则
     """
-    try:
         # 处理农历输入和时区转换
         final_solar_date, final_solar_time, conversion_info = process_date_time_input(
             request.solar_date,
@@ -169,6 +176,22 @@ async def calculate_bazi(request: BaziRequest, http_request: Request):
                     data=cached_result
                 )
         
+    # 双轨并行：优先走编排层（USE_ORCHESTRATOR_BAZI=true 时），否则走原有逻辑
+    if USE_ORCHESTRATOR_BAZI:
+        orchestrator_data = await BaziDataOrchestrator.fetch_data(
+            final_solar_date,
+            final_solar_time,
+            request.gender,
+            modules={"bazi": True},
+            preprocessed=True,
+            calendar_type=request.calendar_type or "solar",
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude,
+        )
+        result = orchestrator_data.get("bazi")
+        result = validate_bazi_data(result.get("bazi", result)) if isinstance(result, dict) else result
+    else:
         # 在线程池中执行CPU密集型计算（使用统一执行器）
         result = await run_in_executor(
             BaziService.calculate_bazi_full,
@@ -176,7 +199,6 @@ async def calculate_bazi(request: BaziRequest, http_request: Request):
             final_solar_time,
             request.gender
         )
-        
         # ✅ 统一类型验证：确保所有字段类型正确（防止gRPC序列化问题）
         result = validate_bazi_data(result.get('bazi', result)) if isinstance(result, dict) else result
         
@@ -200,16 +222,6 @@ async def calculate_bazi(request: BaziRequest, http_request: Request):
             success=True,
             data=result
         )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        import traceback
-        import logging
-        logger = logging.getLogger(__name__)
-        error_trace = traceback.format_exc()
-        logger.error(f"计算失败: {str(e)}\n{error_trace}")
-        error_detail = f"计算失败: {str(e)}\n{error_trace}"
-        raise HTTPException(status_code=500, detail=error_detail)
 
 
 class BaziInterfaceRequest(BaziBaseRequest):
@@ -218,6 +230,7 @@ class BaziInterfaceRequest(BaziBaseRequest):
 
 
 @router.post("/bazi/interface", response_model=BaziResponse, summary="生成八字界面信息")
+@api_error_handler
 async def generate_bazi_interface(request: BaziInterfaceRequest, http_request: Request):
     """
     生成八字界面信息（包含命宫、身宫、胎元、胎息、命卦等）
@@ -232,8 +245,9 @@ async def generate_bazi_interface(request: BaziInterfaceRequest, http_request: R
     - **longitude**: 经度（可选，用于时区转换和真太阳时计算）
     
     返回完整的八字界面信息（JSON格式）
+    
+    架构：通过 BaziDataOrchestrator 统一获取数据（数据总线设计）
     """
-    try:
         # 处理农历输入和时区转换
         final_solar_date, final_solar_time, conversion_info = process_date_time_input(
             request.solar_date,
@@ -244,7 +258,6 @@ async def generate_bazi_interface(request: BaziInterfaceRequest, http_request: R
             request.longitude
         )
         
-        # 检查缓存（包含位置信息）
         cached_result = bazi_cache.get(
             final_solar_date,
             final_solar_time,
@@ -256,7 +269,6 @@ async def generate_bazi_interface(request: BaziInterfaceRequest, http_request: R
         )
         
         if cached_result is not None:
-            # 添加转换信息到结果
             if conversion_info.get('converted') or conversion_info.get('timezone_info'):
                 cached_result['conversion_info'] = conversion_info
             return BaziResponse(
@@ -264,29 +276,39 @@ async def generate_bazi_interface(request: BaziInterfaceRequest, http_request: R
                 data=cached_result
             )
         
-        # 在线程池中执行CPU密集型计算（添加超时保护，最多30秒）
-        try:
-            result = await asyncio.wait_for(
-                run_in_executor(
-                    BaziInterfaceService.generate_interface_full,
+    try:
+        # ✅ 通过编排层统一获取数据（数据总线设计）
+        modules = get_modules_config('interface')
+        orchestrator_data = await asyncio.wait_for(
+            BaziDataOrchestrator.fetch_data(
                     final_solar_date,
                     final_solar_time,
                     request.gender,
-                    request.name or "",
-                    request.location or "未知地",
-                    request.latitude or 39.00,
-                    request.longitude or 120.00
-                ),
-                timeout=30.0  # 30秒超时
-            )
+                modules=modules,
+                preprocessed=True,
+                calendar_type=request.calendar_type or "solar",
+                location=request.location or "未知地",
+                latitude=request.latitude or 39.00,
+                longitude=request.longitude or 120.00
+            ),
+            timeout=30.0
+        )
+        
+        # ✅ 从编排层提取 bazi_interface 数据（保持响应结构不变）
+        result = orchestrator_data.get('bazi_interface', {})
+        if not result:
+            raise HTTPException(status_code=500, detail="界面信息计算失败")
+            
         except asyncio.TimeoutError:
             raise HTTPException(status_code=500, detail="计算超时（超过30秒），请稍后重试")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.getLogger(__name__).error(f"interface 计算失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"计算失败: {str(e)}")
         
-        # 添加转换信息到结果
         if conversion_info.get('converted') or conversion_info.get('timezone_info'):
             result['conversion_info'] = conversion_info
-        
-        # 缓存结果
         bazi_cache.set(
             final_solar_date,
             final_solar_time,
@@ -297,21 +319,10 @@ async def generate_bazi_interface(request: BaziInterfaceRequest, http_request: R
             latitude=request.latitude or 39.00,
             longitude=request.longitude or 120.00
         )
-        
         return BaziResponse(
             success=True,
             data=result
         )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        import traceback
-        import logging
-        logger = logging.getLogger(__name__)
-        error_trace = traceback.format_exc()
-        logger.error(f"生成失败: {str(e)}\n{error_trace}")
-        error_detail = f"生成失败: {str(e)}\n{error_trace}"
-        raise HTTPException(status_code=500, detail=error_detail)
 
 
 class BaziDetailRequest(BaziBaseRequest):
@@ -334,6 +345,7 @@ class BaziDetailRequest(BaziBaseRequest):
 
 
 @router.post("/bazi/detail", response_model=BaziResponse, summary="计算详细八字信息（包含大运流年）")
+@api_error_handler
 async def calculate_bazi_detail(request: BaziDetailRequest, http_request: Request):
     """
     计算详细八字信息（包含大运流年、流月、流日、流时等）
@@ -349,7 +361,6 @@ async def calculate_bazi_detail(request: BaziDetailRequest, http_request: Reques
     
     返回完整的详细八字信息（包含大运流年序列）
     """
-    try:
         from datetime import datetime
         
         # 处理农历输入和时区转换
@@ -362,12 +373,10 @@ async def calculate_bazi_detail(request: BaziDetailRequest, http_request: Reques
             request.longitude
         )
         
-        # 解析当前时间
         current_time = None
         if request.current_time:
             current_time = datetime.strptime(request.current_time, "%Y-%m-%d %H:%M")
         
-        # 检查缓存（包含当前时间）
         current_time_str = request.current_time or datetime.now().strftime("%Y-%m-%d %H:%M")
         cached_result = bazi_cache.get(
             final_solar_date,
@@ -377,7 +386,6 @@ async def calculate_bazi_detail(request: BaziDetailRequest, http_request: Reques
         )
         
         if cached_result is not None:
-            # 添加转换信息到结果
             if conversion_info.get('converted') or conversion_info.get('timezone_info'):
                 cached_result['conversion_info'] = conversion_info
             return BaziResponse(
@@ -385,44 +393,53 @@ async def calculate_bazi_detail(request: BaziDetailRequest, http_request: Reques
                 data=cached_result
             )
         
-        # 在线程池中执行CPU密集型计算（使用统一执行器）
-        # 默认使用快速模式（只计算当前大运）+ 异步预热
+    # 双轨并行：优先走编排层（USE_ORCHESTRATOR_BAZI_DETAIL=true 时），否则走原有逻辑
+    if USE_ORCHESTRATOR_BAZI_DETAIL:
+        orchestrator_data = await BaziDataOrchestrator.fetch_data(
+            final_solar_date,
+            final_solar_time,
+            request.gender,
+            modules={"detail": True},
+            current_time=current_time,
+            preprocessed=True,
+            calendar_type=request.calendar_type or "solar",
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude,
+        )
+        result = orchestrator_data.get("detail") or {}
+        result["warmup_status"] = "completed"
+    else:
         result = await run_in_executor(
             BaziDetailService.calculate_detail_full,
             final_solar_date,
             final_solar_time,
             request.gender,
             current_time,
-            None,  # dayun_index
-            None,  # target_year
-            request.quick_mode if request.quick_mode is not None else True,  # quick_mode
-            request.async_warmup if request.async_warmup is not None else True,  # async_warmup
-            True,  # include_wangshuai
-            True,  # include_shengong_minggong
-            True,  # include_rules
-            True,  # include_wuxing_proportion
-            True,  # include_rizhu_liujiazi
-            None   # rule_types
+            None,
+            None,
+            request.quick_mode if request.quick_mode is not None else True,
+            request.async_warmup if request.async_warmup is not None else True,
+            True,
+            True,
+            True,
+            True,
+            True,
+            None
         )
-        
-        # 添加预热状态到响应（如果使用快速模式）
-        warmup_status = "cached"  # 默认是缓存
+        warmup_status = "cached"
         if cached_result is None:
             if request.quick_mode if request.quick_mode is not None else True:
                 warmup_status = "triggered" if (request.async_warmup if request.async_warmup is not None else True) else "none"
             else:
                 warmup_status = "completed"
-        
         if warmup_status != "cached":
             result['warmup_status'] = warmup_status
             if warmup_status == "triggered":
                 result['message'] = "数据已返回，后台正在预热其他大运"
         
-        # 添加转换信息到结果
         if conversion_info.get('converted') or conversion_info.get('timezone_info'):
             result['conversion_info'] = conversion_info
-        
-        # 缓存结果
         bazi_cache.set(
             final_solar_date,
             final_solar_time,
@@ -430,15 +447,10 @@ async def calculate_bazi_detail(request: BaziDetailRequest, http_request: Reques
             result,
             current_time=current_time_str
         )
-        
         return BaziResponse(
             success=True,
             data=result
         )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"计算失败: {str(e)}")
 
 
 class ShengongMinggongRequest(BaziBaseRequest):
@@ -450,6 +462,7 @@ class ShengongMinggongRequest(BaziBaseRequest):
 
 
 @router.post("/bazi/shengong-minggong", response_model=BaziResponse, summary="获取身宫命宫详细信息")
+@api_error_handler
 async def get_shengong_minggong(request: ShengongMinggongRequest, http_request: Request):
     """
     获取身宫和命宫的详细信息（主星、藏干、星运、自坐、空亡、纳音、神煞等）
@@ -463,8 +476,11 @@ async def get_shengong_minggong(request: ShengongMinggongRequest, http_request: 
     - **longitude**: 经度（可选，用于时区转换和真太阳时计算）
     
     返回身宫、命宫和四柱的详细信息
+    
+    架构：通过 BaziDataOrchestrator 统一获取数据（数据总线设计）
     """
-    try:
+    logger = logging.getLogger(__name__)
+    
         # 处理农历输入和时区转换
         final_solar_date, final_solar_time, conversion_info = process_date_time_input(
             request.solar_date,
@@ -475,20 +491,21 @@ async def get_shengong_minggong(request: ShengongMinggongRequest, http_request: 
             request.longitude
         )
         
-        # 处理 current_time 参数
         current_time = None
         current_time_str = None
         if request.current_time:
-            from datetime import datetime
             current_time = datetime.strptime(request.current_time, "%Y-%m-%d %H:%M")
             current_time_str = request.current_time
         
-        # ✅ 优化：检查 Redis 缓存
+    # 如果没有提供 current_time，使用当前系统时间
+    if current_time is None:
+        current_time = datetime.now()
+
         cache_key_parts = [
             final_solar_date,
             final_solar_time,
             request.gender,
-            "shengong_minggong",  # 区分缓存类型
+        "shengong_minggong",
             str(request.dayun_year_start) if request.dayun_year_start else "",
             str(request.dayun_year_end) if request.dayun_year_end else "",
             str(request.target_year) if request.target_year else "",
@@ -502,10 +519,7 @@ async def get_shengong_minggong(request: ShengongMinggongRequest, http_request: 
             current_time=current_time_str
         )
         
-        if cached_result is not None:
-            # 验证缓存数据的格式
-            if isinstance(cached_result, dict):
-                # 添加转换信息到结果
+    if cached_result is not None and isinstance(cached_result, dict):
                 if conversion_info.get('converted') or conversion_info.get('timezone_info'):
                     cached_result['conversion_info'] = conversion_info
                 cached_result['cache_hit'] = True
@@ -514,9 +528,25 @@ async def get_shengong_minggong(request: ShengongMinggongRequest, http_request: 
                     data=cached_result
                 )
         
-        # 在线程池中执行CPU密集型计算（使用统一执行器）
-        result = await run_in_executor(
-            _calculate_shengong_minggong_details,
+    try:
+        # ✅ 通过编排层统一获取数据（数据总线设计）
+        modules = get_modules_config('shengong_minggong')
+        orchestrator_data = await BaziDataOrchestrator.fetch_data(
+            final_solar_date,
+            final_solar_time,
+            request.gender,
+            modules=modules,
+            current_time=current_time,
+            preprocessed=True,
+            calendar_type=request.calendar_type or "solar",
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude
+        )
+        
+        # ✅ 从编排层数据组装响应（保持响应结构完全不变）
+        result = await _assemble_shengong_minggong_response(
+            orchestrator_data,
             final_solar_date,
             final_solar_time,
             request.gender,
@@ -526,7 +556,10 @@ async def get_shengong_minggong(request: ShengongMinggongRequest, http_request: 
             request.target_year
         )
         
-        # ✅ 优化：缓存计算结果
+    except Exception as e:
+        logger.error(f"shengong-minggong 计算失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"计算失败: {str(e)}")
+
         bazi_cache.set(
             final_solar_date,
             final_solar_time,
@@ -535,23 +568,410 @@ async def get_shengong_minggong(request: ShengongMinggongRequest, http_request: 
             cache_type="shengong_minggong",
             current_time=current_time_str
         )
-        
-        # 添加转换信息到结果
         if conversion_info.get('converted') or conversion_info.get('timezone_info'):
             result['conversion_info'] = conversion_info
-        
         return BaziResponse(
             success=True,
             data=result
         )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        import traceback
+
+
+async def _assemble_shengong_minggong_response(
+    orchestrator_data: dict,
+    solar_date: str, 
+    solar_time: str, 
+    gender: str,
+    current_time: Optional[datetime] = None,
+    dayun_year_start: Optional[int] = None,
+    dayun_year_end: Optional[int] = None,
+    target_year: Optional[int] = None
+) -> dict:
+    """
+    从编排层数据组装 shengong-minggong 响应
+    
+    保持与原 _calculate_shengong_minggong_details() 返回格式完全一致
+    
+    Args:
+        orchestrator_data: 编排层返回的数据
+        solar_date: 阳历日期
+        solar_time: 出生时间
+        gender: 性别
+        current_time: 当前时间（可选）
+        dayun_year_start: 大运起始年份（可选）
+        dayun_year_end: 大运结束年份（可选）
+        target_year: 目标年份（可选）
+        
+    Returns:
+        dict: 与原接口完全一致的响应结构
+    """
         logger = logging.getLogger(__name__)
-        error_trace = traceback.format_exc()
-        logger.error(f"计算身宫命宫失败: {str(e)}\n{error_trace}")
-        raise HTTPException(status_code=500, detail=f"计算失败: {str(e)}")
+    from server.utils.data_validator import ensure_dict
+    
+    # 1. 提取编排层数据
+    bazi_data = orchestrator_data.get('bazi', {})
+    interface_data = orchestrator_data.get('bazi_interface', {})
+    detail_data = orchestrator_data.get('detail', {})
+    dayun_sequence = orchestrator_data.get('dayun', [])
+    liunian_sequence = orchestrator_data.get('liunian', [])
+    liuyue_sequence = orchestrator_data.get('liuyue', [])
+    
+    if not bazi_data:
+        raise ValueError("八字计算失败")
+    
+    # 2. 获取八字四柱和日干
+    bazi_pillars = ensure_dict(bazi_data.get('bazi_pillars', {}), default={})
+    day_stem = bazi_pillars.get('day', {}).get('stem', '')
+    
+    if not day_stem:
+        raise ValueError("无法获取日干信息")
+    
+    # 3. 获取身宫、命宫和胎元的干支
+    palaces = ensure_dict(interface_data.get('palaces', {}), default={})
+    shengong_ganzhi = ''
+    minggong_ganzhi = ''
+    taiyuan_ganzhi = ''
+    
+    if palaces:
+        # 从 palaces.body_palace.ganzhi 获取
+        body_palace_info = palaces.get('body_palace', {})
+        if isinstance(body_palace_info, dict):
+            shengong_ganzhi = body_palace_info.get('ganzhi', '') or ''
+        else:
+            shengong_ganzhi = str(body_palace_info) if body_palace_info else ''
+        
+        # 从 palaces.life_palace.ganzhi 获取
+        life_palace_info = palaces.get('life_palace', {})
+        if isinstance(life_palace_info, dict):
+            minggong_ganzhi = life_palace_info.get('ganzhi', '') or ''
+        else:
+            minggong_ganzhi = str(life_palace_info) if life_palace_info else ''
+        
+        # 从 palaces.fetal_origin.ganzhi 获取胎元
+        fetal_origin_info = palaces.get('fetal_origin', {})
+        if isinstance(fetal_origin_info, dict):
+            taiyuan_ganzhi = fetal_origin_info.get('ganzhi', '') or ''
+        else:
+            taiyuan_ganzhi = str(fetal_origin_info) if fetal_origin_info else ''
+    
+    # 如果从 palaces 中获取失败，尝试直接从顶层获取
+    if not shengong_ganzhi:
+        shengong_ganzhi = str(interface_data.get('body_palace', '') or '')
+    if not minggong_ganzhi:
+        minggong_ganzhi = str(interface_data.get('life_palace', '') or '')
+    if not taiyuan_ganzhi:
+        taiyuan_ganzhi = str(interface_data.get('fetal_origin', '') or '')
+    
+    # 4. 如果仍然获取失败，需要重新计算（回退机制）
+    if not shengong_ganzhi or not minggong_ganzhi:
+        logger.warning(f"无法从编排层获取身宫或命宫，尝试重新计算")
+        
+        try:
+            from core.analyzers.bazi_interface_analyzer import BaziInterfaceAnalyzer
+            from core.calculators.LunarConverter import LunarConverter
+            
+            analyzer = BaziInterfaceAnalyzer()
+            converter = LunarConverter()
+            
+            # 获取农历日期
+            lunar_result = converter.solar_to_lunar(solar_date, solar_time)
+            lunar_date = ensure_dict(lunar_result.get('lunar_date', {}), default={})
+            lunar_year = lunar_date.get('year', '')
+            lunar_month = lunar_date.get('month', '')
+            lunar_day = lunar_date.get('day', '')
+            
+            # 获取时支和月支
+            bazi_pillars_result = ensure_dict(lunar_result.get('bazi_pillars', {}), default={})
+            hour_pillar = ensure_dict(bazi_pillars_result.get('hour', {}), default={})
+            month_pillar = ensure_dict(bazi_pillars_result.get('month', {}), default={})
+            hour_branch = hour_pillar.get('branch', '')
+            month_branch = month_pillar.get('branch', '')
+            
+            # 转换为数字类型
+            if isinstance(lunar_year, str):
+                lunar_year = int(lunar_year.strip()) if lunar_year.strip() else 0
+            if isinstance(lunar_month, str):
+                lunar_month = int(lunar_month.strip()) if lunar_month.strip() else 0
+            if isinstance(lunar_day, str):
+                lunar_day = int(lunar_day.strip()) if lunar_day.strip() else 0
+            
+            # 重新计算身宫和命宫
+            shengong_ganzhi = analyzer.get_body_palace(lunar_year, lunar_month, lunar_day, hour_branch, month_branch)
+            minggong_ganzhi = analyzer.get_life_palace(lunar_year, lunar_month, lunar_day, hour_branch, month_branch)
+            
+        except Exception as e:
+            logger.error(f"重新计算身宫命宫失败: {str(e)}", exc_info=True)
+            raise ValueError(f"无法计算身宫或命宫: {str(e)}")
+    
+    # 5. 获取胎元干支（如果未获取到，则从月柱计算）
+    if not taiyuan_ganzhi:
+        try:
+            month_pillar = bazi_pillars.get('month', {})
+            month_stem = month_pillar.get('stem', '')
+            month_branch_char = month_pillar.get('branch', '')
+            
+            if month_stem and month_branch_char:
+                month_stem_branch = month_stem + month_branch_char
+                from core.analyzers.bazi_interface_analyzer import BaziInterfaceAnalyzer
+                analyzer = BaziInterfaceAnalyzer()
+                taiyuan_ganzhi = analyzer.get_fetal_origin(month_stem_branch)
+        except Exception as e:
+            logger.warning(f"计算胎元失败: {str(e)}", exc_info=True)
+    
+    # 6. 验证干支格式
+    if not shengong_ganzhi or len(shengong_ganzhi) != 2:
+        raise ValueError(f"身宫干支格式错误: {shengong_ganzhi}")
+    if not minggong_ganzhi or len(minggong_ganzhi) != 2:
+        raise ValueError(f"命宫干支格式错误: {minggong_ganzhi}")
+    if not taiyuan_ganzhi or len(taiyuan_ganzhi) != 2:
+        # 尝试重新计算胎元
+        try:
+            month_pillar = bazi_pillars.get('month', {})
+            month_stem = month_pillar.get('stem', '')
+            month_branch_char = month_pillar.get('branch', '')
+            if month_stem and month_branch_char:
+                month_stem_branch = month_stem + month_branch_char
+                from core.analyzers.bazi_interface_analyzer import BaziInterfaceAnalyzer
+                analyzer = BaziInterfaceAnalyzer()
+                taiyuan_ganzhi = analyzer.get_fetal_origin(month_stem_branch)
+                if not taiyuan_ganzhi or len(taiyuan_ganzhi) != 2:
+                    raise ValueError(f"胎元计算失败: {taiyuan_ganzhi}")
+        except Exception as e:
+            raise ValueError(f"胎元干支格式错误: {taiyuan_ganzhi}")
+    
+    # 7. 导入计算所需的模块
+    from core.config.ten_gods_config import TenGodsCalculator
+    from core.config.star_fortune_config import StarFortuneCalculator
+    from core.config.deities_config import DeitiesCalculator
+    from core.data.constants import HIDDEN_STEMS, NAYIN_MAP
+    from core.calculators.bazi_calculator import WenZhenBazi
+    
+    # 创建 WenZhenBazi 实例用于主星计算
+    bazi_calc = WenZhenBazi(solar_date, solar_time, gender)
+    
+    ten_gods_calc = TenGodsCalculator()
+    star_fortune_calc = StarFortuneCalculator()
+    deities_calc = DeitiesCalculator()
+    
+    # 8. 计算身宫详细信息
+    shengong_stem = shengong_ganzhi[0]
+    shengong_branch = shengong_ganzhi[1]
+    
+    shengong_main_star = bazi_calc.get_main_star(day_stem, shengong_stem, 'month')
+    shengong_hidden_stems = HIDDEN_STEMS.get(shengong_branch, [])
+    shengong_star_fortune = star_fortune_calc.get_stem_fortune(day_stem, shengong_branch)
+    shengong_self_sitting = star_fortune_calc.get_stem_fortune(shengong_stem, shengong_branch)
+    shengong_kongwang = star_fortune_calc.get_kongwang(shengong_ganzhi)
+    shengong_nayin = NAYIN_MAP.get((shengong_stem, shengong_branch), '')
+    shengong_deities = deities_calc.calculate_day_deities(shengong_stem, shengong_branch, bazi_pillars)
+    
+    # 9. 计算命宫详细信息
+    minggong_stem = minggong_ganzhi[0]
+    minggong_branch = minggong_ganzhi[1]
+    
+    minggong_main_star = bazi_calc.get_main_star(day_stem, minggong_stem, 'month')
+    minggong_hidden_stems = HIDDEN_STEMS.get(minggong_branch, [])
+    minggong_star_fortune = star_fortune_calc.get_stem_fortune(day_stem, minggong_branch)
+    minggong_self_sitting = star_fortune_calc.get_stem_fortune(minggong_stem, minggong_branch)
+    minggong_kongwang = star_fortune_calc.get_kongwang(minggong_ganzhi)
+    minggong_nayin = NAYIN_MAP.get((minggong_stem, minggong_branch), '')
+    minggong_deities = deities_calc.calculate_day_deities(minggong_stem, minggong_branch, bazi_pillars)
+    
+    # 10. 计算胎元详细信息
+    taiyuan_stem = taiyuan_ganzhi[0]
+    taiyuan_branch = taiyuan_ganzhi[1]
+    
+    taiyuan_main_star = bazi_calc.get_main_star(day_stem, taiyuan_stem, 'month')
+    taiyuan_hidden_stems = HIDDEN_STEMS.get(taiyuan_branch, [])
+    taiyuan_star_fortune = star_fortune_calc.get_stem_fortune(day_stem, taiyuan_branch)
+    taiyuan_self_sitting = star_fortune_calc.get_stem_fortune(taiyuan_stem, taiyuan_branch)
+    taiyuan_kongwang = star_fortune_calc.get_kongwang(taiyuan_ganzhi)
+    taiyuan_nayin = NAYIN_MAP.get((taiyuan_stem, taiyuan_branch), '')
+    taiyuan_deities = deities_calc.calculate_day_deities(taiyuan_stem, taiyuan_branch, bazi_pillars)
+    
+    # 11. 格式化四柱数据
+    details = bazi_data.get('details', {})
+    formatted_pillars = {}
+    for pillar_type in ['year', 'month', 'day', 'hour']:
+        pillar_data = details.get(pillar_type, {})
+        pillar_info = bazi_pillars.get(pillar_type, {})
+        formatted_pillars[pillar_type] = {
+            "stem": {"char": pillar_info.get('stem', '')},
+            "branch": {"char": pillar_info.get('branch', '')},
+            "main_star": pillar_data.get('main_star', ''),
+            "hidden_stems": pillar_data.get('hidden_stems', []),
+            "star_fortune": pillar_data.get('star_fortune', ''),
+            "self_sitting": pillar_data.get('self_sitting', ''),
+            "kongwang": pillar_data.get('kongwang', ''),
+            "nayin": pillar_data.get('nayin', ''),
+            "deities": sort_shensha(pillar_data.get('deities', []))
+        }
+    
+    # 12. 处理大运流年流月数据（从编排层获取）
+    from server.services.bazi_display_service import (
+        BaziDisplayService,
+        _determine_current_dayun_by_jiaoyun,
+        _calculate_default_liunian
+    )
+    
+    details_for_fortune = detail_data.get('details', {}) if detail_data else {}
+    qiyun_info = details_for_fortune.get('qiyun', {})
+    jiaoyun_info = details_for_fortune.get('jiaoyun', {})
+    dayun_info = details_for_fortune.get('dayun', {})
+    
+    # 如果 dayun_sequence 为空，从 details 中获取
+    if not dayun_sequence:
+        dayun_sequence = details_for_fortune.get('dayun_sequence', [])
+    
+    # 确定当前大运
+    birth_year = int(solar_date.split('-')[0])
+    current_dayun = None
+    
+    if jiaoyun_info:
+        current_dayun = _determine_current_dayun_by_jiaoyun(
+            current_time, dayun_sequence, jiaoyun_info, birth_year
+        )
+    
+    if current_dayun is None:
+        current_year = current_time.year
+        current_age = current_year - birth_year + 1
+        
+        for dayun in dayun_sequence:
+            age_range = dayun.get('age_range', {})
+            if age_range:
+                age_start = age_range.get('start', 0)
+                age_end = age_range.get('end', 0)
+                if age_start <= current_age <= age_end:
+                    current_dayun = dayun
+                    break
+    
+    # 格式化大运列表
+    formatted_dayun_list = []
+    for dayun in dayun_sequence:
+        formatted = BaziDisplayService._format_dayun_item(dayun)
+        if current_dayun and dayun.get('step') == current_dayun.get('step'):
+            formatted['is_current'] = True
+        formatted_dayun_list.append(formatted)
+    
+    # 处理流年数据
+    current_year = current_time.year
+    
+    if current_dayun and not current_dayun.get('is_xiaoyun', False):
+        liunian_sequence = current_dayun.get('liunian_sequence', liunian_sequence)
+    elif not liunian_sequence:
+        liunian_sequence = details_for_fortune.get('liunian_sequence', [])
+    
+    current_liunian = None
+    for liunian in liunian_sequence:
+        if liunian.get('year') == current_year:
+            current_liunian = liunian
+            break
+    
+    if current_liunian is None:
+        current_liunian = _calculate_default_liunian(current_year, birth_year, day_stem)
+    
+    formatted_liunian_list = []
+    for liunian in liunian_sequence:
+        formatted = BaziDisplayService._format_liunian_item(liunian)
+        if liunian.get('year') == current_year:
+            formatted['is_current'] = True
+        formatted_liunian_list.append(formatted)
+    
+    # 处理流月数据
+    target_year_for_liuyue = target_year or (current_liunian.get('year') if current_liunian else current_year)
+    
+    target_liunian = None
+    for liunian in liunian_sequence:
+        if liunian.get('year') == target_year_for_liuyue:
+            target_liunian = liunian
+            break
+    
+    if target_liunian:
+        liuyue_sequence = target_liunian.get('liuyue_sequence', liuyue_sequence)
+    elif not liuyue_sequence:
+        liuyue_sequence = details_for_fortune.get('liuyue_sequence', [])
+    
+    current_month = current_time.month
+    current_liuyue = None
+    for liuyue in liuyue_sequence:
+        if liuyue.get('month') == current_month:
+            current_liuyue = liuyue
+            break
+    
+    formatted_liuyue_list = []
+    for liuyue in liuyue_sequence:
+        formatted = BaziDisplayService._format_liuyue_item(liuyue)
+        if current_liuyue and liuyue.get('month') == current_liuyue.get('month'):
+            formatted['is_current'] = True
+        formatted_liuyue_list.append(formatted)
+    
+    # 组装大运流年流月数据
+    dayun_data = {
+        "current": BaziDisplayService._format_dayun_item(current_dayun or dayun_info),
+        "list": formatted_dayun_list,
+        "qiyun": qiyun_info,
+        "jiaoyun": jiaoyun_info
+    }
+    
+    liunian_data = {
+        "current": BaziDisplayService._format_liunian_item(current_liunian) if current_liunian else None,
+        "list": formatted_liunian_list
+    }
+    
+    liuyue_data = {
+        "current": BaziDisplayService._format_liuyue_item(current_liuyue or (liuyue_sequence[0] if liuyue_sequence else {})),
+        "list": formatted_liuyue_list,
+        "target_year": target_year_for_liuyue
+    }
+    
+    # 13. 获取司令字段
+    commander = ''
+    other_info = ensure_dict(interface_data.get('other_info', {}), default={})
+    if isinstance(other_info, dict):
+        commander_element = other_info.get('commander_element', '')
+        if commander_element:
+            commander = commander_element[0] if len(commander_element) > 0 else ''
+    
+    # 14. 格式化返回数据
+    return {
+        "commander": commander,
+        "shengong": {
+            "stem": {"char": shengong_stem},
+            "branch": {"char": shengong_branch},
+            "main_star": shengong_main_star,
+            "hidden_stems": shengong_hidden_stems,
+            "star_fortune": shengong_star_fortune,
+            "self_sitting": shengong_self_sitting,
+            "kongwang": shengong_kongwang,
+            "nayin": shengong_nayin,
+            "deities": sort_shensha(shengong_deities)
+        },
+        "minggong": {
+            "stem": {"char": minggong_stem},
+            "branch": {"char": minggong_branch},
+            "main_star": minggong_main_star,
+            "hidden_stems": minggong_hidden_stems,
+            "star_fortune": minggong_star_fortune,
+            "self_sitting": minggong_self_sitting,
+            "kongwang": minggong_kongwang,
+            "nayin": minggong_nayin,
+            "deities": sort_shensha(minggong_deities)
+        },
+        "taiyuan": {
+            "stem": {"char": taiyuan_stem},
+            "branch": {"char": taiyuan_branch},
+            "main_star": taiyuan_main_star,
+            "hidden_stems": taiyuan_hidden_stems,
+            "star_fortune": taiyuan_star_fortune,
+            "self_sitting": taiyuan_self_sitting,
+            "kongwang": taiyuan_kongwang,
+            "nayin": taiyuan_nayin,
+            "deities": sort_shensha(taiyuan_deities)
+        },
+        "pillars": formatted_pillars,
+        "dayun": dayun_data,
+        "liunian": liunian_data,
+        "liuyue": liuyue_data
+    }
 
 
 def _calculate_shengong_minggong_details(
@@ -583,10 +1003,7 @@ def _calculate_shengong_minggong_details(
     
     logger = logging.getLogger(__name__)
     
-    # ✅ 优化：并行获取身宫命宫和八字基础信息（无依赖关系）
-    import concurrent.futures
-    import threading
-    
+    # ✅ 优化：并行获取身宫命宫和八字基础信息（无依赖关系，使用统一线程池）
     def get_interface_data():
         """获取身宫和命宫的干支"""
         try:
@@ -613,16 +1030,15 @@ def _calculate_shengong_minggong_details(
             logger.error(f"计算八字基础信息失败: {str(e)}", exc_info=True)
             raise ValueError(f"无法计算八字基础信息: {str(e)}")
     
-    # 并行执行（使用线程池）
+    # 并行执行（使用统一线程池）
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            interface_future = executor.submit(get_interface_data)
-            bazi_future = executor.submit(get_bazi_data)
-            
-            # 等待两个任务完成
-            interface_data = interface_future.result()
-            bazi_data, bazi_pillars, day_stem = bazi_future.result()
-            
+        loop = asyncio.get_event_loop()
+        executor = get_executor()
+        interface_data, bazi_result = await asyncio.gather(
+            loop.run_in_executor(executor, get_interface_data),
+            loop.run_in_executor(executor, get_bazi_data),
+        )
+        bazi_data, bazi_pillars, day_stem = bazi_result
             logger.info("✅ 并行获取身宫命宫和八字基础信息完成")
     except Exception as e:
         logger.error(f"并行执行失败: {str(e)}", exc_info=True)

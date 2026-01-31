@@ -85,8 +85,7 @@ try:
     env_path = os.path.join(project_root, '.env')
     if os.path.exists(env_path):
         load_dotenv(env_path, override=True)  # override=True 确保覆盖已存在的环境变量
-        # 使用print保留启动信息输出（不依赖日志配置）
-        print(f"✓ 已加载环境变量文件: {env_path}")
+        logger.info(f"✓ 已加载环境变量文件: {env_path}")
         # 验证关键配置（从数据库读取）
         try:
             from server.config.config_loader import get_config_from_db_only
@@ -384,8 +383,6 @@ except ImportError as e:
     model_tuning_router = None
     MODEL_TUNING_ROUTER_AVAILABLE = False
 
-# 推送服务和数据分析路由已废弃，已删除
-
 # 尝试导入限流中间件（可选，如果安装失败也不影响主流程）
 try:
     from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -490,7 +487,17 @@ async def lifespan(app: FastAPI):
         logger.info(f"✓ 节气表缓存预热完成（{len(warmup_years)}年: {warmup_years[0]}-{warmup_years[-1]}）")
     except Exception as e:
         logger.warning(f"⚠ 节气表缓存预热失败（不影响正常使用）: {e}")
-    
+
+    # 启动时预热 API 缓存（每日运势 + 热门八字组合，后台执行不阻塞）
+    try:
+        import asyncio
+        from server.utils.cache_warmer import warmup_on_startup
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(None, warmup_on_startup)
+        logger.info("✓ 缓存预热任务已提交（后台执行）")
+    except Exception as e:
+        logger.warning(f"⚠ 缓存预热任务提交失败（不影响正常使用）: {e}")
+
     # 启动MySQL连接清理任务（定期清理空闲连接）
     try:
         import asyncio

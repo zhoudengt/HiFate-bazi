@@ -2065,5 +2065,5 @@ if __name__ == "__main__":
     bazi_info = {'xishen': '水', 'jishen': '火'}
     
     result = engine.match_rules(items, bazi_info)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    logger.info(json.dumps(result, ensure_ascii=False, indent=2))
 

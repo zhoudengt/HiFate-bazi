@@ -6,6 +6,9 @@
 """
 
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 import sys
 from typing import Dict, Any, Optional, Callable, AsyncGenerator
 import json
@@ -90,7 +93,7 @@ class FortuneAnalyzerStream:
                     }
                     return
             except Exception as e:
-                print(f"⚠️  图像验证失败: {e}，继续分析")
+                logger.info(f"⚠️  图像验证失败: {e}，继续分析")
             
             # 步骤1: 提取手部特征
             yield {
@@ -196,7 +199,7 @@ class FortuneAnalyzerStream:
                         )
                         return ai_result.get("enhanced_insights", []) if ai_result else []
                     except Exception as e:
-                        print(f"⚠️  Coze API 调用失败: {e}")
+                        logger.info(f"⚠️  Coze API 调用失败: {e}")
                         return []
                 
                 # 创建后台任务，但不等待
@@ -204,7 +207,7 @@ class FortuneAnalyzerStream:
                 # 继续执行，不等待 AI 结果（AI 增强在后台执行）
                 ai_enhanced_insights = []
             except Exception as e:
-                print(f"⚠️  AI 增强任务创建失败: {e}")
+                logger.info(f"⚠️  AI 增强任务创建失败: {e}")
             
             # 步骤6: 合并所有洞察
             yield {
@@ -225,14 +228,14 @@ class FortuneAnalyzerStream:
                     rule_engine = FortuneRuleEngine()
                     all_insights = rule_engine._merge_and_refine_insights(all_insights)
                 except Exception as merge_error:
-                    print(f"⚠️  合并insights失败: {merge_error}，使用原始insights")
+                    logger.info(f"⚠️  合并insights失败: {merge_error}，使用原始insights")
                     # 合并失败时使用原始insights，不中断流程
                 
                 # 计算置信度
                 try:
                     confidence = self.analyzer._calculate_confidence(hand_features, len(all_insights))
                 except Exception as conf_error:
-                    print(f"⚠️  计算置信度失败: {conf_error}，使用默认值")
+                    logger.info(f"⚠️  计算置信度失败: {conf_error}，使用默认值")
                     confidence = 0.7  # 默认置信度
                 
                 # 构建完整报告
@@ -247,18 +250,18 @@ class FortuneAnalyzerStream:
                 }
                 
                 # 确保发送complete消息
-                print(f"✅ 手相分析完成，准备发送complete消息，insights数量: {len(all_insights)}")
+                logger.info(f"✅ 手相分析完成，准备发送complete消息，insights数量: {len(all_insights)}")
                 yield {
                     "type": "complete",
                     "data": report,
                     "statusText": "分析完成"
                 }
-                print(f"✅ complete消息已发送")
+                logger.info(f"✅ complete消息已发送")
                 
             except Exception as final_error:
                 import traceback
                 error_msg = f"生成最终报告失败: {str(final_error)}"
-                print(f"❌ {error_msg}\n{traceback.format_exc()}")
+                logger.info(f"❌ {error_msg}\n{traceback.format_exc()}")
                 # 即使生成报告失败，也要发送一个包含部分数据的complete消息
                 try:
                     fallback_report = {
@@ -287,7 +290,7 @@ class FortuneAnalyzerStream:
         except Exception as e:
             import traceback
             error_msg = f"手相分析失败: {str(e)}"
-            print(f"❌ {error_msg}\n{traceback.format_exc()}")
+            logger.info(f"❌ {error_msg}\n{traceback.format_exc()}")
             yield {
                 "type": "error",
                 "error": error_msg,
@@ -349,7 +352,7 @@ class FortuneAnalyzerStream:
                     }
                     return
             except Exception as e:
-                print(f"⚠️  图像验证失败: {e}，继续分析")
+                logger.info(f"⚠️  图像验证失败: {e}，继续分析")
             
             # 步骤1: 提取面部特征
             yield {
@@ -457,7 +460,7 @@ class FortuneAnalyzerStream:
                     if ai_result:
                         ai_enhanced_insights = ai_result.get("enhanced_insights", [])
                 except Exception as e:
-                    print(f"⚠️  Coze API 调用失败: {e}")
+                    logger.info(f"⚠️  Coze API 调用失败: {e}")
             
             # 步骤6: 合并所有洞察（去重）
             yield {
@@ -478,14 +481,14 @@ class FortuneAnalyzerStream:
                     rule_engine = FortuneRuleEngine()
                     all_insights = rule_engine._merge_and_refine_insights(all_insights)
                 except Exception as merge_error:
-                    print(f"⚠️  合并insights失败: {merge_error}，使用原始insights")
+                    logger.info(f"⚠️  合并insights失败: {merge_error}，使用原始insights")
                     # 合并失败时使用原始insights，不中断流程
                 
                 # 计算置信度
                 try:
                     confidence = self.analyzer._calculate_confidence(face_features, len(all_insights))
                 except Exception as conf_error:
-                    print(f"⚠️  计算置信度失败: {conf_error}，使用默认值")
+                    logger.info(f"⚠️  计算置信度失败: {conf_error}，使用默认值")
                     confidence = 0.7  # 默认置信度
                 
                 # 构建完整报告
@@ -500,18 +503,18 @@ class FortuneAnalyzerStream:
                 }
                 
                 # 确保发送complete消息
-                print(f"✅ 面相分析完成，准备发送complete消息，insights数量: {len(all_insights)}")
+                logger.info(f"✅ 面相分析完成，准备发送complete消息，insights数量: {len(all_insights)}")
                 yield {
                     "type": "complete",
                     "data": report,
                     "statusText": "分析完成"
                 }
-                print(f"✅ complete消息已发送")
+                logger.info(f"✅ complete消息已发送")
                 
             except Exception as final_error:
                 import traceback
                 error_msg = f"生成最终报告失败: {str(final_error)}"
-                print(f"❌ {error_msg}\n{traceback.format_exc()}")
+                logger.info(f"❌ {error_msg}\n{traceback.format_exc()}")
                 # 即使生成报告失败，也要发送一个包含部分数据的complete消息
                 try:
                     fallback_report = {
@@ -540,7 +543,7 @@ class FortuneAnalyzerStream:
         except Exception as e:
             import traceback
             error_msg = f"面相分析失败: {str(e)}"
-            print(f"❌ {error_msg}\n{traceback.format_exc()}")
+            logger.info(f"❌ {error_msg}\n{traceback.format_exc()}")
             yield {
                 "type": "error",
                 "error": error_msg,

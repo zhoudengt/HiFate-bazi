@@ -869,12 +869,13 @@ async def smart_analyze_stream(request: Request):
     )
 
 
-def _calculate_bazi_data(
+async def _fetch_bazi_data_via_orchestrator(
     year: int, month: int, day: int, hour: int, gender: str, user_id: str,
     save_to_cache: bool = True
 ) -> Dict[str, Any]:
     """
-    计算完整八字数据（供场景1和场景2共用）
+    通过 BaziDataOrchestrator 统一获取八字数据（供场景1和场景2共用）
+    符合 08_数据编排架构规范
     
     Args:
         year: 年
@@ -883,49 +884,53 @@ def _calculate_bazi_data(
         hour: 时
         gender: 性别
         user_id: 用户ID
-        save_to_cache: 是否保存到缓存（默认True）
+        save_to_cache: 是否保存到会话缓存（默认True）
         
     Returns:
-        完整八字数据字典
+        完整八字数据字典（与 _calculate_bazi_data 返回结构兼容）
     """
     from server.services.bazi_session_service import BaziSessionService
-    from server.services.bazi_service import BaziService
-    from server.services.bazi_detail_service import BaziDetailService
-    from server.services.wangshuai_service import WangShuaiService
-    from server.orchestrators.fortune_context_service import FortuneContextService
-    from datetime import datetime
+    from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
     
     solar_date = f"{year:04d}-{month:02d}-{day:02d}"
     solar_time = f"{hour:02d}:00"
     
-    # 计算基础八字
-    bazi_result = BaziService.calculate_bazi_full(solar_date, solar_time, gender)
+    # 通过 BaziDataOrchestrator 统一获取数据（含 fortune_context 编排层接入）
+    from datetime import datetime
+    current_year = datetime.now().year
+    target_years = list(range(current_year, current_year + 6))
     
-    # 计算详细八字（包含大运流年）
-    detail_result = BaziDetailService.calculate_detail_full(solar_date, solar_time, gender)
+    modules = {
+        'bazi': True,
+        'wangshuai': True,
+        'detail': True,
+        'rules': {'types': ['ALL']},
+        'fortune_context': {'intent_types': ['ALL'], 'target_years': target_years}
+    }
     
-    # 匹配所有规则（所有类型）
-    matched_rules = BaziService._match_rules(bazi_result)
+    unified_data = await BaziDataOrchestrator.fetch_data(
+        solar_date=solar_date,
+        solar_time=solar_time,
+        gender=gender,
+        modules=modules,
+        use_cache=True,
+        parallel=True,
+        preprocessed=True
+    )
     
-    # 计算旺衰数据
-    wangshuai_result = WangShuaiService.calculate_wangshuai(solar_date, solar_time, gender)
+    # 映射到 complete_bazi_data 结构（与原有 _calculate_bazi_data 兼容）
+    bazi_result = unified_data.get('bazi', {})
+    if isinstance(bazi_result, dict) and 'bazi' not in bazi_result:
+        bazi_result = {'bazi': bazi_result, 'rizhu': {}, 'matched_rules': []}
     
-    # 计算流年大运分析
-    fortune_context = None
-    try:
-        current_year = datetime.now().year
-        target_years = list(range(current_year, current_year + 6))
-        fortune_context = FortuneContextService.get_fortune_context(
-            solar_date=solar_date,
-            solar_time=solar_time,
-            gender=gender,
-            intent_types=["ALL"],
-            target_years=target_years
-        )
-    except Exception as e:
-        logger.warning(f"流年大运分析失败（不影响主流程）: {e}")
+    # BaziService.calculate_bazi_full 返回的 matched_rules 可能为空，优先使用编排层 rules 模块
+    matched_rules = bazi_result.get('matched_rules') or unified_data.get('rules', [])
+    detail_result = unified_data.get('detail', {})
+    wangshuai_result = unified_data.get('wangshuai', {})
     
-    # 构建完整八字数据
+    # 流年大运分析（由编排层 fortune_context 模块返回，复用 detail/wangshuai 避免重复计算）
+    fortune_context = unified_data.get('fortune_context')
+    
     complete_bazi_data = {
         "bazi_result": bazi_result,
         "detail_result": detail_result,
@@ -937,7 +942,6 @@ def _calculate_bazi_data(
         "gender": gender
     }
     
-    # 保存到会话缓存
     if save_to_cache and user_id:
         BaziSessionService.save_bazi_session(user_id, complete_bazi_data)
         logger.info(f"✅ 八字数据已保存到会话缓存: user_id={user_id}")
@@ -962,8 +966,8 @@ async def _scenario_1_generator(
         yield _sse_message("status", {"stage": "bazi", "message": "正在计算八字..."})
         
         with monitor.stage("bazi_calculation", "八字计算", solar_date=f"{year:04d}-{month:02d}-{day:02d}", solar_time=f"{hour:02d}:00", gender=gender):
-            # 使用公共函数计算八字数据
-            complete_bazi_data = _calculate_bazi_data(year, month, day, hour, gender, user_id, save_to_cache=True)
+            # 通过 BaziDataOrchestrator 统一获取八字数据
+            complete_bazi_data = await _fetch_bazi_data_via_orchestrator(year, month, day, hour, gender, user_id, save_to_cache=True)
             logger.info(f"✅ 场景1：完整八字数据已保存到会话缓存（包含所有信息）: user_id={user_id}")
         
         # ==================== 生成简短答复（100字内，流式）====================
@@ -1139,7 +1143,7 @@ async def _scenario_2_generator(
                 logger.info(f"⚠️ 场景2：缓存不存在，使用生辰信息重新计算八字数据: user_id={user_id}")
                 yield _sse_message("status", {"stage": "bazi", "message": "正在计算八字数据..."})
                 try:
-                    complete_bazi_data = _calculate_bazi_data(
+                    complete_bazi_data = await _fetch_bazi_data_via_orchestrator(
                         year=year, month=month, day=day, hour=hour,
                         gender=gender, user_id=user_id, save_to_cache=True
                     )

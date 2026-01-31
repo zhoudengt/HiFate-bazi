@@ -45,6 +45,15 @@ from server.services.mingge_extractor import extract_mingge_names_from_rules
 # 配置日志
 logger = logging.getLogger(__name__)
 
+# 编排层并行度控制：最多 8 个并行任务，避免瞬时压垮下游
+_ORCHESTRATOR_SEMAPHORE = asyncio.Semaphore(8)
+
+
+async def _fetch_with_semaphore(coro):
+    """在信号量限制下执行单个异步任务"""
+    async with _ORCHESTRATOR_SEMAPHORE:
+        return await coro
+
 
 class BaziDataOrchestrator:
     """八字数据编排服务 - 统一管理所有数据模块的获取逻辑"""
@@ -201,7 +210,12 @@ class BaziDataOrchestrator:
         executor = None
         
         # 1. 基础模块（必需，并行获取）
-        if modules.get('bazi') or modules.get('wangshuai') or modules.get('xishen_jishen') or modules.get('wuxing'):
+        # ✅ 优化：bazi/wangshuai 与 xishen_jishen 分离，仅请求 wuxing_proportion 时不启动喜神忌神任务
+        need_bazi = (modules.get('bazi') or modules.get('wangshuai') or
+                    modules.get('wuxing_proportion') or modules.get('wuxing'))
+        need_xishen_jishen = modules.get('xishen_jishen')
+
+        if need_bazi:
             bazi_task = loop.run_in_executor(
                 executor, BaziService.calculate_bazi_full,
                 final_solar_date, final_solar_time, gender
@@ -210,6 +224,12 @@ class BaziDataOrchestrator:
                 executor, WangShuaiService.calculate_wangshuai,
                 final_solar_date, final_solar_time, gender
             )
+            tasks.extend([
+                ('bazi', bazi_task),
+                ('wangshuai', wangshuai_task)
+            ])
+
+        if need_xishen_jishen:
             # ✅ 修复：get_xishen_jishen 是异步函数，返回 XishenJishenResponse (Pydantic模型)
             # 需要转换为字典，但这里先获取响应对象，在结果处理时转换
             # ✅ 扩展：支持7个标准参数
@@ -222,18 +242,14 @@ class BaziDataOrchestrator:
                 latitude=latitude,
                 longitude=longitude
             ))
-            tasks.extend([
-                ('bazi', bazi_task),
-                ('wangshuai', wangshuai_task),
-                ('xishen_jishen', xishen_jishen_task)
-            ])
+            tasks.append(('xishen_jishen', xishen_jishen_task))
         
         # 2. 大运流年模块（需要基础八字数据）
         # ✅ 修复：支持 special_liunians（新命名）和 special_liunian（旧命名）
         # ✅ 修复：支持直接启用 detail 模块
         need_detail = (modules.get('detail') or modules.get('dayun') or modules.get('liunian') or modules.get('liuyue') or 
                        modules.get('special_liunian') or modules.get('special_liunians') or 
-                       modules.get('fortune_display'))
+                       modules.get('fortune_display') or modules.get('fortune_context'))
         logger.info(f"[DEBUG] 检查是否需要 detail_task: need_detail={need_detail}, special_liunians={modules.get('special_liunians')}")
         if need_detail:
             detail_task = loop.run_in_executor(
@@ -256,7 +272,9 @@ class BaziDataOrchestrator:
         
         # personality 和 rizhu 需要在获取八字数据后才能执行，所以不在并行任务中
         
-        if modules.get('wuxing_proportion'):
+        # 五行占比：当已请求 bazi 或 wangshuai 时，不再单独起 wuxing_proportion 任务，
+        # 后续用 bazi + wangshuai 组装（_assemble_wuxing_proportion_from_data），避免重复计算、提升首包速度
+        if modules.get('wuxing_proportion') and not (modules.get('bazi') or modules.get('wangshuai')):
             wuxing_proportion_task = loop.run_in_executor(
                 executor, WuxingProportionService.calculate_proportion,
                 final_solar_date, final_solar_time, gender
@@ -312,10 +330,11 @@ class BaziDataOrchestrator:
             )
             tasks.append(('bazi_ai', ai_task))
         
-        # 执行并行任务
+        # 执行并行任务（受信号量限制，最多 8 个同时执行）
         logger.info(f"[DEBUG] 执行并行任务: parallel={parallel}, tasks数量={len(tasks)}, task_names={[name for name, _ in tasks]}")
         if parallel and tasks:
-            task_results = await asyncio.gather(*[task for _, task in tasks], return_exceptions=True)
+            wrapped = [_fetch_with_semaphore(task) for _, task in tasks]
+            task_results = await asyncio.gather(*wrapped, return_exceptions=True)
             logger.info(f"[DEBUG] 并行任务完成，结果数量={len(task_results)}")
             
             # 处理任务结果
@@ -517,7 +536,7 @@ class BaziDataOrchestrator:
                 
                 # ✅ 获取特殊流年（确保每个大运都完整获取，不去重）
                 # ✅ 架构规范：传入已计算的 liunian_sequence，避免 SpecialLiunianService 重复计算
-                # 详见：docs/standards/08_数据编排架构规范.md
+                # 详见：standards/08_数据编排架构规范.md
                 logger.info(f"[DEBUG] 调用get_special_liunians_batch: target_dayuns长度={len(target_dayuns)}, 大运步数={[d.get('step') for d in target_dayuns]}, special_count={special_count}, liunian_sequence长度={len(liunian_sequence)}")
                 special_liunians = await SpecialLiunianService.get_special_liunians_batch(
                     final_solar_date, final_solar_time, gender,
@@ -630,6 +649,32 @@ class BaziDataOrchestrator:
         # 处理分析模块
         if modules.get('health'):
             result['health'] = task_data.get('health')
+        
+        # 处理 fortune_context 模块（流年大运上下文，依赖 detail + wangshuai）
+        if modules.get('fortune_context') and detail_data:
+            try:
+                from server.orchestrators.fortune_context_service import FortuneContextService
+                fc_config = modules['fortune_context'] if isinstance(modules.get('fortune_context'), dict) else {}
+                intent_types = fc_config.get('intent_types', ['ALL'])
+                target_years = fc_config.get('target_years')
+                if target_years is None:
+                    current_year = datetime.now().year
+                    target_years = list(range(current_year, current_year + 6))
+                fortune_ctx = FortuneContextService.get_fortune_context(
+                    solar_date=final_solar_date,
+                    solar_time=final_solar_time,
+                    gender=gender,
+                    intent_types=intent_types,
+                    target_years=target_years,
+                    detail_result=detail_data,
+                    wangshuai_result=wangshuai_data or task_data.get('wangshuai')
+                )
+                result['fortune_context'] = fortune_ctx
+                if fortune_ctx:
+                    logger.info("[BaziDataOrchestrator] ✅ fortune_context 已组装（复用 detail/wangshuai）")
+            except Exception as e:
+                logger.warning(f"[BaziDataOrchestrator] fortune_context 组装失败: {e}")
+                result['fortune_context'] = None
         
         if modules.get('personality') and bazi_data:
             # RizhuGenderAnalyzer 需要先创建实例

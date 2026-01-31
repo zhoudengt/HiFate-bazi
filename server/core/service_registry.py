@@ -131,7 +131,7 @@ class ServiceRegistry:
         # 发现服务
         service = registry.discover("bazi-core")
         if service:
-            print(f"Service address: {service.address}")
+            logger.info(f"Service address: {service.address}")
         
         # 获取服务地址
         address = registry.get_service_address("bazi-core")

@@ -1,17 +1,15 @@
-# 📋 HiFate-bazi 开发标准
+# 📋 HiFate-bazi 开发标准（规范文档统一入口）
 
 ## 概述
 
-本目录包含 HiFate-bazi 项目的开发标准和规范文档，旨在：
+本目录为项目**规范文档统一入口**，包含架构规范、命名规范、运维规范等。
 
-- 📁 **统一目录结构** - 让代码位置可预测
-- 📝 **规范命名约定** - 提高代码可读性
-- 🚀 **加速开发流程** - 使用模板和生成器
-- 🧪 **保证代码质量** - 完善测试规范
+- 📁 **架构与编码** - 目录结构、命名、测试、检查清单、服务治理
+- 📋 **运维与流程** - 热更新、gRPC、规则开发、部署、安全、LLM 开发
 
 ---
 
-## 文档列表
+## 一、架构与编码规范（01-07）
 
 | 文档 | 说明 | 适用人员 |
 |------|------|----------|
@@ -20,77 +18,51 @@
 | [03_开发者手册.md](03_开发者手册.md) | 快速开始指南 | 新人必读 |
 | [04_测试规范.md](04_测试规范.md) | 测试编写规范 | 所有开发者 |
 | [05_功能开发检查清单.md](05_功能开发检查清单.md) | 开发检查清单 | 所有开发者 |
+| [06_服务治理规范.md](06_服务治理规范.md) | 服务注册、熔断、限流 | 所有开发者 |
+| [07_可观测性规范.md](07_可观测性规范.md) | 日志、监控、追踪 | 所有开发者 |
 
 ---
 
-## 代码模板
+## 二、运维与流程规范
+
+| 文档 | 说明 | 对应 .cursorrules 章节 |
+|------|------|----------------------|
+| [08_数据编排架构规范.md](08_数据编排架构规范.md) | 🔴 数据编排架构（最高优先级） | 数据编排架构原则 |
+| [hot-reload.md](hot-reload.md) | 热更新详细规范 | 热更新强制规范 |
+| [grpc-protocol.md](grpc-protocol.md) | gRPC 协议与序列化 | gRPC 交互规范 |
+| [rule-development.md](rule-development.md) | 规则开发详细规范 | 规则开发规范 |
+| [deployment.md](deployment.md) | 部署（增量部署、灰度发布） | 部署规范 |
+| [security.md](security.md) | 安全规范 | 安全规范 |
+| [testing.md](testing.md) | 测试开发详细规范 | 测试规范 |
+| [llm-development.md](llm-development.md) | 大模型开发流程 | LLM 规范 |
+| [performance-monitoring.md](performance-monitoring.md) | 性能监控 | 性能监控 |
+| [database-connection.md](database-connection.md) | 数据库连接规范 | - |
+| [incremental-sync-no-lock.md](incremental-sync-no-lock.md) | 增量同步无锁方案 | - |
+
+---
+
+## 三、变更记录
+
+| 日期 | 变更 |
+|------|------|
+| 2026-01-31 | 文档精简：删除 docs/、knowledge_base、checklists、需求等；规范统一入口为 standards/；详见 `01_目录结构标准.md` 迁移记录 |
+
+---
+
+## 四、代码模板
 
 `templates/` 目录包含标准代码模板：
 
-| 模板 | 说明 | 使用方式 |
-|------|------|----------|
-| `api_template.py` | API 路由模板 | 复制并修改 |
-| `service_template.py` | 服务类模板 | 复制并修改 |
-| `test_template.py` | 测试类模板 | 复制并修改 |
+| 模板 | 说明 |
+|------|------|
+| `api_template.py` | API 路由模板 |
+| `service_template.py` | 服务类模板 |
 
 ---
 
-## 快速开始
+## 五、使用说明
 
-### 1. 使用代码生成器（推荐）
+1. **开发时**：参考 `.cursorrules` 获取核心规范和快速参考
+2. **深入学习**：查看本目录下的详细规范文档
+3. **规范更新**：先更新本目录文档，再同步 `.cursorrules` 中的核心要点
 
-```bash
-# 生成完整功能（API + Service + Test）
-python scripts/generate.py all --name=feature_name --desc="功能描述"
-
-# 示例
-python scripts/generate.py all --name=calendar --desc="万年历查询"
-```
-
-### 2. 手动创建
-
-1. 复制 `templates/` 中的模板文件
-2. 重命名并修改占位符
-3. 在 `grpc_gateway.py` 注册 gRPC 端点
-4. 在 `main.py` 注册路由
-5. 编写测试
-
----
-
-## 开发流程
-
-```
-需求确认 → 创建代码 → 编写测试 → 代码审查 → 合并发布
-    │           │           │           │
-    ↓           ↓           ↓           ↓
-  需求文档   代码生成器   pytest     检查清单
-```
-
----
-
-## 检查清单（简化版）
-
-每个功能开发完成前，确认：
-
-```
-□ API 文件已创建 (server/api/v1/)
-□ Service 文件已创建 (server/services/)
-□ gRPC 端点已注册 (grpc_gateway.py)
-□ 路由已注册 (main.py)
-□ 单元测试已编写 (tests/unit/)
-□ 测试全部通过
-```
-
----
-
-## 版本历史
-
-| 版本 | 日期 | 说明 |
-|------|------|------|
-| 1.0.0 | 2025-12-11 | 初始版本，完成阶段一优化 |
-
----
-
-## 联系方式
-
-如有问题，请联系项目负责人。

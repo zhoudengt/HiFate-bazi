@@ -207,8 +207,9 @@ def _reload_endpoints():
                     import asyncio
                     request_model = BaziInterfaceRequest(**payload)
                     loop = asyncio.get_event_loop()
+                    from server.utils.async_executor import get_executor
                     result = await loop.run_in_executor(
-                        None,
+                        get_executor(),
                         BaziInterfaceService.generate_interface_full,
                         request_model.solar_date,
                         request_model.solar_time,
@@ -330,13 +331,12 @@ async def _handle_fortune(payload: Dict[str, Any]):
             except ValueError:
                 raise ValueError(f"current_time 参数格式错误: {request_model.current_time}")
     
-    # 调用服务层
+    # 调用服务层（使用统一线程池）
     import asyncio
-    from concurrent.futures import ThreadPoolExecutor
-    executor = ThreadPoolExecutor(max_workers=100)
+    from server.utils.async_executor import get_executor
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
-        executor,
+        get_executor(),
         BaziDisplayService.get_fortune_display,
         final_solar_date,
         final_solar_time,
@@ -424,10 +424,11 @@ async def _handle_bazi_interface(payload: Dict[str, Any]):
         request_model.longitude
     )
     
-    # 在线程池中执行CPU密集型计算
+    # 在线程池中执行CPU密集型计算（使用统一线程池）
+    from server.utils.async_executor import get_executor
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
-        None,  # 使用默认线程池
+        get_executor(),
         BaziInterfaceService.generate_interface_full,
         final_solar_date,
         final_solar_time,
@@ -1370,8 +1371,6 @@ async def grpc_web_gateway(request: Request):
     
     # ⭐ 关键修复：如果端点列表为空，说明热更新后装饰器未执行，立即恢复所有端点
     if len(SUPPORTED_ENDPOINTS) == 0:
-        # 使用 print 强制输出（不依赖日志配置）- 保留用于紧急情况
-        print(f"🚨🚨 端点列表为空！端点: {endpoint}, 立即恢复所有端点...", flush=True)
         logger.critical(f"🚨🚨 端点列表为空！端点: {endpoint}, 立即恢复所有端点...")
         try:
             # 调用 _ensure_endpoints_registered 恢复关键端点
@@ -1379,15 +1378,10 @@ async def grpc_web_gateway(request: Request):
             # 重新获取 handler
             handler = SUPPORTED_ENDPOINTS.get(endpoint)
             endpoint_count = len(SUPPORTED_ENDPOINTS)
-            print(f"🚨 端点恢复完成，当前端点数量: {endpoint_count}, 目标端点: {endpoint}, 是否存在: {handler is not None}", flush=True)
-            logger.error(f"🚨 端点恢复完成，当前端点数量: {endpoint_count}, 目标端点: {endpoint}, 是否存在: {handler is not None}, 已注册端点: {list(SUPPORTED_ENDPOINTS.keys())[:10]}")
+            logger.critical(f"🚨 端点恢复完成，当前端点数量: {endpoint_count}, 目标端点: {endpoint}, 是否存在: {handler is not None}")
             if not handler:
-                print(f"🚨 端点恢复后仍然未找到: {endpoint}, 已注册端点: {list(SUPPORTED_ENDPOINTS.keys())}", flush=True)
                 logger.critical(f"🚨 端点恢复后仍然未找到: {endpoint}, 已注册端点: {list(SUPPORTED_ENDPOINTS.keys())}")
         except Exception as e:
-            print(f"🚨 端点恢复失败: {e}", flush=True)
-            import traceback
-            print(f"🚨 端点恢复失败堆栈: {traceback.format_exc()}", flush=True)
             logger.critical(f"🚨 端点恢复失败: {e}", exc_info=True)
     
     if not handler:

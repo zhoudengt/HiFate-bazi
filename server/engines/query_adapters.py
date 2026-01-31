@@ -5,6 +5,9 @@
 """
 
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 import os
 from typing import Dict, Any, Optional, Callable
 
@@ -107,7 +110,7 @@ class QueryAdapterRegistry:
             return None
             
         except Exception as e:
-            print(f"查询适配器 {adapter_name} 执行失败: {e}")
+            logger.info(f"查询适配器 {adapter_name} 执行失败: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -153,7 +156,7 @@ class QueryAdapterRegistry:
             return None
         except Exception as e:
             # 数据库查询失败，不抛出异常，回退到配置文件
-            print(f"⚠ 数据库查询失败，使用配置文件: {e}")
+            logger.info(f"⚠ 数据库查询失败，使用配置文件: {e}")
             return None
     
     @classmethod
@@ -174,9 +177,9 @@ class QueryAdapterRegistry:
                     # 清空缓存
                     cls._content_cache.clear()
                     cls._cached_version = current_version
-                    print(f"✓ 检测到版本号变化，已清空缓存: {current_version}")
+                    logger.info(f"✓ 检测到版本号变化，已清空缓存: {current_version}")
             except Exception as e:
-                print(f"⚠ 检查版本号失败: {e}")
+                logger.info(f"⚠ 检查版本号失败: {e}")
 
 
 # 注册现有的分析器作为查询适配器
@@ -189,9 +192,9 @@ def register_default_adapters():
             RizhuGenderAnalyzer,
             'analyze_rizhu_gender'
         )
-        print("✓ 注册查询适配器: RizhuGenderAnalyzer")
+        logger.info("✓ 注册查询适配器: RizhuGenderAnalyzer")
     except Exception as e:
-        print(f"⚠ 注册 RizhuGenderAnalyzer 失败: {e}")
+        logger.info(f"⚠ 注册 RizhuGenderAnalyzer 失败: {e}")
     
     try:
         from core.analyzers.deities_analyzer import DeitiesAnalyzer
@@ -200,9 +203,9 @@ def register_default_adapters():
             DeitiesAnalyzer,
             'analyze_all_deities_rules'
         )
-        print("✓ 注册查询适配器: DeitiesAnalyzer")
+        logger.info("✓ 注册查询适配器: DeitiesAnalyzer")
     except Exception as e:
-        print(f"⚠ 注册 DeitiesAnalyzer 失败: {e}")
+        logger.info(f"⚠ 注册 DeitiesAnalyzer 失败: {e}")
 
 
 # 自动注册默认适配器

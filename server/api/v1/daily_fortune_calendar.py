@@ -26,6 +26,7 @@ from server.utils.api_cache_helper import (
     generate_cache_key, get_cached_result, set_cached_result, L2_TTL, get_current_date_str
 )
 from server.services.user_interaction_logger import get_user_interaction_logger
+from server.utils.api_error_handler import api_error_handler
 
 # 导入配置加载器（从数据库读取配置）
 try:
@@ -140,6 +141,7 @@ class DailyFortuneCalendarResponse(BaseModel):
 
 
 @router.post("/daily-fortune-calendar/query", response_model=DailyFortuneCalendarResponse, summary="查询每日运势日历")
+@api_error_handler
 async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
     """
     查询每日运势日历信息
@@ -167,134 +169,106 @@ async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
     
     返回完整的每日运势信息
     """
-    try:
-        # 处理用户生辰的农历输入和时区转换（如果提供了生辰信息）
-        user_final_solar_date = request.solar_date
-        user_final_solar_time = request.solar_time
-        conversion_info = None
-        
-        if request.solar_date and request.solar_time and request.gender:
-            try:
-                user_final_solar_date, user_final_solar_time, conversion_info = BaziInputProcessor.process_input(
-                    request.solar_date,
-                    request.solar_time,
-                    request.calendar_type or "solar",
-                    request.location,
-                    request.latitude,
-                    request.longitude
-                )
-            except Exception as e:
-                # 转换失败不影响主流程，使用原始值
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"用户生辰转换失败，使用原始值: {e}")
-        
-        # >>> 缓存检查（按查询日期+用户生辰缓存）<<<
-        query_date = request.date or get_current_date_str()
-        user_hash = f"{user_final_solar_date or ''}_{user_final_solar_time or ''}_{request.gender or ''}"
-        cache_key = generate_cache_key("dailycalendar", query_date, user_hash)
-        cached = get_cached_result(cache_key, "daily-fortune-calendar")
-        if cached:
-            # ✅ 修复：如果缓存的 weekday 为空，清除缓存并重新计算（修复旧缓存问题）
-            if not cached.get('weekday') or not cached.get('weekday_en'):
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"⚠️  API层检测到缓存的 weekday 为空，清除缓存并重新计算: {cache_key}")
-                try:
-                    from server.utils.cache_multi_level import get_multi_cache
-                    cache = get_multi_cache()
-                    cache.delete(cache_key)
-                except Exception as e:
-                    logger.warning(f"清除API层缓存失败: {e}")
-                # 继续执行，重新计算
-            else:
-                # 缓存命中且数据完整，直接返回
-                return DailyFortuneCalendarResponse(**cached)
-        # >>> 缓存检查结束 <<<
-        
-        # 使用模块级别的导入（已在文件顶部导入）
-        result = DailyFortuneCalendarService.get_daily_fortune_calendar(
-            date_str=request.date,
-            user_solar_date=user_final_solar_date,
-            user_solar_time=user_final_solar_time,
-            user_gender=request.gender
-        )
-        
-        if result.get('success'):
-            # 处理建除信息
-            jianchu_info = result.get('jianchu')
-            jianchu_model = None
-            # 兼容处理：如果jianchu是字符串，尝试从数据库查询
-            if isinstance(jianchu_info, str) and jianchu_info:
-                jianchu_dict = DailyFortuneCalendarService.get_jianchu_info(jianchu_info)
-                if jianchu_dict:
-                    jianchu_info = jianchu_dict
-            if jianchu_info and isinstance(jianchu_info, dict):
-                jianchu_model = JianchuInfo(
-                    name=jianchu_info.get('name'),
-                    energy=jianchu_info.get('energy'),
-                    summary=jianchu_info.get('summary')
-                )
-            
-            # 处理命主信息
-            master_info = result.get('master_info')
-            master_info_model = None
-            if master_info and isinstance(master_info, dict):
-                master_info_model = MasterInfo(
-                    rizhu=master_info.get('rizhu'),
-                    today_shishen=master_info.get('today_shishen')
-                )
-            
-            # 构建响应数据
-            response_dict = {
-                'success': True,
-                'solar_date': result.get('solar_date'),
-                'lunar_date': result.get('lunar_date'),
-                'weekday': result.get('weekday'),
-                'weekday_en': result.get('weekday_en'),
-                'year_pillar': result.get('year_pillar'),
-                'month_pillar': result.get('month_pillar'),
-                'day_pillar': result.get('day_pillar'),
-                'yi': result.get('yi', []),
-                'ji': result.get('ji', []),
-                'luck_level': result.get('luck_level'),
-                'deities': result.get('deities', {}),
-                'chong_he_sha': result.get('chong_he_sha', {}),
-                'jianchu': jianchu_model,
-                'taishen': result.get('taishen'),
-                'taishen_explanation': result.get('taishen_explanation'),
-                'jiazi_fortune': result.get('jiazi_fortune'),
-                'shishen_hint': result.get('shishen_hint'),
-                'zodiac_relations': result.get('zodiac_relations'),
-                'master_info': master_info_model,
-                'wuxing_wear': result.get('wuxing_wear') if result.get('wuxing_wear') else None,  # 空字符串转为None
-                'guiren_fangwei': result.get('guiren_fangwei'),
-                'wenshen_directions': result.get('wenshen_directions')
-            }
-            
-            # 添加转换信息到结果（如果进行了转换）
-            if conversion_info and (conversion_info.get('converted') or conversion_info.get('timezone_info')):
-                response_dict['conversion_info'] = conversion_info
-            
-            # >>> 缓存写入 <<<
-            set_cached_result(cache_key, response_dict, L2_TTL)
-            # >>> 缓存写入结束 <<<
-            
-            return DailyFortuneCalendarResponse(**response_dict)
-        else:
-            return DailyFortuneCalendarResponse(
-                success=False,
-                error=result.get('error', '获取每日运势失败')
+    # 处理用户生辰的农历输入和时区转换（如果提供了生辰信息）
+    user_final_solar_date = request.solar_date
+    user_final_solar_time = request.solar_time
+    conversion_info = None
+
+    if request.solar_date and request.solar_time and request.gender:
+        try:
+            user_final_solar_date, user_final_solar_time, conversion_info = BaziInputProcessor.process_input(
+                request.solar_date,
+                request.solar_time,
+                request.calendar_type or "solar",
+                request.location,
+                request.latitude,
+                request.longitude
             )
-            
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        import traceback
-        raise HTTPException(
-            status_code=500,
-            detail=f"查询每日运势异常: {str(e)}\n{traceback.format_exc()}"
-        )
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"用户生辰转换失败，使用原始值: {e}")
+
+    query_date = request.date or get_current_date_str()
+    user_hash = f"{user_final_solar_date or ''}_{user_final_solar_time or ''}_{request.gender or ''}"
+    cache_key = generate_cache_key("dailycalendar", query_date, user_hash)
+    cached = get_cached_result(cache_key, "daily-fortune-calendar")
+    if cached:
+        if not cached.get('weekday') or not cached.get('weekday_en'):
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"⚠️  API层检测到缓存的 weekday 为空，清除缓存并重新计算: {cache_key}")
+            try:
+                from server.utils.cache_multi_level import get_multi_cache
+                cache = get_multi_cache()
+                cache.delete(cache_key)
+            except Exception as e:
+                logger.warning(f"清除API层缓存失败: {e}")
+        else:
+            return DailyFortuneCalendarResponse(**cached)
+
+    result = DailyFortuneCalendarService.get_daily_fortune_calendar(
+        date_str=request.date,
+        user_solar_date=user_final_solar_date,
+        user_solar_time=user_final_solar_time,
+        user_gender=request.gender
+    )
+
+    if result.get('success'):
+        jianchu_info = result.get('jianchu')
+        jianchu_model = None
+        if isinstance(jianchu_info, str) and jianchu_info:
+            jianchu_dict = DailyFortuneCalendarService.get_jianchu_info(jianchu_info)
+            if jianchu_dict:
+                jianchu_info = jianchu_dict
+        if jianchu_info and isinstance(jianchu_info, dict):
+            jianchu_model = JianchuInfo(
+                name=jianchu_info.get('name'),
+                energy=jianchu_info.get('energy'),
+                summary=jianchu_info.get('summary')
+            )
+
+        master_info = result.get('master_info')
+        master_info_model = None
+        if master_info and isinstance(master_info, dict):
+            master_info_model = MasterInfo(
+                rizhu=master_info.get('rizhu'),
+                today_shishen=master_info.get('today_shishen')
+            )
+
+        response_dict = {
+            'success': True,
+            'solar_date': result.get('solar_date'),
+            'lunar_date': result.get('lunar_date'),
+            'weekday': result.get('weekday'),
+            'weekday_en': result.get('weekday_en'),
+            'year_pillar': result.get('year_pillar'),
+            'month_pillar': result.get('month_pillar'),
+            'day_pillar': result.get('day_pillar'),
+            'yi': result.get('yi', []),
+            'ji': result.get('ji', []),
+            'luck_level': result.get('luck_level'),
+            'deities': result.get('deities', {}),
+            'chong_he_sha': result.get('chong_he_sha', {}),
+            'jianchu': jianchu_model,
+            'taishen': result.get('taishen'),
+            'taishen_explanation': result.get('taishen_explanation'),
+            'jiazi_fortune': result.get('jiazi_fortune'),
+            'shishen_hint': result.get('shishen_hint'),
+            'zodiac_relations': result.get('zodiac_relations'),
+            'master_info': master_info_model,
+            'wuxing_wear': result.get('wuxing_wear') if result.get('wuxing_wear') else None,
+            'guiren_fangwei': result.get('guiren_fangwei'),
+            'wenshen_directions': result.get('wenshen_directions')
+        }
+        if conversion_info and (conversion_info.get('converted') or conversion_info.get('timezone_info')):
+            response_dict['conversion_info'] = conversion_info
+        set_cached_result(cache_key, response_dict, L2_TTL)
+        return DailyFortuneCalendarResponse(**response_dict)
+    return DailyFortuneCalendarResponse(
+        success=False,
+        error=result.get('error', '获取每日运势失败')
+    )
 
 
 class ActionSuggestionsRequest(BaseModel):

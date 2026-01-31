@@ -495,18 +495,18 @@ if __name__ == "__main__":
     
     result = FortuneRelationAnalyzer.analyze(bazi_pillars, liunian, dayun)
     
-    print("=" * 80)
-    print("流年大运关系分析测试")
-    print("=" * 80)
-    print(f"\n流年 vs 大运:")
+    logger.info("=" * 80)
+    logger.info("流年大运关系分析测试")
+    logger.info("=" * 80)
+    logger.info(f"\n流年 vs 大运:")
     for key, value in result['liunian_dayun_relation'].items():
-        print(f"  {key}: {value}")
+        logger.info(f"  {key}: {value}")
     
-    print(f"\n流年 vs 八字:")
+    logger.info(f"\n流年 vs 八字:")
     for key, value in result['liunian_bazi_relation'].items():
         if key != 'important_relations':
-            print(f"  {key}: {value}")
+            logger.info(f"  {key}: {value}")
     
-    print(f"\n总结: {result['summary']}")
-    print("=" * 80)
+    logger.info(f"\n总结: {result['summary']}")
+    logger.info("=" * 80)
 

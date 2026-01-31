@@ -7,6 +7,7 @@
 
 import json
 import hashlib
+import random
 import time
 from typing import Any, Optional, Dict
 from functools import lru_cache
@@ -25,6 +26,7 @@ class L1MemoryCache:
         """
         self._cache = {}
         self._cache_times = {}
+        self._cache_expiry = {}  # key -> expiry timestamp (for per-key TTL)
         self.max_size = max_size
         self.ttl = ttl
         # 缓存统计
@@ -36,27 +38,38 @@ class L1MemoryCache:
         if key not in self._cache:
             self._misses += 1
             return None
-        if time.time() - self._cache_times[key] > self.ttl:
+        expiry = self._cache_expiry.get(key, self._cache_times[key] + self.ttl)
+        if time.time() > expiry:
             del self._cache[key]
             del self._cache_times[key]
+            if key in self._cache_expiry:
+                del self._cache_expiry[key]
             self._misses += 1
             return None
         self._hits += 1
         return self._cache[key]
-    
-    def set(self, key: str, value: Any):
-        """设置缓存"""
+
+    def set(self, key: str, value: Any, ttl: Optional[int] = None):
+        """设置缓存；ttl 为可选，不传则使用实例默认 TTL。TTL 会加 0–10% 随机偏移以防雪崩。"""
+        effective = ttl if ttl is not None else self.ttl
+        if effective:
+            effective = effective + random.randint(0, max(1, int(effective * 0.1)))
         if len(self._cache) >= self.max_size:
             oldest = min(self._cache_times.keys(), key=lambda k: self._cache_times[k])
             del self._cache[oldest]
             del self._cache_times[oldest]
+            if oldest in self._cache_expiry:
+                del self._cache_expiry[oldest]
         self._cache[key] = value
         self._cache_times[key] = time.time()
+        if effective:
+            self._cache_expiry[key] = time.time() + effective
     
     def clear(self):
         """清空缓存"""
         self._cache.clear()
         self._cache_times.clear()
+        self._cache_expiry.clear()
     
     def stats(self) -> dict:
         """获取缓存统计信息"""
@@ -110,13 +123,16 @@ class L2RedisCache:
             return None
         return None
     
-    def set(self, key: str, value: Any):
-        """设置缓存"""
+    def set(self, key: str, value: Any, ttl: Optional[int] = None):
+        """设置缓存；ttl 为可选，不传则使用实例默认 TTL。TTL 会加 0–10% 随机偏移以防雪崩。"""
         if not self._available:
             return
         try:
+            effective = ttl if ttl is not None else self.ttl
+            if effective:
+                effective = effective + random.randint(0, max(1, int(effective * 0.1)))
             data = json.dumps(value, ensure_ascii=False)
-            self.redis.setex(key, self.ttl, data)
+            self.redis.setex(key, effective, data)
         except Exception:
             pass
     
@@ -153,10 +169,15 @@ class L2RedisCache:
             return {"status": "error"}
 
 
+# 空值占位符（缓存穿透保护：将“无结果”也缓存，避免反复击穿到 DB）
+_NULL_VALUE = "__NULL__"
+
+
 # 多级缓存管理器
 class MultiLevelCache:
-    """多级缓存管理器"""
-    
+    """多级缓存管理器（支持空值缓存，防穿透）"""
+    NULL_VALUE = _NULL_VALUE
+
     def __init__(self, 
                  l1_max_size: int = 50000,
                  l1_ttl: int = 300,
@@ -187,27 +208,40 @@ class MultiLevelCache:
         # L1: 本地内存（最快）
         value = self.l1.get(key)
         if value is not None:
+            if value == self.NULL_VALUE:
+                return None
             return value
-        
+
         # L2: Redis（较快）
         value = self.l2.get(key)
         if value is not None:
+            if value == self.NULL_VALUE:
+                return None
             # 回填L1
             self.l1.set(key, value)
             return value
-        
+
         return None
-    
-    def set(self, key: str, value: Any):
+
+    def set(self, key: str, value: Any, ttl: Optional[int] = None):
         """
         多级缓存写入：同时写入L1和L2
         
         Args:
             key: 缓存键
             value: 缓存值
+            ttl: 可选，过期时间（秒）；不传则使用各层默认 TTL
         """
-        self.l1.set(key, value)
-        self.l2.set(key, value)
+        if ttl is not None:
+            self.l1.set(key, value, ttl=ttl)
+            self.l2.set(key, value, ttl=ttl)
+        else:
+            self.l1.set(key, value)
+            self.l2.set(key, value)
+
+    def set_null(self, key: str, ttl: int = 60):
+        """缓存空值，防止穿透（同一 key 短时间内不再请求下游）"""
+        self.set(key, self.NULL_VALUE, ttl=ttl)
     
     def delete(self, key: str):
         """删除缓存（所有层级）"""

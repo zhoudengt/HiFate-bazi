@@ -6,18 +6,27 @@
 """
 
 from typing import Dict, Any, List, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 import json
 
 
 class FortuneRuleEngine:
-    """命理规则引擎"""
-    
+    """命理规则引擎（支持从数据库或硬编码加载规则）"""
+
     def __init__(self):
-        self.hand_rules = self._load_hand_rules()
-        self.face_rules = self._load_face_rules()
-    
-    def _load_hand_rules(self) -> Dict[str, Any]:
-        """加载手相规则"""
+        try:
+            from server.services.unified_rule_service import UnifiedRuleService
+            self.hand_rules = UnifiedRuleService.get_rules("hand") or FortuneRuleEngine._load_hand_rules()
+            self.face_rules = UnifiedRuleService.get_rules("face") or FortuneRuleEngine._load_face_rules()
+        except Exception:
+            self.hand_rules = FortuneRuleEngine._load_hand_rules()
+            self.face_rules = FortuneRuleEngine._load_face_rules()
+
+    @staticmethod
+    def _load_hand_rules() -> Dict[str, Any]:
+        """加载手相规则（硬编码兜底）"""
         return {
             "hand_shape": {
                 "方形手": {
@@ -116,9 +125,10 @@ class FortuneRuleEngine:
                 }
             }
         }
-    
-    def _load_face_rules(self) -> Dict[str, Any]:
-        """加载面相规则"""
+
+    @staticmethod
+    def _load_face_rules() -> Dict[str, Any]:
+        """加载面相规则（硬编码兜底）"""
         return {
             "san_ting": {
                 "upper_long": {
@@ -182,10 +192,10 @@ class FortuneRuleEngine:
     
     def match_hand_rules(self, hand_features: Dict[str, Any]) -> List[Dict[str, Any]]:
         """匹配手相规则（增强版：支持连续值和更多特征）"""
-        print("\n" + "="*80)
-        print("🔍 手相规则匹配")
-        print("="*80)
-        print(f"手相特征: {hand_features}", flush=True)
+        logger.info("\n" + "="*80)
+        logger.info("🔍 手相规则匹配")
+        logger.info("="*80)
+        logger.info(f"手相特征: {hand_features}", flush=True)
         insights = []
         
         # 手型规则（支持连续值，根据ratio和confidence个性化）
@@ -600,16 +610,16 @@ class FortuneRuleEngine:
                     "feature": f"组合:手型+无名指+感情线"
                 })
         
-        print(f"✅ 手相规则匹配完成，共匹配到 {len(insights)} 条规则")
-        print("="*80 + "\n", flush=True)
+        logger.info(f"✅ 手相规则匹配完成，共匹配到 {len(insights)} 条规则")
+        logger.info("="*80 + "\n", flush=True)
         return insights
     
     def match_face_rules(self, face_features: Dict[str, Any]) -> List[Dict[str, Any]]:
         """匹配面相规则（优化版：规则明确化，性能优化，内容丰富化）"""
-        print("\n" + "="*80)
-        print("🔍 面相规则匹配")
-        print("="*80)
-        print(f"面相特征: {face_features}", flush=True)
+        logger.info("\n" + "="*80)
+        logger.info("🔍 面相规则匹配")
+        logger.info("="*80)
+        logger.info(f"面相特征: {face_features}", flush=True)
         insights = []
         scanned_rules = []  # 记录所有扫描的规则
         max_insights = 25  # 性能优化：最多匹配25条规则
@@ -623,9 +633,9 @@ class FortuneRuleEngine:
         # 规则1.1: 上停 + 早年运势（优化：降低阈值，增加中等情况分析）
         rule_name = "规则1.1: 上停 + 早年运势"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
-        print(f"  原理: 上停对应早年运势，上停长则早年运势佳，学习能力强")
-        print(f"  检查: 上停比例={upper:.2%}")
+        logger.info(f"\n{rule_name}")
+        logger.info(f"  原理: 上停对应早年运势，上停长则早年运势佳，学习能力强")
+        logger.info(f"  检查: 上停比例={upper:.2%}")
         if len(insights) < max_insights:
             if upper > 0.38:  # 非常长
                 intensity = "非常长"
@@ -639,7 +649,7 @@ class FortuneRuleEngine:
                         "source": "face",
                         "feature": f"上停:{upper:.2%}"
                     })
-                print(f"  ✅ 匹配成功: 上停非常长，早年运势极佳")
+                logger.info(f"  ✅ 匹配成功: 上停非常长，早年运势极佳")
             elif upper > 0.33:  # 较长（降低阈值从0.35到0.33）
                 intensity = "较长"
                 confidence = 0.75
@@ -652,7 +662,7 @@ class FortuneRuleEngine:
                         "source": "face",
                         "feature": f"上停:{upper:.2%}"
                     })
-                print(f"  ✅ 匹配成功: 上停较长，早年运势较好")
+                logger.info(f"  ✅ 匹配成功: 上停较长，早年运势较好")
             elif upper < 0.28:  # 较短
                 insights.append({
                     "category": "运势",
@@ -661,7 +671,7 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"上停:{upper:.2%}"
                 })
-                print(f"  ✅ 匹配成功: 上停较短，需注意早年运势")
+                logger.info(f"  ✅ 匹配成功: 上停较短，需注意早年运势")
             else:  # 中等（28%-33%之间，添加托底分析）
                 insights.append({
                     "category": "运势",
@@ -670,16 +680,16 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"上停:{upper:.2%}"
                 })
-                print(f"  ✅ 匹配成功: 上停适中，早年运势平稳")
+                logger.info(f"  ✅ 匹配成功: 上停适中，早年运势平稳")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # 规则1.2: 中停 + 中年运势（优化：降低阈值，增加中等情况分析）
         rule_name = "规则1.2: 中停 + 中年运势"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
-        print(f"  原理: 中停对应中年运势，中停长则中年运势佳，事业发展好")
-        print(f"  检查: 中停比例={middle:.2%}")
+        logger.info(f"\n{rule_name}")
+        logger.info(f"  原理: 中停对应中年运势，中停长则中年运势佳，事业发展好")
+        logger.info(f"  检查: 中停比例={middle:.2%}")
         if len(insights) < max_insights:
             if middle > 0.38:  # 非常长
                 intensity = "非常长"
@@ -693,7 +703,7 @@ class FortuneRuleEngine:
                         "source": "face",
                         "feature": f"中停:{middle:.2%}"
                     })
-                print(f"  ✅ 匹配成功: 中停非常长，中年运势极佳")
+                logger.info(f"  ✅ 匹配成功: 中停非常长，中年运势极佳")
             elif middle > 0.33:  # 较长（降低阈值从0.35到0.33）
                 intensity = "较长"
                 confidence = 0.75
@@ -706,7 +716,7 @@ class FortuneRuleEngine:
                         "source": "face",
                         "feature": f"中停:{middle:.2%}"
                     })
-                print(f"  ✅ 匹配成功: 中停较长，中年运势较好")
+                logger.info(f"  ✅ 匹配成功: 中停较长，中年运势较好")
             elif middle < 0.28:  # 较短
                 insights.append({
                     "category": "运势",
@@ -715,7 +725,7 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"中停:{middle:.2%}"
                 })
-                print(f"  ✅ 匹配成功: 中停较短，需注意中年运势")
+                logger.info(f"  ✅ 匹配成功: 中停较短，需注意中年运势")
             else:  # 中等（28%-33%之间，添加托底分析）
                 insights.append({
                     "category": "运势",
@@ -724,16 +734,16 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"中停:{middle:.2%}"
                 })
-                print(f"  ✅ 匹配成功: 中停适中，中年运势平稳")
+                logger.info(f"  ✅ 匹配成功: 中停适中，中年运势平稳")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # 规则1.3: 下停 + 晚年运势（优化：降低阈值，增加中等情况分析）
         rule_name = "规则1.3: 下停 + 晚年运势"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
-        print(f"  原理: 下停对应晚年运势，下停长则晚年运势佳，福气深厚")
-        print(f"  检查: 下停比例={lower:.2%}")
+        logger.info(f"\n{rule_name}")
+        logger.info(f"  原理: 下停对应晚年运势，下停长则晚年运势佳，福气深厚")
+        logger.info(f"  检查: 下停比例={lower:.2%}")
         if len(insights) < max_insights:
             if lower > 0.38:  # 非常长
                 intensity = "非常长"
@@ -747,7 +757,7 @@ class FortuneRuleEngine:
                         "source": "face",
                         "feature": f"下停:{lower:.2%}"
                     })
-                print(f"  ✅ 匹配成功: 下停非常长，晚年运势极佳")
+                logger.info(f"  ✅ 匹配成功: 下停非常长，晚年运势极佳")
             elif lower > 0.33:  # 较长（降低阈值从0.35到0.33）
                 intensity = "较长"
                 confidence = 0.75
@@ -760,7 +770,7 @@ class FortuneRuleEngine:
                         "source": "face",
                         "feature": f"下停:{lower:.2%}"
                     })
-                print(f"  ✅ 匹配成功: 下停较长，晚年运势较好")
+                logger.info(f"  ✅ 匹配成功: 下停较长，晚年运势较好")
             elif lower < 0.28:  # 较短
                 insights.append({
                     "category": "运势",
@@ -769,7 +779,7 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"下停:{lower:.2%}"
                 })
-                print(f"  ✅ 匹配成功: 下停较短，需注意晚年运势")
+                logger.info(f"  ✅ 匹配成功: 下停较短，需注意晚年运势")
             else:  # 中等（28%-33%之间，添加托底分析）
                 insights.append({
                     "category": "运势",
@@ -778,9 +788,9 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"下停:{lower:.2%}"
                 })
-                print(f"  ✅ 匹配成功: 下停适中，晚年运势平稳")
+                logger.info(f"  ✅ 匹配成功: 下停适中，晚年运势平稳")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # ========== 规则组2: 五官与财运 ==========
         measurements = face_features.get("feature_measurements", {})
@@ -788,11 +798,11 @@ class FortuneRuleEngine:
         # 规则2.1: 鼻子高挺 + 财运
         rule_name = "规则2.1: 鼻子高挺 + 财运"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
+        logger.info(f"\n{rule_name}")
         nose_height = measurements.get("nose_height", 0)
         nose_ratio = measurements.get("nose_ratio", 0)
-        print(f"  原理: 鼻子对应财运，鼻梁高挺则财运佳，适合投资理财")
-        print(f"  检查: 鼻子高度={nose_height:.1f}, 比例={nose_ratio:.2f}")
+        logger.info(f"  原理: 鼻子对应财运，鼻梁高挺则财运佳，适合投资理财")
+        logger.info(f"  检查: 鼻子高度={nose_height:.1f}, 比例={nose_ratio:.2f}")
         if len(insights) < max_insights and nose_height > 0:
             # 根据面部高度归一化（更准确）
             face_height = measurements.get("face_height", 100)
@@ -818,7 +828,7 @@ class FortuneRuleEngine:
                         "source": "face",
                         "feature": f"鼻子:高度{nose_height:.1f},比例{nose_ratio:.2f}"
                     })
-                print(f"  ✅ 匹配成功: 鼻梁{intensity}，财运佳")
+                logger.info(f"  ✅ 匹配成功: 鼻梁{intensity}，财运佳")
             elif nose_relative < 0.10 or (nose_height < 40 and nose_ratio < 1.5):  # 低鼻梁
                 rule = self.face_rules["nose"]["low"]
                 for insight_text in rule.get("insights", []):
@@ -829,25 +839,25 @@ class FortuneRuleEngine:
                         "source": "face",
                         "feature": f"鼻子:高度{nose_height:.1f},比例{nose_ratio:.2f}"
                     })
-                print(f"  ✅ 匹配成功: 鼻梁较低，需注意理财")
+                logger.info(f"  ✅ 匹配成功: 鼻梁较低，需注意理财")
             else:
-                print(f"  ❌ 未匹配: 鼻子特征不满足条件")
+                logger.info(f"  ❌ 未匹配: 鼻子特征不满足条件")
         elif nose_height == 0:
-            print(f"  ❌ 未匹配: 鼻子高度数据为空")
+            logger.info(f"  ❌ 未匹配: 鼻子高度数据为空")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # ========== 规则组3: 五官与智慧 ==========
         
         # 规则3.1: 额头宽阔 + 智慧
         rule_name = "规则3.1: 额头宽阔 + 智慧"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
+        logger.info(f"\n{rule_name}")
         forehead_width = measurements.get("forehead_width", 0)
         forehead_ratio = measurements.get("forehead_ratio", 0)
         forehead_height = measurements.get("forehead_height", 0)
-        print(f"  原理: 额头对应智慧，额头宽阔则智慧过人，适合学习研究")
-        print(f"  检查: 额头宽度={forehead_width:.1f}, 比例={forehead_ratio:.2f}")
+        logger.info(f"  原理: 额头对应智慧，额头宽阔则智慧过人，适合学习研究")
+        logger.info(f"  检查: 额头宽度={forehead_width:.1f}, 比例={forehead_ratio:.2f}")
         if len(insights) < max_insights and forehead_width > 0:
             # 根据面部宽度归一化
             face_width = measurements.get("face_width", 100)
@@ -873,7 +883,7 @@ class FortuneRuleEngine:
                         "source": "face",
                         "feature": f"额头:宽度{forehead_width:.1f},比例{forehead_ratio:.2f}"
                     })
-                print(f"  ✅ 匹配成功: 额头{intensity}，智慧过人")
+                logger.info(f"  ✅ 匹配成功: 额头{intensity}，智慧过人")
             elif forehead_relative < 0.70 or (forehead_width < 80 and forehead_ratio < 0.9):  # 狭窄额头
                 insights.append({
                     "category": "智慧",
@@ -882,24 +892,24 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"额头:宽度{forehead_width:.1f},比例{forehead_ratio:.2f}"
                 })
-                print(f"  ✅ 匹配成功: 额头较窄，需加强学习")
+                logger.info(f"  ✅ 匹配成功: 额头较窄，需加强学习")
             else:
-                print(f"  ❌ 未匹配: 额头特征不满足条件")
+                logger.info(f"  ❌ 未匹配: 额头特征不满足条件")
         elif forehead_width == 0:
-            print(f"  ❌ 未匹配: 额头宽度数据为空")
+            logger.info(f"  ❌ 未匹配: 额头宽度数据为空")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # ========== 规则组4: 五官与性格 ==========
         
         # 规则4.1: 眼睛大小 + 性格
         rule_name = "规则4.1: 眼睛大小 + 性格"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
+        logger.info(f"\n{rule_name}")
         eye_width = measurements.get("eye_width", 0)
         eye_symmetry = measurements.get("eye_symmetry", 0)
-        print(f"  原理: 眼睛对应性格和观察能力，眼睛大则性格开朗，善于观察")
-        print(f"  检查: 眼睛宽度={eye_width:.1f}, 对称性={eye_symmetry:.2f}")
+        logger.info(f"  原理: 眼睛对应性格和观察能力，眼睛大则性格开朗，善于观察")
+        logger.info(f"  检查: 眼睛宽度={eye_width:.1f}, 对称性={eye_symmetry:.2f}")
         if len(insights) < max_insights and eye_width > 0:
             face_width = measurements.get("face_width", 100)
             eye_relative = eye_width / max(face_width, 1.0) if face_width > 0 else 0
@@ -913,7 +923,7 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"眼睛:宽度{eye_width:.1f},对称性{eye_symmetry:.2f}"
                 })
-                print(f"  ✅ 匹配成功: 眼睛较大，性格开朗")
+                logger.info(f"  ✅ 匹配成功: 眼睛较大，性格开朗")
             elif eye_relative < 0.12:  # 小眼睛
                 insights.append({
                     "category": "性格",
@@ -922,21 +932,21 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"眼睛:宽度{eye_width:.1f}"
                 })
-                print(f"  ✅ 匹配成功: 眼睛较小，性格内敛")
+                logger.info(f"  ✅ 匹配成功: 眼睛较小，性格内敛")
             else:
-                print(f"  ❌ 未匹配: 眼睛特征不满足条件")
+                logger.info(f"  ❌ 未匹配: 眼睛特征不满足条件")
         elif eye_width == 0:
-            print(f"  ❌ 未匹配: 眼睛宽度数据为空")
+            logger.info(f"  ❌ 未匹配: 眼睛宽度数据为空")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # 规则4.2: 嘴巴大小 + 性格
         rule_name = "规则4.2: 嘴巴大小 + 性格"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
+        logger.info(f"\n{rule_name}")
         mouth_width = measurements.get("mouth_width", 0)
-        print(f"  原理: 嘴巴对应性格和表达能力，嘴巴大则性格外向，善于表达")
-        print(f"  检查: 嘴巴宽度={mouth_width:.1f}")
+        logger.info(f"  原理: 嘴巴对应性格和表达能力，嘴巴大则性格外向，善于表达")
+        logger.info(f"  检查: 嘴巴宽度={mouth_width:.1f}")
         if len(insights) < max_insights and mouth_width > 0:
             face_width = measurements.get("face_width", 100)
             mouth_relative = mouth_width / max(face_width, 1.0) if face_width > 0 else 0
@@ -949,7 +959,7 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"嘴巴:宽度{mouth_width:.1f}"
                 })
-                print(f"  ✅ 匹配成功: 嘴巴较大，性格外向")
+                logger.info(f"  ✅ 匹配成功: 嘴巴较大，性格外向")
             elif mouth_relative < 0.30:  # 小嘴巴
                 insights.append({
                     "category": "性格",
@@ -958,21 +968,21 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"嘴巴:宽度{mouth_width:.1f}"
                 })
-                print(f"  ✅ 匹配成功: 嘴巴较小，性格内敛")
+                logger.info(f"  ✅ 匹配成功: 嘴巴较小，性格内敛")
             else:
-                print(f"  ❌ 未匹配: 嘴巴特征不满足条件")
+                logger.info(f"  ❌ 未匹配: 嘴巴特征不满足条件")
         elif mouth_width == 0:
-            print(f"  ❌ 未匹配: 嘴巴宽度数据为空")
+            logger.info(f"  ❌ 未匹配: 嘴巴宽度数据为空")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # 规则4.3: 面部比例 + 性格
         rule_name = "规则4.3: 面部比例 + 性格"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
+        logger.info(f"\n{rule_name}")
         face_ratio = measurements.get("face_ratio", 0)
-        print(f"  原理: 面部比例对应性格，圆脸温和，长脸理性")
-        print(f"  检查: 面部宽高比={face_ratio:.2f}")
+        logger.info(f"  原理: 面部比例对应性格，圆脸温和，长脸理性")
+        logger.info(f"  检查: 面部宽高比={face_ratio:.2f}")
         if len(insights) < max_insights and face_ratio > 0:
             if face_ratio > 0.75:  # 圆脸
                 insights.append({
@@ -982,7 +992,7 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"面部比例:{face_ratio:.2f}"
                 })
-                print(f"  ✅ 匹配成功: 面部较圆，性格温和")
+                logger.info(f"  ✅ 匹配成功: 面部较圆，性格温和")
             elif face_ratio < 0.60:  # 长脸
                 insights.append({
                     "category": "性格",
@@ -991,25 +1001,25 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"面部比例:{face_ratio:.2f}"
                 })
-                print(f"  ✅ 匹配成功: 面部较长，性格理性")
+                logger.info(f"  ✅ 匹配成功: 面部较长，性格理性")
             else:
-                print(f"  ❌ 未匹配: 面部比例不满足条件")
+                logger.info(f"  ❌ 未匹配: 面部比例不满足条件")
         elif face_ratio == 0:
-            print(f"  ❌ 未匹配: 面部比例数据为空")
+            logger.info(f"  ❌ 未匹配: 面部比例数据为空")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # ========== 规则组5: 健康相关（新增）==========
         
         # 规则5.1: 面部对称性 + 健康
         rule_name = "规则5.1: 面部对称性 + 健康"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
-        print(f"  原理: 面部对称性好则健康运势佳，对称性差则需注意健康")
+        logger.info(f"\n{rule_name}")
+        logger.info(f"  原理: 面部对称性好则健康运势佳，对称性差则需注意健康")
         eye_symmetry = measurements.get("eye_symmetry", 0)
         face_width = measurements.get("face_width", 0)
         face_height = measurements.get("face_height", 0)
-        print(f"  检查: 眼睛对称性={eye_symmetry:.2f}, 面部宽度={face_width:.1f}, 高度={face_height:.1f}")
+        logger.info(f"  检查: 眼睛对称性={eye_symmetry:.2f}, 面部宽度={face_width:.1f}, 高度={face_height:.1f}")
         if len(insights) < max_insights:
             # 计算面部对称性（简化：使用眼睛对称性作为参考）
             if eye_symmetry < 0.05:  # 非常对称
@@ -1020,7 +1030,7 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"对称性:{eye_symmetry:.2f}"
                 })
-                print(f"  ✅ 匹配成功: 面部对称性良好，健康运势佳")
+                logger.info(f"  ✅ 匹配成功: 面部对称性良好，健康运势佳")
             elif eye_symmetry > 0.15:  # 不对称
                 insights.append({
                     "category": "健康",
@@ -1029,19 +1039,19 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"对称性:{eye_symmetry:.2f}"
                 })
-                print(f"  ✅ 匹配成功: 面部对称性一般，需注意健康")
+                logger.info(f"  ✅ 匹配成功: 面部对称性一般，需注意健康")
             else:
-                print(f"  ❌ 未匹配: 对称性不满足条件")
+                logger.info(f"  ❌ 未匹配: 对称性不满足条件")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # 规则5.2: 面部比例协调 + 健康
         rule_name = "规则5.2: 面部比例协调 + 健康"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
-        print(f"  原理: 面部比例协调则健康运势好，比例失衡则需注意健康")
+        logger.info(f"\n{rule_name}")
+        logger.info(f"  原理: 面部比例协调则健康运势好，比例失衡则需注意健康")
         face_ratio = measurements.get("face_ratio", 0)
-        print(f"  检查: 面部宽高比={face_ratio:.2f}")
+        logger.info(f"  检查: 面部宽高比={face_ratio:.2f}")
         if len(insights) < max_insights and face_ratio > 0:
             if 0.60 <= face_ratio <= 0.75:  # 比例协调
                 insights.append({
@@ -1051,23 +1061,23 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"面部比例:{face_ratio:.2f}"
                 })
-                print(f"  ✅ 匹配成功: 面部比例协调，健康运势好")
+                logger.info(f"  ✅ 匹配成功: 面部比例协调，健康运势好")
             else:
-                print(f"  ❌ 未匹配: 面部比例不协调")
+                logger.info(f"  ❌ 未匹配: 面部比例不协调")
         elif face_ratio == 0:
-            print(f"  ❌ 未匹配: 面部比例数据为空")
+            logger.info(f"  ❌ 未匹配: 面部比例数据为空")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # ========== 规则组6: 学习相关（新增）==========
         
         # 规则6.1: 上停 + 额头 + 学习能力
         rule_name = "规则6.1: 上停 + 额头 + 学习能力"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
-        print(f"  原理: 上停和额头对应学习能力，上停长且额头宽则学习能力强")
+        logger.info(f"\n{rule_name}")
+        logger.info(f"  原理: 上停和额头对应学习能力，上停长且额头宽则学习能力强")
         forehead_relative = forehead_width / max(face_width, 1.0) if face_width > 0 and forehead_width > 0 else 0
-        print(f"  检查: 上停比例={upper:.2%}, 额头相对宽度={forehead_relative:.2%}")
+        logger.info(f"  检查: 上停比例={upper:.2%}, 额头相对宽度={forehead_relative:.2%}")
         if len(insights) < max_insights:
             if upper > 0.35 and forehead_relative > 0.80:
                 insights.append({
@@ -1077,7 +1087,7 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"上停:{upper:.2%},额头:{forehead_relative:.2%}"
                 })
-                print(f"  ✅ 匹配成功: 上停长且额头宽，学习能力极强")
+                logger.info(f"  ✅ 匹配成功: 上停长且额头宽，学习能力极强")
             elif upper > 0.35 or forehead_relative > 0.80:
                 insights.append({
                     "category": "学习",
@@ -1086,19 +1096,19 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"上停:{upper:.2%},额头:{forehead_relative:.2%}"
                 })
-                print(f"  ✅ 匹配成功: 上停长或额头宽，学习能力较强")
+                logger.info(f"  ✅ 匹配成功: 上停长或额头宽，学习能力较强")
             else:
-                print(f"  ❌ 未匹配: 上停或额头不满足条件")
+                logger.info(f"  ❌ 未匹配: 上停或额头不满足条件")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # 规则6.2: 眼睛 + 观察能力 + 学习
         rule_name = "规则6.2: 眼睛 + 观察能力 + 学习"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
-        print(f"  原理: 眼睛大则观察能力强，有助于学习")
+        logger.info(f"\n{rule_name}")
+        logger.info(f"  原理: 眼睛大则观察能力强，有助于学习")
         eye_relative = eye_width / max(face_width, 1.0) if face_width > 0 and eye_width > 0 else 0
-        print(f"  检查: 眼睛相对宽度={eye_relative:.2%}")
+        logger.info(f"  检查: 眼睛相对宽度={eye_relative:.2%}")
         if len(insights) < max_insights and eye_width > 0:
             if eye_relative > 0.20:
                 insights.append({
@@ -1108,24 +1118,24 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"眼睛:{eye_relative:.2%}"
                 })
-                print(f"  ✅ 匹配成功: 眼睛较大，观察能力强")
+                logger.info(f"  ✅ 匹配成功: 眼睛较大，观察能力强")
             else:
-                print(f"  ❌ 未匹配: 眼睛不满足条件")
+                logger.info(f"  ❌ 未匹配: 眼睛不满足条件")
         elif eye_width == 0:
-            print(f"  ❌ 未匹配: 眼睛宽度数据为空")
+            logger.info(f"  ❌ 未匹配: 眼睛宽度数据为空")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # ========== 规则组7: 天赋相关（新增）==========
         
         # 规则7.1: 五官特征组合 + 艺术天赋
         rule_name = "规则7.1: 五官特征组合 + 艺术天赋"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
-        print(f"  原理: 眼睛大、嘴巴适中、面部圆润则具有艺术天赋")
+        logger.info(f"\n{rule_name}")
+        logger.info(f"  原理: 眼睛大、嘴巴适中、面部圆润则具有艺术天赋")
         eye_relative = eye_width / max(face_width, 1.0) if face_width > 0 and eye_width > 0 else 0
         mouth_relative = mouth_width / max(face_width, 1.0) if face_width > 0 and mouth_width > 0 else 0
-        print(f"  检查: 眼睛相对宽度={eye_relative:.2%}, 嘴巴相对宽度={mouth_relative:.2%}, 面部比例={face_ratio:.2f}")
+        logger.info(f"  检查: 眼睛相对宽度={eye_relative:.2%}, 嘴巴相对宽度={mouth_relative:.2%}, 面部比例={face_ratio:.2f}")
         if len(insights) < max_insights:
             if (eye_relative > 0.18 and 0.30 < mouth_relative < 0.45 and face_ratio > 0.70):
                 insights.append({
@@ -1135,20 +1145,20 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"组合:眼睛+嘴巴+面部"
                 })
-                print(f"  ✅ 匹配成功: 艺术天赋型特征")
+                logger.info(f"  ✅ 匹配成功: 艺术天赋型特征")
             else:
-                print(f"  ❌ 未匹配: 五官特征组合不满足条件")
+                logger.info(f"  ❌ 未匹配: 五官特征组合不满足条件")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # 规则7.2: 鼻子 + 额头 + 管理天赋
         rule_name = "规则7.2: 鼻子 + 额头 + 管理天赋"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
-        print(f"  原理: 鼻子高挺且额头宽阔则具有管理天赋")
+        logger.info(f"\n{rule_name}")
+        logger.info(f"  原理: 鼻子高挺且额头宽阔则具有管理天赋")
         nose_relative = nose_height / max(face_height, 1.0) if face_height > 0 and nose_height > 0 else 0
         forehead_relative = forehead_width / max(face_width, 1.0) if face_width > 0 and forehead_width > 0 else 0
-        print(f"  检查: 鼻子相对高度={nose_relative:.2%}, 额头相对宽度={forehead_relative:.2%}")
+        logger.info(f"  检查: 鼻子相对高度={nose_relative:.2%}, 额头相对宽度={forehead_relative:.2%}")
         if len(insights) < max_insights:
             if (nose_relative > 0.12 and nose_ratio > 2.0 and forehead_relative > 0.80):
                 insights.append({
@@ -1158,21 +1168,21 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"组合:鼻子+额头"
                 })
-                print(f"  ✅ 匹配成功: 管理天赋型特征")
+                logger.info(f"  ✅ 匹配成功: 管理天赋型特征")
             else:
-                print(f"  ❌ 未匹配: 鼻子或额头不满足条件")
+                logger.info(f"  ❌ 未匹配: 鼻子或额头不满足条件")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # ========== 规则组8: 感情相关（新增）==========
         
         # 规则8.1: 眼睛 + 感情
         rule_name = "规则8.1: 眼睛 + 感情"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
-        print(f"  原理: 眼睛大则感情丰富，善于表达情感")
+        logger.info(f"\n{rule_name}")
+        logger.info(f"  原理: 眼睛大则感情丰富，善于表达情感")
         eye_relative = eye_width / max(face_width, 1.0) if face_width > 0 and eye_width > 0 else 0
-        print(f"  检查: 眼睛相对宽度={eye_relative:.2%}")
+        logger.info(f"  检查: 眼睛相对宽度={eye_relative:.2%}")
         if len(insights) < max_insights and eye_width > 0:
             if eye_relative > 0.20:
                 insights.append({
@@ -1182,21 +1192,21 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"眼睛:{eye_relative:.2%}"
                 })
-                print(f"  ✅ 匹配成功: 眼睛较大，感情丰富")
+                logger.info(f"  ✅ 匹配成功: 眼睛较大，感情丰富")
             else:
-                print(f"  ❌ 未匹配: 眼睛不满足条件")
+                logger.info(f"  ❌ 未匹配: 眼睛不满足条件")
         elif eye_width == 0:
-            print(f"  ❌ 未匹配: 眼睛宽度数据为空")
+            logger.info(f"  ❌ 未匹配: 眼睛宽度数据为空")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # 规则8.2: 嘴巴 + 感情
         rule_name = "规则8.2: 嘴巴 + 感情"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
-        print(f"  原理: 嘴巴适中则感情稳定，善于沟通")
+        logger.info(f"\n{rule_name}")
+        logger.info(f"  原理: 嘴巴适中则感情稳定，善于沟通")
         mouth_relative = mouth_width / max(face_width, 1.0) if face_width > 0 and mouth_width > 0 else 0
-        print(f"  检查: 嘴巴相对宽度={mouth_relative:.2%}")
+        logger.info(f"  检查: 嘴巴相对宽度={mouth_relative:.2%}")
         if len(insights) < max_insights and mouth_width > 0:
             if 0.30 < mouth_relative < 0.45:  # 适中
                 insights.append({
@@ -1206,24 +1216,24 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"嘴巴:{mouth_relative:.2%}"
                 })
-                print(f"  ✅ 匹配成功: 嘴巴适中，感情稳定")
+                logger.info(f"  ✅ 匹配成功: 嘴巴适中，感情稳定")
             else:
-                print(f"  ❌ 未匹配: 嘴巴不满足条件")
+                logger.info(f"  ❌ 未匹配: 嘴巴不满足条件")
         elif mouth_width == 0:
-            print(f"  ❌ 未匹配: 嘴巴宽度数据为空")
+            logger.info(f"  ❌ 未匹配: 嘴巴宽度数据为空")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # ========== 规则组9: 组合规则（完善）==========
         
         # 规则9.1: 上停长 + 额头宽 + 眼睛大 = 智慧学习型
         rule_name = "规则9.1: 上停+额头+眼睛 = 智慧学习型"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
-        print(f"  原理: 上停长、额头宽、眼睛大形成智慧学习型特征")
+        logger.info(f"\n{rule_name}")
+        logger.info(f"  原理: 上停长、额头宽、眼睛大形成智慧学习型特征")
         forehead_relative = forehead_width / max(face_width, 1.0) if face_width > 0 and forehead_width > 0 else 0
         eye_relative = eye_width / max(face_width, 1.0) if face_width > 0 and eye_width > 0 else 0
-        print(f"  检查: 上停={upper:.2%}, 额头={forehead_relative:.2%}, 眼睛={eye_relative:.2%}")
+        logger.info(f"  检查: 上停={upper:.2%}, 额头={forehead_relative:.2%}, 眼睛={eye_relative:.2%}")
         if len(insights) < max_insights:
             if (upper > 0.35 and forehead_relative > 0.80 and eye_relative > 0.18):
                 insights.append({
@@ -1233,19 +1243,19 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"组合:上停+额头+眼睛"
                 })
-                print(f"  ✅ 匹配成功: 智慧学习型特征")
+                logger.info(f"  ✅ 匹配成功: 智慧学习型特征")
             else:
-                print(f"  ❌ 未匹配: 特征组合不满足条件")
+                logger.info(f"  ❌ 未匹配: 特征组合不满足条件")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # 规则9.2: 中停长 + 鼻子高 + 面部比例好 = 事业财运型
         rule_name = "规则9.2: 中停+鼻子+面部比例 = 事业财运型"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
-        print(f"  原理: 中停长、鼻子高、面部比例协调形成事业财运型特征")
+        logger.info(f"\n{rule_name}")
+        logger.info(f"  原理: 中停长、鼻子高、面部比例协调形成事业财运型特征")
         nose_relative = nose_height / max(face_height, 1.0) if face_height > 0 and nose_height > 0 else 0
-        print(f"  检查: 中停={middle:.2%}, 鼻子相对高度={nose_relative:.2%}, 面部比例={face_ratio:.2f}")
+        logger.info(f"  检查: 中停={middle:.2%}, 鼻子相对高度={nose_relative:.2%}, 面部比例={face_ratio:.2f}")
         if len(insights) < max_insights:
             if (middle > 0.35 and nose_relative > 0.12 and 0.60 < face_ratio < 0.75):
                 insights.append({
@@ -1255,19 +1265,19 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"组合:中停+鼻子+面部比例"
                 })
-                print(f"  ✅ 匹配成功: 事业财运型特征")
+                logger.info(f"  ✅ 匹配成功: 事业财运型特征")
             else:
-                print(f"  ❌ 未匹配: 特征组合不满足条件")
+                logger.info(f"  ❌ 未匹配: 特征组合不满足条件")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # 规则9.3: 下停长 + 嘴巴适中 + 面部圆润 = 晚年福气型
         rule_name = "规则9.3: 下停+嘴巴+面部 = 晚年福气型"
         scanned_rules.append(rule_name)
-        print(f"\n{rule_name}")
-        print(f"  原理: 下停长、嘴巴适中、面部圆润形成晚年福气型特征")
+        logger.info(f"\n{rule_name}")
+        logger.info(f"  原理: 下停长、嘴巴适中、面部圆润形成晚年福气型特征")
         mouth_relative = mouth_width / max(face_width, 1.0) if face_width > 0 and mouth_width > 0 else 0
-        print(f"  检查: 下停={lower:.2%}, 嘴巴相对宽度={mouth_relative:.2%}, 面部比例={face_ratio:.2f}")
+        logger.info(f"  检查: 下停={lower:.2%}, 嘴巴相对宽度={mouth_relative:.2%}, 面部比例={face_ratio:.2f}")
         if len(insights) < max_insights:
             if (lower > 0.35 and 0.30 < mouth_relative < 0.45 and face_ratio > 0.70):
                 insights.append({
@@ -1277,19 +1287,19 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"组合:下停+嘴巴+面部"
                 })
-                print(f"  ✅ 匹配成功: 晚年福气型特征")
+                logger.info(f"  ✅ 匹配成功: 晚年福气型特征")
             else:
-                print(f"  ❌ 未匹配: 特征组合不满足条件")
+                logger.info(f"  ❌ 未匹配: 特征组合不满足条件")
         else:
-            print(f"  ⏭️  跳过: 已达到最大规则数限制")
+            logger.info(f"  ⏭️  跳过: 已达到最大规则数限制")
         
         # 特殊特征分析（如果有）
         special_features = face_features.get("special_features", [])
         if len(special_features) > 0 and len(insights) < max_insights:
             rule_name = "规则10.1: 特殊特征分析"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
-            print(f"  原理: 特殊特征可能有特殊的命理意义")
+            logger.info(f"\n{rule_name}")
+            logger.info(f"  原理: 特殊特征可能有特殊的命理意义")
             # 按区域分组
             regions = {}
             for feature in special_features:
@@ -1308,7 +1318,7 @@ class FortuneRuleEngine:
                         "source": "face",
                         "feature": f"特殊特征:{region},{len(features_list)}个"
                     })
-                    print(f"  ✅ 匹配成功: {region}检测到{len(features_list)}个特殊特征")
+                    logger.info(f"  ✅ 匹配成功: {region}检测到{len(features_list)}个特殊特征")
                 else:
                     insights.append({
                         "category": "特殊",
@@ -1317,11 +1327,11 @@ class FortuneRuleEngine:
                         "source": "face",
                         "feature": f"特殊特征:{region}"
                 })
-                    print(f"  ✅ 匹配成功: {region}检测到特殊特征")
+                    logger.info(f"  ✅ 匹配成功: {region}检测到特殊特征")
         
         # 托底方案：如果匹配到的规则太少，生成基础分析
         if len(insights) < 5:
-            print(f"\n⚠️  匹配到的规则较少（{len(insights)}条），启用托底方案生成基础分析...")
+            logger.info(f"\n⚠️  匹配到的规则较少（{len(insights)}条），启用托底方案生成基础分析...")
             
             # 基于三停比例生成基础分析
             if upper > 0 and middle > 0 and lower > 0:
@@ -1335,7 +1345,7 @@ class FortuneRuleEngine:
                         "source": "face",
                         "feature": f"三停均衡:上{upper:.2%},中{middle:.2%},下{lower:.2%}"
                     })
-                    print(f"  ✅ 托底分析: 三停比例均衡")
+                    logger.info(f"  ✅ 托底分析: 三停比例均衡")
                 elif upper > middle and upper > lower:
                     insights.append({
                         "category": "运势",
@@ -1344,7 +1354,7 @@ class FortuneRuleEngine:
                         "source": "face",
                         "feature": f"上停较长:上{upper:.2%},中{middle:.2%},下{lower:.2%}"
                     })
-                    print(f"  ✅ 托底分析: 上停相对较长")
+                    logger.info(f"  ✅ 托底分析: 上停相对较长")
                 elif middle > upper and middle > lower:
                     insights.append({
                         "category": "运势",
@@ -1353,7 +1363,7 @@ class FortuneRuleEngine:
                         "source": "face",
                         "feature": f"中停较长:上{upper:.2%},中{middle:.2%},下{lower:.2%}"
                     })
-                    print(f"  ✅ 托底分析: 中停相对较长")
+                    logger.info(f"  ✅ 托底分析: 中停相对较长")
                 elif lower > upper and lower > middle:
                     insights.append({
                         "category": "运势",
@@ -1362,7 +1372,7 @@ class FortuneRuleEngine:
                         "source": "face",
                         "feature": f"下停较长:上{upper:.2%},中{middle:.2%},下{lower:.2%}"
                     })
-                    print(f"  ✅ 托底分析: 下停相对较长")
+                    logger.info(f"  ✅ 托底分析: 下停相对较长")
             
             # 基于面部比例生成基础分析
             face_ratio = measurements.get("face_ratio", 0)
@@ -1401,25 +1411,25 @@ class FortuneRuleEngine:
                     "source": "face",
                     "feature": f"综合:上{upper:.2%},中{middle:.2%},下{lower:.2%}"
                 })
-                print(f"  ✅ 托底分析: 生成通用综合分析")
+                logger.info(f"  ✅ 托底分析: 生成通用综合分析")
         
         # 合并和提炼重复内容
         insights = self._merge_and_refine_insights(insights)
         
         # 打印最终结果
-        print("\n" + "-"*80)
-        print(f"【面相规则匹配结果】")
-        print(f"  扫描的规则总数: {len(scanned_rules)}")
-        print(f"  匹配成功的规则数（合并前）: {len(insights)}")
-        print(f"  合并后的规则数: {len(insights)}")
-        print(f"\n  扫描的规则列表:")
+        logger.info("\n" + "-"*80)
+        logger.info(f"【面相规则匹配结果】")
+        logger.info(f"  扫描的规则总数: {len(scanned_rules)}")
+        logger.info(f"  匹配成功的规则数（合并前）: {len(insights)}")
+        logger.info(f"  合并后的规则数: {len(insights)}")
+        logger.info(f"\n  扫描的规则列表:")
         for i, rule in enumerate(scanned_rules, 1):
-            print(f"    {i}. {rule}")
-        print(f"\n  匹配成功的规则（合并后）:")
+            logger.info(f"    {i}. {rule}")
+        logger.info(f"\n  匹配成功的规则（合并后）:")
         for i, insight in enumerate(insights, 1):
-            print(f"    {i}. [{insight['category']}] {insight['content']} (置信度: {insight['confidence']})")
-        print("="*80)
-        print(f"✅ 面相规则匹配完成，共扫描 {len(scanned_rules)} 条规则，匹配到 {len(insights)} 条规则（已合并去重）\n", flush=True)
+            logger.info(f"    {i}. [{insight['category']}] {insight['content']} (置信度: {insight['confidence']})")
+        logger.info("="*80)
+        logger.info(f"✅ 面相规则匹配完成，共扫描 {len(scanned_rules)} 条规则，匹配到 {len(insights)} 条规则（已合并去重）\n", flush=True)
         return insights
     
     def integrate_with_bazi(
@@ -1432,13 +1442,13 @@ class FortuneRuleEngine:
         integrated_insights = []
         
         if not bazi_data:
-            print("⚠️  八字数据为空，跳过融合分析")
+            logger.info("⚠️  八字数据为空，跳过融合分析")
             return integrated_insights
         
         # 打印八字数据
-        print("\n" + "="*80)
-        print("🔮 八字与手相面相融合分析")
-        print("="*80)
+        logger.info("\n" + "="*80)
+        logger.info("🔮 八字与手相面相融合分析")
+        logger.info("="*80)
         
         # 获取八字信息
         five_elements = bazi_data.get("element_counts", {})
@@ -1460,7 +1470,7 @@ class FortuneRuleEngine:
                             if isinstance(god_info, dict) and "count" in god_info:
                                 ten_gods[god_name] = god_info["count"]
                     except Exception as e:
-                        print(f"  ⚠️  解析 totals 失败: {e}")
+                        logger.info(f"  ⚠️  解析 totals 失败: {e}")
             
             # 如果 totals 解析失败，尝试从 ten_gods_total 解析
             if not ten_gods and "ten_gods_total" in ten_gods_raw:
@@ -1472,7 +1482,7 @@ class FortuneRuleEngine:
                             if isinstance(god_info, dict) and "count" in god_info:
                                 ten_gods[god_name] = god_info["count"]
                     except Exception as e:
-                        print(f"  ⚠️  解析 ten_gods_total 失败: {e}")
+                        logger.info(f"  ⚠️  解析 ten_gods_total 失败: {e}")
             
             # 如果还是解析失败，尝试直接使用（可能是简单字典）
             if not ten_gods:
@@ -1482,10 +1492,10 @@ class FortuneRuleEngine:
                     elif isinstance(v, str) and v.isdigit():
                         ten_gods[k] = int(v)
         
-        print("\n【八字数据】")
-        print(f"  五行统计: {five_elements}")
-        print(f"  十神统计（原始）: {ten_gods_raw}")
-        print(f"  十神统计（解析后）: {ten_gods}")
+        logger.info("\n【八字数据】")
+        logger.info(f"  五行统计: {five_elements}")
+        logger.info(f"  十神统计（原始）: {ten_gods_raw}")
+        logger.info(f"  十神统计（解析后）: {ten_gods}")
         if bazi_pillars:
             year = bazi_pillars.get("year", {})
             month = bazi_pillars.get("month", {})
@@ -1499,27 +1509,27 @@ class FortuneRuleEngine:
             day_zhi = day.get('zhi') or day.get('branch', '')
             hour_gan = hour.get('gan') or hour.get('stem', '')
             hour_zhi = hour.get('zhi') or hour.get('branch', '')
-            print(f"  八字四柱: {year_gan}{year_zhi} {month_gan}{month_zhi} {day_gan}{day_zhi} {hour_gan}{hour_zhi}")
+            logger.info(f"  八字四柱: {year_gan}{year_zhi} {month_gan}{month_zhi} {day_gan}{day_zhi} {hour_gan}{hour_zhi}")
         
         # 打印手相特征
         if hand_features:
-            print("\n【手相特征】")
+            logger.info("\n【手相特征】")
             hand_shape = hand_features.get("hand_shape", "")
             hand_shape_ratio = hand_features.get("hand_shape_ratio", 0.0)
             palm_lines = hand_features.get("palm_lines", {})
             finger_ratios = hand_features.get("finger_ratios", {})
-            print(f"  手型: {hand_shape} (ratio: {hand_shape_ratio:.2f})")
-            print(f"  掌纹: {palm_lines}")
-            print(f"  指长比例: {finger_ratios}")
+            logger.info(f"  手型: {hand_shape} (ratio: {hand_shape_ratio:.2f})")
+            logger.info(f"  掌纹: {palm_lines}")
+            logger.info(f"  指长比例: {finger_ratios}")
         
         # 打印面相特征
         if face_features:
-            print("\n【面相特征】")
+            logger.info("\n【面相特征】")
             san_ting = face_features.get("san_ting_ratio", {})
-            print(f"  三停比例: {san_ting}")
+            logger.info(f"  三停比例: {san_ting}")
         
-        print("\n【规则匹配过程】")
-        print("-"*80)
+        logger.info("\n【规则匹配过程】")
+        logger.info("-"*80)
         
         # 五行对应关系（传统命理学）
         element_mapping = {
@@ -1547,9 +1557,9 @@ class FortuneRuleEngine:
             # 规则1.1: 方形手 + 金元素（金主收敛、刚强，方形手主稳重，同属性增强）
             rule_name = "规则1.1: 方形手 + 金元素"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
-            print(f"  原理: 方形手对应金、土，金旺则财运佳，适合金融、管理")
-            print(f"  检查: hand_shape='{hand_shape}', 金元素={five_elements.get('金', 0)}, ratio={hand_shape_ratio:.2f}")
+            logger.info(f"\n{rule_name}")
+            logger.info(f"  原理: 方形手对应金、土，金旺则财运佳，适合金融、管理")
+            logger.info(f"  检查: hand_shape='{hand_shape}', 金元素={five_elements.get('金', 0)}, ratio={hand_shape_ratio:.2f}")
             if hand_shape == "方形手" and five_elements.get("金", 0) > 0:
                 gold_count = five_elements.get("金", 0)
                 if gold_count >= 3:
@@ -1579,16 +1589,16 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 需手型='方形手'且金元素 > 0")
+                logger.info(f"  ❌ 未匹配: 需手型='方形手'且金元素 > 0")
             
             # 规则1.2: 方形手 + 土元素（土主稳定、承载，方形手主稳重，同属性增强）
             rule_name = "规则1.2: 方形手 + 土元素"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
-            print(f"  原理: 方形手对应金、土，土旺则稳定务实，适合工程、建筑")
-            print(f"  检查: hand_shape='{hand_shape}', 土元素={five_elements.get('土', 0)}")
+            logger.info(f"\n{rule_name}")
+            logger.info(f"  原理: 方形手对应金、土，土旺则稳定务实，适合工程、建筑")
+            logger.info(f"  检查: hand_shape='{hand_shape}', 土元素={five_elements.get('土', 0)}")
             if hand_shape == "方形手" and five_elements.get("土", 0) >= 2:
                 insight = {
                     "category": "事业",
@@ -1597,16 +1607,16 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 需手型='方形手'且土元素 >= 2")
+                logger.info(f"  ❌ 未匹配: 需手型='方形手'且土元素 >= 2")
             
             # 规则1.3: 长方形手 + 木元素（木主生发、向上，长方形手主理性分析，同属性增强）
             rule_name = "规则1.3: 长方形手 + 木元素"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
-            print(f"  原理: 长方形手对应木、金，木旺则思维活跃，适合技术、科研")
-            print(f"  检查: hand_shape='{hand_shape}', 木元素={five_elements.get('木', 0)}, ratio={hand_shape_ratio:.2f}")
+            logger.info(f"\n{rule_name}")
+            logger.info(f"  原理: 长方形手对应木、金，木旺则思维活跃，适合技术、科研")
+            logger.info(f"  检查: hand_shape='{hand_shape}', 木元素={five_elements.get('木', 0)}, ratio={hand_shape_ratio:.2f}")
             if hand_shape == "长方形手" and five_elements.get("木", 0) > 0:
                 wood_count = five_elements.get("木", 0)
                 if wood_count >= 3:
@@ -1636,16 +1646,16 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 需手型='长方形手'且木元素 > 0")
+                logger.info(f"  ❌ 未匹配: 需手型='长方形手'且木元素 > 0")
             
             # 规则1.4: 长方形手 + 金元素（金主收敛、刚强，长方形手主理性，同属性增强）
             rule_name = "规则1.4: 长方形手 + 金元素"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
-            print(f"  原理: 长方形手对应木、金，金旺则逻辑思维强，适合金融、技术")
-            print(f"  检查: hand_shape='{hand_shape}', 金元素={five_elements.get('金', 0)}, ratio={hand_shape_ratio:.2f}")
+            logger.info(f"\n{rule_name}")
+            logger.info(f"  原理: 长方形手对应木、金，金旺则逻辑思维强，适合金融、技术")
+            logger.info(f"  检查: hand_shape='{hand_shape}', 金元素={five_elements.get('金', 0)}, ratio={hand_shape_ratio:.2f}")
             if hand_shape == "长方形手" and five_elements.get("金", 0) > 0:
                 gold_count = five_elements.get("金", 0)
                 if gold_count >= 3:
@@ -1668,16 +1678,16 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 需手型='长方形手'且金元素 > 0")
+                logger.info(f"  ❌ 未匹配: 需手型='长方形手'且金元素 > 0")
             
             # 规则1.5: 圆形手 + 水元素（水主流动、智慧，圆形手主灵活，同属性增强）
             rule_name = "规则1.5: 圆形手 + 水元素"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
-            print(f"  原理: 圆形手对应水、木，水旺则适应能力强，适合创意、营销")
-            print(f"  检查: hand_shape='{hand_shape}', 水元素={five_elements.get('水', 0)}")
+            logger.info(f"\n{rule_name}")
+            logger.info(f"  原理: 圆形手对应水、木，水旺则适应能力强，适合创意、营销")
+            logger.info(f"  检查: hand_shape='{hand_shape}', 水元素={five_elements.get('水', 0)}")
             if hand_shape == "圆形手" and five_elements.get("水", 0) > 0:
                 insight = {
                     "category": "性格",
@@ -1686,16 +1696,16 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 需手型='圆形手'且水元素 > 0")
+                logger.info(f"  ❌ 未匹配: 需手型='圆形手'且水元素 > 0")
             
             # 规则1.6: 圆形手 + 木元素（木主生发、向上，圆形手主灵活，相生关系）
             rule_name = "规则1.6: 圆形手 + 木元素"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
-            print(f"  原理: 圆形手对应水、木，木旺则思维活跃，适合艺术、设计")
-            print(f"  检查: hand_shape='{hand_shape}', 木元素={five_elements.get('木', 0)}")
+            logger.info(f"\n{rule_name}")
+            logger.info(f"  原理: 圆形手对应水、木，木旺则思维活跃，适合艺术、设计")
+            logger.info(f"  检查: hand_shape='{hand_shape}', 木元素={five_elements.get('木', 0)}")
             if hand_shape == "圆形手" and five_elements.get("木", 0) > 0:
                 insight = {
                     "category": "天赋",
@@ -1704,16 +1714,16 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 需手型='圆形手'且木元素 > 0")
+                logger.info(f"  ❌ 未匹配: 需手型='圆形手'且木元素 > 0")
             
             # 规则1.7: 尖形手 + 火元素（火主热情、向上，尖形手主理想主义，同属性增强）
             rule_name = "规则1.7: 尖形手 + 火元素"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
-            print(f"  原理: 尖形手对应火，火旺则热情向上，适合艺术、教育")
-            print(f"  检查: hand_shape='{hand_shape}', 火元素={five_elements.get('火', 0)}")
+            logger.info(f"\n{rule_name}")
+            logger.info(f"  原理: 尖形手对应火，火旺则热情向上，适合艺术、教育")
+            logger.info(f"  检查: hand_shape='{hand_shape}', 火元素={five_elements.get('火', 0)}")
             if hand_shape == "尖形手" and five_elements.get("火", 0) > 0:
                 insight = {
                     "category": "天赋",
@@ -1722,18 +1732,18 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 需手型='尖形手'且火元素 > 0")
+                logger.info(f"  ❌ 未匹配: 需手型='尖形手'且火元素 > 0")
             
             # ========== 规则组2: 掌纹与五行融合（基于传统命理学对应关系）==========
             
             # 规则2.1: 生命线 + 土元素（生命线对应土，土主稳定承载，健康根基）
             rule_name = "规则2.1: 生命线 + 土元素（健康根基）"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
-            print(f"  原理: 生命线对应土，土旺则健康根基稳固，土弱则需注意脾胃")
-            print(f"  检查: life_line='{life_line}', 土元素={five_elements.get('土', 0)}")
+            logger.info(f"\n{rule_name}")
+            logger.info(f"  原理: 生命线对应土，土旺则健康根基稳固，土弱则需注意脾胃")
+            logger.info(f"  检查: life_line='{life_line}', 土元素={five_elements.get('土', 0)}")
             if "深" in life_line or "长" in life_line:
                 earth_count = five_elements.get("土", 0)
                 
@@ -1756,7 +1766,7 @@ class FortuneRuleEngine:
                         "source": "integrated"
                     }
                     integrated_insights.append(insight)
-                    print(f"  ✅ 匹配成功（土弱）: {insight['content']}")
+                    logger.info(f"  ✅ 匹配成功（土弱）: {insight['content']}")
                 elif earth_count >= 3:
                     insight = {
                         "category": "健康",
@@ -1765,7 +1775,7 @@ class FortuneRuleEngine:
                         "source": "integrated"
                     }
                     integrated_insights.append(insight)
-                    print(f"  ✅ 匹配成功（土旺）: {insight['content']}")
+                    logger.info(f"  ✅ 匹配成功（土旺）: {insight['content']}")
                 else:
                     insight = {
                         "category": "健康",
@@ -1774,16 +1784,16 @@ class FortuneRuleEngine:
                         "source": "integrated"
                     }
                     integrated_insights.append(insight)
-                    print(f"  ✅ 匹配成功（土适中）: {insight['content']}")
+                    logger.info(f"  ✅ 匹配成功（土适中）: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 生命线不满足条件（需包含'深'或'长'）")
+                logger.info(f"  ❌ 未匹配: 生命线不满足条件（需包含'深'或'长'）")
             
             # 规则2.2: 智慧线 + 木元素（智慧线对应木，木主生发向上，学习思维）
             rule_name = "规则2.2: 智慧线 + 木元素（学习思维）"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
-            print(f"  原理: 智慧线对应木，木旺则学习能力强，思维敏捷")
-            print(f"  检查: head_line='{head_line}', 木元素={five_elements.get('木', 0)}")
+            logger.info(f"\n{rule_name}")
+            logger.info(f"  原理: 智慧线对应木，木旺则学习能力强，思维敏捷")
+            logger.info(f"  检查: head_line='{head_line}', 木元素={five_elements.get('木', 0)}")
             if "清晰" in head_line or "深长" in head_line:
                 if five_elements.get("木", 0) > 0:
                     insight = {
@@ -1793,18 +1803,18 @@ class FortuneRuleEngine:
                         "source": "integrated"
                     }
                     integrated_insights.append(insight)
-                    print(f"  ✅ 匹配成功: {insight['content']}")
+                    logger.info(f"  ✅ 匹配成功: {insight['content']}")
                 else:
-                    print(f"  ❌ 未匹配: 智慧线满足条件，但木元素为 {five_elements.get('木', 0)}（需 > 0）")
+                    logger.info(f"  ❌ 未匹配: 智慧线满足条件，但木元素为 {five_elements.get('木', 0)}（需 > 0）")
             else:
-                print(f"  ❌ 未匹配: 智慧线不满足条件（需包含'清晰'或'深长'）")
+                logger.info(f"  ❌ 未匹配: 智慧线不满足条件（需包含'清晰'或'深长'）")
             
             # 规则2.3: 感情线 + 十神（感情线对应水、火，正官正财主稳定和谐）
             rule_name = "规则2.3: 感情线 + 十神（感情婚姻）"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
-            print(f"  原理: 感情线对应水、火，正官正财主感情稳定，婚姻和谐")
-            print(f"  检查: heart_line='{heart_line}', 正官={ten_gods.get('正官', 0)}, 正财={ten_gods.get('正财', 0)}")
+            logger.info(f"\n{rule_name}")
+            logger.info(f"  原理: 感情线对应水、火，正官正财主感情稳定，婚姻和谐")
+            logger.info(f"  检查: heart_line='{heart_line}', 正官={ten_gods.get('正官', 0)}, 正财={ten_gods.get('正财', 0)}")
             if "明显" in heart_line or "深长" in heart_line:
                 zheng_guan = ten_gods.get("正官", 0)
                 zheng_cai = ten_gods.get("正财", 0)
@@ -1850,19 +1860,19 @@ class FortuneRuleEngine:
                         "source": "integrated"
                     }
                     integrated_insights.append(insight)
-                    print(f"  ✅ 匹配成功: {insight['content']}")
+                    logger.info(f"  ✅ 匹配成功: {insight['content']}")
                 else:
-                    print(f"  ❌ 未匹配: 感情线满足条件，但正官={zheng_guan}, 正财={zheng_cai}（需至少一个 > 0）")
+                    logger.info(f"  ❌ 未匹配: 感情线满足条件，但正官={zheng_guan}, 正财={zheng_cai}（需至少一个 > 0）")
             else:
-                print(f"  ❌ 未匹配: 感情线不满足条件（需包含'明显'或'深长'）")
+                logger.info(f"  ❌ 未匹配: 感情线不满足条件（需包含'明显'或'深长'）")
             
             # 规则2.4: 事业线 + 金元素（事业线对应金、火，金主收敛刚强，事业成就）
             rule_name = "规则2.4: 事业线 + 金元素（事业成就）"
             scanned_rules.append(rule_name)
             fate_line = hand_features.get("palm_lines", {}).get("fate_line", "")
-            print(f"\n{rule_name}")
-            print(f"  原理: 事业线对应金、火，金旺则事业有成，适合管理、金融")
-            print(f"  检查: fate_line='{fate_line}', 金元素={five_elements.get('金', 0)}")
+            logger.info(f"\n{rule_name}")
+            logger.info(f"  原理: 事业线对应金、火，金旺则事业有成，适合管理、金融")
+            logger.info(f"  检查: fate_line='{fate_line}', 金元素={five_elements.get('金', 0)}")
             if ("明显" in fate_line or "深长" in fate_line) and five_elements.get("金", 0) > 0:
                 insight = {
                     "category": "事业",
@@ -1871,23 +1881,23 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 需事业线包含'明显'或'深长'且金元素 > 0")
+                logger.info(f"  ❌ 未匹配: 需事业线包含'明显'或'深长'且金元素 > 0")
             
             # ========== 规则组3: 指长与五行融合（基于传统命理学对应关系）==========
             
             # 规则3.1: 指长比例 + 五行天赋（个性化内容）
             rule_name = "规则3.1: 指长比例 + 五行天赋"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
+            logger.info(f"\n{rule_name}")
             if finger_ratios:
                 index_ratio = finger_ratios.get("index", 0)
                 ring_ratio = finger_ratios.get("ring", 0)
                 middle_ratio = finger_ratios.get("middle", 1.0)
                 gold_count = five_elements.get("金", 0)
                 wood_count = five_elements.get("木", 0)
-                print(f"  检查: 食指比例={index_ratio:.2f}, 无名指比例={ring_ratio:.2f}, 中指比例={middle_ratio:.2f}, 金元素={gold_count}, 木元素={wood_count}")
+                logger.info(f"  检查: 食指比例={index_ratio:.2f}, 无名指比例={ring_ratio:.2f}, 中指比例={middle_ratio:.2f}, 金元素={gold_count}, 木元素={wood_count}")
                 
                 # 食指长 + 金元素（根据差异程度个性化）
                 if index_ratio > ring_ratio * 1.05 and gold_count > 0:
@@ -1916,7 +1926,7 @@ class FortuneRuleEngine:
                         "source": "integrated"
                     }
                     integrated_insights.append(insight)
-                    print(f"  ✅ 匹配成功（食指长）: {insight['content']}")
+                    logger.info(f"  ✅ 匹配成功（食指长）: {insight['content']}")
                 
                 # 无名指长 + 木元素（根据差异程度个性化）
                 elif ring_ratio > index_ratio * 1.05 and wood_count > 0:
@@ -1945,7 +1955,7 @@ class FortuneRuleEngine:
                         "source": "integrated"
                     }
                     integrated_insights.append(insight)
-                    print(f"  ✅ 匹配成功（无名指长）: {insight['content']}")
+                    logger.info(f"  ✅ 匹配成功（无名指长）: {insight['content']}")
                 
                 # 中指长 + 木元素（新增）
                 elif middle_ratio > 1.1 and wood_count > 0:
@@ -1956,11 +1966,11 @@ class FortuneRuleEngine:
                         "source": "integrated"
                     }
                     integrated_insights.append(insight)
-                    print(f"  ✅ 匹配成功（中指长）: {insight['content']}")
+                    logger.info(f"  ✅ 匹配成功（中指长）: {insight['content']}")
                 else:
-                    print(f"  ❌ 未匹配: 指长比例或五行元素不满足条件")
+                    logger.info(f"  ❌ 未匹配: 指长比例或五行元素不满足条件")
             else:
-                print(f"  ❌ 未匹配: 指长比例数据为空")
+                logger.info(f"  ❌ 未匹配: 指长比例数据为空")
         
         # ========== 规则组4: 面相与五行融合（基于传统命理学对应关系）==========
         if face_features:
@@ -1974,9 +1984,9 @@ class FortuneRuleEngine:
             # 规则4.1: 上停 + 木元素（上停对应早年，木主生发向上，学习运）
             rule_name = "规则4.1: 上停 + 木元素（早年学习运）"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
-            print(f"  原理: 上停对应早年运势，木主生发向上，学习能力强")
-            print(f"  检查: 上停比例={upper:.2%}, 木元素={five_elements.get('木', 0)}")
+            logger.info(f"\n{rule_name}")
+            logger.info(f"  原理: 上停对应早年运势，木主生发向上，学习能力强")
+            logger.info(f"  检查: 上停比例={upper:.2%}, 木元素={five_elements.get('木', 0)}")
             if upper > 0.35 and five_elements.get("木", 0) > 0:
                 wood_count = five_elements.get("木", 0)
                 if wood_count >= 3:
@@ -2004,16 +2014,16 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 上停比例={upper:.2%}（需 > 35%）或木元素={five_elements.get('木', 0)}（需 > 0）")
+                logger.info(f"  ❌ 未匹配: 上停比例={upper:.2%}（需 > 35%）或木元素={five_elements.get('木', 0)}（需 > 0）")
             
             # 规则4.2: 中停 + 火元素（中停对应中年，火主热情向上，事业运）
             rule_name = "规则4.2: 中停 + 火元素（中年事业运）"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
-            print(f"  原理: 中停对应中年运势，火主热情向上，事业发展好")
-            print(f"  检查: 中停比例={middle:.2%}, 火元素={five_elements.get('火', 0)}")
+            logger.info(f"\n{rule_name}")
+            logger.info(f"  原理: 中停对应中年运势，火主热情向上，事业发展好")
+            logger.info(f"  检查: 中停比例={middle:.2%}, 火元素={five_elements.get('火', 0)}")
             if middle > 0.35 and five_elements.get("火", 0) > 0:
                 fire_count = five_elements.get("火", 0)
                 if fire_count >= 3:
@@ -2041,16 +2051,16 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 中停比例={middle:.2%}（需 > 35%）或火元素={five_elements.get('火', 0)}（需 > 0）")
+                logger.info(f"  ❌ 未匹配: 中停比例={middle:.2%}（需 > 35%）或火元素={five_elements.get('火', 0)}（需 > 0）")
             
             # 规则4.3: 下停 + 土元素（下停对应晚年，土主稳定承载，晚年运）
             rule_name = "规则4.3: 下停 + 土元素（晚年运势）"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
-            print(f"  原理: 下停对应晚年运势，土主稳定承载，晚年有福")
-            print(f"  检查: 下停比例={lower:.2%}, 土元素={five_elements.get('土', 0)}")
+            logger.info(f"\n{rule_name}")
+            logger.info(f"  原理: 下停对应晚年运势，土主稳定承载，晚年有福")
+            logger.info(f"  检查: 下停比例={lower:.2%}, 土元素={five_elements.get('土', 0)}")
             if lower > 0.35 and five_elements.get("土", 0) > 0:
                 earth_count = five_elements.get("土", 0)
                 if earth_count >= 3:
@@ -2078,18 +2088,18 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 下停比例={lower:.2%}（需 > 35%）或土元素={five_elements.get('土', 0)}（需 > 0）")
+                logger.info(f"  ❌ 未匹配: 下停比例={lower:.2%}（需 > 35%）或土元素={five_elements.get('土', 0)}（需 > 0）")
             
             # 规则4.4: 鼻子 + 金元素（鼻子对应财运，金主收敛刚强，财运）
             rule_name = "规则4.4: 鼻子 + 金元素（财运）"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
+            logger.info(f"\n{rule_name}")
             nose_height = measurements.get("nose_height", 0)
             nose_ratio = measurements.get("nose_ratio", 0)
-            print(f"  原理: 鼻子对应财运，金主收敛刚强，财运佳")
-            print(f"  检查: 鼻子高度={nose_height:.1f}, 比例={nose_ratio:.2f}, 金元素={five_elements.get('金', 0)}")
+            logger.info(f"  原理: 鼻子对应财运，金主收敛刚强，财运佳")
+            logger.info(f"  检查: 鼻子高度={nose_height:.1f}, 比例={nose_ratio:.2f}, 金元素={five_elements.get('金', 0)}")
             if (nose_ratio > 2.0 or nose_height > 50) and five_elements.get("金", 0) > 0:
                 gold_count = five_elements.get("金", 0)
                 if gold_count >= 3:
@@ -2119,18 +2129,18 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 需鼻子高挺（比例>2.0或高度>50）且金元素>0")
+                logger.info(f"  ❌ 未匹配: 需鼻子高挺（比例>2.0或高度>50）且金元素>0")
             
             # 规则4.5: 额头 + 木元素（额头对应智慧，木主生发向上，学习能力）
             rule_name = "规则4.5: 额头 + 木元素（智慧学习）"
             scanned_rules.append(rule_name)
-            print(f"\n{rule_name}")
+            logger.info(f"\n{rule_name}")
             forehead_width = measurements.get("forehead_width", 0)
             forehead_ratio = measurements.get("forehead_ratio", 0)
-            print(f"  原理: 额头对应智慧，木主生发向上，学习能力强")
-            print(f"  检查: 额头宽度={forehead_width:.1f}, 比例={forehead_ratio:.2f}, 木元素={five_elements.get('木', 0)}")
+            logger.info(f"  原理: 额头对应智慧，木主生发向上，学习能力强")
+            logger.info(f"  检查: 额头宽度={forehead_width:.1f}, 比例={forehead_ratio:.2f}, 木元素={five_elements.get('木', 0)}")
             if (forehead_ratio > 1.2 or forehead_width > 100) and five_elements.get("木", 0) > 0:
                 wood_count = five_elements.get("木", 0)
                 if wood_count >= 3:
@@ -2160,13 +2170,13 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 需额头宽阔（比例>1.2或宽度>100）且木元素>0")
+                logger.info(f"  ❌ 未匹配: 需额头宽阔（比例>1.2或宽度>100）且木元素>0")
         
         # 托底方案：如果融合分析匹配到的规则太少，生成基础融合分析
         if len(integrated_insights) < 3:
-            print(f"\n⚠️  融合分析匹配到的规则较少（{len(integrated_insights)}条），启用托底方案生成基础融合分析...")
+            logger.info(f"\n⚠️  融合分析匹配到的规则较少（{len(integrated_insights)}条），启用托底方案生成基础融合分析...")
             
             # 基于五行生成基础融合分析
             if five_elements:
@@ -2184,7 +2194,7 @@ class FortuneRuleEngine:
                             "confidence": 0.7,
                             "source": "integrated"
                         })
-                        print(f"  ✅ 托底融合分析: 金元素较旺，财运分析")
+                        logger.info(f"  ✅ 托底融合分析: 金元素较旺，财运分析")
                     elif element_name == "木" and element_count >= 2:
                         integrated_insights.append({
                             "category": "学习",
@@ -2192,7 +2202,7 @@ class FortuneRuleEngine:
                             "confidence": 0.7,
                             "source": "integrated"
                         })
-                        print(f"  ✅ 托底融合分析: 木元素较旺，学习分析")
+                        logger.info(f"  ✅ 托底融合分析: 木元素较旺，学习分析")
                     elif element_name == "土" and element_count >= 3:
                         integrated_insights.append({
                             "category": "事业",
@@ -2200,7 +2210,7 @@ class FortuneRuleEngine:
                             "confidence": 0.7,
                             "source": "integrated"
                         })
-                        print(f"  ✅ 托底融合分析: 土元素较旺，事业分析")
+                        logger.info(f"  ✅ 托底融合分析: 土元素较旺，事业分析")
                     elif element_name == "火" and element_count >= 2:
                         integrated_insights.append({
                             "category": "性格",
@@ -2208,7 +2218,7 @@ class FortuneRuleEngine:
                             "confidence": 0.7,
                             "source": "integrated"
                         })
-                        print(f"  ✅ 托底融合分析: 火元素较旺，性格分析")
+                        logger.info(f"  ✅ 托底融合分析: 火元素较旺，性格分析")
                     elif element_name == "水" and element_count >= 2:
                         integrated_insights.append({
                             "category": "智慧",
@@ -2216,7 +2226,7 @@ class FortuneRuleEngine:
                             "confidence": 0.7,
                             "source": "integrated"
                         })
-                        print(f"  ✅ 托底融合分析: 水元素较旺，智慧分析")
+                        logger.info(f"  ✅ 托底融合分析: 水元素较旺，智慧分析")
             
             # 基于十神生成基础融合分析
             if ten_gods and len(integrated_insights) < 3:
@@ -2231,7 +2241,7 @@ class FortuneRuleEngine:
                             "confidence": 0.7,
                             "source": "integrated"
                         })
-                        print(f"  ✅ 托底融合分析: {god_name}较旺，财运分析")
+                        logger.info(f"  ✅ 托底融合分析: {god_name}较旺，财运分析")
                     elif god_name == "正官" or god_name == "七杀":
                         integrated_insights.append({
                             "category": "事业",
@@ -2239,7 +2249,7 @@ class FortuneRuleEngine:
                             "confidence": 0.7,
                             "source": "integrated"
                         })
-                        print(f"  ✅ 托底融合分析: {god_name}较旺，事业分析")
+                        logger.info(f"  ✅ 托底融合分析: {god_name}较旺，事业分析")
                     elif god_name == "正印" or god_name == "偏印":
                         integrated_insights.append({
                             "category": "学习",
@@ -2247,7 +2257,7 @@ class FortuneRuleEngine:
                             "confidence": 0.7,
                             "source": "integrated"
                         })
-                        print(f"  ✅ 托底融合分析: {god_name}较旺，学习分析")
+                        logger.info(f"  ✅ 托底融合分析: {god_name}较旺，学习分析")
             
             # 如果还是没有足够的洞察，生成通用融合分析
             if len(integrated_insights) < 2:
@@ -2269,21 +2279,21 @@ class FortuneRuleEngine:
                             "confidence": 0.65,
                             "source": "integrated"
                         })
-                    print(f"  ✅ 托底融合分析: 生成通用融合综合分析")
+                    logger.info(f"  ✅ 托底融合分析: 生成通用融合综合分析")
         
         # 打印最终结果
-        print("\n" + "-"*80)
-        print(f"【融合分析结果】")
-        print(f"  扫描的规则总数: {len(scanned_rules)}")
-        print(f"  匹配成功的规则数: {len(integrated_insights)}")
-        print(f"\n  扫描的规则列表:")
+        logger.info("\n" + "-"*80)
+        logger.info(f"【融合分析结果】")
+        logger.info(f"  扫描的规则总数: {len(scanned_rules)}")
+        logger.info(f"  匹配成功的规则数: {len(integrated_insights)}")
+        logger.info(f"\n  扫描的规则列表:")
         for i, rule in enumerate(scanned_rules, 1):
-            print(f"    {i}. {rule}")
-        print(f"\n  匹配成功的规则:")
+            logger.info(f"    {i}. {rule}")
+        logger.info(f"\n  匹配成功的规则:")
         for i, insight in enumerate(integrated_insights, 1):
-            print(f"    {i}. [{insight['category']}] {insight['content']} (置信度: {insight['confidence']})")
-        print("="*80)
-        print(f"✅ 融合分析完成，共扫描 {len(scanned_rules)} 条规则，匹配到 {len(integrated_insights)} 条规则\n", flush=True)
+            logger.info(f"    {i}. [{insight['category']}] {insight['content']} (置信度: {insight['confidence']})")
+        logger.info("="*80)
+        logger.info(f"✅ 融合分析完成，共扫描 {len(scanned_rules)} 条规则，匹配到 {len(integrated_insights)} 条规则\n", flush=True)
         
         # 合并和提炼重复内容
         integrated_insights = self._merge_and_refine_insights(integrated_insights)
@@ -2505,3 +2515,12 @@ class FortuneRuleEngine:
         
         return recommendations
 
+
+def get_hand_rules_static() -> Dict[str, Any]:
+    """模块级：返回手相规则（供 UnifiedRuleService 硬编码兜底使用）。"""
+    return FortuneRuleEngine._load_hand_rules()
+
+
+def get_face_rules_static() -> Dict[str, Any]:
+    """模块级：返回面相规则（供 UnifiedRuleService 硬编码兜底使用）。"""
+    return FortuneRuleEngine._load_face_rules()

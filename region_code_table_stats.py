@@ -7,7 +7,7 @@
 import json
 
 def print_stats():
-    file_path = 'docs/region_code_table.json'
+    file_path = 'region_code_table.json'
     
     with open(file_path, 'r', encoding='utf-8') as f:
         data = json.load(f)

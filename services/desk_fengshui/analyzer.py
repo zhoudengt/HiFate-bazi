@@ -510,5 +510,5 @@ if __name__ == "__main__":
         use_bazi=True
     )
     
-    print(f"分析结果: {result}")
+    logger.info(f"分析结果: {result}")
 

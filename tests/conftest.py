@@ -1,41 +1,41 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-pytest 配置和共享 fixtures
+Pytest fixtures for HiFate-bazi tests.
 """
-import pytest
+
 import os
 import sys
-from typing import Generator
+import pytest
 
-# 添加项目根目录到路径
+# Ensure project root is on path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, project_root)
-
-# 测试配置
-TEST_BASE_URL = os.getenv("TEST_BASE_URL", "http://localhost:8001")
-TEST_API_BASE = f"{TEST_BASE_URL}/api/v1"
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 
 @pytest.fixture
-def api_base_url() -> str:
-    """API 基础 URL"""
-    return TEST_API_BASE
+def client():
+    """FastAPI TestClient for API tests."""
+    from fastapi.testclient import TestClient
+    from server.main import app
+    return TestClient(app)
 
 
 @pytest.fixture
-def test_bazi_data() -> dict:
-    """标准测试八字数据"""
+def sample_bazi_request():
+    """Sample request body for /api/v1/bazi/calculate."""
     return {
         "solar_date": "1990-01-15",
         "solar_time": "12:00",
-        "gender": "male"
+        "gender": "male",
     }
 
 
 @pytest.fixture
-def test_bazi_data_female() -> dict:
-    """女性测试八字数据"""
-    return {
-        "solar_date": "1990-01-15",
-        "solar_time": "12:00",
-        "gender": "female"
-    }
+def sample_bazi_requests():
+    """Multiple sample requests for baseline tests."""
+    return [
+        {"solar_date": "1990-01-15", "solar_time": "12:00", "gender": "male"},
+        {"solar_date": "1985-06-20", "solar_time": "08:30", "gender": "female"},
+    ]

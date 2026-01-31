@@ -13,7 +13,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator, Validat
 from typing import Optional, Dict, Any, Union, Tuple
 from dataclasses import dataclass
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -22,20 +21,24 @@ logger = logging.getLogger(__name__)
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.insert(0, project_root)
 
-from server.services.bazi_display_service import BaziDisplayService
+from server.services.bazi_display_service import (
+    BaziDisplayService, 
+    _determine_current_dayun_by_jiaoyun,
+    _calculate_default_liunian
+)
+from server.services.shensha_sort_service import sort_shensha
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.utils.api_cache_helper import (
     generate_cache_key, get_cached_result, set_cached_result,
     L2_TTL, get_current_date_str
 )
+from server.utils.api_error_handler import api_error_handler
+from server.utils.async_executor import get_executor
+from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
+from server.orchestrators.modules_config import get_modules_config
 
 router = APIRouter()
-
-# 线程池
-cpu_count = os.cpu_count() or 4
-max_workers = min(cpu_count * 2, 100)
-executor = ThreadPoolExecutor(max_workers=max_workers)
 
 
 class BaziDisplayRequest(BaziBaseRequest):
@@ -83,6 +86,7 @@ class FortuneDisplayRequestWithMode:
 
 
 @router.post("/bazi/pan/display", summary="排盘展示（前端优化）")
+@api_error_handler
 async def get_pan_display(request: BaziDisplayRequest):
     """
     获取排盘数据（前端优化格式）
@@ -102,71 +106,131 @@ async def get_pan_display(request: BaziDisplayRequest):
     - 四柱数组（便于前端循环渲染）
     - 五行统计（包含百分比）
     - conversion_info: 转换信息（如果进行了农历转换或时区转换）
+    
+    架构：通过 BaziDataOrchestrator 统一获取数据（数据总线设计）
     """
+    # 处理农历输入和时区转换
+    final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+        request.solar_date,
+        request.solar_time,
+        request.calendar_type or "solar",
+        request.location,
+        request.latitude,
+        request.longitude
+    )
+
+    cache_key = generate_cache_key("pan", final_solar_date, final_solar_time, request.gender)
+    cached = get_cached_result(cache_key, "pan/display")
+    if cached:
+        if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+            cached['conversion_info'] = conversion_info
+        return cached
+
     try:
-        # 处理农历输入和时区转换
-        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
-            request.solar_date,
-            request.solar_time,
-            request.calendar_type or "solar",
-            request.location,
-            request.latitude,
-            request.longitude
+        # ✅ 通过编排层统一获取数据（数据总线设计）
+        modules = get_modules_config('pan_display')
+        orchestrator_data = await BaziDataOrchestrator.fetch_data(
+            final_solar_date,
+            final_solar_time,
+            request.gender,
+            modules=modules,
+            preprocessed=True,  # 已经过 process_input 处理
+            calendar_type=request.calendar_type or "solar",
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude
         )
         
-        # >>> 缓存检查 <<<
-        cache_key = generate_cache_key("pan", final_solar_date, final_solar_time, request.gender)
-        cached = get_cached_result(cache_key, "pan/display")
-        if cached:
-            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
-                cached['conversion_info'] = conversion_info
-            return cached
-        # >>> 缓存检查结束 <<<
+        # ✅ 从编排层数据组装响应（保持响应结构完全不变）
+        result = _assemble_pan_display_response(orchestrator_data)
         
-        loop = asyncio.get_event_loop()
-        try:
-            result = await loop.run_in_executor(
-                executor,
-                BaziDisplayService.get_pan_display,
-                final_solar_date,
-                final_solar_time,
-                request.gender
-            )
-        except BrokenPipeError:
-            # 客户端断开连接，返回友好的错误响应
+    except BrokenPipeError:
+        logger.warning("客户端断开连接，计算中断")
+        return {
+            "success": False,
+            "error": "客户端连接已断开",
+            "error_type": "client_disconnected"
+        }
+    except OSError as e:
+        if e.errno == 32:  # Broken pipe
             logger.warning("客户端断开连接，计算中断")
             return {
                 "success": False,
                 "error": "客户端连接已断开",
                 "error_type": "client_disconnected"
             }
-        except OSError as e:
-            # 处理其他可能的 Broken pipe 相关错误
-            if e.errno == 32:  # Broken pipe
-                logger.warning("客户端断开连接，计算中断")
-                return {
-                    "success": False,
-                    "error": "客户端连接已断开",
-                    "error_type": "client_disconnected"
-                }
-            raise  # 其他 OSError 继续抛出
-        
-        if result.get('success'):
-            # >>> 缓存写入 <<<
-            set_cached_result(cache_key, result, L2_TTL)
-            # >>> 缓存写入结束 <<<
-            # 添加转换信息到结果
-            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
-                result['conversion_info'] = conversion_info
-            return result
-        else:
-            raise HTTPException(status_code=500, detail=result.get('error', '计算失败'))
-            
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise
     except Exception as e:
-        import traceback
-        raise HTTPException(status_code=500, detail=f"计算异常: {str(e)}\n{traceback.format_exc()}")
+        logger.error(f"pan/display 计算失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"计算失败: {str(e)}")
+
+    if result.get('success'):
+        set_cached_result(cache_key, result, L2_TTL)
+        if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+            result['conversion_info'] = conversion_info
+        return result
+    raise HTTPException(status_code=500, detail=result.get('error', '计算失败'))
+
+
+def _assemble_pan_display_response(orchestrator_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    从编排层数据组装 pan/display 响应
+    
+    保持与原 BaziDisplayService.get_pan_display() 返回格式完全一致
+    
+    Args:
+        orchestrator_data: 编排层返回的数据
+        
+    Returns:
+        dict: 与原接口完全一致的响应结构
+    """
+    bazi_data = orchestrator_data.get('bazi', {})
+    rizhu_data = orchestrator_data.get('rizhu', {})
+    rules_data = orchestrator_data.get('rules', [])
+    personality_data = orchestrator_data.get('personality', {})
+    
+    if not bazi_data:
+        return {"success": False, "error": "八字计算失败"}
+    
+    # 复用现有格式化逻辑
+    formatted_pillars = BaziDisplayService._format_pillars_for_display(bazi_data)
+    wuxing_data = BaziDisplayService._format_wuxing_for_display(bazi_data, formatted_pillars)
+    
+    # ✅ 处理日柱解析：优先使用 personality 数据，其次使用 rizhu 数据
+    rizhu_analysis = None
+    if personality_data and personality_data.get('has_data'):
+        rizhu_analysis = {
+            "rizhu": personality_data.get('rizhu', ''),
+            "gender": personality_data.get('gender', ''),
+            "descriptions": personality_data.get('descriptions', []),
+            "summary": personality_data.get('summary', '')
+        }
+    elif rizhu_data:
+        # rizhu 模块返回的是 RizhuLiujiaziService 的数据，格式不同
+        rizhu_analysis = rizhu_data
+    
+    # ✅ 筛选婚姻规则（与原逻辑一致）
+    marriage_rules_all = [
+        rule for rule in rules_data 
+        if 'marriage' in str(rule.get('rule_type', '')).lower() or '婚' in str(rule.get('rule_type', ''))
+    ]
+    # 按优先级排序
+    marriage_rules = sorted(
+        marriage_rules_all, 
+        key=lambda x: x.get('priority', 0), 
+        reverse=True
+    )
+    
+    return {
+        "success": True,
+        "pan": {
+            "basic": bazi_data.get('basic_info', {}),
+            "pillars": formatted_pillars,
+            "wuxing": wuxing_data,
+            "rizhu_analysis": rizhu_analysis,
+            "marriage_rules": marriage_rules
+        }
+    }
 
 
 # ✅ 依赖函数：预处理请求体，处理 "今" 参数
@@ -236,11 +300,12 @@ async def parse_fortune_request(request: Request) -> FortuneDisplayRequestWithMo
 
 
 @router.post("/bazi/fortune/display", summary="大运流年流月统一接口（性能优化）")
+@api_error_handler
 async def get_fortune_display(request_wrapper: FortuneDisplayRequestWithMode = Depends(parse_fortune_request)):
     """
     获取大运流年流月数据（统一接口，一次返回所有数据）
     
-    **性能优化**：只计算一次，避免重复调用
+    **性能优化**：通过统一编排层获取数据，复用缓存，减少重复计算
     
     - **solar_date**: 阳历日期 (YYYY-MM-DD) 或农历日期（当calendar_type=lunar时）
     - **solar_time**: 出生时间 (HH:MM)
@@ -260,86 +325,338 @@ async def get_fortune_display(request_wrapper: FortuneDisplayRequestWithMode = D
     - 流年数据（当前流年、流年列表）
     - 流月数据（当前流月、流月列表）
     - conversion_info: 转换信息（如果进行了农历转换或时区转换）
+    
+    架构：通过 BaziDataOrchestrator 统一获取数据（数据总线设计）
     """
-    try:
-        # 从依赖函数获取 request 和 use_jin_mode
-        request = request_wrapper.request
-        use_jin_mode = request_wrapper.use_jin_mode
-        
-        # 处理农历输入和时区转换
-        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+    request = request_wrapper.request
+    use_jin_mode = request_wrapper.use_jin_mode
+
+    # 处理农历输入和时区转换
+    final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
             request.solar_date,
             request.solar_time,
             request.calendar_type or "solar",
             request.location,
             request.latitude,
-            request.longitude
-        )
-        
-        # ✅ 解析 current_time（如果使用"今"模式，使用当前时间的 datetime 对象）
-        current_time = None
-        if request.current_time:
-            if use_jin_mode:
-                # "今"模式：直接使用当前时间
-                current_time = datetime.now()
-            else:
-                # 正常模式：解析时间字符串
-                try:
-                    current_time = datetime.strptime(str(request.current_time), "%Y-%m-%d %H:%M")
-                except ValueError as e:
-                    logger.error(f"时间解析失败: {request.current_time}, 错误: {e}")
-                    raise ValueError(f"current_time 参数格式错误，应为 '今' 或 'YYYY-MM-DD HH:MM' 格式，但收到: {request.current_time}")
-        
-        # >>> 缓存检查（fortune 按天+参数缓存）<<<
-        current_date = get_current_date_str()
-        cache_key = generate_cache_key(
-            "fortune", final_solar_date, final_solar_time, request.gender, current_date,
-            dayun_index=request.dayun_index,
-            dayun_year_start=request.dayun_year_start,
-            dayun_year_end=request.dayun_year_end,
-            target_year=request.target_year
-        )
-        cached = get_cached_result(cache_key, "fortune/display")
-        if cached:
-            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
-                cached['conversion_info'] = conversion_info
-            return cached
-        # >>> 缓存检查结束 <<<
-        
-        # ✅ 使用统一数据服务（内部适配，接口层完全不动）
-        from server.orchestrators.bazi_data_service import BaziDataService
-        
-        # 使用 BaziDisplayService 直接调用（传递快速模式参数）
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            executor,
-            BaziDisplayService.get_fortune_display,
+        request.longitude
+    )
+
+    # 解析 current_time（如果使用"今"模式，使用当前时间的 datetime 对象）
+    current_time = None
+    if request.current_time:
+        if use_jin_mode:
+            current_time = datetime.now()
+        else:
+            try:
+                current_time = datetime.strptime(str(request.current_time), "%Y-%m-%d %H:%M")
+            except ValueError as e:
+                logger.error(f"时间解析失败: {request.current_time}, 错误: {e}")
+                raise ValueError(f"current_time 参数格式错误，应为 '今' 或 'YYYY-MM-DD HH:MM' 格式，但收到: {request.current_time}")
+    
+    # 如果没有提供 current_time，使用当前系统时间
+    if current_time is None:
+        current_time = datetime.now()
+
+    current_date = get_current_date_str()
+    cache_key = generate_cache_key(
+        "fortune", final_solar_date, final_solar_time, request.gender, current_date,
+        dayun_index=request.dayun_index,
+        dayun_year_start=request.dayun_year_start,
+        dayun_year_end=request.dayun_year_end,
+        target_year=request.target_year
+    )
+    cached = get_cached_result(cache_key, "fortune/display")
+    if cached:
+        if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+            cached['conversion_info'] = conversion_info
+        return cached
+
+    try:
+        # ✅ 通过编排层统一获取数据（数据总线设计）
+        modules = get_modules_config('fortune_display')
+        orchestrator_data = await BaziDataOrchestrator.fetch_data(
             final_solar_date,
             final_solar_time,
             request.gender,
+            modules=modules,
+            current_time=current_time,
+            preprocessed=True,
+            calendar_type=request.calendar_type or "solar",
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude
+        )
+        
+        # ✅ 从编排层数据组装响应（保持响应结构完全不变）
+        result = _assemble_fortune_display_response(
+            orchestrator_data,
+            final_solar_date,
             current_time,
             request.dayun_index,
             request.dayun_year_start,
             request.dayun_year_end,
-            request.target_year,
-            request.quick_mode if request.quick_mode is not None else True,  # quick_mode
-            request.async_warmup if request.async_warmup is not None else True  # async_warmup
+            request.target_year
         )
         
-        if result.get('success'):
-            # >>> 缓存写入 <<<
-            set_cached_result(cache_key, result, L2_TTL)
-            # >>> 缓存写入结束 <<<
-            # 添加转换信息到结果
-            if conversion_info.get('converted') or conversion_info.get('timezone_info'):
-                result['conversion_info'] = conversion_info
-            return result
-        else:
-            raise HTTPException(status_code=500, detail=result.get('error', '计算失败'))
-            
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except BrokenPipeError:
+        logger.warning("客户端断开连接，计算中断")
+        return {
+            "success": False,
+            "error": "客户端连接已断开",
+            "error_type": "client_disconnected"
+        }
+    except OSError as e:
+        if e.errno == 32:  # Broken pipe
+            logger.warning("客户端断开连接，计算中断")
+            return {
+                "success": False,
+                "error": "客户端连接已断开",
+                "error_type": "client_disconnected"
+            }
+        raise
     except Exception as e:
-        import traceback
-        raise HTTPException(status_code=500, detail=f"计算异常: {str(e)}\n{traceback.format_exc()}")
+        logger.error(f"fortune/display 计算失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"计算失败: {str(e)}")
+
+    if result.get('success'):
+        set_cached_result(cache_key, result, L2_TTL)
+        if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+            result['conversion_info'] = conversion_info
+        return result
+    raise HTTPException(status_code=500, detail=result.get('error', '计算失败'))
+
+
+def _assemble_fortune_display_response(
+    orchestrator_data: Dict[str, Any],
+    solar_date: str,
+    current_time: datetime,
+    dayun_index: Optional[int] = None,
+    dayun_year_start: Optional[int] = None,
+    dayun_year_end: Optional[int] = None,
+    target_year: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    从编排层数据组装 fortune/display 响应
+    
+    保持与原 BaziDisplayService.get_fortune_display() 返回格式完全一致
+    
+    Args:
+        orchestrator_data: 编排层返回的数据
+        solar_date: 阳历日期
+        current_time: 当前时间
+        dayun_index: 大运索引（可选）
+        dayun_year_start: 大运起始年份（可选）
+        dayun_year_end: 大运结束年份（可选）
+        target_year: 目标年份（可选）
+        
+    Returns:
+        dict: 与原接口完全一致的响应结构
+    """
+    # 1. 提取编排层数据
+    bazi_data = orchestrator_data.get('bazi', {})
+    interface_data = orchestrator_data.get('bazi_interface', {})
+    detail_data = orchestrator_data.get('detail', {})
+    dayun_sequence = orchestrator_data.get('dayun', [])
+    liunian_sequence = orchestrator_data.get('liunian', [])
+    liuyue_sequence = orchestrator_data.get('liuyue', [])
+    
+    if not bazi_data:
+        return {"success": False, "error": "八字计算失败"}
+    
+    # 2. 提取 detail 中的信息
+    details = detail_data.get('details', {}) if detail_data else {}
+    qiyun_info = details.get('qiyun', {})
+    jiaoyun_info = details.get('jiaoyun', {})
+    dayun_info = details.get('dayun', {})
+    
+    # 如果 dayun_sequence 为空，从 details 中获取
+    if not dayun_sequence:
+        dayun_sequence = details.get('dayun_sequence', [])
+    
+    # 3. 确定当前大运
+    birth_year = int(solar_date.split('-')[0])
+    current_dayun = None
+    
+    if jiaoyun_info:
+        # 优先使用交运日期判断
+        current_dayun = _determine_current_dayun_by_jiaoyun(
+            current_time, dayun_sequence, jiaoyun_info, birth_year
+        )
+    
+    # 如果交运日期判断失败，降级到虚岁判断
+    if current_dayun is None:
+        current_year = current_time.year
+        current_age = current_year - birth_year + 1  # 虚岁计算
+        
+        for dayun in dayun_sequence:
+            age_range = dayun.get('age_range', {})
+            if age_range:
+                age_start = age_range.get('start', 0)
+                age_end = age_range.get('end', 0)
+                if age_start <= current_age <= age_end:
+                    current_dayun = dayun
+                    break
+    
+    # 4. 确定要显示的大运
+    target_dayun = None
+    resolved_dayun_index = dayun_index
+    
+    # 如果提供了年份范围，根据年份范围查找大运索引
+    if dayun_year_start is not None and dayun_year_end is not None and dayun_index is None:
+        for dayun in dayun_sequence:
+            dayun_year_start_actual = dayun.get('year_start')
+            dayun_year_end_actual = dayun.get('year_end')
+            step = dayun.get('step')
+            
+            # 精确匹配
+            if dayun_year_start_actual == dayun_year_start and dayun_year_end_actual == dayun_year_end:
+                resolved_dayun_index = step
+                break
+            # 包含匹配
+            elif dayun_year_start_actual and dayun_year_end_actual:
+                if dayun_year_start_actual <= dayun_year_start <= dayun_year_end_actual:
+                    resolved_dayun_index = step
+                    break
+    
+    if resolved_dayun_index is not None:
+        for dayun in dayun_sequence:
+            if dayun.get('step') == resolved_dayun_index:
+                target_dayun = dayun
+                break
+    else:
+        target_dayun = current_dayun
+    
+    if not target_dayun:
+        target_dayun = current_dayun or (dayun_sequence[0] if dayun_sequence else None)
+    
+    # 5. 格式化大运列表
+    formatted_dayun_list = []
+    for dayun in dayun_sequence:
+        formatted = BaziDisplayService._format_dayun_item(dayun)
+        if current_dayun and dayun.get('step') == current_dayun.get('step'):
+            formatted['is_current'] = True
+        formatted_dayun_list.append(formatted)
+    
+    # 6. 处理流年数据
+    current_year = current_time.year
+    
+    # 优先使用当前大运下的流年序列
+    if current_dayun and not current_dayun.get('is_xiaoyun', False):
+        liunian_sequence = current_dayun.get('liunian_sequence', liunian_sequence)
+    elif not liunian_sequence:
+        liunian_sequence = details.get('liunian_sequence', [])
+    
+    # 确定当前流年
+    current_liunian = None
+    for liunian in liunian_sequence:
+        if liunian.get('year') == current_year:
+            current_liunian = liunian
+            break
+    
+    # 如果流年序列中没有当前年份，计算默认流年数据
+    if current_liunian is None:
+        bazi_pillars = bazi_data.get('bazi_pillars', {})
+        day_stem = bazi_pillars.get('day', {}).get('stem', '')
+        current_liunian = _calculate_default_liunian(current_year, birth_year, day_stem)
+    
+    # 格式化流年列表
+    formatted_liunian_list = []
+    for liunian in liunian_sequence:
+        formatted = BaziDisplayService._format_liunian_item(liunian)
+        if liunian.get('year') == current_year:
+            formatted['is_current'] = True
+        formatted_liunian_list.append(formatted)
+    
+    # 7. 处理流月数据
+    target_year_for_liuyue = target_year or (current_liunian.get('year') if current_liunian else current_year)
+    
+    # 从流年序列中获取流月
+    target_liunian = None
+    for liunian in liunian_sequence:
+        if liunian.get('year') == target_year_for_liuyue:
+            target_liunian = liunian
+            break
+    
+    if target_liunian:
+        liuyue_sequence = target_liunian.get('liuyue_sequence', liuyue_sequence)
+    elif not liuyue_sequence:
+        liuyue_sequence = details.get('liuyue_sequence', [])
+    
+    # 确定当前流月
+    current_month = current_time.month
+    current_liuyue = None
+    for liuyue in liuyue_sequence:
+        if liuyue.get('month') == current_month:
+            current_liuyue = liuyue
+            break
+    
+    # 格式化流月列表
+    formatted_liuyue_list = []
+    for liuyue in liuyue_sequence:
+        formatted = BaziDisplayService._format_liuyue_item(liuyue)
+        if current_liuyue and liuyue.get('month') == current_liuyue.get('month'):
+            formatted['is_current'] = True
+        formatted_liuyue_list.append(formatted)
+    
+    # 8. 格式化四柱详细信息
+    bazi_pillars = bazi_data.get('bazi_pillars', {})
+    bazi_details = bazi_data.get('details', {})
+    formatted_pillars = {}
+    for pillar_type in ['year', 'month', 'day', 'hour']:
+        pillar_details = bazi_details.get(pillar_type, {})
+        formatted_pillars[pillar_type] = {
+            "stem": bazi_pillars.get(pillar_type, {}).get('stem', ''),
+            "branch": bazi_pillars.get(pillar_type, {}).get('branch', ''),
+            "main_star": pillar_details.get('main_star', ''),
+            "hidden_stars": pillar_details.get('hidden_stars', []),
+            "sub_stars": pillar_details.get('sub_stars', pillar_details.get('hidden_stars', [])),
+            "hidden_stems": pillar_details.get('hidden_stems', []),
+            "star_fortune": pillar_details.get('star_fortune', ''),
+            "self_sitting": pillar_details.get('self_sitting', ''),
+            "kongwang": pillar_details.get('kongwang', ''),
+            "nayin": pillar_details.get('nayin', ''),
+            "deities": sort_shensha(pillar_details.get('deities', []))
+        }
+    
+    # 9. 获取司令字段（从 interface_data 中提取）
+    commander = ''
+    if interface_data:
+        other_info = interface_data.get('other_info', {})
+        if isinstance(other_info, dict):
+            commander_element = other_info.get('commander_element', '')
+            if commander_element:
+                commander = commander_element[0] if len(commander_element) > 0 else ''
+    
+    # 10. 组装响应
+    return {
+        "success": True,
+        "pillars": formatted_pillars,
+        "commander": commander,
+        "dayun": {
+            "current": BaziDisplayService._format_dayun_item(current_dayun or dayun_info),
+            "list": formatted_dayun_list,
+            "qiyun": {
+                "date": qiyun_info.get('date', ''),
+                "age_display": qiyun_info.get('age_display', ''),
+                "description": qiyun_info.get('description', '')
+            },
+            "jiaoyun": {
+                "date": jiaoyun_info.get('date', ''),
+                "age_display": jiaoyun_info.get('age_display', ''),
+                "description": jiaoyun_info.get('description', '')
+            }
+        },
+        "liunian": {
+            "current": BaziDisplayService._format_liunian_item(current_liunian) if current_liunian else None,
+            "list": formatted_liunian_list
+        },
+        "liuyue": {
+            "current": BaziDisplayService._format_liuyue_item(current_liuyue or (liuyue_sequence[0] if liuyue_sequence else {})),
+            "list": formatted_liuyue_list,
+            "target_year": target_year_for_liuyue
+        },
+        "details": {
+            "dayun_sequence": dayun_sequence
+        }
+    }
 

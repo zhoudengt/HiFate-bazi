@@ -5,6 +5,9 @@ gRPC server for bazi-core-service.
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger(__name__)
 
 import json
 import os
@@ -32,7 +35,7 @@ class BaziCoreServicer(bazi_core_pb2_grpc.BaziCoreServiceServicer):
         """计算八字排盘"""
         import datetime
         request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{request_time}] 📥 bazi-core-service: 收到请求 - solar_date={request.solar_date}, solar_time={request.solar_time}, gender={request.gender}", flush=True)
+        logger.info(f"[{request_time}] 📥 bazi-core-service: 收到请求 - solar_date={request.solar_date}, solar_time={request.solar_time}, gender={request.gender}", flush=True)
         
         try:
             calculator = BaziCoreCalculator(
@@ -41,7 +44,7 @@ class BaziCoreServicer(bazi_core_pb2_grpc.BaziCoreServiceServicer):
                 gender=request.gender,
             )
             result = calculator.calculate()
-            print(f"[{request_time}] ✅ bazi-core-service: 计算完成", flush=True)
+            logger.info(f"[{request_time}] ✅ bazi-core-service: 计算完成", flush=True)
             
             if result is None:
                 context.set_code(grpc.StatusCode.INTERNAL)
@@ -118,13 +121,13 @@ class BaziCoreServicer(bazi_core_pb2_grpc.BaziCoreServiceServicer):
             }
             response.metadata_json = json.dumps(metadata, ensure_ascii=False)
             
-            print(f"[{request_time}] ✅ bazi-core-service: 响应已返回", flush=True)
+            logger.info(f"[{request_time}] ✅ bazi-core-service: 响应已返回", flush=True)
             return response
             
         except Exception as e:
             import traceback
             error_msg = f"计算失败: {str(e)}\n{traceback.format_exc()}"
-            print(f"[{request_time}] ❌ bazi-core-service: 错误 - {error_msg}", flush=True)
+            logger.info(f"[{request_time}] ❌ bazi-core-service: 错误 - {error_msg}", flush=True)
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"计算失败: {str(e)}")
             return bazi_core_pb2.BaziCoreResponse()
@@ -175,19 +178,19 @@ def serve(port: int = 9001):
         reloader.start()
         
         server.start()
-        print(f"✅ Bazi Core gRPC 服务已启动（热更新已启用），监听端口: {port}")
+        logger.info(f"✅ Bazi Core gRPC 服务已启动（热更新已启用），监听端口: {port}")
         
         try:
             server.wait_for_termination()
         except KeyboardInterrupt:
-            print("\n>>> 正在停止服务...")
+            logger.info("\n>>> 正在停止服务...")
             reloader.stop()
             server.stop(grace=5)
-            print("✅ 服务已停止")
+            logger.info("✅ 服务已停止")
             
     except ImportError as e:
         # 如果热更新模块不可用，使用传统模式（降级）
-        print(f"⚠️ 热更新模块不可用，使用传统模式: {e}")
+        logger.info(f"⚠️ 热更新模块不可用，使用传统模式: {e}")
         
         server_options = [
             ('grpc.keepalive_time_ms', 300000),
@@ -208,14 +211,14 @@ def serve(port: int = 9001):
         server.add_insecure_port(listen_addr)
         
         server.start()
-        print(f"✅ Bazi Core gRPC 服务已启动（传统模式），监听端口: {port}")
+        logger.info(f"✅ Bazi Core gRPC 服务已启动（传统模式），监听端口: {port}")
         
         try:
             server.wait_for_termination()
         except KeyboardInterrupt:
-            print("\n>>> 正在停止服务...")
+            logger.info("\n>>> 正在停止服务...")
             server.stop(grace=5)
-            print("✅ 服务已停止")
+            logger.info("✅ 服务已停止")
 
 
 if __name__ == "__main__":

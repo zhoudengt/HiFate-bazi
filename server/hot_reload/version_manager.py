@@ -5,6 +5,9 @@
 """
 
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 import os
 from typing import Dict, Optional
 
@@ -145,7 +148,7 @@ class VersionManager:
                 version = cls._version_checkers[module_name]()
                 cls._cached_versions[module_name] = version
             except Exception as e:
-                print(f"⚠ 初始化 {module_name} 版本号失败: {e}")
+                logger.info(f"⚠ 初始化 {module_name} 版本号失败: {e}")
                 cls._cached_versions[module_name] = 0
 
 
@@ -171,9 +174,9 @@ def register_default_version_checkers():
             get_source_code_version
         )
         
-        print("✓ 版本号检查器注册成功（规则、内容、源代码）")
+        logger.info("✓ 版本号检查器注册成功（规则、内容、源代码）")
     except Exception as e:
-        print(f"⚠ 注册版本号检查器失败: {e}")
+        logger.info(f"⚠ 注册版本号检查器失败: {e}")
 
 
 # 自动注册

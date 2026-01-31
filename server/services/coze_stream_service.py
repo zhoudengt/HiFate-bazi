@@ -1163,7 +1163,7 @@ class CozeStreamService(BaseLLMStreamService):
                                                     f"2. 找到 Bot ID {used_bot_id} 对应的 Bot\n"
                                                     f"3. 进入 Bot 设置 → System Prompt\n"
                                                     f"4. 确认 System Prompt 包含 {{input}} 占位符\n"
-                                                    f"5. 参考文档：docs/需求/Coze_Bot_System_Prompt_感情婚姻分析.md"
+                                                    "5. 在 Coze Bot 中配置 System Prompt"
                                                 )
                                                 yield {
                                                     'type': 'error',
@@ -1345,7 +1345,7 @@ class CozeStreamService(BaseLLMStreamService):
                 f"   - 找到 Bot ID {used_bot_id} 对应的 Bot\n"
                 f"   - 进入 Bot 设置 → System Prompt\n"
                 f"   - 确认 System Prompt 包含 {{input}} 占位符\n"
-                f"   - 参考文档：docs/需求/Coze_Bot_System_Prompt_感情婚姻分析.md\n"
+                "   - 在 Coze Bot 中配置 System Prompt\n"
                 f"2. 验证输入数据格式：\n"
                 f"   - 使用测试接口：/api/v1/marriage-analysis/test\n"
                 f"   - 确认数据格式是否符合 Bot 期望\n"

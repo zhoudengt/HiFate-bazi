@@ -145,11 +145,8 @@ HiFate-bazi/
 │   ├── tests/             # 测试脚本
 │   └── tools/             # 工具脚本
 │
-├── docs/                   # 文档
-│   ├── Docker生产部署完整指南.md
-│   ├── A_B测试和灰度发布指南.md
-│   ├── 智能运势分析Bot提示词-知识库优先版.md
-│   └── ...                # 其他文档
+├── standards/              # 规范文档（统一入口）
+├── deploy/docs/            # 部署文档
 │
 ├── tests/                  # 测试代码
 │   ├── unit/              # 单元测试
@@ -284,7 +281,7 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 docker compose up -d --build web
 ```
 
-详见：[Docker 生产部署完整指南](docs/Docker生产部署完整指南.md)
+详见：[deploy/docs/](deploy/docs/)（03-首次部署、04-日常运维）
 
 ---
 
@@ -371,7 +368,7 @@ else:
     result = new_algorithm.calculate()
 ```
 
-详见：[A/B 测试和灰度发布指南](docs/A_B测试和灰度发布指南.md)
+详见：[standards/deployment.md](standards/deployment.md)（A/B 测试、灰度发布）
 
 ---
 
@@ -380,12 +377,9 @@ else:
 | 文档 | 说明 |
 |------|------|
 | [开发规范](.cursorrules) | 完整的开发规范和代码标准 |
-| [Docker 生产部署完整指南](docs/Docker生产部署完整指南.md) | Docker 部署详细指南 |
-| [A/B 测试和灰度发布指南](docs/A_B测试和灰度发布指南.md) | A/B 测试和灰度发布使用指南 |
-| [智能运势分析 Bot 提示词](docs/智能运势分析Bot提示词-知识库优先版.md) | Coze Bot 配置和提示词 |
-| [快速开始-开发者必读](docs/快速开始-开发者必读.md) | 开发者入门指南 |
-| [规则系统架构](docs/rule_system_architecture.md) | 规则引擎架构说明 |
-| [API 接口文档](docs/接口测试命令.md) | API 接口说明和测试命令 |
+| [规范文档统一入口](standards/README.md) | 架构、命名、测试、部署等规范 |
+| [部署文档](deploy/docs/) | 01-架构说明、02-ECS初始化、03-首次部署、04-日常运维、05-故障处理 |
+| [部署规范](standards/deployment.md) | 增量部署、灰度发布、A/B 测试 |
 
 ---
 
@@ -486,7 +480,7 @@ else:
 - **服务器**: 123.57.216.15 (阿里云 ECS)
 - **部署路径**: /opt/HiFate-bazi
 
-详见：[Docker 生产部署完整指南](docs/Docker生产部署完整指南.md)
+详见：[deploy/docs/](deploy/docs/)（03-首次部署、04-日常运维）
 
 ---
 

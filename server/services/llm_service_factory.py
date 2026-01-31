@@ -39,7 +39,8 @@ class LLMServiceFactory:
         
         if platform == "bailian":
             try:
-                return BailianStreamService(scene=scene)
+                # ✅ 优化：使用单例方法，避免重复初始化
+                return BailianStreamService.get_instance(scene=scene)
             except Exception as e:
                 logger.error(f"创建百炼服务失败: {e}，回退到 Coze")
                 # 如果百炼服务创建失败，回退到 Coze

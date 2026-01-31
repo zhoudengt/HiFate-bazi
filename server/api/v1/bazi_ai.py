@@ -9,7 +9,6 @@ import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, validator
 from typing import Optional
-from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
 # 添加项目根目录到路径
@@ -19,15 +18,10 @@ sys.path.insert(0, project_root)
 from server.services.bazi_ai_service import BaziAIService
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
+from server.utils.api_error_handler import api_error_handler
+from server.utils.async_executor import get_executor
 
 router = APIRouter()
-
-# 根据CPU核心数动态调整线程池大小（优化高并发性能）
-import os
-cpu_count = os.cpu_count() or 4
-# 线程池大小 = CPU核心数 * 2，但不超过100
-max_workers = min(cpu_count * 2, 100)
-executor = ThreadPoolExecutor(max_workers=max_workers)
 
 
 class BaziAIRequest(BaziBaseRequest):
@@ -51,6 +45,7 @@ class BaziAIResponse(BaseModel):
 
 
 @router.post("/bazi/ai-analyze", response_model=BaziAIResponse, summary="Coze AI分析八字")
+@api_error_handler
 async def analyze_bazi_with_ai(request: BaziAIRequest):
     """
     调用八字接口获取数据，然后使用Coze AI进行分析
@@ -66,33 +61,26 @@ async def analyze_bazi_with_ai(request: BaziAIRequest):
     
     返回八字数据和Coze AI分析结果
     """
-    try:
-        # 在线程池中执行CPU密集型计算
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            executor,
-            BaziAIService.analyze_bazi_with_ai,
-            request.solar_date,
-            request.solar_time,
-            request.gender,
-            request.user_question,
-            request.access_token,
-            request.bot_id,
-            request.api_base,
-            request.include_rizhu_analysis
-        )
-        
-        return BaziAIResponse(
-            success=result.get('success', False),
-            bazi_data=result.get('bazi_data'),
-            ai_analysis=result.get('ai_analysis'),
-            rizhu_analysis=result.get('rizhu_analysis'),
-            polished_rules=result.get('polished_rules'),
-            polished_rules_info=result.get('polished_rules_info'),
-            error=result.get('error')
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI分析失败: {str(e)}")
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        get_executor(),
+        BaziAIService.analyze_bazi_with_ai,
+        request.solar_date,
+        request.solar_time,
+        request.gender,
+        request.user_question,
+        request.access_token,
+        request.bot_id,
+        request.api_base,
+        request.include_rizhu_analysis
+    )
+    return BaziAIResponse(
+        success=result.get('success', False),
+        bazi_data=result.get('bazi_data'),
+        ai_analysis=result.get('ai_analysis'),
+        rizhu_analysis=result.get('rizhu_analysis'),
+        polished_rules=result.get('polished_rules'),
+        polished_rules_info=result.get('polished_rules_info'),
+        error=result.get('error')
+    )
 

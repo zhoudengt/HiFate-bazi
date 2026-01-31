@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
     from proto.generated import desk_fengshui_pb2, desk_fengshui_pb2_grpc
 except ImportError:
-    print("⚠️ proto文件未生成，请先运行生成脚本")
+    logger.info("⚠️ proto文件未生成，请先运行生成脚本")
     # 临时创建占位符
     desk_fengshui_pb2 = None
     desk_fengshui_pb2_grpc = None

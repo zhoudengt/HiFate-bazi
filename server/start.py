@@ -9,6 +9,9 @@
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger(__name__)
 
 import os
 import sys
@@ -140,7 +143,7 @@ def main() -> None:
                                 value = value.strip().strip('"').strip("'")
                                 os.environ.setdefault(key, value)
         except Exception as exc:
-            print(f"⚠️  加载环境变量配置失败: {exc}", file=sys.stderr)
+            logger.info(f"⚠️  加载环境变量配置失败: {exc}", file=sys.stderr)
 
     uvicorn = _load_uvicorn()
     

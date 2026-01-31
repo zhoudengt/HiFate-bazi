@@ -343,5 +343,5 @@ if __name__ == "__main__":
         image_bytes = f.read()
     
     result = detector.detect(image_bytes)
-    print(f"检测结果: {result}")
+    logger.info(f"检测结果: {result}")
 

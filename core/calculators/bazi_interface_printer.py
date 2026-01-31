@@ -6,7 +6,10 @@
 """
 
 import json
+import logging
 from typing import Dict, Any
+
+logger = logging.getLogger(__name__)
 
 
 class BaziInterfacePrinter:
@@ -171,7 +174,7 @@ class BaziInterfacePrinter:
             data: 要打印的数据字典
             indent: JSON 缩进空格数
         """
-        print(BaziInterfacePrinter.format_to_json(data, indent))
+        logger.info(BaziInterfacePrinter.format_to_json(data, indent))
 
     @staticmethod
     def _format_hours(total_hours):

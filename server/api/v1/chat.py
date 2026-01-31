@@ -9,7 +9,6 @@ import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, validator
 from typing import Optional
-from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
 # 添加项目根目录到路径
@@ -17,14 +16,10 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.chat_service import get_chat_service
+from server.utils.api_error_handler import api_error_handler
+from server.utils.async_executor import get_executor
 
 router = APIRouter()
-
-# 线程池
-import os
-cpu_count = os.cpu_count() or 4
-max_workers = min(cpu_count * 2, 100)
-executor = ThreadPoolExecutor(max_workers=max_workers)
 
 
 class CreateConversationRequest(BaseModel):
@@ -69,6 +64,7 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/bazi/chat/create", summary="创建新对话")
+@api_error_handler
 async def create_conversation(request: CreateConversationRequest):
     """
     创建新的对话会话
@@ -82,28 +78,19 @@ async def create_conversation(request: CreateConversationRequest):
     
     返回 conversation_id，用于后续对话
     """
-    try:
-        loop = asyncio.get_event_loop()
-        chat_service = get_chat_service()
-        result = await loop.run_in_executor(
-            executor,
-            chat_service.create_conversation,
-            request.solar_date,
-            request.solar_time,
-            request.gender,
-            request.user_name
-        )
-        
-        if result.get('success'):
-            return result
-        else:
-            raise HTTPException(status_code=500, detail=result.get('error', '创建对话失败'))
-            
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        import traceback
-        raise HTTPException(status_code=500, detail=f"创建对话异常: {str(e)}\n{traceback.format_exc()}")
+    loop = asyncio.get_event_loop()
+    chat_service = get_chat_service()
+    result = await loop.run_in_executor(
+        get_executor(),
+        chat_service.create_conversation,
+        request.solar_date,
+        request.solar_time,
+        request.gender,
+        request.user_name
+    )
+    if result.get('success'):
+        return result
+    raise HTTPException(status_code=500, detail=result.get('error', '创建对话失败'))
 
 
 @router.post("/bazi/chat/send", summary="发送消息")

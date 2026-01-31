@@ -191,10 +191,10 @@ class MicroserviceReloader:
             ast.parse(source, filename=file_path)
             return True
         except SyntaxError as e:
-            print(f"❌ [{self.service_name}] 语法错误 {file_path}: {e}")
+            logger.error(f"❌ [{self.service_name}] 语法错误 {file_path}: {e}")
             return False
         except Exception as e:
-            print(f"⚠ [{self.service_name}] 检查语法失败 {file_path}: {e}")
+            logger.warning(f"⚠ [{self.service_name}] 检查语法失败 {file_path}: {e}")
             return False
     
     def _check_syntax(self, file_path: str) -> bool:
@@ -205,10 +205,10 @@ class MicroserviceReloader:
             ast.parse(source, filename=file_path)
             return True
         except SyntaxError as e:
-            print(f"❌ [{self.service_name}] 语法错误 {file_path}: {e}")
+            logger.error(f"❌ [{self.service_name}] 语法错误 {file_path}: {e}")
             return False
         except Exception as e:
-            print(f"⚠ [{self.service_name}] 检查语法失败 {file_path}: {e}")
+            logger.warning(f"⚠ [{self.service_name}] 检查语法失败 {file_path}: {e}")
             return False
     
     def _check_and_reload(self) -> bool:
@@ -248,13 +248,13 @@ class MicroserviceReloader:
                             if new_state['syntax_valid']:
                                 changed_files.append(('modified', file_path))
                             else:
-                                print(f"⚠ [{self.service_name}] 文件有语法错误，跳过: {file_path}")
+                                logger.warning(f"⚠ [{self.service_name}] 文件有语法错误，跳过: {file_path}")
         
         if changed_files:
-            print(f"\n🔄 [{self.service_name}] 检测到 {len(changed_files)} 个文件变化:")
+            logger.info(f"\n🔄 [{self.service_name}] 检测到 {len(changed_files)} 个文件变化:")
             for change_type, file_path in changed_files:
                 rel_path = os.path.relpath(file_path, project_root)
-                print(f"   {change_type}: {rel_path}")
+                logger.info(f"   {change_type}: {rel_path}")
             
             # 检查是否是共享文件变化，如果是，触发所有依赖服务
             for change_type, file_path in changed_files:
@@ -291,7 +291,7 @@ class MicroserviceReloader:
                 from server.hot_reload.reloaders import SingletonReloader
                 SingletonReloader.reload()
             except Exception as e:
-                print(f"⚠ [{self.service_name}] 单例重置失败: {e}")
+                logger.warning(f"⚠ [{self.service_name}] 单例重置失败: {e}")
             
             # 创建新实例（在锁外创建，避免长时间持锁）
             new_servicer = new_servicer_class()
@@ -304,7 +304,7 @@ class MicroserviceReloader:
             with self._servicer_lock:
                 # 再次检查是否有其他线程已经更新
                 if self._current_version != backup_info.get('version', self._current_version):
-                    print(f"⚠ [{self.service_name}] 检测到并发更新，跳过本次更新")
+                    logger.warning(f"⚠ [{self.service_name}] 检测到并发更新，跳过本次更新")
                     return False
                 
                 # 原子替换：先更新版本号，再替换实例（确保一致性）
@@ -318,14 +318,14 @@ class MicroserviceReloader:
             # 记录版本历史（包含备份信息）
             self._record_version(new_servicer_class, backup_info)
             
-            print(f"✅ [{self.service_name}] Servicer 热更新成功 (版本: {self._current_version})")
+            logger.info(f"✅ [{self.service_name}] Servicer 热更新成功 (版本: {self._current_version})")
             
             # 执行回调
             if self.on_reload_callback:
                 try:
                     self.on_reload_callback(new_servicer)
                 except Exception as e:
-                    print(f"⚠ [{self.service_name}] 回调执行失败: {e}")
+                    logger.warning(f"⚠ [{self.service_name}] 回调执行失败: {e}")
             
             return True
             
@@ -345,8 +345,8 @@ class MicroserviceReloader:
             }
             
             # 打印错误信息
-            print(f"❌ [{self.service_name}] 热更新失败: {error_msg}")
-            print(error_traceback)
+            logger.error(f"❌ [{self.service_name}] 热更新失败: {error_msg}")
+            logger.error(error_traceback)
             
             # 保存错误日志到文件
             self._save_error_log(error_log)
@@ -362,7 +362,7 @@ class MicroserviceReloader:
                     'rollback_failed': True,
                     'status': 'CRITICAL'
                 }
-                print(f"⚠ [{self.service_name}] 回滚失败，服务可能处于不稳定状态")
+                logger.warning(f"⚠ [{self.service_name}] 回滚失败，服务可能处于不稳定状态")
                 self._save_error_log(critical_error, is_critical=True)
                 self._send_alert(critical_error, is_critical=True)
             
@@ -404,7 +404,7 @@ class MicroserviceReloader:
                     'rel_path': rel_path
                 })
             except Exception as e:
-                print(f"⚠ [{self.service_name}] 备份文件失败 {file_path}: {e}")
+                logger.warning(f"⚠ [{self.service_name}] 备份文件失败 {file_path}: {e}")
         
         # 保存备份信息
         backup_info_file = os.path.join(version_backup_dir, 'backup_info.json')
@@ -413,7 +413,7 @@ class MicroserviceReloader:
             with open(backup_info_file, 'w', encoding='utf-8') as f:
                 json.dump(backup_info, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"⚠ [{self.service_name}] 保存备份信息失败: {e}")
+            logger.warning(f"⚠ [{self.service_name}] 保存备份信息失败: {e}")
         
         # 添加到历史记录
         self._version_history.append(backup_info)
@@ -436,7 +436,7 @@ class MicroserviceReloader:
                 import shutil
                 shutil.rmtree(version_backup_dir)
         except Exception as e:
-            print(f"⚠ [{self.service_name}] 清理备份失败: {e}")
+            logger.warning(f"⚠ [{self.service_name}] 清理备份失败: {e}")
     
     def _reset_dependency_states(self, old_servicer: Optional[Any]):
         """重置依赖对象的全局状态"""
@@ -465,29 +465,29 @@ class MicroserviceReloader:
                     if hasattr(attr_value, 'reset') and callable(getattr(attr_value, 'reset')):
                         try:
                             attr_value.reset()
-                            print(f"   ✓ 重置依赖对象: {attr_name}.reset()")
+                            logger.info(f"   ✓ 重置依赖对象: {attr_name}.reset()")
                             reset_count += 1
                         except Exception as e:
-                            print(f"   ⚠ 重置依赖对象失败 {attr_name}.reset(): {e}")
+                            logger.warning(f"   ⚠ 重置依赖对象失败 {attr_name}.reset(): {e}")
                     
                     # 检查是否有 clear_cache() 方法
                     if hasattr(attr_value, 'clear_cache') and callable(getattr(attr_value, 'clear_cache')):
                         try:
                             attr_value.clear_cache()
-                            print(f"   ✓ 清理依赖对象缓存: {attr_name}.clear_cache()")
+                            logger.info(f"   ✓ 清理依赖对象缓存: {attr_name}.clear_cache()")
                             reset_count += 1
                         except Exception as e:
-                            print(f"   ⚠ 清理依赖对象缓存失败 {attr_name}.clear_cache(): {e}")
+                            logger.warning(f"   ⚠ 清理依赖对象缓存失败 {attr_name}.clear_cache(): {e}")
                             
                 except Exception as e:
                     # 忽略无法访问的属性
                     continue
             
             if reset_count > 0:
-                print(f"   📊 重置了 {reset_count} 个依赖对象")
+                logger.info(f"   📊 重置了 {reset_count} 个依赖对象")
                 
         except Exception as e:
-            print(f"⚠ [{self.service_name}] 重置依赖对象状态失败: {e}")
+            logger.warning(f"⚠ [{self.service_name}] 重置依赖对象状态失败: {e}")
     
     def _is_singleton(self, obj: Any) -> bool:
         """检查对象是否是单例模式"""
@@ -514,20 +514,20 @@ class MicroserviceReloader:
             # 尝试重置 _instance
             if hasattr(obj_class, '_instance'):
                 obj_class._instance = None
-                print(f"   ✓ 重置单例: {attr_name}._instance = None")
+                logger.info(f"   ✓ 重置单例: {attr_name}._instance = None")
                 reset_count += 1
             
             # 尝试调用 reset() 方法
             if hasattr(singleton_obj, 'reset') and callable(getattr(singleton_obj, 'reset')):
                 try:
                     singleton_obj.reset()
-                    print(f"   ✓ 调用单例重置方法: {attr_name}.reset()")
+                    logger.info(f"   ✓ 调用单例重置方法: {attr_name}.reset()")
                     reset_count += 1
                 except Exception as e:
-                    print(f"   ⚠ 调用单例重置方法失败 {attr_name}.reset(): {e}")
+                    logger.warning(f"   ⚠ 调用单例重置方法失败 {attr_name}.reset(): {e}")
             
         except Exception as e:
-            print(f"   ⚠ 重置单例失败 {attr_name}: {e}")
+            logger.warning(f"   ⚠ 重置单例失败 {attr_name}: {e}")
         
         return reset_count
     
@@ -545,7 +545,7 @@ class MicroserviceReloader:
             # 只保留最近 50 个错误日志
             self._cleanup_error_logs()
         except Exception as e:
-            print(f"⚠ [{self.service_name}] 保存错误日志失败: {e}")
+            logger.warning(f"⚠ [{self.service_name}] 保存错误日志失败: {e}")
     
     def _cleanup_error_logs(self):
         """清理旧的错误日志"""
@@ -562,7 +562,7 @@ class MicroserviceReloader:
                     except:
                         pass
         except Exception as e:
-            print(f"⚠ [{self.service_name}] 清理错误日志失败: {e}")
+            logger.warning(f"⚠ [{self.service_name}] 清理错误日志失败: {e}")
     
     def _send_alert(self, error_log: Dict, is_critical: bool = False):
         """发送告警（可扩展：邮件、钉钉、企业微信等）"""
@@ -574,17 +574,17 @@ class MicroserviceReloader:
             
             # 这里可以扩展为发送邮件、钉钉、企业微信等
             # 目前只打印告警信息
-            alert_level = "🚨 CRITICAL" if is_critical else "⚠️ WARNING"
-            print(f"{alert_level} [{self.service_name}] 热更新告警:")
-            print(f"   错误: {error_log.get('error', 'Unknown')}")
-            print(f"   时间: {error_log.get('timestamp', 'Unknown')}")
+            if is_critical:
+                logger.critical(f"[{self.service_name}] 热更新告警: {error_log.get('error', 'Unknown')} @ {error_log.get('timestamp', 'Unknown')}")
+            else:
+                logger.warning(f"[{self.service_name}] 热更新告警: {error_log.get('error', 'Unknown')} @ {error_log.get('timestamp', 'Unknown')}")
             
             # TODO: 实现实际的告警发送逻辑
             # if alert_webhook:
             #     send_webhook_alert(alert_webhook, error_log)
             
         except Exception as e:
-            print(f"⚠ [{self.service_name}] 发送告警失败: {e}")
+            logger.warning(f"⚠ [{self.service_name}] 发送告警失败: {e}")
     
     def _validate_servicer(self, servicer: Any) -> bool:
         """验证 Servicer 实例是否可用"""
@@ -601,7 +601,7 @@ class MicroserviceReloader:
             
             return True
         except Exception as e:
-            print(f"⚠ [{self.service_name}] Servicer 验证失败: {e}")
+            logger.warning(f"⚠ [{self.service_name}] Servicer 验证失败: {e}")
             return False
     
     def _record_version(self, servicer_class: Type, backup_info: Dict = None):
@@ -613,17 +613,17 @@ class MicroserviceReloader:
             'module_path': self.module_path,
             'backup_info': backup_info
         }
-        print(f"📝 [{self.service_name}] 版本记录: v{self._current_version} @ {record['timestamp']}")
+        logger.info(f"📝 [{self.service_name}] 版本记录: v{self._current_version} @ {record['timestamp']}")
     
     def _rollback(self) -> bool:
         """回滚到上一版本"""
         if not self._version_history:
-            print(f"⚠ [{self.service_name}] 没有可回滚的版本，尝试使用 Git 回滚...")
+            logger.warning(f"⚠ [{self.service_name}] 没有可回滚的版本，尝试使用 Git 回滚...")
             return self._rollback_via_git()
         
         try:
             last_version = self._version_history[-1]  # 不删除，保留在历史中
-            print(f"🔄 [{self.service_name}] 正在回滚到版本 {last_version['version']}...")
+            logger.info(f"🔄 [{self.service_name}] 正在回滚到版本 {last_version['version']}...")
             
             # 恢复备份的文件
             backup_files = last_version.get('backup_files', [])
@@ -638,13 +638,13 @@ class MicroserviceReloader:
                             import shutil
                             shutil.copy2(backup_path, original_path)
                             restored_count += 1
-                            print(f"   ✓ 恢复: {file_info['rel_path']}")
+                            logger.info(f"   ✓ 恢复: {file_info['rel_path']}")
                         else:
-                            print(f"   ⚠ 备份文件不存在: {backup_path}")
+                            logger.warning(f"   ⚠ 备份文件不存在: {backup_path}")
                     except Exception as e:
-                        print(f"   ❌ 恢复文件失败 {file_info['rel_path']}: {e}")
+                        logger.error(f"   ❌ 恢复文件失败 {file_info['rel_path']}: {e}")
                 
-                print(f"   📊 恢复了 {restored_count}/{len(backup_files)} 个文件")
+                logger.info(f"   📊 恢复了 {restored_count}/{len(backup_files)} 个文件")
             
             # 重新加载模块
             if self.module_path in sys.modules:
@@ -665,16 +665,16 @@ class MicroserviceReloader:
             # 更新文件状态
             self._scan_files()
             
-            print(f"✅ [{self.service_name}] 回滚完成")
+            logger.info(f"✅ [{self.service_name}] 回滚完成")
             return True
             
         except Exception as e:
             import traceback
-            print(f"❌ [{self.service_name}] 回滚失败: {e}")
-            print(traceback.format_exc())
+            logger.error(f"❌ [{self.service_name}] 回滚失败: {e}")
+            logger.error("回滚失败", exc_info=True)
             
             # 如果文件回滚失败，尝试 Git 回滚
-            print(f"🔄 [{self.service_name}] 尝试使用 Git 回滚...")
+            logger.info(f"🔄 [{self.service_name}] 尝试使用 Git 回滚...")
             return self._rollback_via_git()
     
     def _rollback_via_git(self) -> bool:
@@ -691,7 +691,7 @@ class MicroserviceReloader:
             )
             
             if result.returncode != 0:
-                print(f"⚠ [{self.service_name}] 不在 Git 仓库中，无法使用 Git 回滚")
+                logger.warning(f"⚠ [{self.service_name}] 不在 Git 仓库中，无法使用 Git 回滚")
                 return False
             
             # 获取主模块文件路径
@@ -699,11 +699,11 @@ class MicroserviceReloader:
             module_file_path = os.path.join(project_root, module_file)
             
             if not os.path.exists(module_file_path):
-                print(f"⚠ [{self.service_name}] 模块文件不存在: {module_file_path}")
+                logger.warning(f"⚠ [{self.service_name}] 模块文件不存在: {module_file_path}")
                 return False
             
             # 使用 Git checkout 恢复文件
-            print(f"🔄 [{self.service_name}] 使用 Git 恢复文件: {module_file}")
+            logger.info(f"🔄 [{self.service_name}] 使用 Git 恢复文件: {module_file}")
             result = subprocess.run(
                 ['git', 'checkout', 'HEAD', '--', module_file],
                 cwd=project_root,
@@ -727,14 +727,14 @@ class MicroserviceReloader:
                 
                 self._scan_files()
                 
-                print(f"✅ [{self.service_name}] Git 回滚完成")
+                logger.info(f"✅ [{self.service_name}] Git 回滚完成")
                 return True
             else:
-                print(f"❌ [{self.service_name}] Git 回滚失败: {result.stderr}")
+                logger.error(f"❌ [{self.service_name}] Git 回滚失败: {result.stderr}")
                 return False
                 
         except Exception as e:
-            print(f"❌ [{self.service_name}] Git 回滚异常: {e}")
+            logger.error(f"❌ [{self.service_name}] Git 回滚异常: {e}")
             return False
     
     def get_current_servicer(self) -> Optional[Any]:
@@ -761,7 +761,7 @@ class MicroserviceReloader:
     
     def force_reload(self) -> bool:
         """强制重新加载"""
-        print(f"🔄 [{self.service_name}] 强制重新加载...")
+        logger.info(f"🔄 [{self.service_name}] 强制重新加载...")
         return self._reload_servicer()
 
 
@@ -1023,8 +1023,8 @@ def trigger_dependent_services(changed_file: str) -> bool:
     if not dependent_services:
         return False
     
-    print(f"🔄 检测到共享文件变化: {changed_file}")
-    print(f"   → 触发依赖服务热更新: {', '.join(dependent_services)}")
+    logger.info(f"🔄 检测到共享文件变化: {changed_file}")
+    logger.info(f"   → 触发依赖服务热更新: {', '.join(dependent_services)}")
     
     success_count = 0
     for service_name in dependent_services:
@@ -1034,14 +1034,14 @@ def trigger_dependent_services(changed_file: str) -> bool:
                 # 强制检查并重新加载
                 if reloader._check_and_reload():
                     success_count += 1
-                    print(f"   ✓ {service_name} 热更新成功")
+                    logger.info(f"   ✓ {service_name} 热更新成功")
                 else:
-                    print(f"   ⚠ {service_name} 无需更新")
+                    logger.warning(f"   ⚠ {service_name} 无需更新")
             except Exception as e:
-                print(f"   ❌ {service_name} 热更新失败: {e}")
+                logger.error(f"   ❌ {service_name} 热更新失败: {e}")
         else:
-            print(f"   ⚠ {service_name} 未注册")
+            logger.warning(f"   ⚠ {service_name} 未注册")
     
-    print(f"📊 依赖服务热更新完成: {success_count}/{len(dependent_services)} 成功")
+    logger.info(f"📊 依赖服务热更新完成: {success_count}/{len(dependent_services)} 成功")
     return success_count > 0
 

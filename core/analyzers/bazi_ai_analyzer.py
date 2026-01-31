@@ -7,6 +7,9 @@
 """
 
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 import os
 import json
 import requests
@@ -167,7 +170,7 @@ class BaziAIAnalyzer:
             # 直接尝试使用实际消息，而不是测试请求
             for path in possible_paths:
                 test_url = f"{self.api_base}{path}"
-                print(f"🔍 尝试端点: {test_url}")
+                logger.info(f"🔍 尝试端点: {test_url}")
                 
                 # 使用第一个请求格式进行尝试
                 # 尝试最简格式，只包含必需字段
@@ -178,7 +181,7 @@ class BaziAIAnalyzer:
                 
                 try:
                     # 打印调试信息
-                    print(f"📤 发送请求体: {json.dumps(test_payload, ensure_ascii=False, indent=2)[:500]}")
+                    logger.info(f"📤 发送请求体: {json.dumps(test_payload, ensure_ascii=False, indent=2)[:500]}")
                     # 尝试两种认证方式
                     for headers_to_use, header_name in [(self.headers, "Bearer"), (self.headers_pat, "PAT")]:
                         try:
@@ -199,7 +202,7 @@ class BaziAIAnalyzer:
                             if "code" in test_result and test_result.get("code") != 0:
                                 # 有错误码，不是真正的成功
                                 error_msg = test_result.get("msg", str(test_result))
-                                print(f"⚠ 端点返回200但包含错误: {error_msg[:200]}")
+                                logger.info(f"⚠ 端点返回200但包含错误: {error_msg[:200]}")
                                 # 端点存在，但需要调整参数格式
                                 url = test_url
                                 last_error = f"端点 {path} 存在但参数格式需要调整: {error_msg[:200]}"
@@ -208,22 +211,22 @@ class BaziAIAnalyzer:
                                 # 真正的成功
                                 url = test_url
                                 result = test_result
-                                print(f"✓ 找到可用端点: {url}")
+                                logger.info(f"✓ 找到可用端点: {url}")
                                 break
                         except:
                             # 响应不是JSON，可能是文本，也认为是成功
                             url = test_url
                             result = {"content": test_response.text}
-                            print(f"✓ 找到可用端点: {url}")
+                            logger.info(f"✓ 找到可用端点: {url}")
                             break
                     elif test_response.status_code == 404:
                         # 端点不存在，尝试下一个
                         try:
                             error_detail = test_response.json()
                             error_msg = json.dumps(error_detail, ensure_ascii=False)
-                            print(f"✗ 端点不存在 (404): {error_msg[:200]}")
+                            logger.info(f"✗ 端点不存在 (404): {error_msg[:200]}")
                         except:
-                            print(f"✗ 端点不存在 (404): {path}")
+                            logger.info(f"✗ 端点不存在 (404): {path}")
                         last_error = f"端点 {path} 不存在 (404)"
                         continue
                     else:
@@ -232,15 +235,15 @@ class BaziAIAnalyzer:
                         try:
                             error_detail = test_response.json()
                             error_msg = json.dumps(error_detail, ensure_ascii=False)
-                            print(f"⚠ 端点存在但参数错误 ({test_response.status_code}): {error_msg[:200]}")
+                            logger.info(f"⚠ 端点存在但参数错误 ({test_response.status_code}): {error_msg[:200]}")
                         except:
-                            print(f"⚠ 端点存在但参数错误 ({test_response.status_code}): {path}")
+                            logger.info(f"⚠ 端点存在但参数错误 ({test_response.status_code}): {path}")
                         # 端点存在，但需要调整参数格式
                         url = test_url
                         last_error = f"端点 {path} 存在但参数格式需要调整"
                         break
                 except Exception as e:
-                    print(f"✗ 端点调用异常: {path} - {str(e)}")
+                    logger.info(f"✗ 端点调用异常: {path} - {str(e)}")
                     last_error = f"端点 {path} 调用异常: {str(e)}"
                     continue
             
@@ -314,10 +317,10 @@ class BaziAIAnalyzer:
                 found_format = False
                 for i, payload in enumerate(payload_formats):
                     try:
-                        print(f"🔍 尝试格式 {i+1}: {url}")
+                        logger.info(f"🔍 尝试格式 {i+1}: {url}")
                         # 清理 payload，移除 None 值（某些 API 不接受 None）
                         clean_payload = {k: v for k, v in payload.items() if v is not None}
-                        print(f"📤 请求体: {json.dumps(clean_payload, ensure_ascii=False, indent=2)[:500]}")
+                        logger.info(f"📤 请求体: {json.dumps(clean_payload, ensure_ascii=False, indent=2)[:500]}")
                         # 尝试两种认证方式
                         response = None
                         for headers_to_use in [self.headers, self.headers_pat]:
@@ -338,18 +341,18 @@ class BaziAIAnalyzer:
                                 if "code" in response_data and response_data.get("code") != 0:
                                     # 有错误码，不是真正的成功
                                     error_msg = response_data.get("msg", str(response_data))
-                                    print(f"✗ 格式 {i+1} 返回错误: {error_msg[:200]}")
+                                    logger.info(f"✗ 格式 {i+1} 返回错误: {error_msg[:200]}")
                                     last_error = f"格式{i+1}返回错误: {error_msg[:200]}"
                                     continue
                                 else:
                                     # 真正的成功
-                                    print(f"✓ 格式 {i+1} 成功")
+                                    logger.info(f"✓ 格式 {i+1} 成功")
                                     result = response_data
                                     found_format = True
                                     break
                             except:
                                 # 响应不是JSON，可能是文本，也认为是成功
-                                print(f"✓ 格式 {i+1} 成功（文本响应）")
+                                logger.info(f"✓ 格式 {i+1} 成功（文本响应）")
                                 result = {"content": response.text}
                                 found_format = True
                                 break
@@ -358,15 +361,15 @@ class BaziAIAnalyzer:
                             try:
                                 error_detail = response.json()
                                 error_msg = json.dumps(error_detail, ensure_ascii=False)
-                                print(f"✗ 格式 {i+1} 返回错误 {response.status_code}: {error_msg[:200]}")
+                                logger.info(f"✗ 格式 {i+1} 返回错误 {response.status_code}: {error_msg[:200]}")
                                 last_error = f"格式{i+1}返回错误 {response.status_code}: {error_msg[:200]}"
                             except:
                                 error_msg = response.text[:200]
-                                print(f"✗ 格式 {i+1} 返回错误 {response.status_code}: {error_msg}")
+                                logger.info(f"✗ 格式 {i+1} 返回错误 {response.status_code}: {error_msg}")
                                 last_error = f"格式{i+1}返回错误 {response.status_code}: {error_msg}"
                             continue
                     except Exception as e:
-                        print(f"✗ 格式 {i+1} 调用异常: {str(e)}")
+                        logger.info(f"✗ 格式 {i+1} 调用异常: {str(e)}")
                         last_error = f"格式{i+1}调用异常: {str(e)}"
                         continue
                 

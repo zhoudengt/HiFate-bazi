@@ -42,7 +42,7 @@ GIT_BRANCH="master"
 PROJECT_DIR="/opt/HiFate-bazi"
 
 # 生产数据库配置（单源：仅通过 Node1 SSH + docker exec 连接，禁止本地直连）
-# 详见 docs/knowledge_base/deployment_guide.md 章节「生产数据库（Docker，单源配置）」
+# 详见 standards/deployment.md、deploy/docs/
 PROD_MYSQL_CONTAINER="hifate-mysql-master"
 PROD_MYSQL_USER="root"
 PROD_MYSQL_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"

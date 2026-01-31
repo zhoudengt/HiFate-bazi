@@ -10,7 +10,10 @@
 import os
 import sys
 import logging
-from typing import Dict, Any, Optional, AsyncGenerator
+from typing import Dict, Any, Optional, AsyncGenerator, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from scripts.evaluation.bailian import BailianClient
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -30,9 +33,39 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# ✅ 优化：单例缓存，避免每次请求重复初始化
+_bailian_service_cache: Dict[str, 'BailianStreamService'] = {}
+_bailian_client_cache: Optional['BailianClient'] = None
+
 
 class BailianStreamService(BaseLLMStreamService):
-    """百炼流式服务 - 包装 BailianClient 为统一接口"""
+    """百炼流式服务 - 包装 BailianClient 为统一接口（支持单例模式）"""
+    
+    @classmethod
+    def get_instance(cls, scene: str, api_key: Optional[str] = None) -> 'BailianStreamService':
+        """
+        获取单例实例（推荐使用此方法）
+        
+        优化点：
+        1. 同一场景复用实例，避免重复初始化
+        2. 所有场景共享 BailianClient，减少 SDK 初始化开销
+        
+        Args:
+            scene: 场景名称
+            api_key: API Key（可选）
+        
+        Returns:
+            BailianStreamService 实例
+        """
+        global _bailian_service_cache
+        
+        if scene not in _bailian_service_cache:
+            logger.info(f"[BailianStreamService] 创建新实例: scene={scene}")
+            _bailian_service_cache[scene] = cls(scene, api_key)
+        else:
+            logger.debug(f"[BailianStreamService] 复用已有实例: scene={scene}")
+        
+        return _bailian_service_cache[scene]
     
     def __init__(self, scene: str, api_key: Optional[str] = None):
         """

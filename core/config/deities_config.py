@@ -1380,10 +1380,10 @@ class DeitiesCalculator:
 
 
             # # 添加打印语句
-            # print(f"-----------------------年纳音 year_nayin: {year_nayin}")
-            # print(f"-----------------------纳音日支映射 nayin_day_map: {nayin_day_map}")
-            # print(f"-----------------------当前日支: {branch}")
-            # print(f"-----------------------纳音日支映射获取结果: {nayin_day_map.get(branch, [])}")
+            # logger.info(f"-----------------------年纳音 year_nayin: {year_nayin}")
+            # logger.info(f"-----------------------纳音日支映射 nayin_day_map: {nayin_day_map}")
+            # logger.info(f"-----------------------当前日支: {branch}")
+            # logger.info(f"-----------------------纳音日支映射获取结果: {nayin_day_map.get(branch, [])}")
 
             deities.extend(nayin_day_map.get(branch, []))
 

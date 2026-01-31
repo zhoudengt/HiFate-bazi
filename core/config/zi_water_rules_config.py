@@ -926,9 +926,9 @@ ZI_WATER_RULES_CONFIG = {
 if __name__ == "__main__":
     # 示例：获取甲子组合的规则
     jiazi_rules = ZI_WATER_RULES_CONFIG.get('甲子', [])
-    print(f"甲子组合有 {len(jiazi_rules)} 条直读规则")
+    logger.info(f"甲子组合有 {len(jiazi_rules)} 条直读规则")
     for i, rule in enumerate(jiazi_rules, 1):
-        print(f"{i}. {rule}")
+        logger.info(f"{i}. {rule}")
 
 
 ## 只有满足子水类的 才可以打印出来

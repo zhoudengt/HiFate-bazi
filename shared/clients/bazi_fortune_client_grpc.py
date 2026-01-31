@@ -52,23 +52,22 @@ class BaziFortuneClient(BaseGrpcClient):
 
         logger.debug("Calling bazi-fortune-service (gRPC): %s request=%s", self.address, request)
 
-        # 使用基类方法获取标准 gRPC 配置
+        # 使用基类 Channel 连接池复用连接
         options = self.get_grpc_options()
-        
-        with grpc.insecure_channel(self.address, options=options) as channel:
-            stub = bazi_fortune_pb2_grpc.BaziFortuneServiceStub(channel)
-            try:
-                response = stub.CalculateDayunLiunian(request, timeout=self.timeout)
-                
-                if not response.detail_json:
-                    raise RuntimeError("bazi-fortune-service response missing 'detail_json'")
-                
-                detail = json.loads(response.detail_json)
-                return detail
-                
-            except grpc.RpcError as e:
-                logger.error("bazi-fortune-service gRPC error: %s", e)
-                raise
+        channel = self.get_channel(self.address, options)
+        stub = bazi_fortune_pb2_grpc.BaziFortuneServiceStub(channel)
+        try:
+            response = stub.CalculateDayunLiunian(request, timeout=self.timeout)
+
+            if not response.detail_json:
+                raise RuntimeError("bazi-fortune-service response missing 'detail_json'")
+
+            detail = json.loads(response.detail_json)
+            return detail
+
+        except grpc.RpcError as e:
+            logger.error("bazi-fortune-service gRPC error: %s", e)
+            raise
 
     def health_check(self) -> bool:
         """健康检查"""

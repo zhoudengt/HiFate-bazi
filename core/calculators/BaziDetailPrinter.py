@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 from datetime import datetime
 
 from shared.clients.bazi_fortune_client_grpc import BaziFortuneClient
@@ -31,7 +34,7 @@ class BaziDetailPrinter:
                     current_time=current_time_iso,
                 )
             except Exception as exc:
-                print(f"⚠️  调用 bazi-fortune-service 失败，自动回退本地计算: {exc}")
+                logger.info(f"⚠️  调用 bazi-fortune-service 失败，自动回退本地计算: {exc}")
                 self.result = compute_local_detail(
                     self.calculator.solar_date,
                     self.calculator.solar_time,
@@ -39,7 +42,7 @@ class BaziDetailPrinter:
                     current_time=current_time_obj,
                 )
         else:
-            print("提示: 未检测到环境变量 BAZI_FORTUNE_SERVICE_URL，使用本地算法计算大运流年。")
+            logger.info("提示: 未检测到环境变量 BAZI_FORTUNE_SERVICE_URL，使用本地算法计算大运流年。")
             self.result = compute_local_detail(
                 self.calculator.solar_date,
                 self.calculator.solar_time,
@@ -48,12 +51,12 @@ class BaziDetailPrinter:
             )
 
         if not self.result:
-            print("排盘失败，请检查输入参数")
+            logger.info("排盘失败，请检查输入参数")
             return
 
-        print("=" * 120)
-        print("HiFate详细排盘 - 大运流年版本")
-        print("=" * 120)
+        logger.info("=" * 120)
+        logger.info("HiFate详细排盘 - 大运流年版本")
+        logger.info("=" * 120)
 
         self._print_basic_info()
         self._print_bazi_pillars_with_dayun_liunian()
@@ -67,21 +70,21 @@ class BaziDetailPrinter:
     def _print_basic_info(self):
         """打印基本信息"""
         basic = self.result['basic_info']
-        print(f"阳历生日: {basic['solar_date']} {basic['solar_time']}")
+        logger.info(f"阳历生日: {basic['solar_date']} {basic['solar_time']}")
 
         lunar = basic['lunar_date']
-        print(f"农历生日: {lunar['year']}年{lunar['month_name']}{lunar['day_name']}")
+        logger.info(f"农历生日: {lunar['year']}年{lunar['month_name']}{lunar['day_name']}")
 
-        print(f"性别: {'男' if basic['gender'] == 'male' else '女'}")
+        logger.info(f"性别: {'男' if basic['gender'] == 'male' else '女'}")
 
         if 'current_time' in basic and basic['current_time']:
             current_time = basic['current_time']
             if isinstance(current_time, datetime):
-                print(f"当前时间: {current_time.strftime('%Y-%m-%d %H:%M')}")
+                logger.info(f"当前时间: {current_time.strftime('%Y-%m-%d %H:%M')}")
             else:
-                print(f"当前时间: {current_time}")
+                logger.info(f"当前时间: {current_time}")
 
-        print()
+        logger.info("")
 
     def _print_bazi_pillars_with_dayun_liunian(self):
         """打印四柱信息 - 包含流年和大运的横向表格格式"""
@@ -92,8 +95,8 @@ class BaziDetailPrinter:
         liunian_details = self._get_current_liunian_details()
         dayun_details = self._get_current_dayun_details()
 
-        print("四柱八字:")
-        print("-" * 120)
+        logger.info("四柱八字:")
+        logger.info("-" * 120)
 
         # 定义表头
         headers = ["日期", "流年", "大运", "年柱", "月柱", "日柱", "时柱"]
@@ -101,8 +104,8 @@ class BaziDetailPrinter:
 
         # 打印表头
         header_line = "".join(f"{headers[i]:<{col_widths[i]}}" for i in range(len(headers)))
-        print(header_line)
-        print("-" * len(header_line))
+        logger.info(header_line)
+        logger.info("-" * len(header_line))
 
         # 构建各行数据
         rows = []
@@ -184,12 +187,12 @@ class BaziDetailPrinter:
         # 打印除了神煞之外的所有行
         for row in rows:
             row_line = "".join(f"{str(row[i]):<{col_widths[i]}}" for i in range(len(row)))
-            print(row_line)
+            logger.info(row_line)
 
         # 神煞列输出 - 每个神煞占一行
         self._print_deities_in_columns(headers, col_widths, liunian_details, dayun_details, details)
 
-        print()
+        logger.info("")
 
     def _print_deities_in_columns(self, headers, col_widths, liunian_details, dayun_details, details):
         """打印神煞列输出 - 每个神煞占一行"""
@@ -216,13 +219,13 @@ class BaziDetailPrinter:
         if max_deities_count == 0:
             deities_row = ["神煞"] + [''] * (len(headers) - 1)
             row_line = "".join(f"{str(deities_row[i]):<{col_widths[i]}}" for i in range(len(deities_row)))
-            print(row_line)
+            logger.info(row_line)
             return
 
         # 打印神煞标题行
         deities_title_row = ["神煞"] + [''] * (len(headers) - 1)
         row_line = "".join(f"{str(deities_title_row[i]):<{col_widths[i]}}" for i in range(len(deities_title_row)))
-        print(row_line)
+        logger.info(row_line)
 
         # 逐行打印每个神煞
         for i in range(max_deities_count):
@@ -250,7 +253,7 @@ class BaziDetailPrinter:
 
             # 打印这一行
             row_line = "".join(f"{str(deities_row[j]):<{col_widths[j]}}" for j in range(len(deities_row)))
-            print(row_line)
+            logger.info(row_line)
 
     def _get_current_liunian_details(self):
         """获取当前流年详细信息"""
@@ -292,28 +295,28 @@ class BaziDetailPrinter:
 
         dayun_sequence = self.result['details']['dayun_sequence']
 
-        print("大运序列:")
-        print("-" * 80)
+        logger.info("大运序列:")
+        logger.info("-" * 80)
 
         # 打印年份行
         years_line = "  ".join([f"{dayun['year_start']}-{dayun['year_end']}" for dayun in dayun_sequence])
-        print(f"  年份: {years_line}")
+        logger.info(f"  年份: {years_line}")
 
         # 打印年龄行
         ages_line = "  ".join([f"{dayun['age_display']}" for dayun in dayun_sequence])
-        print(f"  年龄: {ages_line}")
+        logger.info(f"  年龄: {ages_line}")
 
         # 打印干支行
         ganzhi_line = "  ".join([f"{dayun['stem']}{dayun['branch']}" if i > 0 else "小运"
                                   for i, dayun in enumerate(dayun_sequence)])
-        print(f"  干支: {ganzhi_line}")
+        logger.info(f"  干支: {ganzhi_line}")
 
         # 打印十神行
         stars_line = "  ".join([f"{dayun['main_star']}" if i > 0 else "小运"
                                 for i, dayun in enumerate(dayun_sequence)])
-        print(f"  十神: {stars_line}")
+        logger.info(f"  十神: {stars_line}")
 
-        print()
+        logger.info("")
 
     def _print_liunian_sequence_info(self):
         """打印流年序列信息"""
@@ -322,22 +325,22 @@ class BaziDetailPrinter:
 
         liunian_sequence = self.result['details']['liunian_sequence']
 
-        print("流年序列:")
-        print("-" * 80)
+        logger.info("流年序列:")
+        logger.info("-" * 80)
 
         # 打印年份行
         years_line = "  ".join([f"{item['year']}" for item in liunian_sequence])
-        print(f"  年份: {years_line}")
+        logger.info(f"  年份: {years_line}")
 
         # 打印干支行
         ganzhi_line = "  ".join([f"{item['stem']}{item['branch']}" for item in liunian_sequence])
-        print(f"  干支: {ganzhi_line}")
+        logger.info(f"  干支: {ganzhi_line}")
 
         # 打印十神行
         stars_line = "  ".join([f"{item['main_star']}" for item in liunian_sequence])
-        print(f"  十神: {stars_line}")
+        logger.info(f"  十神: {stars_line}")
 
-        print()
+        logger.info("")
 
     def _print_liuyue_info(self):
         """打印流月信息"""
@@ -346,19 +349,19 @@ class BaziDetailPrinter:
 
         liuyue_sequence = self.result['details']['liuyue_sequence']
 
-        print("流月信息:")
-        print("-" * 80)
+        logger.info("流月信息:")
+        logger.info("-" * 80)
 
         months_line = "  ".join([f"{item['month']}月" for item in liuyue_sequence])
-        print(f"  月份: {months_line}")
+        logger.info(f"  月份: {months_line}")
 
         terms_line = "  ".join([f"{item['solar_term']}" for item in liuyue_sequence])
-        print(f"  节气: {terms_line}")
+        logger.info(f"  节气: {terms_line}")
 
         ganzhi_line = "  ".join([f"{item['stem']}{item['branch']}" for item in liuyue_sequence])
-        print(f"  干支: {ganzhi_line}")
+        logger.info(f"  干支: {ganzhi_line}")
 
-        print()
+        logger.info("")
 
     def _print_liuri_info(self):
         """打印流日信息"""
@@ -367,22 +370,22 @@ class BaziDetailPrinter:
 
         liuri_sequence = self.result['details']['liuri_sequence']
 
-        print("流日信息:")
-        print("-" * 80)
+        logger.info("流日信息:")
+        logger.info("-" * 80)
 
         # 打印日期行
         dates_line = "  ".join([f"{item['date']}" for item in liuri_sequence])
-        print(f"  日期: {dates_line}")
+        logger.info(f"  日期: {dates_line}")
 
         # 打印干支行
         ganzhi_line = "  ".join([f"{item['stem']}{item['branch']}" for item in liuri_sequence])
-        print(f"  干支: {ganzhi_line}")
+        logger.info(f"  干支: {ganzhi_line}")
 
         # 打印十神行
         stars_line = "  ".join([f"{item['main_star']}" for item in liuri_sequence])
-        print(f"  十神: {stars_line}")
+        logger.info(f"  十神: {stars_line}")
 
-        print()
+        logger.info("")
 
     def _print_liushi_info(self):
         """打印流时信息"""
@@ -391,22 +394,22 @@ class BaziDetailPrinter:
 
         liushi_sequence = self.result['details']['liushi_sequence']
 
-        print("流时信息:")
-        print("-" * 80)
+        logger.info("流时信息:")
+        logger.info("-" * 80)
 
         # 打印时间行
         times_line = "  ".join([f"{item['time']}" for item in liushi_sequence])
-        print(f"  时间: {times_line}")
+        logger.info(f"  时间: {times_line}")
 
         # 打印干支行
         ganzhi_line = "  ".join([f"{item['stem']}{item['branch']}" for item in liushi_sequence])
-        print(f"  干支: {ganzhi_line}")
+        logger.info(f"  干支: {ganzhi_line}")
 
         # 打印十神行
         stars_line = "  ".join([f"{item['main_star']}" for item in liushi_sequence])
-        print(f"  十神: {stars_line}")
+        logger.info(f"  十神: {stars_line}")
 
-        print()
+        logger.info("")
 
     def _print_qiyun_jiaoyun_info(self):
         """打印起运交运信息"""
@@ -414,13 +417,13 @@ class BaziDetailPrinter:
         jiaoyun_info = self.result['details'].get('jiaoyun', {})
 
         if qiyun_info or jiaoyun_info:
-            print("起运交运信息:")
-            print("-" * 40)
+            logger.info("起运交运信息:")
+            logger.info("-" * 40)
 
             if qiyun_info:
-                print(f"起运: {qiyun_info.get('description', '')}")
+                logger.info(f"起运: {qiyun_info.get('description', '')}")
 
             if jiaoyun_info:
-                print(f"交运: {jiaoyun_info.get('description', '')}")
+                logger.info(f"交运: {jiaoyun_info.get('description', '')}")
 
-            print()
+            logger.info("")

@@ -17,6 +17,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.fortune_api_service import FortuneAPIService
+from server.utils.api_error_handler import api_error_handler
 
 router = APIRouter()
 
@@ -100,6 +101,7 @@ class MonthlyFortuneResponse(BaseModel):
 
 
 @router.post("/fortune/daily", response_model=FortuneResponse, summary="获取今日运势")
+@api_error_handler
 async def get_daily_fortune(request: FortuneRequest):
     """
     获取今日运势
@@ -133,38 +135,27 @@ async def get_daily_fortune(request: FortuneRequest):
     
     返回今日运势分析结果
     """
-    try:
-        service = FortuneAPIService(provider=request.provider)
-        result = service.get_daily_fortune(
-            constellation=request.constellation,
-            date=request.date
+    service = FortuneAPIService(provider=request.provider)
+    result = service.get_daily_fortune(
+        constellation=request.constellation,
+        date=request.date
+    )
+    if result.get('success'):
+        return FortuneResponse(
+            success=True,
+            provider=result.get('provider'),
+            constellation=result.get('constellation'),
+            date=result.get('date'),
+            fortune=result.get('fortune')
         )
-        
-        if result.get('success'):
-            return FortuneResponse(
-                success=True,
-                provider=result.get('provider'),
-                constellation=result.get('constellation'),
-                date=result.get('date'),
-                fortune=result.get('fortune')
-            )
-        else:
-            return FortuneResponse(
-                success=False,
-                error=result.get('error', '获取运势失败')
-            )
-            
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        import traceback
-        raise HTTPException(
-            status_code=500,
-            detail=f"获取今日运势异常: {str(e)}\n{traceback.format_exc()}"
-        )
+    return FortuneResponse(
+        success=False,
+        error=result.get('error', '获取运势失败')
+    )
 
 
 @router.post("/fortune/monthly", response_model=MonthlyFortuneResponse, summary="获取本月运势")
+@api_error_handler
 async def get_monthly_fortune(request: MonthlyFortuneRequest):
     """
     获取本月运势
@@ -198,37 +189,25 @@ async def get_monthly_fortune(request: MonthlyFortuneRequest):
     
     返回本月运势分析结果
     """
-    try:
-        service = FortuneAPIService(provider=request.provider)
-        result = service.get_monthly_fortune(
-            constellation=request.constellation,
-            year=request.year,
-            month=request.month
+    service = FortuneAPIService(provider=request.provider)
+    result = service.get_monthly_fortune(
+        constellation=request.constellation,
+        year=request.year,
+        month=request.month
+    )
+    if result.get('success'):
+        return MonthlyFortuneResponse(
+            success=True,
+            provider=result.get('provider'),
+            constellation=result.get('constellation'),
+            year=result.get('year'),
+            month=result.get('month'),
+            fortune=result.get('fortune')
         )
-        
-        if result.get('success'):
-            return MonthlyFortuneResponse(
-                success=True,
-                provider=result.get('provider'),
-                constellation=result.get('constellation'),
-                year=result.get('year'),
-                month=result.get('month'),
-                fortune=result.get('fortune')
-            )
-        else:
-            return MonthlyFortuneResponse(
-                success=False,
-                error=result.get('error', '获取运势失败')
-            )
-            
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        import traceback
-        raise HTTPException(
-            status_code=500,
-            detail=f"获取本月运势异常: {str(e)}\n{traceback.format_exc()}"
-        )
+    return MonthlyFortuneResponse(
+        success=False,
+        error=result.get('error', '获取运势失败')
+    )
 
 
 @router.get("/fortune/providers", summary="获取可用的API提供商")

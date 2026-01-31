@@ -3,6 +3,9 @@
 Intent Service gRPC 服务器
 """
 import grpc
+import logging
+
+logger = logging.getLogger(__name__)
 from concurrent import futures
 import time
 import sys
@@ -20,17 +23,17 @@ try:
     env_path = os.path.join(project_root, '.env')
     if os.path.exists(env_path):
         load_dotenv(env_path, override=True)
-        print(f"✓ Intent Service 已加载 .env: {env_path}")
+        logger.info(f"✓ Intent Service 已加载 .env: {env_path}")
     else:
-        print(f"⚠ .env 文件不存在: {env_path}")
+        logger.info(f"⚠ .env 文件不存在: {env_path}")
     
     # 2. ⭐ 同时加载 config/services.env（关键修复）
     services_env_path = os.path.join(project_root, 'config/services.env')
     if os.path.exists(services_env_path):
         load_dotenv(services_env_path, override=True)
-        print(f"✓ Intent Service 已加载 services.env: {services_env_path}")
+        logger.info(f"✓ Intent Service 已加载 services.env: {services_env_path}")
     else:
-        print(f"⚠ services.env 文件不存在: {services_env_path}")
+        logger.info(f"⚠ services.env 文件不存在: {services_env_path}")
     
     # 3. 验证关键配置（从数据库读取）
     try:
@@ -38,20 +41,20 @@ try:
         intent_bot_id = get_config_from_db_only("INTENT_BOT_ID")
         coze_token = get_config_from_db_only("COZE_ACCESS_TOKEN")
         if intent_bot_id:
-            print(f"✓ INTENT_BOT_ID (数据库): {intent_bot_id}")
+            logger.info(f"✓ INTENT_BOT_ID (数据库): {intent_bot_id}")
         else:
-            print(f"⚠️ 警告：INTENT_BOT_ID 未在数据库中配置，将无法调用Coze API")
+            logger.info(f"⚠️ 警告：INTENT_BOT_ID 未在数据库中配置，将无法调用Coze API")
         if coze_token:
-            print(f"✓ COZE_ACCESS_TOKEN (数据库): {coze_token[:20]}...")
+            logger.info(f"✓ COZE_ACCESS_TOKEN (数据库): {coze_token[:20]}...")
         else:
-            print(f"⚠️ 警告：COZE_ACCESS_TOKEN 未在数据库中配置，将无法调用Coze API")
+            logger.info(f"⚠️ 警告：COZE_ACCESS_TOKEN 未在数据库中配置，将无法调用Coze API")
     except Exception as e:
-        print(f"⚠️ 无法从数据库读取配置: {e}")
+        logger.info(f"⚠️ 无法从数据库读取配置: {e}")
         
 except ImportError:
-    print("⚠ python-dotenv 未安装，将使用系统环境变量")
+    logger.info("⚠ python-dotenv 未安装，将使用系统环境变量")
 except Exception as e:
-    print(f"⚠ 加载环境变量失败: {e}")
+    logger.info(f"⚠ 加载环境变量失败: {e}")
 
 from proto import intent_pb2, intent_pb2_grpc
 from services.intent_service.question_filter import QuestionFilter

@@ -137,7 +137,7 @@ def add_level4_data(data):
     return total_added
 
 def main():
-    file_path = 'docs/region_code_table.json'
+    file_path = 'region_code_table.json'
     
     print(f"正在读取 {file_path}...")
     with open(file_path, 'r', encoding='utf-8') as f:

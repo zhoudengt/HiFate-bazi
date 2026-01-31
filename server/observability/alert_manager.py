@@ -307,7 +307,7 @@ def get_alert_manager() -> AlertManager:
 def console_notifier(alert: Alert):
     """控制台通知器"""
     status = "🔴 触发" if alert.status == AlertStatus.FIRING else "🟢 恢复"
-    print(f"[告警] {status} [{alert.severity.value}] {alert.name}: {alert.message}")
+    logger.info(f"[告警] {status} [{alert.severity.value}] {alert.name}: {alert.message}")
 
 
 def log_notifier(alert: Alert):

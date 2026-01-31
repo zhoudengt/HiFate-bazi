@@ -206,8 +206,8 @@ if __name__ == "__main__":
     enriched = PositionCalculator.calculate_all_positions(items, img_shape)
     
     for item in enriched:
-        print(f"{item['label']}: {item['position']}")
+        logger.info(f"{item['label']}: {item['position']}")
     
     summary = PositionCalculator.get_position_summary(enriched)
-    print(f"\n位置统计: {summary}")
+    logger.info(f"\n位置统计: {summary}")
 

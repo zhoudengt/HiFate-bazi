@@ -3,9 +3,17 @@
 """
 gRPC 配置工具类
 统一管理 gRPC 连接配置，避免在多个文件中重复配置
+支持 keepalive、压缩等，减少网络传输量
 """
 
 from typing import List, Tuple
+
+# 压缩：客户端建连时传入，减少网络传输 40–60%
+try:
+    import grpc
+    GRPC_COMPRESSION = grpc.Compression.Gzip
+except Exception:
+    GRPC_COMPRESSION = None
 
 
 def get_standard_grpc_options() -> List[Tuple[str, int]]:

@@ -6,6 +6,9 @@ Fortune Rule Service gRPC Client
 """
 
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 import os
 import sys
 from typing import Dict, Any, List, Optional
@@ -182,7 +185,7 @@ class FortuneRuleClient:
         except Exception as e:
             import traceback
             error_msg = f"调用 fortune-rule-service 失败: {str(e)}\n{traceback.format_exc()}"
-            print(f"❌ {error_msg}")
+            logger.info(f"❌ {error_msg}")
             return {
                 "success": False,
                 "error": str(e),
@@ -312,7 +315,7 @@ class FortuneRuleClient:
         except Exception as e:
             import traceback
             error_msg = f"调用 fortune-rule-service 失败: {str(e)}\n{traceback.format_exc()}"
-            print(f"❌ {error_msg}")
+            logger.info(f"❌ {error_msg}")
             return {
                 "success": False,
                 "error": str(e),

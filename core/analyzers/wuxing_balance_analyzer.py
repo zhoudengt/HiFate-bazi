@@ -389,13 +389,13 @@ if __name__ == "__main__":
     
     result = WuxingBalanceAnalyzer.analyze(bazi_elements, liunian, dayun)
     
-    print("=" * 80)
-    print("五行动态平衡分析测试")
-    print("=" * 80)
-    print(f"\n八字五行: {WuxingBalanceAnalyzer.format_elements_for_display(result['bazi_elements'])}")
-    print(f"流年五行贡献: {WuxingBalanceAnalyzer.format_elements_for_display(result['liunian_elements'])}")
-    print(f"大运五行贡献: {WuxingBalanceAnalyzer.format_elements_for_display(result['dayun_elements'])}")
-    print(f"\n综合五行: {WuxingBalanceAnalyzer.format_elements_for_display(result['combined_elements'])}")
-    print(f"\n分析结果: {result['analysis']['summary']}")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("五行动态平衡分析测试")
+    logger.info("=" * 80)
+    logger.info(f"\n八字五行: {WuxingBalanceAnalyzer.format_elements_for_display(result['bazi_elements'])}")
+    logger.info(f"流年五行贡献: {WuxingBalanceAnalyzer.format_elements_for_display(result['liunian_elements'])}")
+    logger.info(f"大运五行贡献: {WuxingBalanceAnalyzer.format_elements_for_display(result['dayun_elements'])}")
+    logger.info(f"\n综合五行: {WuxingBalanceAnalyzer.format_elements_for_display(result['combined_elements'])}")
+    logger.info(f"\n分析结果: {result['analysis']['summary']}")
+    logger.info("=" * 80)
 

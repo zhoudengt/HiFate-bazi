@@ -6,6 +6,9 @@ gRPC server for fortune-analysis-service.
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger(__name__)
 
 import os
 import sys
@@ -38,7 +41,7 @@ class FortuneAnalysisServicer(fortune_analysis_pb2_grpc.FortuneAnalysisServiceSe
         """手相分析"""
         import datetime
         request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{request_time}] 📥 fortune-analysis-service: 收到手相分析请求", flush=True)
+        logger.info(f"[{request_time}] 📥 fortune-analysis-service: 收到手相分析请求", flush=True)
         
         try:
             # 调用手相分析器（独立模块）
@@ -94,13 +97,13 @@ class FortuneAnalysisServicer(fortune_analysis_pb2_grpc.FortuneAnalysisServiceSe
             import json
             response.report_json = json.dumps(result, ensure_ascii=False)
             
-            print(f"[{request_time}] ✅ fortune-analysis-service: 手相分析完成", flush=True)
+            logger.info(f"[{request_time}] ✅ fortune-analysis-service: 手相分析完成", flush=True)
             return response
             
         except Exception as e:
             import traceback
             error_msg = f"手相分析失败: {str(e)}\n{traceback.format_exc()}"
-            print(f"[{request_time}] ❌ fortune-analysis-service: 错误 - {error_msg}", flush=True)
+            logger.info(f"[{request_time}] ❌ fortune-analysis-service: 错误 - {error_msg}", flush=True)
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"手相分析失败: {str(e)}")
             response = fortune_analysis_pb2.HandAnalysisResponse()
@@ -112,7 +115,7 @@ class FortuneAnalysisServicer(fortune_analysis_pb2_grpc.FortuneAnalysisServiceSe
         """面相分析"""
         import datetime
         request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{request_time}] 📥 fortune-analysis-service: 收到面相分析请求", flush=True)
+        logger.info(f"[{request_time}] 📥 fortune-analysis-service: 收到面相分析请求", flush=True)
         
         try:
             # 调用面相分析器（独立模块）
@@ -168,13 +171,13 @@ class FortuneAnalysisServicer(fortune_analysis_pb2_grpc.FortuneAnalysisServiceSe
             import json
             response.report_json = json.dumps(result, ensure_ascii=False)
             
-            print(f"[{request_time}] ✅ fortune-analysis-service: 面相分析完成", flush=True)
+            logger.info(f"[{request_time}] ✅ fortune-analysis-service: 面相分析完成", flush=True)
             return response
             
         except Exception as e:
             import traceback
             error_msg = f"面相分析失败: {str(e)}\n{traceback.format_exc()}"
-            print(f"[{request_time}] ❌ fortune-analysis-service: 错误 - {error_msg}", flush=True)
+            logger.info(f"[{request_time}] ❌ fortune-analysis-service: 错误 - {error_msg}", flush=True)
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"面相分析失败: {str(e)}")
             response = fortune_analysis_pb2.FaceAnalysisResponse()
@@ -219,15 +222,15 @@ def serve(port: int = 9005):
         
         # create_hot_reload_server 已经绑定了端口，不需要再次绑定
         server.start()
-        print(f"✅ Fortune Analysis gRPC 服务已启动（热更新已启用），监听端口: {port}")
+        logger.info(f"✅ Fortune Analysis gRPC 服务已启动（热更新已启用），监听端口: {port}")
         
         try:
             server.wait_for_termination()
         except KeyboardInterrupt:
-            print("\n>>> 正在停止服务...")
+            logger.info("\n>>> 正在停止服务...")
             reloader.stop()
             server.stop(grace=5)
-            print("✅ 服务已停止")
+            logger.info("✅ 服务已停止")
             
     except ImportError:
         # 降级到传统模式
@@ -249,14 +252,14 @@ def serve(port: int = 9005):
         server.add_insecure_port(listen_addr)
         
         server.start()
-        print(f"✅ Fortune Analysis gRPC 服务已启动（传统模式），监听端口: {port}")
+        logger.info(f"✅ Fortune Analysis gRPC 服务已启动（传统模式），监听端口: {port}")
         
         try:
             server.wait_for_termination()
         except KeyboardInterrupt:
-            print("\n>>> 正在停止服务...")
+            logger.info("\n>>> 正在停止服务...")
             server.stop(grace=5)
-            print("✅ 服务已停止")
+            logger.info("✅ 服务已停止")
 
 
 if __name__ == "__main__":

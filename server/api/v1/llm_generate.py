@@ -9,7 +9,6 @@ import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, validator
 from typing import Optional
-from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
 # 添加项目根目录到路径
@@ -17,14 +16,10 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.llm_generate_service import LLMGenerateService
+from server.utils.api_error_handler import api_error_handler
+from server.utils.async_executor import get_executor
 
 router = APIRouter()
-
-# 线程池
-import os
-cpu_count = os.cpu_count() or 4
-max_workers = min(cpu_count * 2, 100)
-executor = ThreadPoolExecutor(max_workers=max_workers)
 
 
 class LLMGenerateRequest(BaseModel):
@@ -75,6 +70,7 @@ class LLMGenerateResponse(BaseModel):
 
 
 @router.post("/bazi/llm-generate", response_model=LLMGenerateResponse, summary="LLM 生成完整报告（类似 FateTell）")
+@api_error_handler
 async def generate_llm_report(request: LLMGenerateRequest):
     """
     使用 LLM 直接生成完整的命理报告（类似 FateTell 的实时生成模式）
@@ -98,41 +94,33 @@ async def generate_llm_report(request: LLMGenerateRequest):
     
     返回 LLM 生成的完整报告
     """
-    try:
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            executor,
-            LLMGenerateService.generate_report,
-            request.solar_date,
-            request.solar_time,
-            request.gender,
-            request.user_question,
-            request.access_token,
-            request.bot_id,
-            request.api_base
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        get_executor(),
+        LLMGenerateService.generate_report,
+        request.solar_date,
+        request.solar_time,
+        request.gender,
+        request.user_question,
+        request.access_token,
+        request.bot_id,
+        request.api_base
+    )
+
+    if result.get('success'):
+        return LLMGenerateResponse(
+            success=True,
+            report=result.get('report'),
+            bazi_data=result.get('bazi_data'),
+            prompt_length=result.get('prompt_length'),
+            report_length=result.get('report_length')
         )
-        
-        if result.get('success'):
-            return LLMGenerateResponse(
-                success=True,
-                report=result.get('report'),
-                bazi_data=result.get('bazi_data'),
-                prompt_length=result.get('prompt_length'),
-                report_length=result.get('report_length')
-            )
-        else:
-            # 返回友好的错误信息，而不是直接抛出异常
-            return LLMGenerateResponse(
-                success=False,
-                error=result.get('error', '生成失败'),
-                error_detail=result.get('error_detail'),
-                suggestion=result.get('suggestion'),
-                bazi_data=result.get('bazi_data')
-            )
-            
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        import traceback
-        raise HTTPException(status_code=500, detail=f"生成异常: {str(e)}\n{traceback.format_exc()}")
+    # 返回友好的错误信息，而不是直接抛出异常
+    return LLMGenerateResponse(
+        success=False,
+        error=result.get('error', '生成失败'),
+        error_detail=result.get('error_detail'),
+        suggestion=result.get('suggestion'),
+        bazi_data=result.get('bazi_data')
+    )
 

@@ -8,6 +8,9 @@
 """
 
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 import os
 from datetime import datetime
 
@@ -302,7 +305,7 @@ class BaziInterfaceGenerator:
         formatted_text = result.get("formatted_text", {})
         if formatted_text:
             for key, value in formatted_text.items():
-                print(value)
+                logger.info(value)
         else:
             # 如果没有格式化文本，直接打印 JSON
             self.printer.print_json(result)
@@ -362,17 +365,17 @@ def main():
     generator = BaziInterfaceGenerator()
 
     try:
-        print("=" * 60)
-        print("八字界面信息生成器")
-        print("=" * 60)
-        print(f"姓名: {args.name}")
-        print(f"性别: {args.gender}")
-        print(f"出生日期: {args.date}")
-        print(f"出生时间: {args.time}")
-        print(f"出生地点: {args.location}")
-        print(f"坐标: ({args.latitude}, {args.longitude})")
-        print("=" * 60)
-        print()
+        logger.info("=" * 60)
+        logger.info("八字界面信息生成器")
+        logger.info("=" * 60)
+        logger.info(f"姓名: {args.name}")
+        logger.info(f"性别: {args.gender}")
+        logger.info(f"出生日期: {args.date}")
+        logger.info(f"出生时间: {args.time}")
+        logger.info(f"出生地点: {args.location}")
+        logger.info(f"坐标: ({args.latitude}, {args.longitude})")
+        logger.info("=" * 60)
+        logger.info("")
         
         result = generator.generate_interface_info(
             args.name, 
@@ -385,16 +388,16 @@ def main():
         )
 
         if args.json:
-            print("JSON 格式输出:")
-            print("=" * 60)
-            print(generator.printer.format_to_json(result))
+            logger.info("JSON 格式输出:")
+            logger.info("=" * 60)
+            logger.info(generator.printer.format_to_json(result))
         else:
-            print("格式化文本输出:")
-            print("=" * 60)
+            logger.info("格式化文本输出:")
+            logger.info("=" * 60)
         generator.print_interface_info(result)
 
     except Exception as e:
-        print(f"错误: {e}")
+        logger.info(f"错误: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

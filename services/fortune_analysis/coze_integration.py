@@ -6,6 +6,9 @@ Coze API 集成模块
 """
 
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 import sys
 import requests
 import json
@@ -42,7 +45,7 @@ class CozeIntegration:
         self.api_base = api_base_env.rstrip('/').replace('/v1', '').replace('/v2', '')
         
         if not self.access_token or not self.bot_id:
-            print("⚠️  Coze API 配置未找到，AI 增强功能将不可用")
+            logger.info("⚠️  Coze API 配置未找到，AI 增强功能将不可用")
             return
         
         # 设置请求头（与 bazi_ai_analyzer.py 保持一致）
@@ -86,7 +89,7 @@ class CozeIntegration:
             return result
             
         except Exception as e:
-            print(f"⚠️  Coze API 调用失败: {e}")
+            logger.info(f"⚠️  Coze API 调用失败: {e}")
             return None
     
     def _prepare_prompt(self, analysis_data: Dict[str, Any]) -> str:
@@ -211,12 +214,12 @@ class CozeIntegration:
                             continue
             
             # 所有尝试都失败
-            print(f"⚠️  所有 Coze API 端点都失败，最后错误: {last_error}")
-            print(f"💡 提示：请检查 Token 是否正确，Bot 是否已发布")
+            logger.info(f"⚠️  所有 Coze API 端点都失败，最后错误: {last_error}")
+            logger.info(f"💡 提示：请检查 Token 是否正确，Bot 是否已发布")
             return None
             
         except Exception as e:
-            print(f"⚠️  Coze API 调用异常: {e}")
+            logger.info(f"⚠️  Coze API 调用异常: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -278,7 +281,7 @@ class CozeIntegration:
             return None
             
         except Exception as e:
-            print(f"⚠️  解析 Coze 响应失败: {e}")
+            logger.info(f"⚠️  解析 Coze 响应失败: {e}")
             import traceback
             traceback.print_exc()
             return None

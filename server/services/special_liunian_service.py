@@ -41,7 +41,7 @@ class SpecialLiunianService:
         ⚠️ 不去重：同一年可能有多个关系，保留所有流年
         
         ✅ 架构规范：优先使用传入的 liunian_sequence，避免重复计算
-        详见：docs/standards/08_数据编排架构规范.md
+        详见：standards/08_数据编排架构规范.md
         
         Args:
             solar_date: 阳历日期
@@ -96,7 +96,7 @@ class SpecialLiunianService:
         start_time = time.time()
         
         # ✅ 架构规范：优先使用传入的 liunian_sequence，避免重复计算
-        # 详见：docs/standards/08_数据编排架构规范.md
+        # 详见：standards/08_数据编排架构规范.md
         if liunian_sequence is not None and len(liunian_sequence) > 0:
             # ✅ 使用传入的数据（由 BaziDataOrchestrator 传入）
             logger.info(f"✅ [架构优化] 使用传入的 liunian_sequence，共 {len(liunian_sequence)} 个流年，避免重复计算")

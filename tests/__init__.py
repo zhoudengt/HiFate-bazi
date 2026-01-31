@@ -1,3 +1,1 @@
-"""
-HiFate-bazi 测试套件
-"""
+# HiFate-bazi tests package

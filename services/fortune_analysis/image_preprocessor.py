@@ -5,6 +5,9 @@
 """
 
 import cv2
+import logging
+
+logger = logging.getLogger(__name__)
 import numpy as np
 from PIL import Image
 import io
@@ -54,7 +57,7 @@ class ImagePreprocessor:
             
             # 如果清晰度较低但可接受，记录警告但不拒绝
             if laplacian_var < 100:
-                print(f"⚠️  图像清晰度较低: {laplacian_var:.1f}，但继续处理")
+                logger.info(f"⚠️  图像清晰度较低: {laplacian_var:.1f}，但继续处理")
             
             return True, ""
             
@@ -69,7 +72,7 @@ class ImagePreprocessor:
             img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             return img
         except Exception as e:
-            print(f"图像解码失败: {e}")
+            logger.info(f"图像解码失败: {e}")
             return None
     
     @staticmethod

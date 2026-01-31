@@ -190,7 +190,7 @@ async def annual_report_test(request: AnnualReportRequest):
             },
             "usage": {
                 "description": "此接口返回的数据可以直接用于 Coze Bot 的 {{input}} 占位符",
-                "coze_bot_setup": "1. 登录 Coze 平台\n2. 找到'年运报告分析' Bot\n3. 进入 Bot 设置 → System Prompt\n4. 复制 docs/需求/Coze_Bot_System_Prompt_年运报告.md 中的提示词\n5. 粘贴到 System Prompt 中\n6. 保存设置",
+                "coze_bot_setup": "1. 登录 Coze 平台\n2. 找到'年运报告分析' Bot\n3. 进入 Bot 设置 → System Prompt\n4. 配置提示词并保存",
                 "test_command": f'curl -X POST "http://localhost:8001/api/v1/annual-report/test" -H "Content-Type: application/json" -d \'{{"solar_date": "{request.solar_date}", "solar_time": "{request.solar_time}", "gender": "{request.gender}"}}\''
             }
         }
@@ -242,7 +242,7 @@ async def annual_report_stream_generator(
         # ✅ 性能优化：立即返回首条消息，让用户感知到连接已建立
         # 这个优化将首次响应时间从 24秒 降低到 <1秒
         # ✅ 架构优化：移除无意义的进度消息，直接开始数据处理
-        # 详见：docs/standards/08_数据编排架构规范.md
+        # 详见：standards/08_数据编排架构规范.md
         
         logger.info(f"年运报告请求: solar_date={solar_date}, solar_time={solar_time}, gender={gender}")
         

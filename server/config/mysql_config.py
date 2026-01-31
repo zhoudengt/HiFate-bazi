@@ -4,6 +4,7 @@
 MySQL 配置模块 - 支持连接池
 """
 
+import logging
 import pymysql
 from pymysql.cursors import DictCursor
 from typing import Optional, Dict, Any
@@ -19,6 +20,8 @@ import time
 # 使用统一环境配置
 from server.config.env_config import is_local_dev
 IS_LOCAL_DEV = is_local_dev()
+
+logger = logging.getLogger(__name__)
 
 # 根据环境设置默认值
 # ⚠️ 安全规范：密码必须通过环境变量配置，不允许硬编码
@@ -126,9 +129,9 @@ class MySQLConnectionPool:
                 if conn:
                     self._pool.put(conn)
             except Exception as e:
-                print(f"⚠️  初始化连接池时创建连接失败: {e}")
+                logger.warning(f"⚠️  初始化连接池时创建连接失败: {e}")
                 break
-        print(f"✓ MySQL连接池初始化成功 (min={self.mincached}, max={self.maxconnections})")
+        logger.info(f"✓ MySQL连接池初始化成功 (min={self.mincached}, max={self.maxconnections})")
     
     def _create_connection(self) -> Optional[pymysql.Connection]:
         """创建新连接"""
@@ -143,7 +146,7 @@ class MySQLConnectionPool:
             self._connection_times[conn_id] = time.time()
             return conn
         except Exception as e:
-            print(f"✗ 创建MySQL连接失败: {e}")
+            logger.error(f"✗ 创建MySQL连接失败: {e}")
             with self._lock:
                 self._current_connections -= 1
             return None
@@ -355,7 +358,7 @@ def _init_mysql_pool():
         )
         return _mysql_pool
     except Exception as e:
-        print(f"✗ MySQL连接池初始化失败: {e}")
+        logger.error(f"✗ MySQL连接池初始化失败: {e}")
         return None
 
 
@@ -380,7 +383,7 @@ def get_mysql_connection():
         try:
             return _mysql_pool.connection()
         except Exception as e:
-            print(f"⚠️  从连接池获取连接失败，回退到单连接模式: {e}")
+            logger.warning(f"⚠️  从连接池获取连接失败，回退到单连接模式: {e}")
             # 连接池失败时回退到单连接模式
     
     # 回退到单连接模式
@@ -388,7 +391,7 @@ def get_mysql_connection():
         connection = pymysql.connect(**mysql_config)
         return connection
     except Exception as e:
-        print(f"MySQL 连接失败: {e}")
+        logger.info(f"MySQL 连接失败: {e}")
         raise
 
 
@@ -429,10 +432,10 @@ def cleanup_idle_mysql_connections(max_idle_time: int = 300):
     try:
         cleaned = _mysql_pool.cleanup_idle_connections(max_idle_time)
         if cleaned > 0:
-            print(f"✓ 清理了 {cleaned} 个长时间未使用的MySQL连接")
+            logger.info(f"✓ 清理了 {cleaned} 个长时间未使用的MySQL连接")
         return cleaned
     except Exception as e:
-        print(f"⚠️  清理MySQL连接失败: {e}")
+        logger.warning(f"⚠️  清理MySQL连接失败: {e}")
         return 0
 
 
@@ -470,10 +473,10 @@ def test_mysql_connection() -> bool:
     try:
         conn = get_mysql_connection()
         return_mysql_connection(conn)
-        print(f"✓ MySQL 连接成功（使用连接池）: {mysql_config['host']}:{mysql_config['port']}")
+        logger.info(f"✓ MySQL 连接成功（使用连接池）: {mysql_config['host']}:{mysql_config['port']}")
         return True
     except Exception as e:
-        print(f"✗ MySQL 连接失败: {e}")
+        logger.error(f"✗ MySQL 连接失败: {e}")
         return False
 
 

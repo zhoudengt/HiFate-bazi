@@ -6,6 +6,9 @@
 """
 
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 import sys
 import os
 from typing import List, Optional, Dict
@@ -49,7 +52,7 @@ class RuleContentDAO:
                     return descriptions
             return []
         except Exception as e:
-            print(f"⚠ 查询日柱性别内容失败: {e}")
+            logger.info(f"⚠ 查询日柱性别内容失败: {e}")
             return []
     
     @staticmethod
@@ -67,7 +70,7 @@ class RuleContentDAO:
                 return int(result[0]['content_version'])
             return 1
         except Exception as e:
-            print(f"⚠ 获取版本号失败: {e}")
+            logger.info(f"⚠ 获取版本号失败: {e}")
             return 1
     
     @staticmethod
@@ -85,7 +88,7 @@ class RuleContentDAO:
                 return int(result[0]['rule_version'])
             return 1
         except Exception as e:
-            print(f"⚠ 获取规则版本号失败: {e}")
+            logger.info(f"⚠ 获取规则版本号失败: {e}")
             return 1
     
     @staticmethod
@@ -96,10 +99,10 @@ class RuleContentDAO:
             db.execute_update(
                 "UPDATE rule_version SET content_version = content_version + 1"
             )
-            print("✓ 内容版本号已更新")
+            logger.info("✓ 内容版本号已更新")
             return True
         except Exception as e:
-            print(f"⚠ 更新内容版本号失败: {e}")
+            logger.info(f"⚠ 更新内容版本号失败: {e}")
             return False
     
     @staticmethod
@@ -110,10 +113,10 @@ class RuleContentDAO:
             db.execute_update(
                 "UPDATE rule_version SET rule_version = rule_version + 1"
             )
-            print("✓ 规则版本号已更新")
+            logger.info("✓ 规则版本号已更新")
             return True
         except Exception as e:
-            print(f"⚠ 更新规则版本号失败: {e}")
+            logger.info(f"⚠ 更新规则版本号失败: {e}")
             return False
     
     @staticmethod
@@ -148,13 +151,13 @@ class RuleContentDAO:
             RuleContentDAO.update_content_version()
             return True
         except Exception as e:
-            print(f"⚠ 保存日柱性别内容失败: {e}")
+            logger.info(f"⚠ 保存日柱性别内容失败: {e}")
             return False
     
     @staticmethod
     def batch_save_rizhu_gender_contents(contents: List[Dict]) -> int:
         """
-        批量保存日柱性别内容
+        批量保存日柱性别内容（单次批量 INSERT，避免 N+1 查询）。
         
         Args:
             contents: 内容列表，格式：[{'rizhu': '甲子', 'gender': 'male', 'descriptions': [...]}, ...]
@@ -162,15 +165,33 @@ class RuleContentDAO:
         Returns:
             int: 成功保存的数量
         """
-        success_count = 0
-        for content in contents:
-            if RuleContentDAO.save_rizhu_gender_content(
-                content['rizhu'],
-                content['gender'],
-                content['descriptions']
-            ):
-                success_count += 1
-        return success_count
+        if not contents:
+            return 0
+        try:
+            db = get_db_connection()
+            placeholders = ", ".join(["(%s, %s, %s)"] * len(contents))
+            sql = (
+                "INSERT INTO rizhu_gender_contents (rizhu, gender, descriptions) "
+                "VALUES " + placeholders + """
+                ON DUPLICATE KEY UPDATE
+                    descriptions = VALUES(descriptions),
+                    version = version + 1,
+                    updated_at = NOW()
+            """
+            )
+            params = []
+            for c in contents:
+                params.extend([
+                    c['rizhu'],
+                    c['gender'],
+                    json.dumps(c['descriptions'], ensure_ascii=False),
+                ])
+            db.execute_update(sql, tuple(params))
+            RuleContentDAO.update_content_version()
+            return len(contents)
+        except Exception as e:
+            logger.warning("批量保存日柱性别内容失败: %s", e)
+            return 0
     
     @staticmethod
     def get_all_rizhu_gender_contents() -> List[Dict]:
@@ -202,7 +223,7 @@ class RuleContentDAO:
                 })
             return contents
         except Exception as e:
-            print(f"⚠ 获取所有内容失败: {e}")
+            logger.info(f"⚠ 获取所有内容失败: {e}")
             return []
     
     @staticmethod
@@ -228,7 +249,7 @@ class RuleContentDAO:
             RuleContentDAO.update_content_version()
             return True
         except Exception as e:
-            print(f"⚠ 禁用内容失败: {e}")
+            logger.info(f"⚠ 禁用内容失败: {e}")
             return False
     
     @staticmethod
@@ -254,7 +275,7 @@ class RuleContentDAO:
             RuleContentDAO.update_content_version()
             return True
         except Exception as e:
-            print(f"⚠ 启用内容失败: {e}")
+            logger.info(f"⚠ 启用内容失败: {e}")
             return False
 
 

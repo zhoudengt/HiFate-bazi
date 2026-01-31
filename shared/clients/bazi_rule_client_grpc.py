@@ -64,41 +64,38 @@ class BaziRuleClient(BaseGrpcClient):
         logger.info(f"[{request_time}] 🔵 调用 bazi-rule-service (gRPC): {self.address}, solar_date={solar_date}, solar_time={solar_time}, gender={gender}, rule_types=[{rule_types_str}], use_cache={use_cache}")
         logger.debug("Calling bazi-rule-service (gRPC): %s request=%s", self.address, request)
 
-        # 使用基类方法获取 gRPC 配置（包含消息大小限制，支持大响应）
-        # 462条规则可能产生较大的响应，需要50MB消息大小限制
+        # 使用基类 Channel 连接池复用连接（含消息大小限制）
         options = self.get_grpc_options(include_message_size=True, max_message_size_mb=50)
-        
-        with grpc.insecure_channel(self.address, options=options) as channel:
-            stub = bazi_rule_pb2_grpc.BaziRuleServiceStub(channel)
-            try:
-                response = stub.MatchRules(request, timeout=self.timeout)
-                
-                import datetime
-                response_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                matched_data = json.loads(response.matched_json) if response.matched_json else []
-                matched_count = len(matched_data)
-                
-                # 处理 unmatched 数据（可能是完整列表或只包含 count）
-                unmatched_json = response.unmatched_json if response.unmatched_json else '{}'
-                unmatched_data = json.loads(unmatched_json)
-                if isinstance(unmatched_data, dict) and 'count' in unmatched_data:
-                    # 只返回 count，不返回完整列表
-                    unmatched_list = []
-                else:
-                    unmatched_list = unmatched_data if isinstance(unmatched_data, list) else []
-                
-                logger.info(f"[{response_time}] ✅ bazi-rule-service (gRPC): 调用成功，匹配 {matched_count} 条规则")
-                return {
-                    "matched": matched_data,
-                    "unmatched": unmatched_list,
-                    "context": json.loads(response.context_json) if response.context_json else {},
-                }
+        channel = self.get_channel(self.address, options)
+        stub = bazi_rule_pb2_grpc.BaziRuleServiceStub(channel)
+        try:
+            response = stub.MatchRules(request, timeout=self.timeout)
 
-            except grpc.RpcError as e:
-                import datetime
-                error_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                logger.error(f"[{error_time}] ❌ bazi-rule-service (gRPC): 调用失败 - {e}")
-                raise
+            import datetime
+            response_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            matched_data = json.loads(response.matched_json) if response.matched_json else []
+            matched_count = len(matched_data)
+
+            # 处理 unmatched 数据（可能是完整列表或只包含 count）
+            unmatched_json = response.unmatched_json if response.unmatched_json else '{}'
+            unmatched_data = json.loads(unmatched_json)
+            if isinstance(unmatched_data, dict) and 'count' in unmatched_data:
+                unmatched_list = []
+            else:
+                unmatched_list = unmatched_data if isinstance(unmatched_data, list) else []
+
+            logger.info(f"[{response_time}] ✅ bazi-rule-service (gRPC): 调用成功，匹配 {matched_count} 条规则")
+            return {
+                "matched": matched_data,
+                "unmatched": unmatched_list,
+                "context": json.loads(response.context_json) if response.context_json else {},
+            }
+
+        except grpc.RpcError as e:
+            import datetime
+            error_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logger.error(f"[{error_time}] ❌ bazi-rule-service (gRPC): 调用失败 - {e}")
+            raise
 
     def health_check(self) -> bool:
         """健康检查"""

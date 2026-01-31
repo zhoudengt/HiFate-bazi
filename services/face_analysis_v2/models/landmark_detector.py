@@ -5,6 +5,9 @@ MediaPipe人脸关键点检测器
 """
 
 import cv2
+import logging
+
+logger = logging.getLogger(__name__)
 import numpy as np
 from typing import List, Dict, Optional, Tuple
 
@@ -13,7 +16,7 @@ try:
     MEDIAPIPE_AVAILABLE = True
 except ImportError:
     MEDIAPIPE_AVAILABLE = False
-    print("⚠️  MediaPipe未安装，将使用降级模式")
+    logger.info("⚠️  MediaPipe未安装，将使用降级模式")
 
 
 class LandmarkDetector:
@@ -43,8 +46,8 @@ class LandmarkDetector:
                 self._initialized = True
             except Exception as e:
                 # 如果初始化失败，使用降级方案
-                print(f"⚠️  MediaPipe初始化失败：{e}")
-                print("   将使用降级模式（模拟数据）")
+                logger.info(f"⚠️  MediaPipe初始化失败：{e}")
+                logger.info("   将使用降级模式（模拟数据）")
                 from .landmark_detector_fallback import LandmarkDetectorFallback
                 self.fallback = LandmarkDetectorFallback()
                 self._initialized = True

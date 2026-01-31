@@ -10,6 +10,9 @@
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger(__name__)
 
 import os
 import sys
@@ -76,7 +79,7 @@ class BaziCoreCalculator:
             self.last_result = result
             return result
         except Exception as exc:  # pragma: no cover - 调试输出
-            print(f"计算错误: {exc}")
+            logger.info(f"计算错误: {exc}")
             import traceback
             traceback.print_exc()
             return None
@@ -92,10 +95,10 @@ class BaziCoreCalculator:
         self.is_zi_shi_adjusted = lunar_result['is_zi_shi_adjusted']
 
         if self.is_zi_shi_adjusted:
-            print(  # pragma: no cover - 调试输出
+            logger.debug(  # pragma: no cover - 调试输出
                 f"注意：23点以后，日期调整为: {self.adjusted_solar_date} {self.adjusted_solar_time}"
             )
-            print(  # pragma: no cover
+            logger.debug(  # pragma: no cover
                 f"年柱保持为: {self.bazi_pillars['year']['stem']}{self.bazi_pillars['year']['branch']}"
             )
 

@@ -5,6 +5,9 @@
 """
 
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 import sys
 from typing import Dict, Any, Optional
 
@@ -101,7 +104,7 @@ class HandAnalyzerCore:
                 if ai_result:
                     ai_enhanced_insights = ai_result.get("enhanced_insights", [])
             except Exception as e:
-                print(f"⚠️  Coze API 调用失败: {e}")
+                logger.info(f"⚠️  Coze API 调用失败: {e}")
             
             # 7. 合并所有洞察（去重）
             all_insights = hand_insights + integrated_insights + ai_enhanced_insights
@@ -130,7 +133,7 @@ class HandAnalyzerCore:
         except Exception as e:
             import traceback
             error_msg = f"手相分析失败: {str(e)}\n{traceback.format_exc()}"
-            print(f"❌ {error_msg}")
+            logger.info(f"❌ {error_msg}")
             return {
                 "success": False,
                 "error": str(e)

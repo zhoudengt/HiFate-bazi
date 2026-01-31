@@ -4,6 +4,7 @@
 Redis 配置模块
 """
 
+import logging
 import redis
 from redis.connection import ConnectionPool
 from typing import Optional, Dict, Any
@@ -25,6 +26,8 @@ REDIS_CONFIG = {
     'health_check_interval': 30,  # 健康检查间隔 30秒（优化方案1.1）
     'decode_responses': False  # 存储二进制数据，需要手动序列化/反序列化
 }
+
+logger = logging.getLogger(__name__)
 
 # 全局 Redis 连接池
 redis_pool: Optional[ConnectionPool] = None
@@ -83,10 +86,10 @@ def init_redis(host: str = 'localhost', port: int = 6379, db: int = 0,
     # 测试连接
     try:
         redis_client.ping()
-        print(f"✓ Redis 连接成功: {host}:{port} (连接池大小: {max_connections})")
+        logger.info(f"✓ Redis 连接成功: {host}:{port} (连接池大小: {max_connections})")
         return True
     except Exception as e:
-        print(f"✗ Redis 连接失败: {e}")
+        logger.error(f"✗ Redis 连接失败: {e}")
         redis_client = None
         return False
 
@@ -136,10 +139,10 @@ def get_redis_client_with_retry(max_retries: int = 3, retry_delay: float = 1.0) 
                 return client
         except Exception as e:
             if attempt < max_retries - 1:
-                print(f"⚠️ Redis 连接失败（尝试 {attempt + 1}/{max_retries}），{retry_delay}秒后重试: {e}")
+                logger.warning(f"⚠️ Redis 连接失败（尝试 {attempt + 1}/{max_retries}），{retry_delay}秒后重试: {e}")
                 time.sleep(retry_delay)
             else:
-                print(f"✗ Redis 连接失败（已重试 {max_retries} 次）: {e}")
+                logger.error(f"✗ Redis 连接失败（已重试 {max_retries} 次）: {e}")
                 return None
     return None
 
@@ -157,7 +160,7 @@ def check_redis_health() -> bool:
             return client.ping()
         return False
     except Exception as e:
-        print(f"⚠️ Redis 健康检查失败: {e}")
+        logger.warning(f"⚠️ Redis 健康检查失败: {e}")
         return False
 
 
@@ -230,7 +233,7 @@ try:
         health_check_interval=int(os.getenv('REDIS_HEALTH_CHECK_INTERVAL', '30'))  # 默认30秒
     )
 except Exception as e:
-    print(f"Redis 初始化失败（可选依赖）: {e}")
+    logger.warning(f"Redis 初始化失败（可选依赖）: {e}")
     redis_client = None
 
 

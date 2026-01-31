@@ -8,6 +8,13 @@ services:
       APP_ENV: production
       DEBUG: "False"
       LOG_LEVEL: WARNING
+      USE_ORCHESTRATOR_BAZI: "true"
+      USE_ORCHESTRATOR_BAZI_DETAIL: "true"
+      USE_ORCHESTRATOR_WANGSHUAI: "true"
+      USE_ORCHESTRATOR_XISHEN_JISHEN: "true"
+      USE_ORCHESTRATOR_FORMULA: "true"
+      USE_ORCHESTRATOR_BAZI_RULES: "true"
+      USE_ORCHESTRATOR_RIZHU_LIUJIAZI: "true"
     # 资源限制
     deploy:
       resources:

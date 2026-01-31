@@ -21,6 +21,7 @@ from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.services.wangshuai_service import WangShuaiService
 from server.services.bazi_detail_service import BaziDetailService
+from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
 from server.services.health_analysis_service import HealthAnalysisService
 from server.services.bazi_display_service import BaziDisplayService
 from core.analyzers.fortune_relation_analyzer import FortuneRelationAnalyzer
@@ -31,6 +32,9 @@ import asyncio
 # ⚠️ FormulaRuleService 已完全废弃，所有规则匹配统一使用 RuleService
 
 router = APIRouter()
+
+# 双轨并行：编排层开关，默认关闭
+USE_ORCHESTRATOR_FORMULA = os.environ.get("USE_ORCHESTRATOR_FORMULA", "false").lower() == "true"
 
 
 class FormulaAnalysisRequest(BaziBaseRequest):
@@ -86,89 +90,114 @@ async def analyze_formula_rules(request: FormulaAnalysisRequest):
             return FormulaAnalysisResponse(success=True, data=cached)
         # >>> 缓存检查结束 <<<
         
-        # 1. 计算八字
-        # ✅ 修复：改为异步执行，避免阻塞事件循环
-        start_time = time.time()
-        loop = asyncio.get_event_loop()
-        from concurrent.futures import ThreadPoolExecutor
-        executor = ThreadPoolExecutor(max_workers=min(os.cpu_count() or 4 * 2, 100))
-        
-        try:
-            # 使用线程池执行，添加30秒超时保护
-            bazi_result = await asyncio.wait_for(
-                loop.run_in_executor(
-                    executor,
-                    BaziService.calculate_bazi_full,
-                    final_solar_date,
-                    final_solar_time,
-                    request.gender
-                ),
-                timeout=30.0
+        # 双轨并行：优先走编排层（USE_ORCHESTRATOR_FORMULA=true 时）
+        if USE_ORCHESTRATOR_FORMULA:
+            orchestrator_data = await BaziDataOrchestrator.fetch_data(
+                final_solar_date,
+                final_solar_time,
+                request.gender,
+                modules={
+                    "bazi": True,
+                    "wangshuai": True,
+                    "detail": True,
+                    "health": True,
+                },
+                preprocessed=True,
+                calendar_type=request.calendar_type or "solar",
+                location=request.location,
+                latitude=request.latitude,
+                longitude=request.longitude,
             )
-            elapsed_time = time.time() - start_time
-            logger.info(f"⏱️ 八字计算耗时: {elapsed_time:.2f}秒")
-        except asyncio.TimeoutError:
-            elapsed_time = time.time() - start_time
-            logger.error(f"❌ 八字计算超时（>{30.0}秒），耗时: {elapsed_time:.2f}秒")
-            raise HTTPException(status_code=500, detail="八字计算超时，请稍后重试")
-        except Exception as e:
-            elapsed_time = time.time() - start_time
-            logger.error(f"❌ 八字计算异常（耗时: {elapsed_time:.2f}秒）: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"八字计算失败: {str(e)}")
-        
-        # calculate_bazi_full返回的数据结构: {'bazi': {...}, 'rizhu': {...}, 'matched_rules': {...}}
-        if not bazi_result or not isinstance(bazi_result, dict):
-            raise HTTPException(status_code=400, detail='八字计算失败')
-        
-        # 提取实际的八字数据（在bazi键下）
-        bazi_data = bazi_result.get('bazi', {})
-        if not bazi_data:
-            raise HTTPException(status_code=400, detail='八字数据为空')
-        
-        # ✅ 统一类型验证：确保所有字段类型正确（防止gRPC序列化问题）
-        bazi_data = validate_bazi_data(bazi_data)
-        
-        # 1.1. 并行获取额外数据（喜忌、大运流年、健康分析）
-        loop = asyncio.get_event_loop()
-        executor = None
-        
-        try:
-            wangshuai_result, detail_result, health_result = await asyncio.gather(
-                loop.run_in_executor(
-                    executor,
-                    WangShuaiService.calculate_wangshuai,
-                    final_solar_date,
-                    final_solar_time,
-                    request.gender
-                ),
-                loop.run_in_executor(
-                    executor,
-                    BaziDetailService.calculate_detail_full,
-                    final_solar_date,
-                    final_solar_time,
-                    request.gender
-                ),
-                loop.run_in_executor(
-                    executor,
-                    HealthAnalysisService.analyze,
-                    bazi_data
-                ),
-                return_exceptions=True
-            )
+            bazi_result = orchestrator_data.get("bazi") or {}
+            bazi_data = bazi_result.get("bazi", bazi_result) if isinstance(bazi_result, dict) else {}
+            bazi_data = validate_bazi_data(bazi_data) if bazi_data else {}
+            wangshuai_result = orchestrator_data.get("wangshuai") or {}
+            detail_result = orchestrator_data.get("detail") or {}
+            health_result = orchestrator_data.get("health") or {}
+            if not bazi_data:
+                raise HTTPException(status_code=400, detail="八字数据为空")
+        else:
+            # 1. 计算八字
+            # ✅ 修复：改为异步执行，避免阻塞事件循环
+            start_time = time.time()
+            loop = asyncio.get_event_loop()
+            from server.utils.async_executor import get_executor
+            try:
+                # 使用统一线程池执行，添加30秒超时保护
+                bazi_result = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        get_executor(),
+                        BaziService.calculate_bazi_full,
+                        final_solar_date,
+                        final_solar_time,
+                        request.gender
+                    ),
+                    timeout=30.0
+                )
+                elapsed_time = time.time() - start_time
+                logger.info(f"⏱️ 八字计算耗时: {elapsed_time:.2f}秒")
+            except asyncio.TimeoutError:
+                elapsed_time = time.time() - start_time
+                logger.error(f"❌ 八字计算超时（>{30.0}秒），耗时: {elapsed_time:.2f}秒")
+                raise HTTPException(status_code=500, detail="八字计算超时，请稍后重试")
+            except Exception as e:
+                elapsed_time = time.time() - start_time
+                logger.error(f"❌ 八字计算异常（耗时: {elapsed_time:.2f}秒）: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=f"八字计算失败: {str(e)}")
             
-            # 记录数据获取结果（用于调试）
-            if isinstance(wangshuai_result, Exception):
-                logger.warning(f"获取喜忌数据失败: {wangshuai_result}")
-            if isinstance(detail_result, Exception):
-                logger.warning(f"获取大运流年数据失败: {detail_result}")
-            if isinstance(health_result, Exception):
-                logger.warning(f"获取健康分析数据失败: {health_result}")
-        except Exception as e:
-            # 如果并行调用失败，使用默认值，不影响主流程
-            logger.warning(f"并行数据获取异常: {e}")
-            wangshuai_result = {}
-            detail_result = {}
-            health_result = {}
+            # calculate_bazi_full返回的数据结构: {'bazi': {...}, 'rizhu': {...}, 'matched_rules': {...}}
+            if not bazi_result or not isinstance(bazi_result, dict):
+                raise HTTPException(status_code=400, detail='八字计算失败')
+            
+            # 提取实际的八字数据（在bazi键下）
+            bazi_data = bazi_result.get('bazi', {})
+            if not bazi_data:
+                raise HTTPException(status_code=400, detail='八字数据为空')
+            
+            # ✅ 统一类型验证：确保所有字段类型正确（防止gRPC序列化问题）
+            bazi_data = validate_bazi_data(bazi_data)
+            
+            # 1.1. 并行获取额外数据（喜忌、大运流年、健康分析），使用统一线程池
+            loop = asyncio.get_event_loop()
+            from server.utils.async_executor import get_executor
+            _exec = get_executor()
+            try:
+                wangshuai_result, detail_result, health_result = await asyncio.gather(
+                    loop.run_in_executor(
+                        _exec,
+                        WangShuaiService.calculate_wangshuai,
+                        final_solar_date,
+                        final_solar_time,
+                        request.gender
+                    ),
+                    loop.run_in_executor(
+                        _exec,
+                        BaziDetailService.calculate_detail_full,
+                        final_solar_date,
+                        final_solar_time,
+                        request.gender
+                    ),
+                    loop.run_in_executor(
+                        _exec,
+                        HealthAnalysisService.analyze,
+                        bazi_data
+                    ),
+                    return_exceptions=True
+                )
+                
+                # 记录数据获取结果（用于调试）
+                if isinstance(wangshuai_result, Exception):
+                    logger.warning(f"获取喜忌数据失败: {wangshuai_result}")
+                if isinstance(detail_result, Exception):
+                    logger.warning(f"获取大运流年数据失败: {detail_result}")
+                if isinstance(health_result, Exception):
+                    logger.warning(f"获取健康分析数据失败: {health_result}")
+            except Exception as e:
+                # 如果并行调用失败，使用默认值，不影响主流程
+                logger.warning(f"并行数据获取异常: {e}")
+                wangshuai_result = {}
+                detail_result = {}
+                health_result = {}
         
         # 提取喜忌数据
         xi_ji_data = {}

@@ -23,20 +23,20 @@ def _ensure_venv():
         venv_python_resolved = venv_python.resolve()
         # 如果当前 Python 不是 .venv 中的，提示用户
         if current_python != venv_python_resolved:
-            print("=" * 60, file=sys.stderr)
-            print("⚠️  检测到未使用项目虚拟环境 (.venv)", file=sys.stderr)
-            print("=" * 60, file=sys.stderr)
-            print(f"当前 Python: {current_python}", file=sys.stderr)
-            print(f"项目虚拟环境: {venv_python_resolved}", file=sys.stderr)
-            print("", file=sys.stderr)
-            print("请使用以下方式执行：", file=sys.stderr)
+            logger.info("=" * 60, file=sys.stderr)
+            logger.info("⚠️  检测到未使用项目虚拟环境 (.venv)", file=sys.stderr)
+            logger.info("=" * 60, file=sys.stderr)
+            logger.info(f"当前 Python: {current_python}", file=sys.stderr)
+            logger.info(f"项目虚拟环境: {venv_python_resolved}", file=sys.stderr)
+            logger.info("", file=sys.stderr)
+            logger.info("请使用以下方式执行：", file=sys.stderr)
             script_path = Path(__file__).resolve()
-            print(f"  {venv_python_resolved} {script_path}", file=sys.stderr)
-            print("", file=sys.stderr)
-            print("或者激活虚拟环境后执行：", file=sys.stderr)
-            print(f"  source {project_root}/.venv/bin/activate", file=sys.stderr)
-            print(f"  python {script_path}", file=sys.stderr)
-            print("=" * 60, file=sys.stderr)
+            logger.info(f"  {venv_python_resolved} {script_path}", file=sys.stderr)
+            logger.info("", file=sys.stderr)
+            logger.info("或者激活虚拟环境后执行：", file=sys.stderr)
+            logger.info(f"  source {project_root}/.venv/bin/activate", file=sys.stderr)
+            logger.info(f"  python {script_path}", file=sys.stderr)
+            logger.info("=" * 60, file=sys.stderr)
             sys.exit(1)
 
 _ensure_venv()
@@ -71,7 +71,7 @@ def _load_services_env():
                                 if key not in os.environ:
                                     os.environ[key] = value
         except Exception as exc:
-            print(f"⚠️  加载环境变量配置失败: {exc}", file=sys.stderr)
+            logger.info(f"⚠️  加载环境变量配置失败: {exc}", file=sys.stderr)
 
 # 自动加载环境变量
 _load_services_env()
@@ -296,7 +296,7 @@ class WenZhenBazi:
             adjusted_year, adjusted_month, adjusted_day = next_date.year, next_date.month, next_date.day
             adjusted_hour = 0
             self.is_zi_shi_adjusted = True
-            print(f"注意：23点以后，日期调整为: {adjusted_year:04d}-{adjusted_month:02d}-{adjusted_day:02d} 00:{minute:02d}")
+            logger.info(f"注意：23点以后，日期调整为: {adjusted_year:04d}-{adjusted_month:02d}-{adjusted_day:02d} 00:{minute:02d}")
 
         # 保存调整后的日期和时间
         self.adjusted_solar_date = f"{adjusted_year:04d}-{adjusted_month:02d}-{adjusted_day:02d}"
@@ -336,7 +336,7 @@ class WenZhenBazi:
 
         # 输出调试信息
         if self.is_zi_shi_adjusted:
-            print(f"年柱保持为: {self.bazi_pillars['year']['stem']}{self.bazi_pillars['year']['branch']}")
+            logger.info(f"年柱保持为: {self.bazi_pillars['year']['stem']}{self.bazi_pillars['year']['branch']}")
 
     def _calculate_ten_gods(self):
         """计算十神 - 使用修正后的计算器"""
@@ -1045,19 +1045,19 @@ class WenZhenBazi:
         """打印排盘结果"""
         result = self.calculate()
         if not result:
-            print("排盘失败，请检查输入参数")
+            logger.info("排盘失败，请检查输入参数")
             return
 
-        print("=" * 60)
-        print("HiFate排盘 - 最完整版本")
-        print("=" * 60)
+        logger.info("=" * 60)
+        logger.info("HiFate排盘 - 最完整版本")
+        logger.info("=" * 60)
 
         basic = result['basic_info']
-        print(f"阳历: {basic['solar_date']} {basic['solar_time']}")
+        logger.info(f"阳历: {basic['solar_date']} {basic['solar_time']}")
 
         # 如果日期被调整过，显示调整后的日期
         if basic['is_zi_shi_adjusted']:
-            print(f"调整后: {basic['adjusted_solar_date']} {basic['adjusted_solar_time']} (子时调整)")
+            logger.info(f"调整后: {basic['adjusted_solar_date']} {basic['adjusted_solar_time']} (子时调整)")
 
         # 显示农历日期
         lunar = basic['lunar_date']
@@ -1070,9 +1070,9 @@ class WenZhenBazi:
         if not lunar_day_name:
             lunar_day_name = f"{lunar['day']}日"
 
-        print(f"农历: {lunar_year}年{lunar_month_name}{lunar_day_name}")
-        print(f"性别: {'男' if basic['gender'] == 'male' else '女'}")
-        print()
+        logger.info(f"农历: {lunar_year}年{lunar_month_name}{lunar_day_name}")
+        logger.info(f"性别: {'男' if basic['gender'] == 'male' else '女'}")
+        logger.info("")
 
         pillars = result['bazi_pillars']
         details = result['details']
@@ -1154,21 +1154,21 @@ class WenZhenBazi:
         col_widths = [8, 20, 20, 20, 20]
 
         header_line = "".join(f"{headers[i]:<{col_widths[i]}}" for i in range(len(headers)))
-        print(header_line)
-        print("-" * len(header_line))
+        logger.info(header_line)
+        logger.info("-" * len(header_line))
 
         for row in rows:
             row_line = "".join(f"{row[i]:<{col_widths[i]}}" for i in range(len(row)))
-            print(row_line)
+            logger.info(row_line)
 
 
 
     # 新增日柱性别分析方法：
     def print_rizhu_gender_analysis(self):
         """打印日柱性别查询分析结果"""
-        print("\n" + "=" * 80)
-        #print("日柱性别命理分析")
-        #print("=" * 80)
+        logger.info("\n" + "=" * 80)
+        #logger.info("日柱性别命理分析")
+        #logger.info("=" * 80)
 
         # 确保已经计算了八字
         if not self.bazi_pillars or not self.details:
@@ -1179,7 +1179,7 @@ class WenZhenBazi:
 
         # 获取分析结果
         analysis_output = analyzer.get_formatted_output()
-        print(analysis_output)
+        logger.info(analysis_output)
 
     # 新增匹配规则的方法，将内部计算结果发送给规则引擎
     def match_rules(self, rule_types=None, use_cache=False):
@@ -2192,22 +2192,22 @@ if __name__ == "__main__":
             ]
         )
         if matched_rules:
-            print("\n匹配到的规则：")
+            logger.info("\n匹配到的规则：")
             for idx, rule in enumerate(matched_rules, 1):
                 rule_code = rule.get('rule_code') or rule.get('rule_id', '')
                 rule_name = rule.get('rule_name', '')
                 rule_type = rule.get('rule_type', '')
-                print(f"{idx}. [{rule_type}] {rule_code} - {rule_name}")
+                logger.info(f"{idx}. [{rule_type}] {rule_code} - {rule_name}")
                 filters = WenZhenBazi._get_rule_filters(rule_code)
                 if filters:
                     if filters.get('category'):
-                        print(f"   规则类型: {filters['category']}")
+                        logger.info(f"   规则类型: {filters['category']}")
                     if filters.get('gender'):
-                        print(f"   对应性别: {filters['gender']}")
+                        logger.info(f"   对应性别: {filters['gender']}")
                     if filters.get('condition1'):
-                        print(f"   筛选条件1: {filters['condition1']}")
+                        logger.info(f"   筛选条件1: {filters['condition1']}")
                     if filters.get('condition2'):
-                        print(f"   筛选条件2: {filters['condition2']}")
+                        logger.info(f"   筛选条件2: {filters['condition2']}")
                 content = rule.get('content', {})
                 text = ''
                 if isinstance(content, dict):
@@ -2217,44 +2217,44 @@ if __name__ == "__main__":
                 elif isinstance(content, str):
                     text = content
                 if text:
-                    print(f"   {text}")
+                    logger.info(f"   {text}")
                 context_lines = bazi.last_rule_context.get(rule_code) or (
                     bazi.last_rule_context.get(rule.get('rule_id', ''))
                 )
                 if context_lines:
                     for line in context_lines:
-                        print(f"   相关值: {line}")
+                        logger.info(f"   相关值: {line}")
         else:
-            print("\n未匹配到任何婚姻或日柱规则。")
+            logger.info("\n未匹配到任何婚姻或日柱规则。")
 
         if unmatched_rules:
-            print("\n未命中的规则（全部列出）：")
+            logger.info("\n未命中的规则（全部列出）：")
             for idx, item in enumerate(unmatched_rules, 1):
-                print(f"{idx}. [{item['rule_type']}] {item['rule_id']} - {item['rule_name']}")
-                print(f"   未命中原因: {item['reason']}")
+                logger.info(f"{idx}. [{item['rule_type']}] {item['rule_id']} - {item['rule_name']}")
+                logger.info(f"   未命中原因: {item['reason']}")
                 rule_snapshot = item.get('rule') or {}
                 if rule_snapshot:
                     conditions_json = json.dumps(rule_snapshot.get('conditions', {}), ensure_ascii=False)
-                    print(f"   规则条件: {conditions_json}")
+                    logger.info(f"   规则条件: {conditions_json}")
                     content = rule_snapshot.get('content')
                     if content:
-                        print(f"   规则内容: {json.dumps(content, ensure_ascii=False)}")
+                        logger.info(f"   规则内容: {json.dumps(content, ensure_ascii=False)}")
                 filters = WenZhenBazi._get_rule_filters(item['rule_id'])
                 if filters:
                     if filters.get('category'):
-                        print(f"   规则类型: {filters['category']}")
+                        logger.info(f"   规则类型: {filters['category']}")
                     condition1 = filters.get('condition1')
                     condition2 = filters.get('condition2')
                     gender = filters.get('gender')
                     if gender:
-                        print(f"   对应性别: {gender}")
+                        logger.info(f"   对应性别: {gender}")
                     if condition1:
-                        print(f"   筛选条件1: {condition1}")
+                        logger.info(f"   筛选条件1: {condition1}")
                     if condition2:
-                        print(f"   筛选条件2: {condition2}")
+                        logger.info(f"   筛选条件2: {condition2}")
                 context_lines = bazi.last_rule_context.get(item['rule_id'])
                 if context_lines:
                     for line in context_lines:
-                        print(f"   相关值: {line}")
+                        logger.info(f"   相关值: {line}")
     except Exception as exc:
-        print(f"规则匹配失败: {exc}")
+        logger.info(f"规则匹配失败: {exc}")

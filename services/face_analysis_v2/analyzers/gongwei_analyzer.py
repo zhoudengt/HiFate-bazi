@@ -5,6 +5,9 @@
 """
 
 from typing import List, Dict, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class GongweiAnalyzer:
@@ -239,7 +242,7 @@ class GongweiAnalyzer:
                 # 保守策略：只返回一个明确的特征，避免同时匹配互斥规则
                 detected_features.append('眉间距宽')  # 优先识别眉间距，避免浓淡互斥
                 # 注意：不返回"眉毛浓密顺长"和"眉毛稀疏散乱"同时存在
-                print(f"[DEBUG] 兄弟宫特征识别: {detected_features}", flush=True)  # 调试日志
+                logger.info(f"[DEBUG] 兄弟宫特征识别: {detected_features}", flush=True)  # 调试日志
             elif '夫妻' in gongwei or '妻妾' in gongwei:
                 # 夫妻宫：基于眼角区域的特征
                 # 识别鱼尾纹、光泽、是否有痣或疤

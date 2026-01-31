@@ -9,7 +9,6 @@ import os
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List
-from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
 # 添加项目根目录到路径
@@ -18,11 +17,14 @@ sys.path.insert(0, project_root)
 
 from server.services.bazi_service import BaziService
 from server.services.rule_service import RuleService
+from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
 from server.services import selector_service
 from server.services import nlg_service
 from server.utils.data_validator import validate_bazi_data
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
+from server.utils.api_error_handler import api_error_handler
+from server.utils.async_executor import get_executor
 
 # 尝试导入限流器（可选功能）
 try:
@@ -38,14 +40,10 @@ except ImportError:
 
 router = APIRouter()
 
-# 根据CPU核心数动态调整线程池大小
-import os
-cpu_count = os.cpu_count() or 4
-max_workers = min(cpu_count * 2, 100)
-executor = ThreadPoolExecutor(max_workers=max_workers)
+# 双轨并行：编排层开关，默认关闭
+USE_ORCHESTRATOR_BAZI_RULES = os.environ.get("USE_ORCHESTRATOR_BAZI_RULES", "false").lower() == "true"
 
-
-# 简单的内存限流存储（如果 slowapi 不可用时的降级方案）
+# 简单内存限流存储（如果 slowapi 不可用时的降级方案）
 _rate_limit_storage = {}  # {key: [(timestamp, count), ...]}
 _rate_limit_lock = __import__('threading').Lock()  # 线程锁
 
@@ -122,6 +120,7 @@ class BaziRulesResponse(BaseModel):
 
 
 @router.post("/bazi/rules/match", response_model=BaziRulesResponse, summary="匹配八字规则")
+@api_error_handler
 async def match_bazi_rules(request: BaziRulesRequest, http_request: Request):
     """
     匹配八字规则（新增接口，不影响现有功能）
@@ -143,33 +142,48 @@ async def match_bazi_rules(request: BaziRulesRequest, http_request: Request):
     
     返回匹配的规则列表和八字数据
     """
-    try:
-        # 处理农历输入和时区转换
-        final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
-            request.solar_date,
-            request.solar_time,
-            request.calendar_type or "solar",
-            request.location,
-            request.latitude,
-            request.longitude
+    # 处理农历输入和时区转换
+    final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+        request.solar_date,
+        request.solar_time,
+        request.calendar_type or "solar",
+        request.location,
+        request.latitude,
+        request.longitude
+    )
+
+    # 双轨并行：优先走编排层（USE_ORCHESTRATOR_BAZI_RULES=true 时）
+    if USE_ORCHESTRATOR_BAZI_RULES:
+        orchestrator_data = await BaziDataOrchestrator.fetch_data(
+            final_solar_date,
+            final_solar_time,
+            request.gender,
+            modules={
+                "bazi": True,
+                "rules": {"types": request.rule_types or []},
+            },
+            preprocessed=True,
+            calendar_type=request.calendar_type or "solar",
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude,
         )
-        
-        # 在线程池中执行CPU密集型计算
+        matched_rules = orchestrator_data.get("rules") or []
+        bazi_result = None
+        if request.include_bazi:
+            bazi_result = orchestrator_data.get("bazi")
+            if bazi_result and isinstance(bazi_result, dict):
+                bazi_result = validate_bazi_data(bazi_result.get("bazi", bazi_result))
+        bazi_data = orchestrator_data.get("bazi") or {}
+    else:
         loop = asyncio.get_event_loop()
-        
-        # 1. 构造规则引擎需要的八字数据（包含流年信息）
         from core.calculators.BaziCalculator import BaziCalculator
         calculator = BaziCalculator(final_solar_date, final_solar_time, request.gender)
         bazi_data = await loop.run_in_executor(
-            executor,
+            get_executor(),
             calculator.build_rule_input
         )
-        
-        # ✅ 统一类型验证：确保所有字段类型正确（防止gRPC序列化问题）
         bazi_data = validate_bazi_data(bazi_data)
-
-        # 2. 如果需要返回完整八字结果，继续调用服务层
-        # 注意：如果只需要规则匹配，可以设置 include_bazi=false 来跳过这一步，提高性能
         bazi_result = None
         if request.include_bazi:
             bazi_result = await loop.run_in_executor(
@@ -179,41 +193,29 @@ async def match_bazi_rules(request: BaziRulesRequest, http_request: Request):
                 request.solar_time,
                 request.gender
             )
-            # ✅ 统一类型验证：确保返回的八字数据也经过验证
             if bazi_result and isinstance(bazi_result, dict):
                 bazi_result = validate_bazi_data(bazi_result.get('bazi', bazi_result))
-        
         if not bazi_data:
             raise ValueError("八字计算失败，请检查输入参数")
-        
-        # 3. 匹配规则
         matched_rules = await loop.run_in_executor(
-            executor,
+            get_executor(),
             RuleService.match_rules,
             bazi_data,
             request.rule_types,
-            True  # 使用缓存
+            True
         )
-        
-        # 添加转换信息到结果
-        response_data = {
-            'success': True,
-            'bazi_data': bazi_result if request.include_bazi else None,
-            'matched_rules': matched_rules,
-            'rule_count': len(matched_rules)
-        }
-        
-        if conversion_info.get('converted') or conversion_info.get('timezone_info'):
-            response_data['conversion_info'] = conversion_info
-        
-        return BaziRulesResponse(**response_data)
-        
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        import traceback
-        error_detail = f"规则匹配失败: {str(e)}\n{traceback.format_exc()}"
-        raise HTTPException(status_code=500, detail=error_detail)
+
+    response_data = {
+        'success': True,
+        'bazi_data': bazi_result if request.include_bazi else None,
+        'matched_rules': matched_rules,
+        'rule_count': len(matched_rules)
+    }
+
+    if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+        response_data['conversion_info'] = conversion_info
+
+    return BaziRulesResponse(**response_data)
 
 
 class CuratedRequest(BaziRulesRequest):
@@ -226,6 +228,7 @@ class CuratedRequest(BaziRulesRequest):
 
 
 @router.post("/bazi/rules/curated", summary="精选规则（去冲突+多样化，可选NLG）")
+@api_error_handler
 async def curated_bazi_rules(
     request: CuratedRequest, 
     http_request: Request
@@ -241,67 +244,46 @@ async def curated_bazi_rules(
     """
     # 限流检查（在函数开始处直接调用）
     check_rate_limit_dependency(http_request)
-    
-    try:
-        loop = asyncio.get_event_loop()
-        # 计算规则输入（与 match 接口一致）
-        from core.calculators.BaziCalculator import BaziCalculator
-        calculator = BaziCalculator(request.solar_date, request.solar_time, request.gender)
-        bazi_data = await loop.run_in_executor(
-            executor,
-            calculator.build_rule_input
+
+    loop = asyncio.get_event_loop()
+    from core.calculators.BaziCalculator import BaziCalculator
+    calculator = BaziCalculator(request.solar_date, request.solar_time, request.gender)
+    bazi_data = await loop.run_in_executor(
+        get_executor(),
+        calculator.build_rule_input
+    )
+    bazi_data = validate_bazi_data(bazi_data)
+    candidates = await loop.run_in_executor(
+        get_executor(),
+        RuleService.match_rules,
+        bazi_data,
+        request.rule_types,
+        True
+    )
+    user_profile = {"gender": request.gender}
+    curated = await loop.run_in_executor(
+        get_executor(),
+        selector_service.select_curated,
+        candidates,
+        user_profile,
+        request.k or 8,
+        request.min_per_tag,
+        request.max_per_tag,
+        request.weights
+    )
+    response = {
+        "success": True,
+        "rule_count": len(curated),
+        "curated_rules": curated
+    }
+    if request.use_nlg:
+        text = await loop.run_in_executor(
+            get_executor(),
+            nlg_service.render_curated_as_text,
+            curated
         )
-
-        # ✅ 统一类型验证：确保所有字段类型正确（防止gRPC序列化问题）
-        bazi_data = validate_bazi_data(bazi_data)
-
-        # 匹配候选
-        candidates = await loop.run_in_executor(
-            executor,
-            RuleService.match_rules,
-            bazi_data,
-            request.rule_types,
-            True  # 使用缓存
-        )
-
-        # 用户画像（目前仅性别参与打分，后续可扩展）
-        user_profile = {"gender": request.gender}
-
-        # 精选
-        curated = await loop.run_in_executor(
-            executor,
-            selector_service.select_curated,
-            candidates,
-            user_profile,
-            request.k or 8,
-            request.min_per_tag,
-            request.max_per_tag,
-            request.weights
-        )
-
-        response = {
-            "success": True,
-            "rule_count": len(curated),
-            "curated_rules": curated
-        }
-
-        # 可选生成文本
-        if request.use_nlg:
-            text = await loop.run_in_executor(
-                executor,
-                nlg_service.render_curated_as_text,
-                curated
-            )
-            response["nlg_text"] = text
-
-        return response
-
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        import traceback
-        error_detail = f"精选失败: {str(e)}\n{traceback.format_exc()}"
-        raise HTTPException(status_code=500, detail=error_detail)
+        response["nlg_text"] = text
+    return response
 
 
 @router.get("/bazi/rules/types", summary="获取规则类型列表")
@@ -351,6 +333,7 @@ async def get_rules_stats():
 
 
 @router.post("/bazi/rules/query-rizhu-gender", summary="查询日柱性别规则内容")
+@api_error_handler
 async def query_rizhu_gender_rule(request: BaziRulesRequest):
     """
     专门查询日柱性别规则的内容（新增接口）
@@ -364,55 +347,40 @@ async def query_rizhu_gender_rule(request: BaziRulesRequest):
     
     返回匹配的日柱性别规则内容
     """
-    try:
-        loop = asyncio.get_event_loop()
-        
-        # 1. 计算八字
-        bazi_result = await loop.run_in_executor(
-            executor,
-            BaziService.calculate_bazi_full,
-            request.solar_date,
-            request.solar_time,
-            request.gender
-        )
-        
-        # 转换为规则引擎需要的格式
-        bazi_data = {
-            'basic_info': bazi_result.get('bazi', {}).get('basic_info', {}),
-            'bazi_pillars': bazi_result.get('bazi', {}).get('bazi_pillars', {}),
-            'details': bazi_result.get('bazi', {}).get('details', {}),
-            'ten_gods_stats': bazi_result.get('bazi', {}).get('ten_gods_stats', {}),
-            'elements': bazi_result.get('bazi', {}).get('elements', {}),
-            'element_counts': bazi_result.get('bazi', {}).get('element_counts', {}),
-            'relationships': bazi_result.get('bazi', {}).get('relationships', {})
-        }
-        
-        # 2. 匹配规则（只匹配日柱性别规则）
-        matched_rules = await loop.run_in_executor(
-            executor,
-            RuleService.match_rules,
-            bazi_data,
-            ['rizhu_gender_dynamic'],  # 只匹配日柱性别动态规则
-            True  # 使用缓存
-        )
-        
-        # 3. 提取日柱信息
-        day_stem = bazi_data.get('bazi_pillars', {}).get('day', {}).get('stem', '')
-        day_branch = bazi_data.get('bazi_pillars', {}).get('day', {}).get('branch', '')
-        rizhu = f"{day_stem}{day_branch}"
-        gender = bazi_data.get('basic_info', {}).get('gender', 'male')
-        
-        return {
-            "success": True,
-            "rizhu": rizhu,
-            "gender": gender,
-            "matched_rules": matched_rules,
-            "rule_count": len(matched_rules),
-            "message": f"日柱{rizhu}{'男' if gender == 'male' else '女'}命分析"
-        }
-        
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
+    loop = asyncio.get_event_loop()
+    bazi_result = await loop.run_in_executor(
+        get_executor(),
+        BaziService.calculate_bazi_full,
+        request.solar_date,
+        request.solar_time,
+        request.gender
+    )
+    bazi_data = {
+        'basic_info': bazi_result.get('bazi', {}).get('basic_info', {}),
+        'bazi_pillars': bazi_result.get('bazi', {}).get('bazi_pillars', {}),
+        'details': bazi_result.get('bazi', {}).get('details', {}),
+        'ten_gods_stats': bazi_result.get('bazi', {}).get('ten_gods_stats', {}),
+        'elements': bazi_result.get('bazi', {}).get('elements', {}),
+        'element_counts': bazi_result.get('bazi', {}).get('element_counts', {}),
+        'relationships': bazi_result.get('bazi', {}).get('relationships', {})
+    }
+    matched_rules = await loop.run_in_executor(
+        get_executor(),
+        RuleService.match_rules,
+        bazi_data,
+        ['rizhu_gender_dynamic'],
+        True
+    )
+    day_stem = bazi_data.get('bazi_pillars', {}).get('day', {}).get('stem', '')
+    day_branch = bazi_data.get('bazi_pillars', {}).get('day', {}).get('branch', '')
+    rizhu = f"{day_stem}{day_branch}"
+    gender = bazi_data.get('basic_info', {}).get('gender', 'male')
+    return {
+        "success": True,
+        "rizhu": rizhu,
+        "gender": gender,
+        "matched_rules": matched_rules,
+        "rule_count": len(matched_rules),
+        "message": f"日柱{rizhu}{'男' if gender == 'male' else '女'}命分析"
+    }
 

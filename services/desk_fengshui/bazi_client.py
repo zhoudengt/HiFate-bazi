@@ -192,5 +192,5 @@ if __name__ == "__main__":
     client = BaziClient()
     
     result = client.get_xishen_jishen('1990-01-01', '12:00', 'male')
-    print(f"结果: {result}")
+    logger.info(f"结果: {result}")
 

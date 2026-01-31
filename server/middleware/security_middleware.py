@@ -12,10 +12,11 @@
 5. 可疑访问检测
 """
 
+import fnmatch
 import time
 import json
 import logging
-from typing import Callable, Optional
+from typing import Callable, Optional, Dict, Any
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -27,6 +28,53 @@ from server.observability.security_monitor import get_security_monitor, Security
 from server.core.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
+
+# 全局限流策略：按路径模式配置 rate（请求/秒）与 capacity（令牌桶容量）
+RATE_LIMIT_CONFIG: Dict[str, Dict[str, Any]] = {
+    "/api/v1/bazi/*": {"rate": 100, "capacity": 200},
+    "/api/v1/fortune/*": {"rate": 50, "capacity": 100},
+    "/api/v1/stream/*": {"rate": 10, "capacity": 20},
+}
+# 未匹配到模式时使用的默认限流
+DEFAULT_RATE_LIMIT = {"rate": 60, "capacity": 120}
+
+
+def _match_path_config(path: str) -> Dict[str, Any]:
+    """根据请求路径匹配限流配置"""
+    for pattern, config in RATE_LIMIT_CONFIG.items():
+        if fnmatch.fnmatch(path, pattern):
+            return config
+    return DEFAULT_RATE_LIMIT
+
+
+class PathBasedRateLimiter:
+    """按路径应用 RATE_LIMIT_CONFIG 的限流器，供 SecurityMiddleware 使用"""
+
+    def __init__(self):
+        self._limiters: Dict[str, RateLimiter] = {}
+        self._lock = __import__("threading").Lock()
+
+    def _get_limiter(self, path: str) -> RateLimiter:
+        config = _match_path_config(path)
+        pattern = next(
+            (p for p in RATE_LIMIT_CONFIG if fnmatch.fnmatch(path, p)),
+            "default",
+        )
+        name = f"security:{pattern}"
+        with self._lock:
+            if name not in self._limiters:
+                self._limiters[name] = RateLimiter.get(
+                    name,
+                    rate=config["rate"],
+                    capacity=config["capacity"],
+                )
+            return self._limiters[name]
+
+    async def check_rate_limit(self, client_ip: str, path: str) -> bool:
+        """检查是否允许请求；返回 True 表示允许，False 表示超限"""
+        limiter = self._get_limiter(path)
+        key = f"{client_ip}:{path}"
+        return limiter.allow(key)
 
 
 class ModifiedRequest(StarletteRequest):

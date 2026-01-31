@@ -6,6 +6,9 @@
 """
 
 from typing import Dict, Any, List, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class FortuneRuleEngine:
@@ -408,22 +411,22 @@ class FortuneRuleEngine:
         integrated_insights = []
         
         if not bazi_data:
-            print("⚠️  八字数据为空，跳过融合分析")
+            logger.info("⚠️  八字数据为空，跳过融合分析")
             return integrated_insights
         
         # 打印八字数据
-        print("\n" + "="*80)
-        print("🔮 八字与手相面相融合分析")
-        print("="*80)
+        logger.info("\n" + "="*80)
+        logger.info("🔮 八字与手相面相融合分析")
+        logger.info("="*80)
         
         # 获取八字信息
         five_elements = bazi_data.get("element_counts", {})
         ten_gods = bazi_data.get("ten_gods_stats", {})
         bazi_pillars = bazi_data.get("bazi_pillars", {})
         
-        print("\n【八字数据】")
-        print(f"  五行统计: {five_elements}")
-        print(f"  十神统计: {ten_gods}")
+        logger.info("\n【八字数据】")
+        logger.info(f"  五行统计: {five_elements}")
+        logger.info(f"  十神统计: {ten_gods}")
         if bazi_pillars:
             year = bazi_pillars.get("year", {})
             month = bazi_pillars.get("month", {})
@@ -437,27 +440,27 @@ class FortuneRuleEngine:
             day_zhi = day.get('zhi') or day.get('branch', '')
             hour_gan = hour.get('gan') or hour.get('stem', '')
             hour_zhi = hour.get('zhi') or hour.get('branch', '')
-            print(f"  八字四柱: {year_gan}{year_zhi} {month_gan}{month_zhi} {day_gan}{day_zhi} {hour_gan}{hour_zhi}")
+            logger.info(f"  八字四柱: {year_gan}{year_zhi} {month_gan}{month_zhi} {day_gan}{day_zhi} {hour_gan}{hour_zhi}")
         
         # 打印手相特征
         if hand_features:
-            print("\n【手相特征】")
+            logger.info("\n【手相特征】")
             hand_shape = hand_features.get("hand_shape", "")
             hand_shape_ratio = hand_features.get("hand_shape_ratio", 0.0)
             palm_lines = hand_features.get("palm_lines", {})
             finger_ratios = hand_features.get("finger_ratios", {})
-            print(f"  手型: {hand_shape} (ratio: {hand_shape_ratio:.2f})")
-            print(f"  掌纹: {palm_lines}")
-            print(f"  指长比例: {finger_ratios}")
+            logger.info(f"  手型: {hand_shape} (ratio: {hand_shape_ratio:.2f})")
+            logger.info(f"  掌纹: {palm_lines}")
+            logger.info(f"  指长比例: {finger_ratios}")
         
         # 打印面相特征
         if face_features:
-            print("\n【面相特征】")
+            logger.info("\n【面相特征】")
             san_ting = face_features.get("san_ting_ratio", {})
-            print(f"  三停比例: {san_ting}")
+            logger.info(f"  三停比例: {san_ting}")
         
-        print("\n【规则匹配过程】")
-        print("-"*80)
+        logger.info("\n【规则匹配过程】")
+        logger.info("-"*80)
         
         # 五行对应关系
         element_mapping = {
@@ -478,8 +481,8 @@ class FortuneRuleEngine:
             finger_ratios = hand_features.get("finger_ratios", {})
             
             # 手型 + 五行融合
-            print(f"\n规则1: 手型 + 五行融合")
-            print(f"  检查: hand_shape='{hand_shape}', 金元素={five_elements.get('金', 0)}")
+            logger.info(f"\n规则1: 手型 + 五行融合")
+            logger.info(f"  检查: hand_shape='{hand_shape}', 金元素={five_elements.get('金', 0)}")
             if hand_shape == "方形手" and five_elements.get("金", 0) > 0:
                 insight = {
                     "category": "财运",
@@ -488,12 +491,12 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 条件不满足")
+                logger.info(f"  ❌ 未匹配: 条件不满足")
             
-            print(f"\n规则2: 圆形手 + 水元素")
-            print(f"  检查: hand_shape='{hand_shape}', 水元素={five_elements.get('水', 0)}")
+            logger.info(f"\n规则2: 圆形手 + 水元素")
+            logger.info(f"  检查: hand_shape='{hand_shape}', 水元素={five_elements.get('水', 0)}")
             if hand_shape == "圆形手" and five_elements.get("水", 0) > 0:
                 insight = {
                     "category": "性格",
@@ -502,13 +505,13 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 条件不满足")
+                logger.info(f"  ❌ 未匹配: 条件不满足")
             
             # 生命线 + 八字健康（增强版）
-            print(f"\n规则3: 生命线 + 八字健康分析")
-            print(f"  检查: life_line='{life_line}', 土元素={five_elements.get('土', 0)}")
+            logger.info(f"\n规则3: 生命线 + 八字健康分析")
+            logger.info(f"  检查: life_line='{life_line}', 土元素={five_elements.get('土', 0)}")
             if "深" in life_line or "长" in life_line:
                 if five_elements.get("土", 0) < 2:
                     insight = {
@@ -518,7 +521,7 @@ class FortuneRuleEngine:
                         "source": "integrated"
                     }
                     integrated_insights.append(insight)
-                    print(f"  ✅ 匹配成功（土弱）: {insight['content']}")
+                    logger.info(f"  ✅ 匹配成功（土弱）: {insight['content']}")
                 elif five_elements.get("土", 0) >= 3:
                     insight = {
                         "category": "健康",
@@ -527,15 +530,15 @@ class FortuneRuleEngine:
                         "source": "integrated"
                     }
                     integrated_insights.append(insight)
-                    print(f"  ✅ 匹配成功（土旺）: {insight['content']}")
+                    logger.info(f"  ✅ 匹配成功（土旺）: {insight['content']}")
                 else:
-                    print(f"  ⚠️  生命线深长，但土元素数量为 {five_elements.get('土', 0)}，未匹配特定规则")
+                    logger.info(f"  ⚠️  生命线深长，但土元素数量为 {five_elements.get('土', 0)}，未匹配特定规则")
             else:
-                print(f"  ❌ 未匹配: 生命线不满足条件（需包含'深'或'长'）")
+                logger.info(f"  ❌ 未匹配: 生命线不满足条件（需包含'深'或'长'）")
             
             # 智慧线 + 八字学习运
-            print(f"\n规则4: 智慧线 + 八字学习运")
-            print(f"  检查: head_line='{head_line}', 木元素={five_elements.get('木', 0)}")
+            logger.info(f"\n规则4: 智慧线 + 八字学习运")
+            logger.info(f"  检查: head_line='{head_line}', 木元素={five_elements.get('木', 0)}")
             if "清晰" in head_line or "深长" in head_line:
                 if five_elements.get("木", 0) > 0:
                     insight = {
@@ -545,15 +548,15 @@ class FortuneRuleEngine:
                         "source": "integrated"
                     }
                     integrated_insights.append(insight)
-                    print(f"  ✅ 匹配成功: {insight['content']}")
+                    logger.info(f"  ✅ 匹配成功: {insight['content']}")
                 else:
-                    print(f"  ❌ 未匹配: 智慧线满足条件，但木元素为 {five_elements.get('木', 0)}（需 > 0）")
+                    logger.info(f"  ❌ 未匹配: 智慧线满足条件，但木元素为 {five_elements.get('木', 0)}（需 > 0）")
             else:
-                print(f"  ❌ 未匹配: 智慧线不满足条件（需包含'清晰'或'深长'）")
+                logger.info(f"  ❌ 未匹配: 智慧线不满足条件（需包含'清晰'或'深长'）")
             
             # 感情线 + 八字感情运
-            print(f"\n规则5: 感情线 + 八字感情运")
-            print(f"  检查: heart_line='{heart_line}', 正官={ten_gods.get('正官', 0)}, 正财={ten_gods.get('正财', 0)}")
+            logger.info(f"\n规则5: 感情线 + 八字感情运")
+            logger.info(f"  检查: heart_line='{heart_line}', 正官={ten_gods.get('正官', 0)}, 正财={ten_gods.get('正财', 0)}")
             if "明显" in heart_line or "深长" in heart_line:
                 if ten_gods.get("正官", 0) > 0 or ten_gods.get("正财", 0) > 0:
                     insight = {
@@ -563,18 +566,18 @@ class FortuneRuleEngine:
                         "source": "integrated"
                     }
                     integrated_insights.append(insight)
-                    print(f"  ✅ 匹配成功: {insight['content']}")
+                    logger.info(f"  ✅ 匹配成功: {insight['content']}")
                 else:
-                    print(f"  ❌ 未匹配: 感情线满足条件，但正官={ten_gods.get('正官', 0)}, 正财={ten_gods.get('正财', 0)}（需至少一个 > 0）")
+                    logger.info(f"  ❌ 未匹配: 感情线满足条件，但正官={ten_gods.get('正官', 0)}, 正财={ten_gods.get('正财', 0)}（需至少一个 > 0）")
             else:
-                print(f"  ❌ 未匹配: 感情线不满足条件（需包含'明显'或'深长'）")
+                logger.info(f"  ❌ 未匹配: 感情线不满足条件（需包含'明显'或'深长'）")
             
             # 指长 + 八字天赋
-            print(f"\n规则6: 指长比例 + 八字天赋")
+            logger.info(f"\n规则6: 指长比例 + 八字天赋")
             if finger_ratios:
                 index_ratio = finger_ratios.get("index", 0)
                 ring_ratio = finger_ratios.get("ring", 0)
-                print(f"  检查: 食指比例={index_ratio:.2f}, 无名指比例={ring_ratio:.2f}, 金元素={five_elements.get('金', 0)}, 木元素={five_elements.get('木', 0)}")
+                logger.info(f"  检查: 食指比例={index_ratio:.2f}, 无名指比例={ring_ratio:.2f}, 金元素={five_elements.get('金', 0)}, 木元素={five_elements.get('木', 0)}")
                 
                 if index_ratio > ring_ratio * 1.05 and five_elements.get("金", 0) > 0:
                     insight = {
@@ -584,7 +587,7 @@ class FortuneRuleEngine:
                         "source": "integrated"
                     }
                     integrated_insights.append(insight)
-                    print(f"  ✅ 匹配成功（食指长）: {insight['content']}")
+                    logger.info(f"  ✅ 匹配成功（食指长）: {insight['content']}")
                 elif ring_ratio > index_ratio * 1.05 and five_elements.get("木", 0) > 0:
                     insight = {
                         "category": "天赋",
@@ -593,11 +596,11 @@ class FortuneRuleEngine:
                         "source": "integrated"
                     }
                     integrated_insights.append(insight)
-                    print(f"  ✅ 匹配成功（无名指长）: {insight['content']}")
+                    logger.info(f"  ✅ 匹配成功（无名指长）: {insight['content']}")
                 else:
-                    print(f"  ❌ 未匹配: 指长比例或五行元素不满足条件")
+                    logger.info(f"  ❌ 未匹配: 指长比例或五行元素不满足条件")
             else:
-                print(f"  ❌ 未匹配: 指长比例数据为空")
+                logger.info(f"  ❌ 未匹配: 指长比例数据为空")
         
         # 面相 + 八字融合（增强版）
         if face_features:
@@ -607,8 +610,8 @@ class FortuneRuleEngine:
             lower = san_ting.get("lower", 0.34)
             
             # 上停长 + 八字学习运
-            print(f"\n规则7: 上停 + 八字学习运")
-            print(f"  检查: 上停比例={upper:.2%}, 木元素={five_elements.get('木', 0)}")
+            logger.info(f"\n规则7: 上停 + 八字学习运")
+            logger.info(f"  检查: 上停比例={upper:.2%}, 木元素={five_elements.get('木', 0)}")
             if upper > 0.35 and five_elements.get("木", 0) > 0:
                 insight = {
                     "category": "学习",
@@ -617,13 +620,13 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 上停比例={upper:.2%}（需 > 35%）或木元素={five_elements.get('木', 0)}（需 > 0）")
+                logger.info(f"  ❌ 未匹配: 上停比例={upper:.2%}（需 > 35%）或木元素={five_elements.get('木', 0)}（需 > 0）")
             
             # 中停长 + 八字事业运
-            print(f"\n规则8: 中停 + 八字事业运")
-            print(f"  检查: 中停比例={middle:.2%}, 火元素={five_elements.get('火', 0)}")
+            logger.info(f"\n规则8: 中停 + 八字事业运")
+            logger.info(f"  检查: 中停比例={middle:.2%}, 火元素={five_elements.get('火', 0)}")
             if middle > 0.35 and five_elements.get("火", 0) > 0:
                 insight = {
                     "category": "事业",
@@ -632,13 +635,13 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 中停比例={middle:.2%}（需 > 35%）或火元素={five_elements.get('火', 0)}（需 > 0）")
+                logger.info(f"  ❌ 未匹配: 中停比例={middle:.2%}（需 > 35%）或火元素={five_elements.get('火', 0)}（需 > 0）")
             
             # 下停长 + 八字晚年运
-            print(f"\n规则9: 下停 + 八字晚年运")
-            print(f"  检查: 下停比例={lower:.2%}, 土元素={five_elements.get('土', 0)}")
+            logger.info(f"\n规则9: 下停 + 八字晚年运")
+            logger.info(f"  检查: 下停比例={lower:.2%}, 土元素={five_elements.get('土', 0)}")
             if lower > 0.35 and five_elements.get("土", 0) > 0:
                 insight = {
                     "category": "运势",
@@ -647,17 +650,17 @@ class FortuneRuleEngine:
                     "source": "integrated"
                 }
                 integrated_insights.append(insight)
-                print(f"  ✅ 匹配成功: {insight['content']}")
+                logger.info(f"  ✅ 匹配成功: {insight['content']}")
             else:
-                print(f"  ❌ 未匹配: 下停比例={lower:.2%}（需 > 35%）或土元素={five_elements.get('土', 0)}（需 > 0）")
+                logger.info(f"  ❌ 未匹配: 下停比例={lower:.2%}（需 > 35%）或土元素={five_elements.get('土', 0)}（需 > 0）")
         
         # 打印最终结果
-        print("\n" + "-"*80)
-        print(f"【融合分析结果】")
-        print(f"  匹配到的规则数量: {len(integrated_insights)}")
+        logger.info("\n" + "-"*80)
+        logger.info(f"【融合分析结果】")
+        logger.info(f"  匹配到的规则数量: {len(integrated_insights)}")
         for i, insight in enumerate(integrated_insights, 1):
-            print(f"  {i}. [{insight['category']}] {insight['content']} (置信度: {insight['confidence']})")
-        print("="*80 + "\n")
+            logger.info(f"  {i}. [{insight['category']}] {insight['content']} (置信度: {insight['confidence']})")
+        logger.info("="*80 + "\n")
         
         return integrated_insights
     

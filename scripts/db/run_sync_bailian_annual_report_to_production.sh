@@ -1,7 +1,7 @@
 #!/bin/bash
 # 将 service_configs 的 BAILIAN_ANNUAL_REPORT_APP_ID 同步到生产 MySQL
 # 生产 MySQL 在 Node1 Docker 内，需通过 SSH + docker exec 执行。
-# 详见 docs/knowledge_base/deployment_guide.md
+# 详见 standards/deployment.md、deploy/docs/
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

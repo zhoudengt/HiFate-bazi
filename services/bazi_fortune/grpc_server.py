@@ -5,6 +5,9 @@ gRPC server for bazi-fortune-service.
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger(__name__)
 
 import json
 import os
@@ -33,7 +36,7 @@ class BaziFortuneServicer(bazi_fortune_pb2_grpc.BaziFortuneServiceServicer):
         """计算大运流年"""
         import datetime
         request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{request_time}] 📥 bazi-fortune-service: 收到请求 - solar_date={request.solar_date}, solar_time={request.solar_time}, gender={request.gender}, current_time={request.current_time}", flush=True)
+        logger.info(f"[{request_time}] 📥 bazi-fortune-service: 收到请求 - solar_date={request.solar_date}, solar_time={request.solar_time}, gender={request.gender}, current_time={request.current_time}", flush=True)
         
         try:
             # 解析当前时间
@@ -62,18 +65,18 @@ class BaziFortuneServicer(bazi_fortune_pb2_grpc.BaziFortuneServiceServicer):
             }
             response.metadata_json = json.dumps(metadata, ensure_ascii=False)
             
-            print(f"[{request_time}] ✅ bazi-fortune-service: 响应已返回", flush=True)
+            logger.info(f"[{request_time}] ✅ bazi-fortune-service: 响应已返回", flush=True)
             return response
             
         except ValueError as e:
-            print(f"[{request_time}] ❌ bazi-fortune-service: 参数错误 - {str(e)}", flush=True)
+            logger.info(f"[{request_time}] ❌ bazi-fortune-service: 参数错误 - {str(e)}", flush=True)
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details(str(e))
             return bazi_fortune_pb2.BaziFortuneResponse()
         except Exception as e:
             import traceback
             error_msg = f"运势计算失败: {str(e)}\n{traceback.format_exc()}"
-            print(f"[{request_time}] ❌ bazi-fortune-service: 错误 - {error_msg}", flush=True)
+            logger.info(f"[{request_time}] ❌ bazi-fortune-service: 错误 - {error_msg}", flush=True)
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"运势计算失败: {str(e)}")
             return bazi_fortune_pb2.BaziFortuneResponse()
@@ -116,15 +119,15 @@ def serve(port: int = 9002):
         
         # create_hot_reload_server 已经绑定了端口，不需要再次绑定
         server.start()
-        print(f"✅ Bazi Fortune gRPC 服务已启动（热更新已启用），监听端口: {port}")
+        logger.info(f"✅ Bazi Fortune gRPC 服务已启动（热更新已启用），监听端口: {port}")
         
         try:
             server.wait_for_termination()
         except KeyboardInterrupt:
-            print("\n>>> 正在停止服务...")
+            logger.info("\n>>> 正在停止服务...")
             reloader.stop()
             server.stop(grace=5)
-            print("✅ 服务已停止")
+            logger.info("✅ 服务已停止")
             
     except ImportError:
         # 降级到传统模式
@@ -147,14 +150,14 @@ def serve(port: int = 9002):
         server.add_insecure_port(listen_addr)
         
         server.start()
-        print(f"✅ Bazi Fortune gRPC 服务已启动（传统模式），监听端口: {port}")
+        logger.info(f"✅ Bazi Fortune gRPC 服务已启动（传统模式），监听端口: {port}")
         
         try:
             server.wait_for_termination()
         except KeyboardInterrupt:
-            print("\n>>> 正在停止服务...")
+            logger.info("\n>>> 正在停止服务...")
             server.stop(grace=5)
-            print("✅ 服务已停止")
+            logger.info("✅ 服务已停止")
 
 
 if __name__ == "__main__":

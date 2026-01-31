@@ -6,9 +6,12 @@
 """
 
 import json
+import logging
 import sys
 import os
 from typing import List, Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -63,7 +66,7 @@ class HomepageContentDAO:
             
             return result
         except Exception as e:
-            print(f"⚠ 查询首页内容失败: {e}")
+            logger.warning(f"⚠ 查询首页内容失败: {e}")
             import traceback
             traceback.print_exc()
             return []
@@ -102,7 +105,7 @@ class HomepageContentDAO:
                 return item
             return None
         except Exception as e:
-            print(f"⚠ 查询首页内容失败: {e}")
+            logger.warning(f"⚠ 查询首页内容失败: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -219,7 +222,7 @@ class HomepageContentDAO:
             result = db.execute_update(sql, tuple(params))
             return result > 0
         except Exception as e:
-            print(f"⚠ 更新首页内容失败: {e}")
+            logger.warning(f"⚠ 更新首页内容失败: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -249,7 +252,7 @@ class HomepageContentDAO:
             result = db.execute_update(sql, (content_id,))
             return result > 0
         except Exception as e:
-            print(f"⚠ 删除首页内容失败: {e}")
+            logger.warning(f"⚠ 删除首页内容失败: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -272,7 +275,7 @@ class HomepageContentDAO:
             result = db.execute_update(sql, (sort_order, content_id))
             return result > 0
         except Exception as e:
-            print(f"⚠ 更新排序失败: {e}")
+            logger.warning(f"⚠ 更新排序失败: {e}")
             import traceback
             traceback.print_exc()
             return False

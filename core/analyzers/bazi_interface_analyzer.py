@@ -5,6 +5,10 @@
 包含所有逻辑转化方法，用于计算星座、生肖、命卦、命宫、身宫等
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class BaziInterfaceAnalyzer:
     """八字界面信息分析器 - 包含所有逻辑转化方法"""
@@ -218,7 +222,7 @@ class BaziInterfaceAnalyzer:
                 return self.day_stem_branch_to_mansion[day_stem_branch]
             else:
                 # 如果日干支不在映射表中，使用默认方法
-                print(f"⚠ 警告: 日干支 {day_stem_branch} 不在星宿映射表中，使用默认方法")
+                logger.info(f"⚠ 警告: 日干支 {day_stem_branch} 不在星宿映射表中，使用默认方法")
         
         # 如果没有提供日干支，使用旧的基于农历年月日的计算方法（向后兼容）
         if lunar_year and lunar_month and lunar_day:

@@ -5,6 +5,9 @@ MySQL 连接器模块
 """
 
 import pymysql
+import logging
+
+logger = logging.getLogger(__name__)
 from pymysql.cursors import DictCursor
 from typing import Optional, Dict, List, Any
 from contextlib import contextmanager
@@ -103,7 +106,7 @@ class MySQLConnector:
             with conn.cursor() as cursor:
                 cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{db_name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
                 conn.commit()
-                print(f"✓ 数据库 {db_name} 创建成功或已存在")
+                logger.info(f"✓ 数据库 {db_name} 创建成功或已存在")
         finally:
             conn.close()
 

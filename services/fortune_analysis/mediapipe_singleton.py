@@ -6,6 +6,9 @@ MediaPipe 单例管理器
 """
 
 import threading
+import logging
+
+logger = logging.getLogger(__name__)
 from typing import Optional
 
 try:
@@ -58,9 +61,9 @@ class MediaPipeSingleton:
                             min_detection_confidence=0.7,
                             min_tracking_confidence=0.5
                         )
-                        print("✅ MediaPipe Hands 单例已创建")
+                        logger.info("✅ MediaPipe Hands 单例已创建")
                     except Exception as e:
-                        print(f"⚠️  MediaPipe Hands 初始化失败: {e}")
+                        logger.info(f"⚠️  MediaPipe Hands 初始化失败: {e}")
                         return None
         
         return self._hands_instance
@@ -81,9 +84,9 @@ class MediaPipeSingleton:
                             min_detection_confidence=0.6,
                             min_tracking_confidence=0.5
                         )
-                        print("✅ MediaPipe FaceMesh 单例已创建")
+                        logger.info("✅ MediaPipe FaceMesh 单例已创建")
                     except Exception as e:
-                        print(f"⚠️  MediaPipe FaceMesh 初始化失败: {e}")
+                        logger.info(f"⚠️  MediaPipe FaceMesh 初始化失败: {e}")
                         return None
         
         return self._face_mesh_instance

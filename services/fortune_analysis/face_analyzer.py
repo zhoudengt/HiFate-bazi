@@ -6,6 +6,9 @@
 """
 
 import cv2
+import logging
+
+logger = logging.getLogger(__name__)
 import numpy as np
 from typing import Dict, Any, Optional, List
 import json
@@ -15,7 +18,7 @@ try:
     MEDIAPIPE_AVAILABLE = True
 except ImportError:
     MEDIAPIPE_AVAILABLE = False
-    print("⚠️  MediaPipe 未安装，面相分析功能将受限")
+    logger.info("⚠️  MediaPipe 未安装，面相分析功能将受限")
 
 import sys
 import os

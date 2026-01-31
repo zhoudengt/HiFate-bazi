@@ -5,6 +5,9 @@ gRPC server for bazi-analyzer-service.
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger(__name__)
 
 import json
 import os
@@ -103,15 +106,15 @@ def serve(port: int = 9003):
         
         # create_hot_reload_server 已经绑定了端口，不需要再次绑定
         server.start()
-        print(f"✅ Bazi Analyzer gRPC 服务已启动（热更新已启用），监听端口: {port}")
+        logger.info(f"✅ Bazi Analyzer gRPC 服务已启动（热更新已启用），监听端口: {port}")
         
         try:
             server.wait_for_termination()
         except KeyboardInterrupt:
-            print("\n>>> 正在停止服务...")
+            logger.info("\n>>> 正在停止服务...")
             reloader.stop()
             server.stop(grace=5)
-            print("✅ 服务已停止")
+            logger.info("✅ 服务已停止")
             
     except ImportError:
         # 降级到传统模式
@@ -122,14 +125,14 @@ def serve(port: int = 9003):
         server.add_insecure_port(listen_addr)
         
         server.start()
-        print(f"✅ Bazi Analyzer gRPC 服务已启动（传统模式），监听端口: {port}")
+        logger.info(f"✅ Bazi Analyzer gRPC 服务已启动（传统模式），监听端口: {port}")
         
         try:
             server.wait_for_termination()
         except KeyboardInterrupt:
-            print("\n>>> 正在停止服务...")
+            logger.info("\n>>> 正在停止服务...")
             server.stop(grace=5)
-            print("✅ 服务已停止")
+            logger.info("✅ 服务已停止")
 
 
 if __name__ == "__main__":

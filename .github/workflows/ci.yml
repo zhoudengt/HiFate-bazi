@@ -266,6 +266,24 @@ jobs:
         run: |
           pytest tests/unit/ -v --cov=server --cov=src --cov-report=xml --cov-report=term --cov-report=html
       
+      - name: 运行基准测试
+        env:
+          MYSQL_HOST: localhost
+          MYSQL_PORT: 3306
+          MYSQL_USER: root
+          MYSQL_PASSWORD: test_password
+          MYSQL_DATABASE: test_db
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          BAZI_CORE_SERVICE_URL: localhost:9001
+          BAZI_RULE_SERVICE_URL: localhost:9004
+          BAZI_FORTUNE_SERVICE_URL: localhost:9002
+          BAZI_ANALYZER_SERVICE_URL: localhost:9003
+          BAZI_CORE_SERVICE_STRICT: "0"
+          BAZI_RULE_SERVICE_STRICT: "0"
+        run: |
+          pytest tests/baseline/ tests/api/test_bazi_api.py tests/unit/test_orchestrator.py -v --tb=short -o addopts="-v --tb=short"
+      
       - name: 运行 API 测试
         env:
           MYSQL_HOST: localhost

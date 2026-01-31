@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 import os
 
 # 添加模块路径
@@ -21,19 +24,19 @@ class BaziPrinter:
         """打印排盘结果"""
         self.result = self.calculator.calculate()
         if not self.result:
-            print("排盘失败，请检查输入参数")
+            logger.info("排盘失败，请检查输入参数")
             return
 
-        print("=" * 60)
-        print("HiFate排盘 - 最完整版本")
-        print("=" * 60)
+        logger.info("=" * 60)
+        logger.info("HiFate排盘 - 最完整版本")
+        logger.info("=" * 60)
 
         basic = self.result['basic_info']
-        print(f"阳历: {basic['solar_date']} {basic['solar_time']}")
+        logger.info(f"阳历: {basic['solar_date']} {basic['solar_time']}")
 
         # 如果日期被调整过，显示调整后的日期
         if basic['is_zi_shi_adjusted']:
-            print(f"调整后: {basic['adjusted_solar_date']} {basic['adjusted_solar_time']} (子时调整)")
+            logger.info(f"调整后: {basic['adjusted_solar_date']} {basic['adjusted_solar_time']} (子时调整)")
 
         # 显示农历日期
         lunar = basic['lunar_date']
@@ -46,9 +49,9 @@ class BaziPrinter:
         if not lunar_day_name:
             lunar_day_name = f"{lunar['day']}日"
 
-        print(f"农历: {lunar_year}年{lunar_month_name}{lunar_day_name}")
-        print(f"性别: {'男' if basic['gender'] == 'male' else '女'}")
-        print()
+        logger.info(f"农历: {lunar_year}年{lunar_month_name}{lunar_day_name}")
+        logger.info(f"性别: {'男' if basic['gender'] == 'male' else '女'}")
+        logger.info("")
 
         pillars = self.result['bazi_pillars']
         details = self.result['details']
@@ -128,16 +131,16 @@ class BaziPrinter:
         col_widths = [8, 20, 20, 20, 20]
 
         header_line = "".join(f"{headers[i]:<{col_widths[i]}}" for i in range(len(headers)))
-        print(header_line)
-        print("-" * len(header_line))
+        logger.info(header_line)
+        logger.info("-" * len(header_line))
 
         for row in rows:
             row_line = "".join(f"{row[i]:<{col_widths[i]}}" for i in range(len(row)))
-            print(row_line)
+            logger.info(row_line)
 
     def print_rizhu_gender_analysis(self):
         """打印日柱性别查询分析结果"""
-        print("\n" + "=" * 80)
+        logger.info("\n" + "=" * 80)
 
         # 确保已经计算了八字
         if not self.calculator.bazi_pillars or not self.calculator.details:
@@ -148,7 +151,7 @@ class BaziPrinter:
 
         # 获取分析结果
         analysis_output = analyzer.get_formatted_output()
-        print(analysis_output)
+        logger.info(analysis_output)
 
     def get_formatted_result(self):
         """获取格式化结果（不打印）"""

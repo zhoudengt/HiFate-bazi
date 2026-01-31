@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 import os
 
 # 添加项目根目录到 Python 路径
@@ -58,20 +61,20 @@ def main():
         try:
             current_time = datetime.strptime(args.current_time, "%Y-%m-%d %H:%M")
         except ValueError:
-            print(f"警告: 当前时间格式错误，使用系统当前时间")
+            logger.info(f"警告: 当前时间格式错误，使用系统当前时间")
             current_time = datetime.now()
     else:
         current_time = datetime.now()
 
-    print("=" * 60)
-    print("八字详细计算器 - 大运流年版本")
-    print("=" * 60)
-    print(f"出生日期: {args.date}")
-    print(f"出生时间: {args.time}")
-    print(f"性别: {args.gender}")
-    print(f"当前时间: {current_time.strftime('%Y-%m-%d %H:%M')}")
-    print("=" * 60)
-    print()
+    logger.info("=" * 60)
+    logger.info("八字详细计算器 - 大运流年版本")
+    logger.info("=" * 60)
+    logger.info(f"出生日期: {args.date}")
+    logger.info(f"出生时间: {args.time}")
+    logger.info(f"性别: {args.gender}")
+    logger.info(f"当前时间: {current_time.strftime('%Y-%m-%d %H:%M')}")
+    logger.info("=" * 60)
+    logger.info("")
     
     try:
         # 创建八字计算器
@@ -88,7 +91,7 @@ def main():
         printer.print_detailed_result(current_time=current_time)
         
     except Exception as e:
-        print(f"错误: {e}")
+        logger.info(f"错误: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

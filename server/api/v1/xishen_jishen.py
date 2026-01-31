@@ -23,6 +23,7 @@ sys.path.insert(0, project_root)
 from server.services.wangshuai_service import WangShuaiService
 from server.services.bazi_service import BaziService
 from server.services.rule_service import RuleService
+from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
 from server.services.config_service import ConfigService
 from server.utils.data_validator import validate_bazi_data
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
@@ -35,6 +36,9 @@ from server.utils.api_cache_helper import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# 双轨并行：编排层开关，默认关闭
+USE_ORCHESTRATOR_XISHEN_JISHEN = os.environ.get("USE_ORCHESTRATOR_XISHEN_JISHEN", "false").lower() == "true"
 
 
 class XishenJishenRequest(BaziBaseRequest):
@@ -85,19 +89,41 @@ async def get_xishen_jishen(request: XishenJishenRequest):
             return XishenJishenResponse(success=True, data=cached)
         # >>> 缓存检查结束 <<<
         
+        # 双轨并行：优先走编排层（USE_ORCHESTRATOR_XISHEN_JISHEN=true 时）
+        if USE_ORCHESTRATOR_XISHEN_JISHEN:
+            orchestrator_data = await BaziDataOrchestrator.fetch_data(
+                final_solar_date,
+                final_solar_time,
+                request.gender,
+                modules={"xishen_jishen": True},
+                preprocessed=True,
+                calendar_type=request.calendar_type or "solar",
+                location=request.location,
+                latitude=request.latitude,
+                longitude=request.longitude,
+            )
+            xishen_result = orchestrator_data.get("xishen_jishen")
+            if xishen_result is not None:
+                if isinstance(xishen_result, dict):
+                    return XishenJishenResponse(**xishen_result)
+                if hasattr(xishen_result, "model_dump"):
+                    return XishenJishenResponse(**xishen_result.model_dump())
+                if hasattr(xishen_result, "dict"):
+                    return XishenJishenResponse(**xishen_result.dict())
+            # 降级到原有逻辑
+            logger.warning("编排层喜神忌神数据为空，降级到原有逻辑")
+        
         # 1. 获取旺衰分析结果（包含喜神五行和忌神五行）
         # ✅ 修复：改为异步执行，避免阻塞事件循环
         import time
         start_time = time.time()
         loop = asyncio.get_event_loop()
-        from concurrent.futures import ThreadPoolExecutor
-        executor = ThreadPoolExecutor(max_workers=min(os.cpu_count() or 4 * 2, 100))
-        
+        from server.utils.async_executor import get_executor
         try:
-            # 使用线程池执行，添加30秒超时保护
+            # 使用统一线程池执行，添加30秒超时保护
             wangshuai_result = await asyncio.wait_for(
                 loop.run_in_executor(
-                    executor,
+                    get_executor(),
                     WangShuaiService.calculate_wangshuai,
                     final_solar_date,
                     final_solar_time,
@@ -377,10 +403,8 @@ async def xishen_jishen_stream_generator(
     llm_start_time = None
     
     try:
-        # ✅ 性能优化：立即返回首条消息，让用户感知到连接已建立
-        # 这个优化将首次响应时间从 24秒 降低到 <1秒
-        # ✅ 架构优化：移除无意义的进度消息，直接开始数据处理
-        # 详见：docs/standards/08_数据编排架构规范.md
+        # ✅ 立即返回首条消息，让 curl/客户端感知连接已建立（避免长时间无输出被误判为无响应）
+        yield f"data: {json.dumps({'type': 'progress', 'message': '正在获取喜神忌神数据...'}, ensure_ascii=False)}\n\n"
         
         # 1. 处理农历输入和时区转换
         final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(

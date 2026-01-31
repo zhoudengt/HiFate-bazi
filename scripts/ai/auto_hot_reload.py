@@ -44,8 +44,8 @@ HOT_RELOAD_ROLLBACK_API = f"{HOT_RELOAD_API}/rollback"
 
 # 监控的目录和文件类型
 WATCH_DIRS = [
+    "core",
     "server",
-    "src",
     "services",
 ]
 

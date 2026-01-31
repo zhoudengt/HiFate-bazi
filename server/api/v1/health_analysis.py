@@ -20,6 +20,7 @@ from datetime import datetime
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, project_root)
 
+from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
 from server.services.bazi_service import BaziService
 from server.services.wangshuai_service import WangShuaiService
 from server.services.bazi_detail_service import BaziDetailService
@@ -101,127 +102,62 @@ async def health_analysis_debug(request: HealthAnalysisRequest):
     try:
         # 处理输入（农历转换等）
         final_solar_date, final_solar_time, _ = BaziInputProcessor.process_input(
-            request.solar_date, request.solar_time, "solar", None, None, None
+            request.solar_date, request.solar_time, request.calendar_type or "solar",
+            request.location, request.latitude, request.longitude
         )
         
-        # 并行获取数据
-        loop = asyncio.get_event_loop()
-        executor = None
-        
-        bazi_result, wangshuai_result, detail_result = await asyncio.gather(
-            loop.run_in_executor(executor, BaziService.calculate_bazi_full, final_solar_date, final_solar_time, request.gender),
-            loop.run_in_executor(executor, WangShuaiService.calculate_wangshuai, final_solar_date, final_solar_time, request.gender),
-            loop.run_in_executor(executor, BaziDetailService.calculate_detail_full, final_solar_date, final_solar_time, request.gender)
-        )
-        
-        # 提取和验证数据
-        if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
-            bazi_data = bazi_result['bazi']
-        else:
-            bazi_data = bazi_result
-        bazi_data = validate_bazi_data(bazi_data)
-        
-        # ✅ 使用统一数据服务获取大运流年、特殊流年数据（与流式接口保持一致）
-        from server.orchestrators.bazi_data_service import BaziDataService
-        
-        fortune_data = await BaziDataService.get_fortune_data(
+        # 通过 BaziDataOrchestrator 统一获取数据（主路径统一）
+        from server.utils.analysis_stream_helpers import get_modules_config
+        modules = get_modules_config('health')
+        unified_data = await BaziDataOrchestrator.fetch_data(
             solar_date=final_solar_date,
             solar_time=final_solar_time,
             gender=request.gender,
+            modules=modules,
+            use_cache=True,
+            parallel=True,
             calendar_type=request.calendar_type or "solar",
             location=request.location,
             latitude=request.latitude,
             longitude=request.longitude,
-            include_dayun=True,
-            include_liunian=True,
-            include_special_liunian=True,
-            dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,
-            target_years=BaziDataService.DEFAULT_TARGET_YEARS,
-            current_time=None
+            preprocessed=True
         )
         
-        # 转换为字典格式（与流式接口保持一致）
-        dayun_sequence = []
-        special_liunians = []
-        
-        for dayun in fortune_data.dayun_sequence:
-            dayun_sequence.append({
-                'step': dayun.step,
-                'stem': dayun.stem,
-                'branch': dayun.branch,
-                'year_start': dayun.year_start,
-                'year_end': dayun.year_end,
-                'age_range': dayun.age_range,
-                'age_display': dayun.age_display,
-                'nayin': dayun.nayin,
-                'main_star': dayun.main_star,
-                'hidden_stems': dayun.hidden_stems or [],
-                'hidden_stars': dayun.hidden_stars or [],
-                'star_fortune': dayun.star_fortune,
-                'self_sitting': dayun.self_sitting,
-                'kongwang': dayun.kongwang,
-                'deities': dayun.deities or [],
-                'details': dayun.details or {}
-            })
-        
-        for special_liunian in fortune_data.special_liunians:
-            special_liunians.append({
-                'year': special_liunian.year,
-                'stem': special_liunian.stem,
-                'branch': special_liunian.branch,
-                'ganzhi': special_liunian.ganzhi,
-                'age': special_liunian.age,
-                'age_display': special_liunian.age_display,
-                'nayin': special_liunian.nayin,
-                'main_star': special_liunian.main_star,
-                'hidden_stems': special_liunian.hidden_stems or [],
-                'hidden_stars': special_liunian.hidden_stars or [],
-                'star_fortune': special_liunian.star_fortune,
-                'self_sitting': special_liunian.self_sitting,
-                'kongwang': special_liunian.kongwang,
-                'deities': special_liunian.deities or [],
-                'relations': special_liunian.relations or [],
-                'dayun_step': special_liunian.dayun_step,
-                'dayun_ganzhi': special_liunian.dayun_ganzhi,
-                'details': special_liunian.details or {}
-            })
-        
-        # 获取五行统计
-        element_counts = bazi_data.get('element_counts', {})
-        
-        # ⚠️ 重要：从 wangshuai_result 中提取旺衰数据
-        # wangshuai_result 格式是 {'success': True, 'data': {...}}，需要提取 data
-        if not wangshuai_result.get('success'):
-            logger.warning(f"旺衰分析失败: {wangshuai_result.get('error')}")
-            wangshuai_data = {}
+        # 提取数据
+        bazi_module_data = unified_data.get('bazi', {})
+        if isinstance(bazi_module_data, dict) and 'bazi' in bazi_module_data:
+            bazi_data = bazi_module_data.get('bazi', {})
         else:
+            bazi_data = bazi_module_data
+        bazi_data = validate_bazi_data(bazi_data)
+        
+        wangshuai_result = unified_data.get('wangshuai', {})
+        if isinstance(wangshuai_result, dict) and wangshuai_result.get('success'):
             wangshuai_data = wangshuai_result.get('data', {})
+        else:
+            wangshuai_data = wangshuai_result if isinstance(wangshuai_result, dict) else {}
         
-        # 构建规则匹配数据
-        rule_data = {
-            'basic_info': bazi_data.get('basic_info', {}),
-            'bazi_pillars': bazi_data.get('bazi_pillars', {}),
-            'details': bazi_data.get('details', {}),
-            'ten_gods_stats': bazi_data.get('ten_gods_stats', {}),
-            'elements': bazi_data.get('elements', {}),
-            'element_counts': element_counts,
-            'relationships': bazi_data.get('relationships', {})
-        }
+        detail_result = unified_data.get('detail', {})
+        dayun_sequence = detail_result.get('dayun_sequence', [])
+        special_liunians_data = unified_data.get('special_liunians', {})
+        special_liunians = special_liunians_data.get('list', []) if isinstance(special_liunians_data, dict) else []
+        health_rules = unified_data.get('rules', [])
         
-        # 并行执行健康分析和规则匹配
-        # ⚠️ 重要：使用 wangshuai_data（提取后的数据），而不是 wangshuai_result（原始结果）
-        # ⚠️ 修复：构建正确的 xi_ji_data 结构
+        element_counts = bazi_data.get('element_counts', {})
         xi_ji_data_for_health_debug = {
             'xi_ji_elements': {
                 'xi_shen': wangshuai_data.get('xi_shen_elements', []),
                 'ji_shen': wangshuai_data.get('ji_shen_elements', [])
             }
         }
-        health_result, health_rules = await asyncio.gather(
-            loop.run_in_executor(executor, HealthAnalysisService.analyze,
-                                 bazi_data, element_counts, wangshuai_data,
-                                 xi_ji_data_for_health_debug),
-            loop.run_in_executor(executor, RuleService.match_rules, rule_data, ['health'], True)
+        
+        loop = asyncio.get_event_loop()
+        executor = None
+        health_result = await loop.run_in_executor(
+            executor,
+            lambda: HealthAnalysisService.analyze(
+                bazi_data, element_counts, wangshuai_data, xi_ji_data_for_health_debug
+            )
         )
         
         # 构建input_data（直接使用硬编码函数，确保数据完整性）
@@ -315,7 +251,7 @@ async def health_analysis_stream_generator(
         # ✅ 性能优化：立即返回首条消息，让用户感知到连接已建立
         # 这个优化将首次响应时间从 24秒 降低到 <1秒
         # ✅ 架构优化：移除无意义的进度消息，直接开始数据处理
-        # 详见：docs/standards/08_数据编排架构规范.md
+        # 详见：standards/08_数据编排架构规范.md
         
         # 1. Bot ID 配置检查（优先级：参数 > 数据库配置 > 环境变量）
         used_bot_id = bot_id
@@ -337,131 +273,63 @@ async def health_analysis_stream_generator(
             solar_date, solar_time, calendar_type or "solar", location, latitude, longitude
         )
         
-        # 3. 并行获取基础数据
-        loop = asyncio.get_event_loop()
-        executor = None
-        
-        # ⚠️ 初始化 detail_result，确保在所有代码路径中都有定义
-        detail_result = None
-        
+        # 3. 通过 BaziDataOrchestrator 统一获取数据（主路径统一）
         try:
-            # 并行获取基础数据
-            bazi_task = loop.run_in_executor(
-                executor,
-                lambda: BaziService.calculate_bazi_full(
-                    final_solar_date,
-                    final_solar_time,
-                    gender
-                )
-            )
-            wangshuai_task = loop.run_in_executor(
-                executor,
-                lambda: WangShuaiService.calculate_wangshuai(
-                    final_solar_date,
-                    final_solar_time,
-                    gender
-                )
-            )
-            detail_task = loop.run_in_executor(
-                executor,
-                lambda: BaziDetailService.calculate_detail_full(
-                    final_solar_date,
-                    final_solar_time,
-                    gender
-                )
-            )
+            from server.utils.analysis_stream_helpers import get_modules_config
+            modules = get_modules_config('health')
             
-            bazi_result, wangshuai_result, detail_result = await asyncio.gather(bazi_task, wangshuai_task, detail_task)
-            
-            # 提取八字数据
-            if isinstance(bazi_result, dict) and 'bazi' in bazi_result:
-                bazi_data = bazi_result['bazi']
-            else:
-                bazi_data = bazi_result
-            
-            # 验证数据类型
-            bazi_data = validate_bazi_data(bazi_data)
-            if not bazi_data:
-                raise ValueError("八字计算失败，返回数据为空")
-            
-            # 处理旺衰数据
-            if not wangshuai_result.get('success'):
-                logger.warning(f"旺衰分析失败: {wangshuai_result.get('error')}")
-                wangshuai_data = {}
-            else:
-                wangshuai_data = wangshuai_result.get('data', {})
-            
-            # ✅ 使用统一数据服务获取大运流年、特殊流年数据（确保数据一致性）
-            from server.orchestrators.bazi_data_service import BaziDataService
-            
-            # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
-            # ✅ 性能优化：传入已获取的 detail_result，避免重复调用 calculate_detail_full
-            fortune_data = await BaziDataService.get_fortune_data(
+            unified_data = await BaziDataOrchestrator.fetch_data(
                 solar_date=final_solar_date,
                 solar_time=final_solar_time,
                 gender=gender,
+                modules=modules,
+                use_cache=True,
+                parallel=True,
                 calendar_type=calendar_type or "solar",
                 location=location,
                 latitude=latitude,
                 longitude=longitude,
-                include_dayun=True,
-                include_liunian=True,
-                include_special_liunian=True,
-                dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,  # 统一的大运模式
-                target_years=BaziDataService.DEFAULT_TARGET_YEARS,  # 统一的年份范围
-                current_time=None,
-                detail_result=detail_result  # ✅ 性能优化：复用已获取的 detail_result
+                preprocessed=True
             )
             
-            # 从统一数据服务获取大运序列和特殊流年
-            dayun_sequence = []
-            special_liunians = []
+            # 提取八字数据
+            bazi_module_data = unified_data.get('bazi', {})
+            if isinstance(bazi_module_data, dict) and 'bazi' in bazi_module_data:
+                bazi_data = bazi_module_data.get('bazi', {})
+            else:
+                bazi_data = bazi_module_data
             
-            # 转换为字典格式（兼容现有代码）
-            for dayun in fortune_data.dayun_sequence:
-                dayun_sequence.append({
-                    'step': dayun.step,
-                    'stem': dayun.stem,
-                    'branch': dayun.branch,
-                    'year_start': dayun.year_start,
-                    'year_end': dayun.year_end,
-                    'age_range': dayun.age_range,
-                    'age_display': dayun.age_display,
-                    'nayin': dayun.nayin,
-                    'main_star': dayun.main_star,
-                    'hidden_stems': dayun.hidden_stems or [],
-                    'hidden_stars': dayun.hidden_stars or [],
-                    'star_fortune': dayun.star_fortune,
-                    'self_sitting': dayun.self_sitting,
-                    'kongwang': dayun.kongwang,
-                    'deities': dayun.deities or [],
-                    'details': dayun.details or {}
-                })
+            bazi_data = validate_bazi_data(bazi_data)
+            if not bazi_data:
+                raise ValueError("八字计算失败，返回数据为空")
             
-            # 转换为字典格式（兼容现有代码）
-            for special_liunian in fortune_data.special_liunians:
-                special_liunians.append({
-                    'year': special_liunian.year,
-                    'stem': special_liunian.stem,
-                    'branch': special_liunian.branch,
-                    'ganzhi': special_liunian.ganzhi,
-                    'age': special_liunian.age,
-                    'age_display': special_liunian.age_display,
-                    'nayin': special_liunian.nayin,
-                    'main_star': special_liunian.main_star,
-                    'hidden_stems': special_liunian.hidden_stems or [],
-                    'hidden_stars': special_liunian.hidden_stars or [],
-                    'star_fortune': special_liunian.star_fortune,
-                    'self_sitting': special_liunian.self_sitting,
-                    'kongwang': special_liunian.kongwang,
-                    'deities': special_liunian.deities or [],
-                    'relations': special_liunian.relations or [],
-                    'dayun_step': special_liunian.dayun_step,
-                    'dayun_ganzhi': special_liunian.dayun_ganzhi,
-                    'details': special_liunian.details or {}
-                })
+            # 提取旺衰数据
+            wangshuai_result = unified_data.get('wangshuai', {})
+            if isinstance(wangshuai_result, dict) and wangshuai_result.get('success'):
+                wangshuai_data = wangshuai_result.get('data', {})
+            else:
+                wangshuai_data = wangshuai_result if isinstance(wangshuai_result, dict) else {}
             
-            logger.info(f"[Health Analysis Stream] ✅ 统一数据服务数据获取完成")
+            if not wangshuai_result.get('success', True):
+                logger.warning(f"旺衰分析失败: {wangshuai_result.get('error')}")
+            
+            # 提取 detail（BaziDetailService 返回的完整结构）
+            detail_result = unified_data.get('detail', {})
+            if not detail_result:
+                raise ValueError("详细数据获取失败，无法继续分析")
+            
+            # 提取大运序列和特殊流年
+            dayun_sequence = detail_result.get('dayun_sequence', [])
+            special_liunians_data = unified_data.get('special_liunians', {})
+            if isinstance(special_liunians_data, dict) and 'list' in special_liunians_data:
+                special_liunians = special_liunians_data.get('list', [])
+            else:
+                special_liunians = []
+            
+            # 提取健康规则（由编排层 rules 模块返回）
+            health_rules = unified_data.get('rules', [])
+            
+            logger.info(f"[Health Analysis Stream] ✅ BaziDataOrchestrator 数据获取完成")
             
         except Exception as e:
             import traceback
@@ -477,18 +345,6 @@ async def health_analysis_stream_generator(
         # 4. 提取和验证数据
         
         logger.info(f"[Health Analysis Stream] 获取到特殊流年数量: {len(special_liunians)}")
-        
-        # ⚠️ 防御性检查：确保 detail_result 不为 None
-        # detail_result 包含 ten_gods 和 deities 数据，这些数据由 BaziDetailService.calculate_detail_full() 提供
-        # 与 BaziDataService.get_fortune_data() 不同，detail_result 提供的是十神和神煞信息
-        if detail_result is None:
-            logger.error("[Health Analysis Stream] ❌ detail_result 为 None，无法继续分析")
-            error_response = {
-                'type': 'error',
-                'content': "详细数据获取失败，无法继续分析。请稍后重试。"
-            }
-            yield f"data: {json.dumps(error_response, ensure_ascii=False)}\n\n"
-            return
         
         # 获取五行统计
         element_counts = bazi_data.get('element_counts', {})
@@ -518,16 +374,17 @@ async def health_analysis_stream_generator(
         }
         logger.info(f"[Health Analysis] xi_ji_data_for_health 构建完成: xi_shen={xi_ji_data_for_health['xi_ji_elements']['xi_shen']}, ji_shen={xi_ji_data_for_health['xi_ji_elements']['ji_shen']}")
         
+        # 6. 执行健康分析（HealthAnalysisService 需 bazi_data 等，编排层未封装此依赖，故在此调用）
         loop = asyncio.get_event_loop()
         executor = None
-        health_result, health_rules = await asyncio.gather(
-            loop.run_in_executor(executor, HealthAnalysisService.analyze,
-                                 bazi_data, element_counts, wangshuai_data, 
-                                 xi_ji_data_for_health),
-            loop.run_in_executor(executor, RuleService.match_rules, rule_data, ['health'], True)
+        health_result = await loop.run_in_executor(
+            executor,
+            lambda: HealthAnalysisService.analyze(
+                bazi_data, element_counts, wangshuai_data, xi_ji_data_for_health
+            )
         )
         
-        # 7. 构建input_data（直接使用硬编码函数，确保数据完整性）
+        # 7. 构建input_data
         # ⚠️ 重要：使用 wangshuai_data（提取后的数据），而不是 wangshuai_result（原始结果）
         input_data = build_health_input_data(
             bazi_data,
