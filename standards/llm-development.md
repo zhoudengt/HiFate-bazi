@@ -1221,6 +1221,8 @@ def _format_wuxing_for_llm(proportion_data: Dict[str, Any]) -> str:
 - [ ] 优化后 LLM 分析内容正确
 - [ ] 优化后接口响应速度提升
 
+**流式接口性能测试工具**：使用 **流式接口各环节耗时测试工具（Stream Profiler）** 对优化前后各阶段耗时进行测量。工具路径：`tools/stream_profiler/`，用法与指标说明见 `standards/04_测试规范.md` 十一、及 `tools/stream_profiler/README.md`。**工具修改时，须同步更新上述文档与本段落。**
+
 ---
 
 ### 优化3：LLM 分析结果缓存（已实施）
