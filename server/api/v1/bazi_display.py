@@ -184,9 +184,24 @@ def _assemble_pan_display_response(orchestrator_data: Dict[str, Any]) -> Dict[st
     Returns:
         dict: 与原接口完全一致的响应结构
     """
-    bazi_data = orchestrator_data.get('bazi', {})
-    rizhu_data = orchestrator_data.get('rizhu', {})
-    rules_data = orchestrator_data.get('rules', [])
+    bazi_data_raw = orchestrator_data.get('bazi', {})
+    
+    # ✅ 修复：处理嵌套结构 {'bazi': {...}, 'rizhu': '...', 'matched_rules': [...]}
+    # BaziService.calculate_bazi_full 返回嵌套结构，内层 'bazi' 才是实际的八字数据
+    if isinstance(bazi_data_raw, dict) and 'bazi' in bazi_data_raw and isinstance(bazi_data_raw.get('bazi'), dict):
+        # 嵌套结构：提取内层 bazi 数据
+        bazi_data = bazi_data_raw.get('bazi', {})
+        # 同时提取嵌套结构中的 rizhu 和 matched_rules（如果存在）
+        rizhu_from_bazi = bazi_data_raw.get('rizhu')
+        rules_from_bazi = bazi_data_raw.get('matched_rules', [])
+    else:
+        # 非嵌套结构（兼容旧格式）
+        bazi_data = bazi_data_raw
+        rizhu_from_bazi = None
+        rules_from_bazi = []
+    
+    rizhu_data = orchestrator_data.get('rizhu', {}) or rizhu_from_bazi
+    rules_data = orchestrator_data.get('rules', []) or rules_from_bazi
     personality_data = orchestrator_data.get('personality', {})
     
     if not bazi_data:
