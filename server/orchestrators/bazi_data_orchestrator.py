@@ -30,7 +30,8 @@ from server.services.wuxing_proportion_service import WuxingProportionService
 from server.services.bazi_interface_service import BaziInterfaceService
 from server.services.bazi_display_service import BaziDisplayService
 from server.services.bazi_ai_service import BaziAIService
-from server.api.v1.xishen_jishen import get_xishen_jishen, XishenJishenRequest
+# 注意：get_xishen_jishen 和 XishenJishenRequest 延迟导入，避免循环依赖
+# from server.api.v1.xishen_jishen import get_xishen_jishen, XishenJishenRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.utils.data_validator import validate_bazi_data
 from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
@@ -233,6 +234,8 @@ class BaziDataOrchestrator:
             # ✅ 修复：get_xishen_jishen 是异步函数，返回 XishenJishenResponse (Pydantic模型)
             # 需要转换为字典，但这里先获取响应对象，在结果处理时转换
             # ✅ 扩展：支持7个标准参数
+            # ✅ 延迟导入，避免循环依赖
+            from server.api.v1.xishen_jishen import get_xishen_jishen, XishenJishenRequest
             xishen_jishen_task = get_xishen_jishen(XishenJishenRequest(
                 solar_date=final_solar_date,
                 solar_time=final_solar_time,
