@@ -25,11 +25,12 @@ logger = logging.getLogger(__name__)
 
 DISPLAY_MODULES = {
     # /api/v1/bazi/pan/display - 排盘展示
+    # ✅ 性能优化：禁用 personality/rizhu/rules，前端不使用这些数据
     'pan_display': {
-        'bazi': True,               # 八字四柱、十神、五行
-        'personality': True,        # 日柱性格分析（RizhuGenderAnalyzer）
-        'rizhu': True,              # 日柱解析（RizhuLiujiaziService）
-        'rules': {'types': None}    # 所有规则（内部筛选婚姻规则）
+        'bazi': True,               # 八字四柱、十神、五行（必须）
+        'personality': False,       # 禁用：日柱性格分析
+        'rizhu': False,             # 禁用：日柱解析
+        'rules': False              # 禁用：规则匹配
     },
     
     # /api/v1/bazi/interface - 基本信息（命宫、身宫、胎元等）
