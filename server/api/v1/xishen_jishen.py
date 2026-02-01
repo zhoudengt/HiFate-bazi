@@ -37,6 +37,96 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
+def _format_xishen_jishen_for_llm(data: Dict[str, Any]) -> str:
+    """
+    将喜神忌神数据格式化为人类可读的中文描述（用于传给大模型）
+    
+    优化点：
+    1. 去除冗长 JSON 和重复嵌套，只保留分析必需项
+    2. 喜神/忌神/旺衰/十神命格/四柱/日主 等用简洁【标签】形式
+    3. 可选：五行个数、十神简表，便于模型理解
+    
+    Args:
+        data: 喜神忌神完整数据（含 xi_shen_elements, ji_shen_elements, bazi_pillars 等）
+        
+    Returns:
+        str: 格式化后的中文描述（体量远小于原 JSON）
+    """
+    def _names(items: List[Any]) -> str:
+        if not items:
+            return '无'
+        names = []
+        for x in items:
+            if isinstance(x, dict):
+                names.append(x.get('name', str(x)))
+            else:
+                names.append(str(x))
+        return '、'.join(names) if names else '无'
+    
+    lines = []
+    
+    # 喜神五行
+    xi = data.get('xi_shen_elements', [])
+    lines.append(f"【喜神】{_names(xi)}")
+    
+    # 忌神五行
+    ji = data.get('ji_shen_elements', [])
+    lines.append(f"【忌神】{_names(ji)}")
+    
+    # 旺衰与总分
+    wangshuai = data.get('wangshuai', '')
+    total_score = data.get('total_score', 0)
+    lines.append(f"【旺衰】{wangshuai}({total_score}分)")
+    
+    # 十神命格（取 name）
+    mingge = data.get('shishen_mingge', [])
+    lines.append(f"【十神命格】{_names(mingge)}")
+    
+    # 四柱：年乙丑 月己卯 日戊午 时丙辰
+    pillars = data.get('bazi_pillars', {})
+    if pillars:
+        pillar_names = {'year': '年', 'month': '月', 'day': '日', 'hour': '时'}
+        parts = []
+        for key in ['year', 'month', 'day', 'hour']:
+            p = pillars.get(key, {})
+            if isinstance(p, dict):
+                s = p.get('stem', '') + p.get('branch', '')
+            else:
+                s = str(p)
+            if s:
+                parts.append(f"{pillar_names.get(key, key)}{s}")
+        if parts:
+            lines.append(f"【四柱】{' '.join(parts)}")
+    
+    # 日主
+    day_stem = data.get('day_stem', '')
+    if day_stem:
+        lines.append(f"【日主】{day_stem}")
+    
+    # 可选：五行个数（只保留分析必需，简写）
+    element_counts = data.get('element_counts', {})
+    if element_counts and isinstance(element_counts, dict):
+        parts = [f"{e}{c}" for e, c in element_counts.items() if c]
+        if parts:
+            lines.append(f"【五行个数】{' '.join(parts)}")
+    
+    # 可选：十神简表（四柱主星）
+    ten_gods = data.get('ten_gods', {})
+    if ten_gods and isinstance(ten_gods, dict):
+        pillar_labels = {'year': '年柱', 'month': '月柱', 'day': '日柱', 'hour': '时柱'}
+        parts = []
+        for key in ['year', 'month', 'day', 'hour']:
+            tg = ten_gods.get(key, {})
+            if isinstance(tg, dict):
+                main = tg.get('main_star', '')
+                if main:
+                    parts.append(f"{pillar_labels.get(key, key)}{main}")
+        if parts:
+            lines.append(f"【十神】{'、'.join(parts)}")
+    
+    return '\n'.join(lines)
+
 # 双轨并行：编排层开关，默认关闭
 USE_ORCHESTRATOR_XISHEN_JISHEN = os.environ.get("USE_ORCHESTRATOR_XISHEN_JISHEN", "false").lower() == "true"
 
@@ -347,15 +437,19 @@ async def xishen_jishen_test(request: XishenJishenRequest):
             "wangshuai_detail": data.get('wangshuai_detail', {})
         }
         
-        # 4. 格式化数据（JSON字符串，与流式接口一致）
+        # 4. 格式化数据：优化前=完整JSON，优化后=描述文（供优化效果测试用）
         formatted_data = json.dumps(input_data, ensure_ascii=False, indent=2)
+        formatted_data_length = len(formatted_data)
+        formatted_for_llm = _format_xishen_jishen_for_llm(data)
+        formatted_data_length_optimized = len(formatted_for_llm)
         
         # 5. 返回格式化后的数据
         return {
             "success": True,
             "input_data": input_data,
             "formatted_data": formatted_data,
-            "formatted_data_length": len(formatted_data),
+            "formatted_data_length": formatted_data_length,
+            "formatted_data_length_optimized": formatted_data_length_optimized,
             "usage": {
                 "description": "此接口返回的结构化数据可以直接用于 Coze Bot 或百炼智能体的输入（使用 {{input}} 占位符）",
                 "test_command": f'curl -X POST "http://localhost:8001/api/v1/bazi/xishen-jishen/test" -H "Content-Type: application/json" -d \'{{"solar_date": "{request.solar_date}", "solar_time": "{request.solar_time}", "gender": "{request.gender}", "calendar_type": "{request.calendar_type or "solar"}"}}\''
@@ -403,9 +497,6 @@ async def xishen_jishen_stream_generator(
     llm_start_time = None
     
     try:
-        # ✅ 立即返回首条消息，让 curl/客户端感知连接已建立（避免长时间无输出被误判为无响应）
-        yield f"data: {json.dumps({'type': 'progress', 'message': '正在获取喜神忌神数据...'}, ensure_ascii=False)}\n\n"
-        
         # 1. 处理农历输入和时区转换
         final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
             request.solar_date,
@@ -477,34 +568,35 @@ async def xishen_jishen_stream_generator(
             'data': response_data_base
         }
         
-        # 填充数据：16KB 空格，强制刷新网络缓冲区（需要超过网络设备的缓冲阈值）
-        PADDING = ' ' * 16384
-        
-        # 6. 先发送完整的喜神忌神数据（type: "data"，带填充）
+        # 6. 先发送完整的喜神忌神数据（type: "data"）
         data_msg = {
             'type': 'data',
-            'content': response_data,
-            '_padding': PADDING  # 填充数据强制刷新缓冲区
+            'content': response_data
         }
         yield f"data: {json.dumps(data_msg, ensure_ascii=False)}\n\n"
         
-        # 7. 构建 input_data（结构化数据，传递给 Coze Bot）
-        input_data = {
-            "shishen_mingge": data.get('shishen_mingge', []),
-            "xi_shen_elements": data.get('xi_shen_elements', []),
-            "ji_shen_elements": data.get('ji_shen_elements', []),
-            "wangshuai": data.get('wangshuai', ''),
-            "total_score": data.get('total_score', 0),
-            "bazi_pillars": data.get('bazi_pillars', {}),
-            "day_stem": data.get('day_stem', ''),
-            "ten_gods": data.get('ten_gods', {}),
-            "element_counts": data.get('element_counts', {}),
-            "deities": data.get('deities', {}),
-            "wangshuai_detail": data.get('wangshuai_detail', {})
-        }
+        # 7. 格式化为简洁中文描述（与五行占比一致，减少 token、去冗余）
+        formatted_data = _format_xishen_jishen_for_llm(data)
+        input_data = {"formatted_text": formatted_data, "char_count": len(formatted_data)}
         
-        # 8. 格式化数据（JSON字符串，传递给 Coze Bot）
-        formatted_data = json.dumps(input_data, ensure_ascii=False, indent=2)
+        # 8. LLM 分析结果缓存（相同八字描述 → 相同分析结果）
+        import hashlib
+        llm_cache_key = f"llm_xishen:{hashlib.md5(formatted_data.encode()).hexdigest()}"
+        try:
+            cached_llm_result = get_cached_result(llm_cache_key, "llm-xishen")
+            if cached_llm_result:
+                logger.info(f"[喜神忌神] LLM 缓存命中: {llm_cache_key[:30]}...")
+                cached_content = cached_llm_result.get('content', '')
+                if cached_content:
+                    chunk_size = 50
+                    for i in range(0, len(cached_content), chunk_size):
+                        chunk = cached_content[i:i+chunk_size]
+                        yield f"data: {json.dumps({'type': 'progress', 'content': chunk}, ensure_ascii=False)}\n\n"
+                        await asyncio.sleep(0.01)
+                    yield f"data: {json.dumps({'type': 'complete', 'content': ''}, ensure_ascii=False)}\n\n"
+                    return
+        except Exception as e:
+            logger.warning(f"[喜神忌神] LLM 缓存读取失败: {e}")
         
         # 9. 创建 LLM 流式服务（根据数据库配置选择平台：coze 或 bailian）
         # 配置方式：在 service_configs 表中设置 XISHEN_JISHEN_LLM_PLATFORM = "bailian" 使用千问模型
@@ -528,131 +620,46 @@ async def xishen_jishen_stream_generator(
             yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 11. 流式生成大模型分析（带心跳包保持连接）
-        # 使用异步队列来实现心跳与数据的交错发送
-        import asyncio
-        from asyncio import Queue
-        
-        HEARTBEAT_INTERVAL = 10  # 心跳间隔（秒）
-        # 填充数据：16KB 空格，强制刷新网络缓冲区（解决跨域网络缓冲问题）
-        PADDING = ' ' * 16384
-        data_queue = Queue()
-        stop_heartbeat = asyncio.Event()
-        
-        # 设置 LLM 开始时间
+        # 11. 流式生成大模型分析（与五行占比一致，无心跳）
         llm_start_time = time.time()
+        stream_kwargs = {}
+        if hasattr(llm_service, 'bot_id') and llm_service.bot_id:
+            actual_bot_id = bot_id or get_config_from_db_only("XISHEN_JISHEN_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
+            if actual_bot_id:
+                stream_kwargs['bot_id'] = actual_bot_id
         
-        # 心跳任务：定期发送心跳包
-        async def heartbeat_task():
-            heartbeat_count = 0
-            while not stop_heartbeat.is_set():
-                try:
-                    await asyncio.wait_for(stop_heartbeat.wait(), timeout=HEARTBEAT_INTERVAL)
-                    break  # 如果收到停止信号，退出
-                except asyncio.TimeoutError:
-                    # 超时，发送心跳（带填充数据）
-                    heartbeat_count += 1
-                    heartbeat_msg = {
-                        'type': 'heartbeat',
-                        'content': f'正在生成AI分析... ({heartbeat_count * HEARTBEAT_INTERVAL}秒)',
-                        '_padding': PADDING  # 填充数据强制刷新缓冲区
-                    }
-                    await data_queue.put(heartbeat_msg)
-                    logger.info(f"[喜神忌神流式] 发送心跳包 #{heartbeat_count} (带16KB填充)")
-        
-        # 数据任务：从 LLM API 读取数据（传递 formatted_data）
-        async def data_task():
-            nonlocal llm_first_token_time
-            try:
-                # 百炼平台不需要 bot_id，Coze 平台需要
-                stream_kwargs = {}
-                if hasattr(llm_service, 'bot_id') and llm_service.bot_id:
-                    actual_bot_id = bot_id or get_config_from_db_only("XISHEN_JISHEN_BOT_ID") or get_config_from_db_only("COZE_BOT_ID")
-                    if actual_bot_id:
-                        stream_kwargs['bot_id'] = actual_bot_id
-                
-                async for result in llm_service.stream_analysis(formatted_data, **stream_kwargs):
-                    # 记录第一个token时间
-                    nonlocal llm_first_token_time
-                    if llm_first_token_time is None and result.get('type') == 'progress':
-                        llm_first_token_time = time.time()
-                    
-                    # 收集输出内容
-                    if result.get('type') == 'progress':
-                        content = result.get('content', '')
-                        if content:
-                            llm_output_chunks.append(content)
-                    
-                    await data_queue.put(result)
-                # 发送完成标记
-                await data_queue.put({'type': '_done'})
-            except Exception as e:
-                logger.error(f"[喜神忌神流式] Coze API 错误: {e}")
-                await data_queue.put({'type': 'error', 'content': str(e)})
-                await data_queue.put({'type': '_done'})
-            finally:
-                stop_heartbeat.set()
-        
-        # 发送初始心跳（带填充数据）
-        heartbeat_msg = {
-            'type': 'heartbeat',
-            'content': '正在生成AI分析，请稍候...',
-            '_padding': PADDING  # 填充数据强制刷新缓冲区
-        }
-        yield f"data: {json.dumps(heartbeat_msg, ensure_ascii=False)}\n\n"
-        logger.info("[喜神忌神流式] 发送初始心跳 (带16KB填充)")
-        
-        # 启动心跳和数据任务
-        heartbeat_coro = asyncio.create_task(heartbeat_task())
-        data_coro = asyncio.create_task(data_task())
-        
-        try:
-            # 从队列中读取数据并发送
-            while True:
-                result = await data_queue.get()
-                
-                if result.get('type') == '_done':
-                    # 发送完成消息
-                    msg = {
-                        'type': 'complete',
-                        'content': '分析完成'
-                    }
-                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                    break
-                elif result.get('type') == 'heartbeat':
-                    yield f"data: {json.dumps(result, ensure_ascii=False)}\n\n"
-                elif result.get('type') == 'progress':
-                    msg = {
-                        'type': 'progress',
-                        'content': result.get('content', '')
-                    }
-                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                    await asyncio.sleep(0)
-                elif result.get('type') == 'complete':
-                    complete_content = result.get('content', '')
-                    if complete_content:
-                        llm_output_chunks.append(complete_content)
-                    msg = {
-                        'type': 'complete',
-                        'content': complete_content
-                    }
-                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                    break
-                elif result.get('type') == 'error':
-                    msg = {
-                        'type': 'error',
-                        'content': result.get('content', '生成失败')
-                    }
-                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                    break
-        finally:
-            # 清理任务
-            stop_heartbeat.set()
-            heartbeat_coro.cancel()
-            try:
-                await heartbeat_coro
-            except asyncio.CancelledError:
-                pass
+        async for result in llm_service.stream_analysis(formatted_data, **stream_kwargs):
+            if llm_first_token_time is None and result.get('type') == 'progress':
+                llm_first_token_time = time.time()
+            if result.get('type') == 'progress':
+                content = result.get('content', '')
+                if content:
+                    llm_output_chunks.append(content)
+                msg = {'type': 'progress', 'content': content}
+                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0)
+            elif result.get('type') == 'complete':
+                complete_content = result.get('content', '')
+                if complete_content:
+                    llm_output_chunks.append(complete_content)
+                llm_output = ''.join(llm_output_chunks)
+                if llm_output:
+                    try:
+                        set_cached_result(llm_cache_key, {'content': llm_output}, L2_TTL * 24)
+                        logger.info(f"[喜神忌神] LLM 结果已缓存: {llm_cache_key[:30]}..., 长度={len(llm_output)}")
+                    except Exception as e:
+                        logger.warning(f"[喜神忌神] LLM 缓存写入失败: {e}")
+                msg = {'type': 'complete', 'content': complete_content}
+                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                break
+            elif result.get('type') == 'error':
+                msg = {'type': 'error', 'content': result.get('content', '生成失败')}
+                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                break
+        else:
+            # 流结束但未收到 complete，补发完成消息
+            msg = {'type': 'complete', 'content': ''}
+            yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
         
         # 12. 记录交互数据到数据库（异步，不阻塞）
         api_end_time = time.time()
