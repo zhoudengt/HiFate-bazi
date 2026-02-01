@@ -183,11 +183,11 @@ def _assemble_pan_display_response(orchestrator_data: Dict[str, Any]) -> Dict[st
         
     Returns:
         dict: 与原接口完全一致的响应结构
-        
-    Note:
-        性能优化：personality/rizhu/rules 模块已禁用，这些字段返回空值
     """
     bazi_data = orchestrator_data.get('bazi', {})
+    rizhu_data = orchestrator_data.get('rizhu', {})
+    rules_data = orchestrator_data.get('rules', [])
+    personality_data = orchestrator_data.get('personality', {})
     
     if not bazi_data:
         return {"success": False, "error": "八字计算失败"}
@@ -196,8 +196,30 @@ def _assemble_pan_display_response(orchestrator_data: Dict[str, Any]) -> Dict[st
     formatted_pillars = BaziDisplayService._format_pillars_for_display(bazi_data)
     wuxing_data = BaziDisplayService._format_wuxing_for_display(bazi_data, formatted_pillars)
     
-    # ✅ 性能优化：rizhu_analysis 和 marriage_rules 已禁用，返回空值
-    # 保持字段存在以兼容前端，但不获取数据以提高效率
+    # ✅ 处理日柱解析：优先使用 personality 数据，其次使用 rizhu 数据
+    rizhu_analysis = None
+    if personality_data and personality_data.get('has_data'):
+        rizhu_analysis = {
+            "rizhu": personality_data.get('rizhu', ''),
+            "gender": personality_data.get('gender', ''),
+            "descriptions": personality_data.get('descriptions', []),
+            "summary": personality_data.get('summary', '')
+        }
+    elif rizhu_data:
+        # rizhu 模块返回的是 RizhuLiujiaziService 的数据，格式不同
+        rizhu_analysis = rizhu_data
+    
+    # ✅ 筛选婚姻规则（与原逻辑一致）
+    marriage_rules_all = [
+        rule for rule in rules_data 
+        if 'marriage' in str(rule.get('rule_type', '')).lower() or '婚' in str(rule.get('rule_type', ''))
+    ]
+    # 按优先级排序
+    marriage_rules = sorted(
+        marriage_rules_all, 
+        key=lambda x: x.get('priority', 0), 
+        reverse=True
+    )
     
     return {
         "success": True,
@@ -205,8 +227,8 @@ def _assemble_pan_display_response(orchestrator_data: Dict[str, Any]) -> Dict[st
             "basic": bazi_data.get('basic_info', {}),
             "pillars": formatted_pillars,
             "wuxing": wuxing_data,
-            "rizhu_analysis": None,     # 已禁用，返回空
-            "marriage_rules": []        # 已禁用，返回空数组
+            "rizhu_analysis": rizhu_analysis,
+            "marriage_rules": marriage_rules
         }
     }
 
