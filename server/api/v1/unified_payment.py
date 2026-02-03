@@ -9,6 +9,7 @@ import sys
 import os
 import time
 import logging
+import importlib
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, Dict, Literal
@@ -157,8 +158,6 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
             # 如果客户端未注册，尝试重新加载支付服务模块
             if "不支持的支付平台" in str(e):
                 try:
-                    import importlib
-                    import sys
                     if 'services.payment_service' in sys.modules:
                         importlib.reload(sys.modules['services.payment_service'])
                     # 再次尝试获取客户端
@@ -178,7 +177,6 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
             raise HTTPException(status_code=400, detail=f"支付渠道 {provider_str} 未启用，请检查配置")
 
         # 生成订单号
-        import time
         order_id = f"{provider_str.upper()}_{int(time.time() * 1000)}"
 
         # 区域检查和白名单检查（临时跳过，等正式支付时再启用）
@@ -266,7 +264,6 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
 
         # 多 worker 下热更新可能只作用于部分进程，传了 success_url/cancel_url 时强制重载支付服务以使用最新代码
         if request.success_url or request.cancel_url:
-            import importlib
             if "services.payment_service" in sys.modules:
                 try:
                     importlib.reload(sys.modules["services.payment_service"])
@@ -380,8 +377,6 @@ def verify_unified_payment(request: VerifyPaymentRequest):
             # 如果客户端未注册，尝试重新加载支付服务模块
             if "不支持的支付平台" in str(e):
                 try:
-                    import importlib
-                    import sys
                     if 'services.payment_service' in sys.modules:
                         importlib.reload(sys.modules['services.payment_service'])
                     # 再次尝试获取客户端
