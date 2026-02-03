@@ -72,6 +72,8 @@ class CreatePaymentRequest(BaseModel):
     payment_type: Optional[str] = Field("native", description="微信支付类型：native/jsapi")
     payment_method: Optional[str] = Field(None, description="具体支付方式（如linepay用于Payssion，card用于PayerMax）")
     metadata: Optional[Dict[str, str]] = Field(default=None, description="元数据")
+    success_url: Optional[str] = Field(None, description="支付成功跳转URL；Stripe须含占位符 {CHECKOUT_SESSION_ID}")
+    cancel_url: Optional[str] = Field(None, description="支付取消跳转URL")
 
 
 class CreatePaymentResponse(BaseModel):
@@ -232,6 +234,11 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
             "customer_email": request.customer_email,
             "metadata": request.metadata,
         }
+        if request.success_url:
+            payment_params["success_url"] = request.success_url
+            payment_params["return_url"] = request.success_url
+        if request.cancel_url:
+            payment_params["cancel_url"] = request.cancel_url
 
         # 根据支付平台添加特定参数
         if provider_str == "stripe":
