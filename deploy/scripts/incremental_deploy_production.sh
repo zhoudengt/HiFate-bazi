@@ -542,6 +542,20 @@ if [ "$NODE1_COMMIT" != "$LOCAL_COMMIT" ]; then
     echo -e "${GREEN}✅ Node1 代码已同步到最新版本${NC}"
 fi
 
+# 🔥 关键：将宿主机代码同步到 Docker 容器内（热更新才能检测到变化）
+echo "🔄 同步代码到 Docker 容器..."
+CONTAINERS="hifate-web hifate-bazi-core hifate-bazi-fortune hifate-bazi-analyzer hifate-rule-service hifate-fortune-analyzer hifate-payment-service hifate-fortune-rule hifate-intent-service hifate-prompt-optimizer hifate-desk-fengshui"
+
+for container in $CONTAINERS; do
+    if ssh_exec $NODE1_PUBLIC_IP "docker ps -q -f name=$container" 2>/dev/null | grep -q .; then
+        ssh_exec $NODE1_PUBLIC_IP "docker cp $PROJECT_DIR/server $container:/app/ && \
+            docker cp $PROJECT_DIR/src $container:/app/ && \
+            docker cp $PROJECT_DIR/services $container:/app/ && \
+            (docker cp $PROJECT_DIR/core $container:/app/ 2>/dev/null || true)"
+        echo "  ✅ $container 代码已同步"
+    fi
+done
+
 # 🚫 注意：Nginx 配置由前端团队管理，后端部署脚本不再修改 Nginx 配置
 
 echo -e "${GREEN}✅ Node1 代码拉取完成${NC}"

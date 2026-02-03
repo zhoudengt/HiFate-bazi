@@ -270,6 +270,9 @@ class MicroserviceReloader:
     def _reload_servicer(self) -> bool:
         """重新加载 Servicer 类"""
         try:
+            # 先获取旧的 servicer（修复：必须在 reload 前获取，供 _reset_dependency_states 使用）
+            old_servicer = self._current_servicer
+            
             # 备份当前版本（包括代码文件）
             backup_info = self._backup_current_version()
             
