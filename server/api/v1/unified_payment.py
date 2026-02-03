@@ -262,17 +262,6 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
                 "openid": request.openid,
             })
 
-        # 多 worker 下热更新可能只作用于部分进程，传了 success_url/cancel_url 时强制重载支付服务以使用最新代码
-        if request.success_url or request.cancel_url:
-            if "services.payment_service" in sys.modules:
-                try:
-                    importlib.reload(sys.modules["services.payment_service"])
-                    payment_client = get_payment_client(provider_str)
-                except Exception as e:
-                    logger.warning("支付服务重载失败，使用当前客户端: %s", e)
-                    if "不支持的支付平台" in str(e):
-                        registered = payment_client_factory.list_clients()
-                        logger.warning("当前已注册支付平台: %s", registered)
         # 调用支付客户端创建支付
         result = payment_client.create_payment(**payment_params)
 
