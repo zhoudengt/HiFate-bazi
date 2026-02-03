@@ -164,9 +164,13 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
                     # 再次尝试获取客户端
                     payment_client = get_payment_client(provider_str)
                 except Exception as reload_error:
-                    logger.warning(f"重新加载支付服务模块失败: {reload_error}")
+                    logger.warning("重新加载支付服务模块失败: %s", reload_error)
+                    registered = payment_client_factory.list_clients()
+                    logger.warning("当前已注册支付平台: %s", registered)
                     raise HTTPException(status_code=400, detail=str(e))
             else:
+                registered = payment_client_factory.list_clients()
+                logger.warning("不支持的支付平台 %s，当前已注册: %s", provider_str, registered)
                 raise HTTPException(status_code=400, detail=str(e))
 
         # 检查支付客户端是否启用
@@ -269,6 +273,9 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
                     payment_client = get_payment_client(provider_str)
                 except Exception as e:
                     logger.warning("支付服务重载失败，使用当前客户端: %s", e)
+                    if "不支持的支付平台" in str(e):
+                        registered = payment_client_factory.list_clients()
+                        logger.warning("当前已注册支付平台: %s", registered)
         # 调用支付客户端创建支付
         result = payment_client.create_payment(**payment_params)
 
@@ -380,9 +387,13 @@ def verify_unified_payment(request: VerifyPaymentRequest):
                     # 再次尝试获取客户端
                     payment_client = get_payment_client(provider_str)
                 except Exception as reload_error:
-                    logger.warning(f"重新加载支付服务模块失败: {reload_error}")
+                    logger.warning("重新加载支付服务模块失败: %s", reload_error)
+                    registered = payment_client_factory.list_clients()
+                    logger.warning("当前已注册支付平台: %s", registered)
                     raise HTTPException(status_code=400, detail=str(e))
             else:
+                registered = payment_client_factory.list_clients()
+                logger.warning("不支持的支付平台 %s，当前已注册: %s", provider_str, registered)
                 raise HTTPException(status_code=400, detail=str(e))
 
         # 检查支付客户端是否启用

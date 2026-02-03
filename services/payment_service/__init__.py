@@ -6,6 +6,7 @@
 """
 
 import logging
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +17,8 @@ from .client_factory import payment_client_factory
 try:
     from .stripe_client_v2 import StripeClient  # 新版插件化 Stripe 客户端
     logger.info("✅ Stripe 客户端已注册")
-except ImportError as e:
-    logger.warning(f"⚠️ Stripe 客户端导入失败: {e}")
+except Exception as e:
+    logger.warning("⚠️ Stripe 客户端导入失败: %s\n%s", e, traceback.format_exc())
 
 try:
     # 导入并注册旧版 PayPal 客户端（需要适配）
@@ -53,38 +54,38 @@ try:
             return {"success": False, "error": "需要 payment_id"}
 
     logger.info("✅ PayPal 客户端已注册")
-except ImportError as e:
-    logger.warning(f"⚠️ PayPal 客户端导入失败: {e}")
+except Exception as e:
+    logger.warning("⚠️ PayPal 客户端导入失败: %s\n%s", e, traceback.format_exc())
 
 try:
     from .payssion_client import PayssionClient
     logger.info("✅ Payssion 客户端已注册")
-except ImportError as e:
-    logger.warning(f"⚠️ Payssion 客户端导入失败: {e}")
+except Exception as e:
+    logger.warning("⚠️ Payssion 客户端导入失败: %s\n%s", e, traceback.format_exc())
 
 try:
     from .payermax_client import PayerMaxClient
     logger.info("✅ PayerMax 客户端已注册")
-except ImportError as e:
-    logger.warning(f"⚠️ PayerMax 客户端导入失败: {e}")
+except Exception as e:
+    logger.warning("⚠️ PayerMax 客户端导入失败: %s\n%s", e, traceback.format_exc())
 
 try:
     from .alipay_client import AlipayClient
     logger.info("✅ Alipay 客户端已注册")
-except ImportError as e:
-    logger.warning(f"⚠️ Alipay 客户端导入失败: {e}")
+except Exception as e:
+    logger.warning("⚠️ Alipay 客户端导入失败: %s\n%s", e, traceback.format_exc())
 
 try:
     from .wechat_client import WeChatPayClient
     logger.info("✅ WeChat 客户端已注册")
-except ImportError as e:
-    logger.warning(f"⚠️ WeChat 客户端导入失败: {e}")
+except Exception as e:
+    logger.warning("⚠️ WeChat 客户端导入失败: %s\n%s", e, traceback.format_exc())
 
 try:
     from .linepay_client import LinePayClient
     logger.info("✅ LinePay 客户端已注册")
-except ImportError as e:
-    logger.warning(f"⚠️ LinePay 客户端导入失败: {e}")
+except Exception as e:
+    logger.warning("⚠️ LinePay 客户端导入失败: %s\n%s", e, traceback.format_exc())
 
 # 输出注册统计
 registered_providers = list(payment_client_factory.get_available_providers().keys())
