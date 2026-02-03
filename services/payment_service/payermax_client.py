@@ -254,6 +254,8 @@ class PayerMaxClient(BasePaymentClient):
         order_id = kwargs.get('order_id', f"PAYERMAX_{int(datetime.now().timestamp() * 1000)}")
         payment_method = kwargs.get('payment_method')
         customer_email = kwargs.get('customer_email', '')
+        success_url = kwargs.get('success_url')
+        cancel_url = kwargs.get('cancel_url')
 
         # 使用接口调用日志记录器
         api_logger = self._get_payment_api_logger()
@@ -265,11 +267,13 @@ class PayerMaxClient(BasePaymentClient):
                 log_billing=True
             )
             return decorator(self._create_payment_impl)(
-                amount, currency, product_name, order_id, payment_method, customer_email
+                amount, currency, product_name, order_id, payment_method, customer_email,
+                success_url, cancel_url
             )
         else:
             return self._create_payment_impl(
-                amount, currency, product_name, order_id, payment_method, customer_email
+                amount, currency, product_name, order_id, payment_method, customer_email,
+                success_url, cancel_url
             )
 
     def _create_payment_impl(
@@ -279,7 +283,9 @@ class PayerMaxClient(BasePaymentClient):
         product_name: str,
         order_id: str,
         payment_method: Optional[str],
-        customer_email: str
+        customer_email: str,
+        success_url: Optional[str] = None,
+        cancel_url: Optional[str] = None
     ) -> Dict[str, Any]:
         """创建支付订单的实现"""
         if not self.is_enabled:
@@ -304,7 +310,7 @@ class PayerMaxClient(BasePaymentClient):
                     "country": "US",  # 默认美国，可根据需求扩展
                     "userId": self._generate_user_id(customer_email),
                     "language": "en",
-                    "frontCallbackUrl": self._get_success_url(),
+                    "frontCallbackUrl": success_url or self._get_success_url(),
                     "notifyUrl": self._get_notify_url(),
                     "integrate": "Hosted_Checkout"
                 }

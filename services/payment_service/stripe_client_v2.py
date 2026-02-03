@@ -121,6 +121,8 @@ class StripeClient(BasePaymentClient):
         order_id = kwargs.get('order_id')
         enable_adaptive_pricing = kwargs.get('enable_adaptive_pricing', True)
         enable_link = kwargs.get('enable_link', True)
+        success_url = kwargs.get('success_url')
+        cancel_url = kwargs.get('cancel_url')
 
         return self.create_checkout_session(
             amount=amount,
@@ -130,7 +132,9 @@ class StripeClient(BasePaymentClient):
             metadata=metadata,
             enable_adaptive_pricing=enable_adaptive_pricing,
             enable_link=enable_link,
-            order_id=order_id
+            order_id=order_id,
+            success_url=success_url,
+            cancel_url=cancel_url
         )
 
     def verify_payment(self, **kwargs) -> Dict[str, Any]:
