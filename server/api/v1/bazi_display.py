@@ -387,7 +387,7 @@ async def get_fortune_display(request_wrapper: FortuneDisplayRequestWithMode = D
         return cached
 
     try:
-        # ✅ 通过编排层统一获取数据（数据总线设计）
+        # ✅ 通过编排层统一获取数据（数据总线设计）；透传大运范围以支持切换大运
         modules = get_modules_config('fortune_display')
         orchestrator_data = await BaziDataOrchestrator.fetch_data(
             final_solar_date,
@@ -399,7 +399,11 @@ async def get_fortune_display(request_wrapper: FortuneDisplayRequestWithMode = D
             calendar_type=request.calendar_type or "solar",
             location=request.location,
             latitude=request.latitude,
-            longitude=request.longitude
+            longitude=request.longitude,
+            dayun_index=request.dayun_index,
+            dayun_year_start=request.dayun_year_start,
+            dayun_year_end=request.dayun_year_end,
+            target_year=request.target_year
         )
         
         # ✅ 从编排层数据组装响应（保持响应结构完全不变）

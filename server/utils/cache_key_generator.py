@@ -208,10 +208,15 @@ class CacheKeyGenerator:
         calendar_type: Optional[str] = None,
         location: Optional[str] = None,
         latitude: Optional[float] = None,
-        longitude: Optional[float] = None
+        longitude: Optional[float] = None,
+        current_time: Optional[Any] = None,
+        dayun_index: Optional[int] = None,
+        dayun_year_start: Optional[int] = None,
+        dayun_year_end: Optional[int] = None,
+        target_year: Optional[int] = None
     ) -> str:
         """
-        生成 BaziDataOrchestrator 缓存键
+        生成 BaziDataOrchestrator 缓存键（含 current_time 与 dayun 范围，避免切大运/换时间命中错误缓存）
         
         Args:
             solar_date: 阳历日期或农历日期
@@ -222,6 +227,11 @@ class CacheKeyGenerator:
             location: 出生地点
             latitude: 纬度
             longitude: 经度
+            current_time: 当前时间（datetime 或 None）
+            dayun_index: 大运索引
+            dayun_year_start: 大运起始年份
+            dayun_year_end: 大运结束年份
+            target_year: 目标年份
             
         Returns:
             str: 缓存键
@@ -231,6 +241,21 @@ class CacheKeyGenerator:
         modules_hash = hashlib.md5(modules_str.encode('utf-8')).hexdigest()[:8]
         
         suffix = f"orchestrator:modules:{modules_hash}"
+        # 大运/时间范围参与 key，避免不同 current_time 或 dayun 范围共用缓存
+        scope_parts = []
+        if current_time is not None:
+            t_str = (current_time.isoformat() if hasattr(current_time, 'isoformat') and callable(getattr(current_time, 'isoformat')) else str(current_time))
+            scope_parts.append(f"t_{t_str}")
+        if dayun_index is not None:
+            scope_parts.append(f"di_{dayun_index}")
+        if dayun_year_start is not None:
+            scope_parts.append(f"ys_{dayun_year_start}")
+        if dayun_year_end is not None:
+            scope_parts.append(f"ye_{dayun_year_end}")
+        if target_year is not None:
+            scope_parts.append(f"ty_{target_year}")
+        if scope_parts:
+            suffix = suffix + ":" + ":".join(scope_parts)
         
         return CacheKeyGenerator.generate_bazi_data_key(
             solar_date, solar_time, gender,

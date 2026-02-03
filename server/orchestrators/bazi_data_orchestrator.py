@@ -151,10 +151,14 @@ class BaziDataOrchestrator:
         location: Optional[str] = None,
         latitude: Optional[float] = None,
         longitude: Optional[float] = None,
-        preprocessed: bool = False
+        preprocessed: bool = False,
+        dayun_index: Optional[int] = None,
+        dayun_year_start: Optional[int] = None,
+        dayun_year_end: Optional[int] = None,
+        target_year: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        根据模块配置获取数据（支持7个标准参数）
+        根据模块配置获取数据（支持7个标准参数 + 大运范围）
         
         Args:
             solar_date: 阳历日期或农历日期
@@ -169,6 +173,10 @@ class BaziDataOrchestrator:
             latitude: 纬度（可选，用于时区转换）
             longitude: 经度（可选，用于时区转换和真太阳时计算）
             preprocessed: 如果为True，表示solar_date和solar_time已经过process_input处理，跳过重复处理
+            dayun_index: 大运索引（可选），指定要计算的大运，仅该大运有流年序列
+            dayun_year_start: 大运起始年份（可选），与 dayun_year_end 一起用于解析 dayun_index
+            dayun_year_end: 大运结束年份（可选）
+            target_year: 目标年份（可选），用于流月
         
         Returns:
             dict: 包含所有请求模块的数据
@@ -176,7 +184,7 @@ class BaziDataOrchestrator:
         if current_time is None:
             current_time = datetime.now()
         
-        # ✅ 优化：使用缓存（如果启用）
+        # ✅ 优化：使用缓存（如果启用），key 含 current_time 与 dayun 范围
         if use_cache:
             try:
                 from server.utils.cache_key_generator import CacheKeyGenerator
@@ -184,7 +192,12 @@ class BaziDataOrchestrator:
                 
                 cache_key = CacheKeyGenerator.generate_orchestrator_key(
                     solar_date, solar_time, gender, modules,
-                    calendar_type, location, latitude, longitude
+                    calendar_type, location, latitude, longitude,
+                    current_time=current_time,
+                    dayun_index=dayun_index,
+                    dayun_year_start=dayun_year_start,
+                    dayun_year_end=dayun_year_end,
+                    target_year=target_year
                 )
                 
                 cache = get_multi_cache()
@@ -255,12 +268,19 @@ class BaziDataOrchestrator:
                        modules.get('fortune_display') or modules.get('fortune_context'))
         logger.info(f"[DEBUG] 检查是否需要 detail_task: need_detail={need_detail}, special_liunians={modules.get('special_liunians')}")
         if need_detail:
+            # ✅ 与上一版一致：quick_mode=True；支持 dayun_index 指定大运（切换大运时一次调用）
+            # 传参顺序：solar_date, solar_time, gender, current_time, dayun_index, target_year, quick_mode, async_warmup
+            resolved_dayun_index = dayun_index  # 若仅传 year_start/end，在拿到 detail 后再解析并可能二次调用
             detail_task = loop.run_in_executor(
                 executor, BaziDetailService.calculate_detail_full,
-                final_solar_date, final_solar_time, gender, current_time
+                final_solar_date, final_solar_time, gender, current_time,
+                resolved_dayun_index,
+                target_year,
+                True,   # quick_mode=True
+                False   # async_warmup
             )
             tasks.append(('detail', detail_task))
-            logger.info(f"[DEBUG] 已添加 detail_task 到 tasks")
+            logger.info(f"[DEBUG] 已添加 detail_task 到 tasks (quick_mode=True, dayun_index={resolved_dayun_index})")
         
         # 3. 规则匹配模块（需要基础八字数据，在获取基础数据后处理）
         # 注意：规则匹配需要在获取八字数据后才能执行，所以不在并行任务中
@@ -442,6 +462,34 @@ class BaziDataOrchestrator:
                 logger.info(f"detail_data 获取成功，dayun_sequence 数量: {dayun_count}")
             else:
                 logger.warning("detail_data 获取失败，返回 None")
+        
+        # ✅ 若仅传 dayun_year_start/end 未传 dayun_index，从首轮 detail 解析 step，若非当前大运则二次调用
+        if detail_data and dayun_index is None and dayun_year_start is not None and dayun_year_end is not None:
+            ds = detail_data.get('dayun_sequence') or (detail_data.get('details') or {}).get('dayun_sequence') or []
+            birth_year = int(final_solar_date.split('-')[0])
+            current_year = current_time.year
+            current_step = None
+            target_step = None
+            for d in ds:
+                ys, ye = d.get('year_start'), d.get('year_end')
+                if ys is not None and ye is not None:
+                    if ys <= current_year <= ye:
+                        current_step = d.get('step')
+                    if dayun_year_start == ys and dayun_year_end == ye:
+                        target_step = d.get('step')
+                        break
+                    if ys <= dayun_year_start <= ye:
+                        target_step = d.get('step')
+                        break
+            if target_step is not None and target_step != current_step:
+                detail_task_2 = loop.run_in_executor(
+                    executor, BaziDetailService.calculate_detail_full,
+                    final_solar_date, final_solar_time, gender, current_time,
+                    target_step, target_year, True, False
+                )
+                detail_data = await detail_task_2
+                task_data['detail'] = detail_data
+                logger.info(f"[DEBUG] 按年份范围二次获取大运流年: dayun_index={target_step}")
         
         if detail_data:
             # ✅ 修复：detail_data 同时包含顶层和 details 中的 dayun_sequence
@@ -821,7 +869,7 @@ class BaziDataOrchestrator:
         if modules.get('detail') and detail_data:
             result['detail'] = detail_data
         
-        # ✅ 优化：写入缓存（如果启用）
+        # ✅ 优化：写入缓存（如果启用），key 含 current_time 与 dayun 范围
         if use_cache:
             try:
                 from server.utils.cache_key_generator import CacheKeyGenerator
@@ -829,7 +877,12 @@ class BaziDataOrchestrator:
                 
                 cache_key = CacheKeyGenerator.generate_orchestrator_key(
                     solar_date, solar_time, gender, modules,
-                    calendar_type, location, latitude, longitude
+                    calendar_type, location, latitude, longitude,
+                    current_time=current_time,
+                    dayun_index=dayun_index,
+                    dayun_year_start=dayun_year_start,
+                    dayun_year_end=dayun_year_end,
+                    target_year=target_year
                 )
                 
                 cache = get_multi_cache()
