@@ -164,3 +164,89 @@ def stripe_webhook_test():
         "endpoint": "/api/v1/payment/webhook/stripe",
         "method": "POST"
     }
+
+
+# ========== PayerMax Webhook ==========
+
+@router.post("/payment/webhook/payermax", summary="PayerMax Webhook 处理")
+async def payermax_webhook(request: Request):
+    """
+    处理 PayerMax 异步通知
+    
+    PayerMax 会在支付完成后发送异步通知到此端点
+    """
+    import json
+    
+    # 获取请求体
+    try:
+        payload = await request.body()
+        data = json.loads(payload.decode('utf-8'))
+    except Exception as e:
+        logger.error(f"PayerMax Webhook 解析请求体失败: {e}")
+        return {"code": "FAIL", "msg": f"解析请求失败: {e}"}
+    
+    logger.info(f"收到PayerMax Webhook通知: {json.dumps(data, ensure_ascii=False)[:500]}")
+    
+    # 提取关键字段
+    out_trade_no = data.get('outTradeNo')  # 商户订单号
+    trade_token = data.get('tradeToken')    # PayerMax 交易号
+    trade_status = data.get('tradeStatus')  # 交易状态: SUCCESS / FAILED
+    total_amount = data.get('totalAmount')  # 金额
+    currency = data.get('currency')         # 货币
+    
+    logger.info(f"PayerMax回调: outTradeNo={out_trade_no}, tradeToken={trade_token}, status={trade_status}")
+    
+    if not out_trade_no:
+        logger.warning("PayerMax Webhook 缺少 outTradeNo")
+        return {"code": "FAIL", "msg": "缺少 outTradeNo"}
+    
+    # 更新订单状态（如果有 PaymentTransactionDAO）
+    if PaymentTransactionDAO and trade_status:
+        try:
+            from datetime import datetime
+            
+            # 映射状态
+            status_map = {
+                'SUCCESS': 'success',
+                'FAILED': 'failed',
+                'PENDING': 'pending'
+            }
+            new_status = status_map.get(trade_status, 'pending')
+            
+            # 查找交易记录
+            transaction = PaymentTransactionDAO.get_transaction_by_order_id(order_id=out_trade_no)
+            
+            if transaction:
+                # 检查幂等性
+                if transaction.get('status') == 'success':
+                    logger.info(f"PayerMax订单已处理过，跳过: order_id={out_trade_no}")
+                    return {"code": "SUCCESS", "msg": "订单已处理"}
+                
+                # 更新状态
+                paid_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S') if new_status == 'success' else None
+                PaymentTransactionDAO.update_status_by_order_id(
+                    order_id=out_trade_no,
+                    status=new_status,
+                    paid_at=paid_at
+                )
+                logger.info(f"PayerMax订单状态已更新: order_id={out_trade_no}, status={new_status}")
+            else:
+                logger.warning(f"PayerMax Webhook 未找到订单: order_id={out_trade_no}")
+        except Exception as e:
+            logger.error(f"PayerMax Webhook 更新订单失败: {e}")
+    
+    # 返回成功响应（PayerMax 要求返回 code=SUCCESS）
+    return {"code": "SUCCESS", "msg": "OK"}
+
+
+@router.get("/payment/webhook/payermax", summary="PayerMax Webhook 测试端点")
+def payermax_webhook_test():
+    """
+    PayerMax Webhook 测试端点（用于验证配置）
+    """
+    return {
+        "status": "ok",
+        "message": "PayerMax Webhook端点已配置",
+        "endpoint": "/api/v1/payment/webhook/payermax",
+        "method": "POST"
+    }
