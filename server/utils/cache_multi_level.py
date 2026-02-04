@@ -347,7 +347,7 @@ def get_multi_cache() -> MultiLevelCache:
     if _multi_cache is None:
         # 尝试导入 Redis 客户端
         try:
-            from server.config.redis_config import get_redis_client
+            from shared.config.redis import get_redis_client
             redis_client = get_redis_client()
         except Exception:
             redis_client = None

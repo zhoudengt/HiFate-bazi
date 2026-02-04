@@ -7,6 +7,15 @@
 - 解包通用 JSON 载荷
 - 调用现有 FastAPI/Pydantic 处理逻辑
 - 返回与原 REST 接口一致的 JSON 数据
+
+⚠️ 模块化重构说明：
+此文件正在进行渐进式模块化重构，部分功能已迁移到 server/api/grpc_gateway/ 目录：
+- server/api/grpc_gateway/protocol/ - 协议编解码（encoder.py, decoder.py, response.py）
+- server/api/grpc_gateway/registry.py - 端点注册机制
+- server/api/grpc_gateway/handlers/ - 各类处理函数（待迁移）
+
+新代码请优先使用模块化版本：from server.api.grpc_gateway import ...
+此文件保留用于向后兼容，后续将逐步迁移。
 """
 
 from __future__ import annotations
@@ -1313,15 +1322,21 @@ async def _collect_sse_stream(generator) -> Dict[str, Any]:
         }
 
 
-def _grpc_cors_headers() -> Dict[str, str]:
-    return {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": (
-            "content-type,x-grpc-web,x-user-agent,grpc-timeout,authorization"
-        ),
-        "Access-Control-Allow-Methods": "POST,OPTIONS",
-        "Access-Control-Expose-Headers": "grpc-status,grpc-message",
-    }
+def _grpc_cors_headers(request_origin: str = None) -> Dict[str, str]:
+    """获取 gRPC-Web CORS 响应头（使用统一配置）"""
+    try:
+        from server.utils.cors_config import get_grpc_cors_headers
+        return get_grpc_cors_headers(request_origin)
+    except Exception:
+        # 回退到默认配置
+        return {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": (
+                "content-type,x-grpc-web,x-user-agent,grpc-timeout,authorization"
+            ),
+            "Access-Control-Allow-Methods": "POST,OPTIONS",
+            "Access-Control-Expose-Headers": "grpc-status,grpc-message",
+        }
 
 
 @router.options("/grpc-web/{path:path}")

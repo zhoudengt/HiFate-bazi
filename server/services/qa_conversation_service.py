@@ -22,8 +22,9 @@ sys.path.insert(0, project_root)
 from server.services.llm_service_factory import LLMServiceFactory
 from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
 from server.services.qa_question_generator import QAQuestionGenerator
-from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+from shared.config.database import get_mysql_connection, return_mysql_connection
 from server.utils.data_validator import validate_bazi_data
+from server.utils.async_executor import run_in_executor
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.utils.performance_monitor import PerformanceMonitor
 
@@ -117,54 +118,13 @@ class QAConversationService:
             
             # 2. 创建会话记录（使用事务确保数据一致性）
             with monitor.stage("db_session_insert", "数据库会话插入"):
-                conn = get_mysql_connection()
-                try:
-                    # 开始事务
-                    conn.autocommit = False
-                    
-                    with conn.cursor() as cursor:
-                        # 插入会话记录
-                        cursor.execute(
-                            """INSERT INTO qa_conversation_sessions 
-                               (session_id, user_id, solar_date, solar_time, gender, created_at) 
-                               VALUES (%s, %s, %s, %s, %s, NOW())""",
-                            (session_id, user_id, solar_date, solar_time, gender)
-                        )
-                        
-                        # 提交事务
-                        conn.commit()
-                        logger.info(f"✅ 会话记录已提交到数据库: {session_id}")
-                    
-                    # 3. 验证插入是否成功（直接查询，不依赖 rowcount）
-                    # 注意：PyMySQL 的 rowcount 在 commit 后可能失效，直接查询更可靠
-                    with conn.cursor() as cursor:
-                        cursor.execute(
-                            """SELECT session_id, user_id, solar_date, solar_time, gender, created_at 
-                               FROM qa_conversation_sessions 
-                               WHERE session_id = %s""",
-                            (session_id,)
-                        )
-                        verification_row = cursor.fetchone()
-                        
-                        if not verification_row:
-                            raise Exception(f"会话验证失败：插入后无法查询到会话记录 {session_id}")
-                        
-                        # 注意：PyMySQL 返回字典格式，使用键访问而不是索引
-                        logger.info(f"✅ 会话验证成功: {session_id}, 用户: {verification_row.get('user_id', 'N/A')}, 创建时间: {verification_row.get('created_at', 'N/A')}")
-                        monitor.add_metric("db_session_insert", "session_id", session_id)
-                        
-                except Exception as db_error:
-                    # 回滚事务
-                    if conn:
-                        try:
-                            conn.rollback()
-                            logger.warning(f"⚠️ 数据库操作失败，已回滚事务: {db_error}")
-                        except Exception as rollback_error:
-                            logger.error(f"❌ 回滚事务失败: {rollback_error}", exc_info=True)
-                    raise db_error
-                finally:
-                    if conn:
-                        return_mysql_connection(conn)
+                # 使用 run_in_executor 包装同步数据库操作，避免阻塞事件循环
+                verification_row = await run_in_executor(
+                    self._insert_session_sync,
+                    session_id, user_id, solar_date, solar_time, gender
+                )
+                logger.info(f"✅ 会话验证成功: {session_id}, 用户: {verification_row.get('user_id', 'N/A')}, 创建时间: {verification_row.get('created_at', 'N/A')}")
+                monitor.add_metric("db_session_insert", "session_id", session_id)
             
             # 4. 计算并缓存完整八字数据（阶段1优化：数据缓存）
             with monitor.stage("bazi_data_calculation", "计算并缓存八字数据"):
@@ -227,6 +187,73 @@ class QAConversationService:
                 'performance': monitor.get_summary()  # 即使失败也返回性能摘要
             }
     
+    def _insert_session_sync(
+        self,
+        session_id: str,
+        user_id: str,
+        solar_date: str,
+        solar_time: str,
+        gender: str
+    ) -> Dict[str, Any]:
+        """
+        同步插入会话记录（在线程池中执行）
+        
+        Args:
+            session_id: 会话ID
+            user_id: 用户ID
+            solar_date: 出生日期
+            solar_time: 出生时间
+            gender: 性别
+            
+        Returns:
+            验证查询结果
+        """
+        conn = get_mysql_connection()
+        try:
+            # 开始事务
+            conn.autocommit = False
+            
+            with conn.cursor() as cursor:
+                # 插入会话记录
+                cursor.execute(
+                    """INSERT INTO qa_conversation_sessions 
+                       (session_id, user_id, solar_date, solar_time, gender, created_at) 
+                       VALUES (%s, %s, %s, %s, %s, NOW())""",
+                    (session_id, user_id, solar_date, solar_time, gender)
+                )
+                
+                # 提交事务
+                conn.commit()
+                logger.info(f"✅ 会话记录已提交到数据库: {session_id}")
+            
+            # 验证插入是否成功（直接查询，不依赖 rowcount）
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """SELECT session_id, user_id, solar_date, solar_time, gender, created_at 
+                       FROM qa_conversation_sessions 
+                       WHERE session_id = %s""",
+                    (session_id,)
+                )
+                verification_row = cursor.fetchone()
+                
+                if not verification_row:
+                    raise Exception(f"会话验证失败：插入后无法查询到会话记录 {session_id}")
+                
+                return verification_row
+                
+        except Exception as db_error:
+            # 回滚事务
+            if conn:
+                try:
+                    conn.rollback()
+                    logger.warning(f"⚠️ 数据库操作失败，已回滚事务: {db_error}")
+                except Exception as rollback_error:
+                    logger.error(f"❌ 回滚事务失败: {rollback_error}", exc_info=True)
+            raise db_error
+        finally:
+            if conn:
+                return_mysql_connection(conn)
+    
     async def get_category_questions(
         self,
         category: str
@@ -241,32 +268,37 @@ class QAConversationService:
             问题列表
         """
         try:
-            conn = get_mysql_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute(
-                        """SELECT id, question_text, priority 
-                           FROM qa_question_templates 
-                           WHERE category = %s AND enabled = 1 
-                           ORDER BY priority ASC, id ASC""",
-                        (category,)
-                    )
-                    rows = cursor.fetchall()
-                    
-                    questions = []
-                    for row in rows:
-                        questions.append({
-                            'id': row[0],
-                            'text': row[1],
-                            'priority': row[2]
-                        })
-                    
-                    return questions
-            finally:
-                return_mysql_connection(conn)
+            # 使用 run_in_executor 包装同步数据库操作
+            return await run_in_executor(self._get_category_questions_sync, category)
         except Exception as e:
             logger.error(f"❌ 获取分类问题失败: {e}", exc_info=True)
             return []
+    
+    def _get_category_questions_sync(self, category: str) -> List[Dict[str, Any]]:
+        """同步获取分类问题（在线程池中执行）"""
+        conn = get_mysql_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """SELECT id, question_text, priority 
+                       FROM qa_question_templates 
+                       WHERE category = %s AND enabled = 1 
+                       ORDER BY priority ASC, id ASC""",
+                    (category,)
+                )
+                rows = cursor.fetchall()
+                
+                questions = []
+                for row in rows:
+                    questions.append({
+                        'id': row[0],
+                        'text': row[1],
+                        'priority': row[2]
+                    })
+                
+                return questions
+        finally:
+            return_mysql_connection(conn)
     
     async def ask_question(
         self,
@@ -626,23 +658,28 @@ class QAConversationService:
     async def _get_initial_question(self) -> str:
         """获取初始问题"""
         try:
-            conn = get_mysql_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute(
-                        """SELECT question_text FROM qa_question_templates 
-                           WHERE category = 'initial' AND enabled = 1 
-                           ORDER BY priority ASC, id ASC LIMIT 1"""
-                    )
-                    row = cursor.fetchone()
-                    if row:
-                        return row[0]
-                    return "看了命盘解读，你是最关注哪一方面呢"
-            finally:
-                return_mysql_connection(conn)
+            # 使用 run_in_executor 包装同步数据库操作
+            return await run_in_executor(self._get_initial_question_sync)
         except Exception as e:
             logger.error(f"获取初始问题失败: {e}")
             return "看了命盘解读，你是最关注哪一方面呢"
+    
+    def _get_initial_question_sync(self) -> str:
+        """同步获取初始问题（在线程池中执行）"""
+        conn = get_mysql_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """SELECT question_text FROM qa_question_templates 
+                       WHERE category = 'initial' AND enabled = 1 
+                       ORDER BY priority ASC, id ASC LIMIT 1"""
+                )
+                row = cursor.fetchone()
+                if row:
+                    return row[0]
+                return "看了命盘解读，你是最关注哪一方面呢"
+        finally:
+            return_mysql_connection(conn)
     
     async def _get_categories(self) -> List[Dict[str, str]]:
         """获取分类列表"""
@@ -670,54 +707,52 @@ class QAConversationService:
             logger.warning(f"⚠️ 获取会话信息失败: session_id 为空")
             return None
         
-        conn = None
         try:
             logger.debug(f"🔄 开始查询会话信息: {session_id}")
-            
-            # 获取数据库连接
-            try:
-                conn = get_mysql_connection()
-                if not conn:
-                    raise Exception("无法获取数据库连接")
-            except Exception as conn_error:
-                logger.error(f"❌ 数据库连接失败: {conn_error}, session_id: {session_id}", exc_info=True)
-                return None
-            
-            try:
-                with conn.cursor() as cursor:
-                    # 执行查询
-                    cursor.execute(
-                        """SELECT user_id, solar_date, solar_time, gender, current_category, created_at, updated_at
-                           FROM qa_conversation_sessions 
-                           WHERE session_id = %s""",
-                        (session_id,)
-                    )
-                    row = cursor.fetchone()
-                    
-                    if row:
-                        session_data = {
-                            'user_id': row[0],
-                            'solar_date': row[1],
-                            'solar_time': row[2],
-                            'gender': row[3],
-                            'current_category': row[4],
-                            'created_at': row[5].isoformat() if row[5] else None,
-                            'updated_at': row[6].isoformat() if row[6] else None
-                        }
-                        logger.info(f"✅ 会话查询成功: {session_id}, 用户: {session_data.get('user_id')}, 创建时间: {session_data.get('created_at')}")
-                        return session_data
-                    else:
-                        logger.warning(f"⚠️ 会话不存在: {session_id}")
-                        return None
-            except Exception as query_error:
-                logger.error(f"❌ 查询会话信息失败: {query_error}, session_id: {session_id}", exc_info=True)
-                return None
-            finally:
-                if conn:
-                    return_mysql_connection(conn)
+            # 使用 run_in_executor 包装同步数据库操作
+            return await run_in_executor(self._get_session_sync, session_id)
         except Exception as e:
             logger.error(f"❌ 获取会话信息异常: {e}, session_id: {session_id}", exc_info=True)
             return None
+    
+    def _get_session_sync(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """同步获取会话信息（在线程池中执行）"""
+        conn = None
+        try:
+            conn = get_mysql_connection()
+            if not conn:
+                raise Exception("无法获取数据库连接")
+            
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """SELECT user_id, solar_date, solar_time, gender, current_category, created_at, updated_at
+                       FROM qa_conversation_sessions 
+                       WHERE session_id = %s""",
+                    (session_id,)
+                )
+                row = cursor.fetchone()
+                
+                if row:
+                    session_data = {
+                        'user_id': row[0],
+                        'solar_date': row[1],
+                        'solar_time': row[2],
+                        'gender': row[3],
+                        'current_category': row[4],
+                        'created_at': row[5].isoformat() if row[5] else None,
+                        'updated_at': row[6].isoformat() if row[6] else None
+                    }
+                    logger.info(f"✅ 会话查询成功: {session_id}, 用户: {session_data.get('user_id')}, 创建时间: {session_data.get('created_at')}")
+                    return session_data
+                else:
+                    logger.warning(f"⚠️ 会话不存在: {session_id}")
+                    return None
+        except Exception as query_error:
+            logger.error(f"❌ 查询会话信息失败: {query_error}, session_id: {session_id}", exc_info=True)
+            return None
+        finally:
+            if conn:
+                return_mysql_connection(conn)
     
     async def _validate_session(self, session_id: str) -> Dict[str, Any]:
         """
@@ -775,37 +810,42 @@ class QAConversationService:
     async def _get_conversation_history(self, session_id: str) -> List[Dict[str, Any]]:
         """获取对话历史"""
         try:
-            conn = get_mysql_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute(
-                        """SELECT turn_number, question, answer, generated_questions_before, 
-                                  generated_questions_after, intent_result, category 
-                           FROM qa_conversation_history 
-                           WHERE session_id = %s 
-                           ORDER BY turn_number ASC""",
-                        (session_id,)
-                    )
-                    rows = cursor.fetchall()
-                    
-                    history = []
-                    for row in rows:
-                        history.append({
-                            'turn_number': row[0],
-                            'question': row[1],
-                            'answer': row[2],
-                            'generated_questions_before': json.loads(row[3]) if row[3] else [],
-                            'generated_questions_after': json.loads(row[4]) if row[4] else [],
-                            'intent_result': json.loads(row[5]) if row[5] else {},
-                            'category': row[6]
-                        })
-                    
-                    return history
-            finally:
-                return_mysql_connection(conn)
+            # 使用 run_in_executor 包装同步数据库操作
+            return await run_in_executor(self._get_conversation_history_sync, session_id)
         except Exception as e:
             logger.error(f"获取对话历史失败: {e}")
             return []
+    
+    def _get_conversation_history_sync(self, session_id: str) -> List[Dict[str, Any]]:
+        """同步获取对话历史（在线程池中执行）"""
+        conn = get_mysql_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """SELECT turn_number, question, answer, generated_questions_before, 
+                              generated_questions_after, intent_result, category 
+                       FROM qa_conversation_history 
+                       WHERE session_id = %s 
+                       ORDER BY turn_number ASC""",
+                    (session_id,)
+                )
+                rows = cursor.fetchall()
+                
+                history = []
+                for row in rows:
+                    history.append({
+                        'turn_number': row[0],
+                        'question': row[1],
+                        'answer': row[2],
+                        'generated_questions_before': json.loads(row[3]) if row[3] else [],
+                        'generated_questions_after': json.loads(row[4]) if row[4] else [],
+                        'intent_result': json.loads(row[5]) if row[5] else {},
+                        'category': row[6]
+                    })
+                
+                return history
+        finally:
+            return_mysql_connection(conn)
     
     async def _save_conversation_history(
         self,
@@ -819,28 +859,46 @@ class QAConversationService:
     ):
         """保存对话历史"""
         try:
-            conn = get_mysql_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute(
-                        """INSERT INTO qa_conversation_history 
-                           (session_id, turn_number, question, answer, generated_questions_before, 
-                            generated_questions_after, intent_result, category) 
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-                        (
-                            session_id,
-                            turn_number,
-                            question,
-                            answer,
-                            json.dumps(generated_questions_before, ensure_ascii=False),
-                            json.dumps(generated_questions_after, ensure_ascii=False),
-                            json.dumps(intent_result, ensure_ascii=False),
-                            intent_result.get('intents', ['general'])[0] if intent_result.get('intents') else 'general'
-                        )
-                    )
-                    conn.commit()
-            finally:
-                return_mysql_connection(conn)
+            # 使用 run_in_executor 包装同步数据库操作
+            await run_in_executor(
+                self._save_conversation_history_sync,
+                session_id, turn_number, question, answer,
+                generated_questions_before, generated_questions_after, intent_result
+            )
         except Exception as e:
             logger.error(f"保存对话历史失败: {e}", exc_info=True)
+    
+    def _save_conversation_history_sync(
+        self,
+        session_id: str,
+        turn_number: int,
+        question: str,
+        answer: str,
+        generated_questions_before: List[str],
+        generated_questions_after: List[str],
+        intent_result: Dict[str, Any]
+    ):
+        """同步保存对话历史（在线程池中执行）"""
+        conn = get_mysql_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """INSERT INTO qa_conversation_history 
+                       (session_id, turn_number, question, answer, generated_questions_before, 
+                        generated_questions_after, intent_result, category) 
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (
+                        session_id,
+                        turn_number,
+                        question,
+                        answer,
+                        json.dumps(generated_questions_before, ensure_ascii=False),
+                        json.dumps(generated_questions_after, ensure_ascii=False),
+                        json.dumps(intent_result, ensure_ascii=False),
+                        intent_result.get('intents', ['general'])[0] if intent_result.get('intents') else 'general'
+                    )
+                )
+                conn.commit()
+        finally:
+            return_mysql_connection(conn)
 

@@ -56,7 +56,7 @@ class CacheVersionManager:
         if self._enabled:
             try:
                 # 尝试获取 Redis 客户端
-                from server.config.redis_config import get_redis_client
+                from shared.config.redis import get_redis_client
                 self._redis_client = get_redis_client()
                 logger.info(f"缓存版本管理器已启用，当前版本: {self._version}")
             except Exception as e:

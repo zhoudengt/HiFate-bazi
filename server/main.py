@@ -501,7 +501,7 @@ async def lifespan(app: FastAPI):
     # 启动MySQL连接清理任务（定期清理空闲连接）
     try:
         import asyncio
-        from server.config.mysql_config import cleanup_idle_mysql_connections
+        from shared.config.database import cleanup_idle_mysql_connections
         
         async def connection_cleanup_task():
             """定期清理空闲MySQL连接（每60秒清理一次）"""
@@ -606,14 +606,28 @@ async def log_requests(request: Request, call_next):
     
     return response
 
-# 添加CORS中间件
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应限制具体域名
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# 添加CORS中间件（使用统一配置）
+try:
+    from server.utils.cors_config import get_cors_config
+    cors_config = get_cors_config()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_config["allow_origins"],
+        allow_credentials=cors_config["allow_credentials"],
+        allow_methods=cors_config["allow_methods"],
+        allow_headers=cors_config["allow_headers"],
+    )
+    logger.info(f"✓ CORS 中间件已配置，允许来源: {cors_config['allow_origins']}")
+except Exception as e:
+    # 回退到允许所有来源（确保服务可用）
+    logger.warning(f"⚠ CORS 配置加载失败，使用默认配置: {e}")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # 添加GZip压缩中间件（SSE响应除外）
 # 使用自定义中间件，对 text/event-stream 响应禁用压缩
@@ -1158,7 +1172,7 @@ async def health_check():
         
         # 检查MySQL连接池状态
         try:
-            from server.config.mysql_config import get_connection_pool_stats
+            from shared.config.database import get_connection_pool_stats
             health_data["mysql_pool"] = get_connection_pool_stats()
         except Exception as e:
             health_data["mysql_pool"] = {

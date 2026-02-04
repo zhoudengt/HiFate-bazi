@@ -59,8 +59,19 @@ router = APIRouter()
 # 获取服务地址
 FORTUNE_ANALYSIS_SERVICE_URL = os.getenv("FORTUNE_ANALYSIS_SERVICE_URL", "127.0.0.1:9005")
 
-# 简单认证：API Key（从环境变量读取，或使用默认值）
-FORTUNE_ANALYSIS_API_KEY = os.getenv("FORTUNE_ANALYSIS_API_KEY", "fortune_analysis_default_key_2024")
+# 简单认证：API Key（必须从环境变量读取）
+# 安全规范：生产环境不允许使用默认值
+_app_env = os.getenv("APP_ENV", "development").lower()
+if _app_env == "production":
+    FORTUNE_ANALYSIS_API_KEY = os.getenv("FORTUNE_ANALYSIS_API_KEY")
+    if not FORTUNE_ANALYSIS_API_KEY:
+        import logging
+        logging.getLogger(__name__).warning(
+            "⚠️ 生产环境未配置 FORTUNE_ANALYSIS_API_KEY，fortune_analysis 接口将拒绝所有请求"
+        )
+else:
+    # 开发环境：允许使用默认值（方便本地调试）
+    FORTUNE_ANALYSIS_API_KEY = os.getenv("FORTUNE_ANALYSIS_API_KEY", "dev_fortune_analysis_key")
 
 # 导入图像验证器和流式分析器
 # 添加服务目录到路径，确保能正确导入

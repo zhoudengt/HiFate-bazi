@@ -35,13 +35,11 @@ from server.services.bazi_ai_service import BaziAIService
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.utils.data_validator import validate_bazi_data
 from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
-from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+from shared.config.database import get_mysql_connection, return_mysql_connection
 from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
 from server.services.config_service import ConfigService
 from server.services.mingge_extractor import extract_mingge_names_from_rules
-from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
-from server.services.config_service import ConfigService
-from server.services.mingge_extractor import extract_mingge_names_from_rules
+from server.utils.async_executor import get_executor
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -221,7 +219,7 @@ class BaziDataOrchestrator:
         # 准备并行任务列表
         tasks = []
         loop = asyncio.get_event_loop()
-        executor = None
+        executor = get_executor()  # 使用全局线程池，统一管理
         
         # 1. 基础模块（必需，并行获取）
         # ✅ 优化：bazi/wangshuai 与 xishen_jishen 分离，仅请求 wuxing_proportion 时不启动喜神忌神任务

@@ -42,19 +42,13 @@ class ChatService:
         self.redis_client = None
         if REDIS_AVAILABLE:
             try:
-                # 尝试连接 Redis（从环境变量或默认配置）
-                redis_host = os.getenv("REDIS_HOST", "localhost")
-                redis_port = int(os.getenv("REDIS_PORT", "6379"))
-                redis_db = int(os.getenv("REDIS_DB", "0"))
-                self.redis_client = redis.Redis(
-                    host=redis_host,
-                    port=redis_port,
-                    db=redis_db,
-                    decode_responses=True,
-                    socket_connect_timeout=2
-                )
-                # 测试连接
-                self.redis_client.ping()
+                # 使用统一的 Redis 连接池（性能优化：避免重复创建连接）
+                # 使用字符串模式客户端（decode_responses=True）
+                from shared.config.redis import get_redis_client_str
+                self.redis_client = get_redis_client_str()
+                if self.redis_client:
+                    # 测试连接
+                    self.redis_client.ping()
             except Exception:
                 self.redis_client = None
     

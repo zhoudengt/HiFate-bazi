@@ -12,7 +12,7 @@ from datetime import datetime
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
-from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+from shared.config.database import get_mysql_connection, return_mysql_connection
 
 def export_daily_fortune_data(output_file: str, db_name: str = "hifate_bazi"):
     """导出每日运势相关数据"""

@@ -306,7 +306,7 @@ async def get_performance_stats():
         
         # 1. MySQL连接池统计
         try:
-            from server.config.mysql_config import get_connection_pool_stats
+            from shared.config.database import get_connection_pool_stats
             stats["mysql_pool"] = get_connection_pool_stats()
         except Exception as e:
             logger.warning(f"获取MySQL连接池统计失败: {e}")
@@ -314,7 +314,7 @@ async def get_performance_stats():
         
         # 2. Redis连接池统计
         try:
-            from server.config.redis_config import get_redis_pool_stats
+            from shared.config.redis import get_redis_pool_stats
             stats["redis_pool"] = get_redis_pool_stats()
         except Exception as e:
             logger.warning(f"获取Redis连接池统计失败: {e}")

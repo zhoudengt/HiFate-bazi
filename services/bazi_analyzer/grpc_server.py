@@ -25,29 +25,75 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "proto", "generated"))
 import bazi_analyzer_pb2
 import bazi_analyzer_pb2_grpc
 
-from core.calculators.BaziCalculator import BaziCalculator
-from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
+# 双轨支持：优先使用 gRPC 客户端，降级到本地计算
+USE_GRPC_BAZI_CORE = os.environ.get("USE_GRPC_BAZI_CORE", "true").lower() == "true"
+
+# 延迟导入，仅在需要时加载
+def _get_bazi_core_client():
+    """获取 BaziCoreClient 实例"""
+    try:
+        from shared.clients.bazi_core_client_grpc import BaziCoreClient
+        return BaziCoreClient()
+    except Exception as e:
+        logger.warning(f"BaziCoreClient 初始化失败，降级到本地计算: {e}")
+        return None
+
+def _get_local_calculator():
+    """获取本地 BaziCalculator（降级方案）"""
+    from core.calculators.BaziCalculator import BaziCalculator
+    return BaziCalculator
+
+def _get_rizhu_analyzer():
+    """获取 RizhuGenderAnalyzer"""
+    from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
+    return RizhuGenderAnalyzer
 
 
 class BaziAnalyzerServicer(bazi_analyzer_pb2_grpc.BaziAnalyzerServiceServicer):
     """实现 BaziAnalyzerService 的 gRPC 服务"""
 
+    def __init__(self):
+        """初始化服务"""
+        self._bazi_core_client = None
+        if USE_GRPC_BAZI_CORE:
+            self._bazi_core_client = _get_bazi_core_client()
+
     def RunAnalyzers(self, request: bazi_analyzer_pb2.BaziAnalyzerRequest, context: grpc.ServicerContext) -> bazi_analyzer_pb2.BaziAnalyzerResponse:
         """执行分析"""
         try:
-            calculator = BaziCalculator(request.solar_date, request.solar_time, request.gender)
-            bazi_result = calculator.calculate()
+            # 双轨支持：优先使用 gRPC 客户端调用 bazi-core 服务
+            bazi_pillars = None
+            if USE_GRPC_BAZI_CORE and self._bazi_core_client:
+                try:
+                    bazi_result = self._bazi_core_client.calculate_bazi(
+                        request.solar_date, request.solar_time, request.gender
+                    )
+                    if bazi_result:
+                        bazi_pillars = bazi_result.get('bazi_pillars', {})
+                        logger.info(f"✅ 通过 gRPC 获取八字数据成功")
+                except Exception as e:
+                    logger.warning(f"gRPC 调用失败，降级到本地计算: {e}")
             
-            if not bazi_result:
-                context.set_code(grpc.StatusCode.INTERNAL)
-                context.set_details("八字排盘失败")
-                return bazi_analyzer_pb2.BaziAnalyzerResponse()
+            # 降级方案：本地计算
+            if not bazi_pillars:
+                BaziCalculator = _get_local_calculator()
+                calculator = BaziCalculator(request.solar_date, request.solar_time, request.gender)
+                bazi_result = calculator.calculate()
+                
+                if not bazi_result:
+                    context.set_code(grpc.StatusCode.INTERNAL)
+                    context.set_details("八字排盘失败")
+                    return bazi_analyzer_pb2.BaziAnalyzerResponse()
+                
+                bazi_pillars = bazi_result.get('bazi_pillars', {})
+                logger.info(f"✅ 通过本地计算获取八字数据成功（降级模式）")
 
             results: dict = {}
+            RizhuGenderAnalyzer = _get_rizhu_analyzer()
 
             for analyzer_type in request.analysis_types:
                 if analyzer_type == "rizhu_gender":
-                    analyzer = RizhuGenderAnalyzer(calculator.bazi_pillars, calculator.gender)
+                    analyzer = RizhuGenderAnalyzer(bazi_pillars, request.gender)
                     analysis = analyzer.analyze_rizhu_gender()
                     analysis["formatted_text"] = analyzer.get_formatted_output()
                     results[analyzer_type] = analysis

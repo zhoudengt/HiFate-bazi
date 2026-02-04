@@ -16,7 +16,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from server.db.mysql_connector import MySQLConnector
-from server.config.mysql_config import mysql_config
+from shared.config.database import mysql_config
 
 
 def init_database():

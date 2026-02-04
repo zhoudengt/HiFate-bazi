@@ -234,7 +234,7 @@ def clear_stream_cache(prefix: str, solar_date: str = None) -> int:
         清除的缓存数量
     """
     try:
-        from server.config.redis_config import get_redis_client
+        from shared.config.redis import get_redis_client
         
         redis_client = get_redis_client()
         if not redis_client:

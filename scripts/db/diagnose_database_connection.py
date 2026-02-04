@@ -73,7 +73,7 @@ def diagnose():
     # 3. 测试数据库连接
     print(f"\n3️⃣ 测试数据库连接...")
     try:
-        from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+        from shared.config.database import get_mysql_connection, return_mysql_connection
         
         conn_start = time.time()
         conn = get_mysql_connection()

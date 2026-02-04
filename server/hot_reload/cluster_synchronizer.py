@@ -89,8 +89,9 @@ class ClusterSynchronizer:
         """获取 Redis 客户端"""
         if self._redis_client is None:
             try:
-                from server.config.redis_config import get_redis_client
-                self._redis_client = get_redis_client()
+                # 使用统一的 Redis 连接池（字符串模式）
+                from shared.config.redis import get_redis_client_str
+                self._redis_client = get_redis_client_str()
             except ImportError:
                 # 如果没有配置模块，使用默认连接
                 import redis

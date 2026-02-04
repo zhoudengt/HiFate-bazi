@@ -285,7 +285,7 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
                 transaction = PaymentTransactionDAO.get_transaction_by_order_id(order_id)
                 if transaction:
                     # 如果交易记录存在但没有 expires_at，更新它
-                    from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+                    from shared.config.database import get_mysql_connection, return_mysql_connection
                     conn = get_mysql_connection()
                     try:
                         with conn.cursor() as cursor:

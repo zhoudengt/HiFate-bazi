@@ -2,37 +2,101 @@
 # -*- coding: utf-8 -*-
 """
 MySQL 配置模块 - 支持连接池
+
+这是项目的统一 MySQL 配置模块，位于 shared/config/ 目录下。
+所有新代码应该使用此模块，server/config/mysql_config.py 是兼容层。
 """
 
 import pymysql
 import logging
-
-logger = logging.getLogger(__name__)
 from pymysql.cursors import DictCursor
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Literal
 import os
 import queue
 import threading
 import time
 
-# MySQL 连接配置（从环境变量读取）
-# ⚠️ 重要：根据环境自动选择默认配置
-# 本地开发：localhost:3306，密码: 123456
-# 生产环境：8.210.52.217:3306 (公网) / 172.18.121.222:3306 (内网)，密码: Yuanqizhan@163
-# 判断环境（本地开发 or 生产）
-# 通过环境变量 ENV 或 APP_ENV 判断，local/development 表示本地开发，其他表示生产环境
-IS_LOCAL_DEV = os.getenv("ENV", os.getenv("APP_ENV", "local")).lower() in ["local", "development"]
+logger = logging.getLogger(__name__)
+
+# ============================================================
+# 环境检测（独立实现，不依赖 server/ 模块）
+# ============================================================
+Environment = Literal["local", "development", "staging", "production"]
+
+
+def _detect_environment() -> tuple:
+    """
+    检测当前环境
+    
+    Returns:
+        tuple: (env, is_local_dev, is_production, is_staging)
+    """
+    env_value = os.getenv("ENV", os.getenv("APP_ENV", "local")).lower()
+    
+    if env_value in ["local", "dev", "development"]:
+        return "local", True, False, False
+    elif env_value in ["staging", "stage"]:
+        return "staging", False, False, True
+    elif env_value in ["prod", "production"]:
+        return "production", False, True, False
+    else:
+        return "local", True, False, False
+
+
+_ENV, IS_LOCAL_DEV, IS_PRODUCTION, IS_STAGING = _detect_environment()
+
+
+def get_current_env() -> Environment:
+    """获取当前环境"""
+    return _ENV
+
+
+def is_local_dev() -> bool:
+    """是否为本地开发环境"""
+    return IS_LOCAL_DEV
+
+
+def is_production() -> bool:
+    """是否为生产环境"""
+    return IS_PRODUCTION
+
+
+def is_staging() -> bool:
+    """是否为预发布环境"""
+    return IS_STAGING
+
+
+# ============================================================
+# MySQL 连接配置
+# ============================================================
 
 # 根据环境设置默认值
-# ⚠️ 安全规范：密码必须通过环境变量配置，不允许硬编码
+# ⚠️ 安全规范：所有敏感配置必须通过环境变量配置，禁止硬编码
 if IS_LOCAL_DEV:
-    # 本地开发：使用本地MySQL
-    DEFAULT_MYSQL_HOST = 'localhost'
-    DEFAULT_MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', '123456'))  # 本地开发默认密码
-else:
-    # 生产环境：使用生产MySQL
-    DEFAULT_MYSQL_HOST = '8.210.52.217'  # 生产Node1公网IP
+    # 本地开发：使用本地 MySQL，允许有默认 host
+    DEFAULT_MYSQL_HOST = os.getenv('MYSQL_HOST', 'localhost')
     DEFAULT_MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', ''))
+    if not DEFAULT_MYSQL_PASSWORD:
+        import logging
+        logging.getLogger(__name__).warning(
+            "⚠️ MYSQL_PASSWORD 未配置，请设置环境变量（本地开发可在 .env 文件中配置）"
+        )
+else:
+    # 生产环境：必须通过环境变量配置，无默认值
+    DEFAULT_MYSQL_HOST = os.getenv('MYSQL_HOST')
+    DEFAULT_MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', ''))
+    
+    if not DEFAULT_MYSQL_HOST:
+        import logging
+        logging.getLogger(__name__).error(
+            "❌ 生产环境必须配置 MYSQL_HOST 环境变量"
+        )
+        # 不在这里 raise，让服务尝试启动，在连接时报错
+    if not DEFAULT_MYSQL_PASSWORD:
+        import logging
+        logging.getLogger(__name__).error(
+            "❌ 生产环境必须配置 MYSQL_PASSWORD 环境变量"
+        )
 
 mysql_config = {
     'host': os.getenv('MYSQL_HOST', DEFAULT_MYSQL_HOST),
@@ -47,19 +111,48 @@ mysql_config = {
     'init_command': "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"
 }
 
-# MySQL 连接池配置
-# 优化说明：
-# - mincached=2：减少服务启动时连接数（11服务×2=22 < 40，避免超过max_user_connections）
-# - maxcached=20：减少最大缓存连接数，节省资源
-# - maxconnections=30：每个服务最多30个连接（根据15个用户需求调整）
-# - recycle_time=300：连接回收时间5分钟，确保空闲连接及时回收
-MYSQL_POOL_CONFIG = {
-    'mincached': 2,         # 最小连接数（从5减少到2，减少启动时连接数）
-    'maxcached': 20,        # 最大缓存连接数（从30减少到20）
-    'maxconnections': 30,   # 最大连接数（从50减少到30，每个服务最多30个连接）
-    'connection_timeout': 30,  # 获取连接的超时时间（秒）
-    'recycle_time': 300,     # 连接回收时间（秒），超过此时间未使用的连接将被关闭（5分钟）
-}
+
+# ============================================================
+# MySQL 连接池配置（根据环境动态调整）
+# ============================================================
+
+def _get_pool_config() -> Dict[str, int]:
+    """
+    根据环境获取连接池配置
+    
+    Returns:
+        Dict: 连接池配置
+    """
+    if IS_LOCAL_DEV:
+        # 本地开发环境：较小的连接池
+        return {
+            'mincached': 2,
+            'maxcached': 10,
+            'maxconnections': 20,
+            'connection_timeout': 10,
+            'recycle_time': 300,  # 5分钟
+        }
+    elif IS_PRODUCTION:
+        # 生产环境：较大的连接池以支持高并发
+        return {
+            'mincached': 5,
+            'maxcached': 30,
+            'maxconnections': 50,
+            'connection_timeout': 30,
+            'recycle_time': 3600,  # 1小时
+        }
+    else:
+        # 预发布环境：中等配置
+        return {
+            'mincached': 3,
+            'maxcached': 20,
+            'maxconnections': 30,
+            'connection_timeout': 20,
+            'recycle_time': 600,  # 10分钟
+        }
+
+
+MYSQL_POOL_CONFIG = _get_pool_config()
 
 # 全局连接池实例
 _mysql_pool: Optional['MySQLConnectionPool'] = None
@@ -513,6 +606,32 @@ def execute_update(sql: str, params: tuple = None) -> int:
         raise
     finally:
         return_mysql_connection(conn)
+
+
+def refresh_connection_pool() -> bool:
+    """
+    刷新连接池（热更新时使用）
+    
+    清理所有空闲连接，让新请求创建新连接。
+    用于配置变更后刷新数据库连接。
+    
+    Returns:
+        bool: 刷新是否成功
+    """
+    global _mysql_pool
+    
+    try:
+        if _mysql_pool is not None:
+            # 清理所有空闲连接
+            cleaned = _mysql_pool.cleanup_idle_connections(max_idle_time=0)
+            logger.info(f"✓ MySQL 连接池已刷新，清理了 {cleaned} 个连接")
+            return True
+        else:
+            logger.info("ℹ MySQL 连接池未初始化，无需刷新")
+            return True
+    except Exception as e:
+        logger.warning(f"⚠️ MySQL 连接池刷新失败: {e}")
+        return False
 
 
 

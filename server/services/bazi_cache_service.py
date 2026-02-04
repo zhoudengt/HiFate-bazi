@@ -77,7 +77,7 @@ class BaziCacheService:
     def get_redis_client():
         """获取 Redis 客户端"""
         try:
-            from server.config.redis_config import get_redis_pool
+            from shared.config.redis import get_redis_pool
             redis_pool = get_redis_pool()
             if redis_pool:
                 return redis_pool.get_connection()

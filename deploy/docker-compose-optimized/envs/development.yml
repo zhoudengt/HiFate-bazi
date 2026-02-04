@@ -1,0 +1,91 @@
+# HiFate-bazi Docker Compose 开发环境覆盖
+# 使用方式：docker-compose -f deploy/docker-compose-optimized/base.yml \
+#           -f deploy/docker-compose-optimized/envs/development.yml up -d
+
+services:
+  # 主 Web 服务 - 开发模式
+  web:
+    environment:
+      APP_ENV: development
+      DEBUG: "True"
+      LOG_LEVEL: DEBUG
+    # 挂载源代码（热更新）
+    volumes:
+      - ../../server:/app/server:ro
+      - ../../core:/app/core:ro
+      - ../../shared:/app/shared:ro
+      - ../../services:/app/services:ro
+    # 开发模式：不自动重启（方便调试）
+    restart: "no"
+
+  # MySQL - 开发模式
+  mysql:
+    # 暴露到宿主机（方便本地调试）
+    ports:
+      - "13306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+
+  # Redis - 开发模式
+  redis:
+    ports:
+      - "16379:6379"
+
+  # 八字核心服务 - 开发模式
+  bazi-core:
+    environment:
+      APP_ENV: development
+      DEBUG: "True"
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ../../services:/app/services:ro
+      - ../../core:/app/core:ro
+      - ../../shared:/app/shared:ro
+    restart: "no"
+
+  # 八字分析服务 - 开发模式
+  bazi-analyzer:
+    environment:
+      APP_ENV: development
+      DEBUG: "True"
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ../../services:/app/services:ro
+      - ../../core:/app/core:ro
+      - ../../shared:/app/shared:ro
+    restart: "no"
+
+  # 规则服务 - 开发模式
+  bazi-rule:
+    environment:
+      APP_ENV: development
+      DEBUG: "True"
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ../../services:/app/services:ro
+      - ../../core:/app/core:ro
+      - ../../shared:/app/shared:ro
+    restart: "no"
+
+  # 运势分析服务 - 开发模式
+  fortune-analysis:
+    environment:
+      APP_ENV: development
+      DEBUG: "True"
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ../../services:/app/services:ro
+      - ../../core:/app/core:ro
+      - ../../shared:/app/shared:ro
+    restart: "no"
+
+  # 支付服务 - 开发模式
+  payment-service:
+    environment:
+      APP_ENV: development
+      DEBUG: "True"
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ../../services:/app/services:ro
+      - ../../shared:/app/shared:ro
+    restart: "no"

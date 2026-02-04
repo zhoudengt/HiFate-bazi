@@ -152,7 +152,7 @@ class BaziDataCache:
             
             if modules is None:
                 # 清除所有相关缓存（使用 pattern 匹配）
-                from server.config.redis_config import get_redis_client
+                from shared.config.redis import get_redis_client
                 redis_client = get_redis_client()
                 
                 if redis_client:

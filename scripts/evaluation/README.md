@@ -128,11 +128,37 @@ aiohttp
 pip install pandas openpyxl aiohttp
 ```
 
+## 接口回归测试（上一版 vs 下一版）
+
+用于在代码调整后，验证接口返回**格式与内容**与上一版是否一致。
+
+```bash
+# 模式1：双环境对比（上一版=旧环境 URL，下一版=新环境 URL）
+python scripts/evaluation/api_regression_test.py --old-url http://旧环境:8001 --new-url http://新环境:8001
+
+# 模式2：先保存基线，改代码后再对比
+python scripts/evaluation/api_regression_test.py --save-baseline -o api_baseline.json
+# ... 改代码、热更新 ...
+python scripts/evaluation/api_regression_test.py --baseline api_baseline.json --new-url http://localhost:8001
+
+# 仅对比格式/结构（不对比 LLM 文本等内容）
+python scripts/evaluation/api_regression_test.py --old-url ... --new-url ... --format-only
+```
+
+**覆盖范围**：共 **38 个接口**，包括：
+- 八字核心：`/bazi/data`、`/bazi/interface`、排盘、旺衰、身宫命宫、日元六十甲子、公式分析、五行/喜忌 等
+- 流式分析：五行/喜忌/事业/婚姻/健康/子女/总评/年运/每日运势 的 stream 与 debug、test
+- 日历与智能：万年历、每日运势日历查询、智能分析
+- 支付/首页/管理：支付渠道、首页内容、面相/办公桌风水、Proto 列表
+
+**说明**：依赖 Coze 的流式接口（事业/婚姻/健康/子女/总评/年运）在配额用尽时会返回 4028，属环境限制，不影响格式回归结论。
+
 ## 目录结构
 
 ```
 scripts/evaluation/
 ├── __init__.py         # 模块初始化
+├── api_regression_test.py  # 接口回归测试（上一版 vs 下一版）
 ├── bazi_evaluator.py   # 主评测脚本（入口）
 ├── api_client.py       # API客户端封装
 ├── excel_handler.py    # Excel读写处理

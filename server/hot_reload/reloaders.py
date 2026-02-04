@@ -112,7 +112,7 @@ class CacheReloader:
             
             # 清理 L2 Redis 缓存中的特定模式（bazi_detail 和 special_liunians）
             try:
-                from server.config.redis_config import get_redis_client
+                from shared.config.redis import get_redis_client
                 redis_client = get_redis_client()
                 if redis_client:
                     # 清理 bazi_detail:* 模式的键
@@ -553,7 +553,7 @@ class ConfigReloaderEnhanced:
             
             # 3. 重新加载数据库连接池配置
             try:
-                from server.config.mysql_config import refresh_connection_pool
+                from shared.config.database import refresh_connection_pool
                 refresh_connection_pool()
                 logger.info("   ✓ MySQL 连接池已刷新")
             except (ImportError, AttributeError):
@@ -561,7 +561,7 @@ class ConfigReloaderEnhanced:
             
             # 4. 重新加载 Redis 配置
             try:
-                from server.config.redis_config import refresh_redis_connection
+                from shared.config.redis import refresh_redis_connection
                 refresh_redis_connection()
                 logger.info("   ✓ Redis 连接已刷新")
             except (ImportError, AttributeError):

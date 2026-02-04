@@ -16,7 +16,7 @@ import sys
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+from shared.config.database import get_mysql_connection, return_mysql_connection
 import logging
 
 # 使用标准 logging 模块（UnifiedLogger 主要用于业务日志）

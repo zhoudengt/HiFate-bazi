@@ -21,7 +21,7 @@ def _cache_sync_subscriber():
     global _subscriber_running
     
     try:
-        from server.config.redis_config import get_redis_client
+        from shared.config.redis import get_redis_client
         
         redis_client = get_redis_client()
         if not redis_client:
@@ -94,7 +94,7 @@ def stop_cache_sync_subscriber():
         
         # 取消订阅
         try:
-            from server.config.redis_config import get_redis_client
+            from shared.config.redis import get_redis_client
             redis_client = get_redis_client()
             if redis_client:
                 pubsub = redis_client.pubsub()

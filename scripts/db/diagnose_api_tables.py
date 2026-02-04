@@ -13,7 +13,7 @@ import time
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, PROJECT_ROOT)
 
-from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+from shared.config.database import get_mysql_connection, return_mysql_connection
 from server.services.rizhu_liujiazi_service import RizhuLiujiaziService
 from server.services.config_service import ConfigService
 

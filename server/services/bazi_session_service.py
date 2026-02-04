@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # 尝试导入Redis
 try:
-    from server.config.redis_config import get_redis_client
+    from shared.config.redis import get_redis_client
     REDIS_AVAILABLE = True
 except Exception as e:
     REDIS_AVAILABLE = False

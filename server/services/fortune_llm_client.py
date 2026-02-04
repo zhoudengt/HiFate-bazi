@@ -115,22 +115,18 @@ class FortuneLLMClient:
         if not self.bot_id:
             raise ValueError("FORTUNE_ANALYSIS_BOT_ID not set (checked database config, COZE_BOT_ID, environment variables, and config/services.env)")
         
-        # 初始化Redis客户端（如果可用）
+        # 初始化Redis客户端（如果可用）- 使用统一连接池
         self.redis_client = None
         if REDIS_AVAILABLE:
             try:
-                redis_host = os.getenv("REDIS_HOST", "localhost")
-                redis_port = int(os.getenv("REDIS_PORT", "16379"))
-                self.redis_client = redis.Redis(
-                    host=redis_host,
-                    port=redis_port,
-                    db=0,
-                    decode_responses=True,
-                    socket_connect_timeout=2
-                )
-                # 测试连接
-                self.redis_client.ping()
-                logger.info(f"✅ Redis缓存已启用: {redis_host}:{redis_port}")
+                # 使用统一的 Redis 连接池（性能优化：避免重复创建连接）
+                from shared.config.redis import get_redis_client_str
+                self.redis_client = get_redis_client_str()
+                if self.redis_client:
+                    self.redis_client.ping()
+                    logger.info(f"✅ Redis缓存已启用（使用连接池）")
+                else:
+                    logger.warning(f"⚠️ Redis连接池获取失败，缓存不可用")
             except Exception as e:
                 logger.warning(f"⚠️ Redis连接失败，缓存不可用: {e}")
                 self.redis_client = None
@@ -299,7 +295,7 @@ class FortuneLLMClient:
                 # 获取Redis客户端
                 redis_client = None
                 try:
-                    from server.config.redis_config import get_redis_pool
+                    from shared.config.redis import get_redis_pool
                     redis_pool = get_redis_pool()
                     if redis_pool:
                         redis_client = redis_pool.get_connection()

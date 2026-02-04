@@ -1,0 +1,188 @@
+# HiFate-bazi Docker Compose 基础配置（优化版）
+# 使用 x- 扩展减少重复配置
+#
+# ⚠️ 说明：这是优化后的 Docker Compose 配置示例
+# 使用方式：docker-compose -f deploy/docker-compose-optimized/base.yml \
+#           -f deploy/docker-compose-optimized/envs/production.yml up -d
+
+# ============================================================
+# 可复用的配置模板（x- 扩展）
+# ============================================================
+
+x-microservice-base: &microservice-base
+  image: ${DOCKER_IMAGE:-hifate-bazi:latest}
+  restart: unless-stopped
+  networks:
+    - hifate-network
+  environment: &base-env
+    # 数据库配置
+    MYSQL_HOST: ${MYSQL_HOST:-mysql}
+    MYSQL_PORT: ${MYSQL_PORT:-3306}
+    MYSQL_USER: ${MYSQL_USER:-root}
+    MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+    MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+    # Redis 配置
+    REDIS_HOST: ${REDIS_HOST:-redis}
+    REDIS_PORT: ${REDIS_PORT:-6379}
+    # 应用配置
+    APP_ENV: ${APP_ENV:-production}
+    TZ: Asia/Shanghai
+
+x-grpc-service: &grpc-service
+  <<: *microservice-base
+  depends_on:
+    mysql:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+x-healthcheck-web: &healthcheck-web
+  test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 10s
+
+x-healthcheck-grpc: &healthcheck-grpc
+  test: ["CMD", "grpc_health_probe", "-addr=:9001"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 10s
+
+x-deploy-limits: &deploy-limits
+  resources:
+    limits:
+      cpus: '1.0'
+      memory: 1G
+    reservations:
+      cpus: '0.5'
+      memory: 512M
+
+# ============================================================
+# 服务定义
+# ============================================================
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: hifate-mysql
+    ports:
+      - "${MYSQL_EXTERNAL_PORT:-13306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max_connections=500
+    restart: unless-stopped
+    networks:
+      - hifate-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: hifate-redis
+    ports:
+      - "${REDIS_EXTERNAL_PORT:-16379}:6379"
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - hifate-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # 主 Web 服务
+  web:
+    <<: *microservice-base
+    container_name: hifate-web
+    ports:
+      - "${WEB_PORT:-8001}:8001"
+    environment:
+      <<: *base-env
+      # 数据编排层开关
+      USE_ORCHESTRATOR_BAZI: ${USE_ORCHESTRATOR_BAZI:-true}
+      USE_ORCHESTRATOR_BAZI_DETAIL: ${USE_ORCHESTRATOR_BAZI_DETAIL:-true}
+      USE_ORCHESTRATOR_WANGSHUAI: ${USE_ORCHESTRATOR_WANGSHUAI:-true}
+      USE_ORCHESTRATOR_XISHEN_JISHEN: ${USE_ORCHESTRATOR_XISHEN_JISHEN:-true}
+      USE_ORCHESTRATOR_FORMULA: ${USE_ORCHESTRATOR_FORMULA:-true}
+      USE_ORCHESTRATOR_BAZI_RULES: ${USE_ORCHESTRATOR_BAZI_RULES:-true}
+      USE_ORCHESTRATOR_RIZHU_LIUJIAZI: ${USE_ORCHESTRATOR_RIZHU_LIUJIAZI:-true}
+    command: python -m server.main
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck-web
+
+  # 八字核心服务 (gRPC)
+  bazi-core:
+    <<: *grpc-service
+    container_name: hifate-bazi-core
+    ports:
+      - "${BAZI_CORE_PORT:-9001}:9001"
+    command: python services/bazi_core/grpc_server.py
+
+  # 八字分析服务 (gRPC)
+  bazi-analyzer:
+    <<: *grpc-service
+    container_name: hifate-bazi-analyzer
+    ports:
+      - "${BAZI_ANALYZER_PORT:-9003}:9003"
+    command: python services/bazi_analyzer/grpc_server.py
+
+  # 规则服务 (gRPC)
+  bazi-rule:
+    <<: *grpc-service
+    container_name: hifate-bazi-rule
+    ports:
+      - "${BAZI_RULE_PORT:-9004}:9004"
+    command: python services/bazi_rule/grpc_server.py
+
+  # 运势分析服务 (gRPC)
+  fortune-analysis:
+    <<: *grpc-service
+    container_name: hifate-fortune-analysis
+    ports:
+      - "${FORTUNE_ANALYSIS_PORT:-9005}:9005"
+    command: python services/fortune_analysis/grpc_server.py
+
+  # 支付服务 (gRPC)
+  payment-service:
+    <<: *grpc-service
+    container_name: hifate-payment
+    ports:
+      - "${PAYMENT_PORT:-9010}:9010"
+    command: python services/payment_service/grpc_server.py
+
+# ============================================================
+# 网络和卷
+# ============================================================
+
+networks:
+  hifate-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:

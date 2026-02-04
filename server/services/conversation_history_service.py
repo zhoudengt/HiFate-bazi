@@ -238,14 +238,9 @@ class ConversationHistoryService:
             scenario_type: 场景类型（scenario1=选择项, scenario2=问答）
         """
         try:
-            from server.config.mysql_config import get_mysql_pool
+            from shared.config.database import get_mysql_connection, return_mysql_connection
             
-            pool = get_mysql_pool()
-            if not pool:
-                logger.warning("MySQL连接池不可用，跳过保存对话记录")
-                return False
-            
-            conn = pool.get_connection()
+            conn = get_mysql_connection()
             if not conn:
                 logger.warning("获取MySQL连接失败，跳过保存对话记录")
                 return False
@@ -267,7 +262,7 @@ class ConversationHistoryService:
                 logger.info(f"✅ 保存对话记录成功: user_id={user_id}, scenario={scenario_type}, round={round_number}, keywords={keywords}")
                 return True
             finally:
-                pool.return_connection(conn)
+                return_mysql_connection(conn)
                 
         except Exception as e:
             logger.error(f"❌ 保存对话记录到MySQL失败: {e}", exc_info=True)
@@ -291,7 +286,7 @@ class ConversationHistoryService:
             是否保存成功
         """
         try:
-            from server.config.redis_config import get_redis_client
+            from shared.config.redis import get_redis_client
             
             redis_client = get_redis_client()
             if not redis_client:
@@ -342,7 +337,7 @@ class ConversationHistoryService:
             历史摘要列表 [{round: int, keywords: [], summary: str}, ...]
         """
         try:
-            from server.config.redis_config import get_redis_client
+            from shared.config.redis import get_redis_client
             
             redis_client = get_redis_client()
             if not redis_client:
@@ -378,7 +373,7 @@ class ConversationHistoryService:
             是否清除成功
         """
         try:
-            from server.config.redis_config import get_redis_client
+            from shared.config.redis import get_redis_client
             
             redis_client = get_redis_client()
             if not redis_client:

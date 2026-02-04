@@ -28,28 +28,51 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# 生产环境配置
-NODE1_PUBLIC_IP="8.210.52.217"
-NODE1_PRIVATE_IP="172.18.121.222"
-NODE2_PUBLIC_IP="47.243.160.43"
-NODE2_PRIVATE_IP="172.18.121.223"
+# ============================================
+# 配置加载（优先级：环境变量 > 配置文件 > 默认值）
+# ============================================
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+CONFIG_FILE="${SCRIPT_DIR}/deploy.conf"
 
-# Git 仓库配置
-GIT_REPO="https://github.com/zhoudengt/HiFate-bazi"
-GIT_BRANCH="master"
+# 如果配置文件存在，加载它
+if [ -f "$CONFIG_FILE" ]; then
+    echo -e "${GREEN}✓ 从配置文件加载: $CONFIG_FILE${NC}"
+    source "$CONFIG_FILE"
+fi
 
-# 项目目录
-PROJECT_DIR="/opt/HiFate-bazi"
+# 生产环境配置（从环境变量或配置文件读取，无硬编码默认值）
+NODE1_PUBLIC_IP="${NODE1_PUBLIC_IP:-}"
+NODE1_PRIVATE_IP="${NODE1_PRIVATE_IP:-}"
+NODE2_PUBLIC_IP="${NODE2_PUBLIC_IP:-}"
+NODE2_PRIVATE_IP="${NODE2_PRIVATE_IP:-}"
+
+# 验证必需配置
+if [ -z "$NODE1_PUBLIC_IP" ]; then
+    echo -e "${RED}❌ 错误：NODE1_PUBLIC_IP 未配置${NC}"
+    echo -e "${YELLOW}请配置 deploy.conf 或设置环境变量${NC}"
+    echo -e "  cp ${SCRIPT_DIR}/deploy.conf.template ${SCRIPT_DIR}/deploy.conf"
+    exit 1
+fi
+
+# Git 仓库配置（有默认值）
+GIT_REPO="${GIT_REPO:-https://github.com/zhoudengt/HiFate-bazi}"
+GIT_BRANCH="${GIT_BRANCH:-master}"
+
+# 项目目录（有默认值）
+PROJECT_DIR="${PROJECT_DIR:-/opt/HiFate-bazi}"
 
 # 生产数据库配置（单源：仅通过 Node1 SSH + docker exec 连接，禁止本地直连）
 # 详见 standards/deployment.md、deploy/docs/
-PROD_MYSQL_CONTAINER="hifate-mysql-master"
-PROD_MYSQL_USER="root"
-PROD_MYSQL_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
-PROD_MYSQL_DATABASE="hifate_bazi"
+PROD_MYSQL_CONTAINER="${PROD_MYSQL_CONTAINER:-hifate-mysql-master}"
+PROD_MYSQL_USER="${PROD_MYSQL_USER:-root}"
+PROD_MYSQL_PASSWORD="${PROD_MYSQL_PASSWORD:-$SSH_PASSWORD}"
+PROD_MYSQL_DATABASE="${PROD_MYSQL_DATABASE:-hifate_bazi}"
 
-# SSH 密码（从环境变量或默认值读取）
-SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+# SSH 密码（必须从环境变量或配置文件读取）
+SSH_PASSWORD="${SSH_PASSWORD:-}"
+if [ -z "$SSH_PASSWORD" ]; then
+    echo -e "${YELLOW}⚠️ 警告：SSH_PASSWORD 未配置，将尝试使用 SSH 密钥认证${NC}"
+fi
 
 # 允许自动数据库同步（默认启用）
 # 设置为 true 时，自动生成并执行数据库同步脚本，无需用户确认
@@ -542,19 +565,9 @@ if [ "$NODE1_COMMIT" != "$LOCAL_COMMIT" ]; then
     echo -e "${GREEN}✅ Node1 代码已同步到最新版本${NC}"
 fi
 
-# 🔥 关键：将宿主机代码同步到 Docker 容器内（热更新才能检测到变化）
-echo "🔄 同步代码到 Docker 容器..."
-CONTAINERS="hifate-web hifate-bazi-core hifate-bazi-fortune hifate-bazi-analyzer hifate-rule-service hifate-fortune-analyzer hifate-payment-service hifate-fortune-rule hifate-intent-service hifate-prompt-optimizer hifate-desk-fengshui"
-
-for container in $CONTAINERS; do
-    if ssh_exec $NODE1_PUBLIC_IP "docker ps -q -f name=$container" 2>/dev/null | grep -q .; then
-        ssh_exec $NODE1_PUBLIC_IP "docker cp $PROJECT_DIR/server $container:/app/ && \
-            docker cp $PROJECT_DIR/src $container:/app/ && \
-            docker cp $PROJECT_DIR/services $container:/app/ && \
-            (docker cp $PROJECT_DIR/core $container:/app/ 2>/dev/null || true)"
-        echo "  ✅ $container 代码已同步"
-    fi
-done
+# 🔥 热更新说明：若生产使用 docker-compose.hotreload.yml（volume 挂载 server/src/services/core），
+#    宿主机 git pull 后容器内即见新代码，无需 docker cp；后续触发热更新即可生效。
+#    详见 deploy/docs/06-热更新Volume部署说明.md
 
 # 🚫 注意：Nginx 配置由前端团队管理，后端部署脚本不再修改 Nginx 配置
 

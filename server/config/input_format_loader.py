@@ -16,7 +16,7 @@ import sys
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+from shared.config.database import get_mysql_connection, return_mysql_connection
 from server.utils.unified_logger import get_unified_logger
 
 logger = get_unified_logger()
@@ -346,7 +346,7 @@ class InputDataFormatLoader:
     def _get_redis_client(self) -> Optional[Any]:
         """获取Redis客户端"""
         try:
-            from server.config.redis_config import get_redis_pool
+            from shared.config.redis import get_redis_pool
             redis_pool = get_redis_pool()
             if redis_pool:
                 return redis_pool.get_connection()

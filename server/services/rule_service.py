@@ -18,7 +18,7 @@ sys.path.insert(0, project_root)
 from server.engines.rule_engine import EnhancedRuleEngine
 from server.engines.query_adapters import QueryAdapterRegistry
 from server.utils.cache_multi_level import get_multi_cache
-from server.config.mysql_config import mysql_config
+from shared.config.database import mysql_config
 
 logger = logging.getLogger(__name__)
 

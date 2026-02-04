@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Intent Service gRPC 客户端
+
+性能优化：使用 BaseGrpcClient 的连接池复用 gRPC Channel
 """
 import grpc
 import os
@@ -15,9 +17,24 @@ from typing import Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
+# gRPC 配置选项
+_GRPC_OPTIONS = [
+    ('grpc.max_send_message_length', 50 * 1024 * 1024),
+    ('grpc.max_receive_message_length', 50 * 1024 * 1024),
+    ('grpc.keepalive_time_ms', 30000),  # 30秒发送一次 keepalive
+    ('grpc.keepalive_timeout_ms', 10000),  # 10秒超时
+]
+
 
 class IntentServiceClient:
-    """Intent Service 客户端"""
+    """
+    Intent Service 客户端
+    
+    使用连接池复用 gRPC Channel，避免频繁创建连接。
+    """
+    
+    # 类级别的连接池
+    _channel_cache: Dict[str, grpc.Channel] = {}
     
     def __init__(self, service_url: str = None):
         """
@@ -32,17 +49,24 @@ class IntentServiceClient:
         self._connect()
     
     def _connect(self):
-        """建立连接"""
+        """建立连接（使用连接池复用）"""
         try:
-            self.channel = grpc.insecure_channel(
-                self.service_url,
-                options=[
-                    ('grpc.max_send_message_length', 50 * 1024 * 1024),
-                    ('grpc.max_receive_message_length', 50 * 1024 * 1024),
-                ]
-            )
+            # 尝试使用 BaseGrpcClient 的连接池
+            try:
+                from shared.clients.base_grpc_client import BaseGrpcClient
+                self.channel = BaseGrpcClient.get_channel(self.service_url, _GRPC_OPTIONS)
+                logger.info(f"Intent Service client using shared channel pool: {self.service_url}")
+            except ImportError:
+                # 回退：使用类级别的连接池
+                if self.service_url not in IntentServiceClient._channel_cache:
+                    IntentServiceClient._channel_cache[self.service_url] = grpc.insecure_channel(
+                        self.service_url,
+                        options=_GRPC_OPTIONS
+                    )
+                self.channel = IntentServiceClient._channel_cache[self.service_url]
+                logger.info(f"Intent Service client using local channel pool: {self.service_url}")
+            
             self.stub = intent_pb2_grpc.IntentServiceStub(self.channel)
-            logger.info(f"Intent Service client connected to {self.service_url}")
         except Exception as e:
             logger.error(f"Failed to connect to Intent Service: {e}")
             raise
@@ -171,9 +195,14 @@ class IntentServiceClient:
             return False
     
     def close(self):
-        """关闭连接"""
-        if self.channel:
-            self.channel.close()
+        """
+        关闭客户端
+        
+        注意：由于使用连接池复用 Channel，这里不关闭 Channel。
+        Channel 由连接池管理，会在应用退出时自动清理。
+        """
+        # 不关闭共享的 Channel
+        self.stub = None
     
     def __enter__(self):
         return self

@@ -190,7 +190,7 @@ def clear_cache():
         cache.l1.clear()
         print(f"✅ L1 缓存已清除")
         
-        from server.config.redis_config import get_redis_client
+        from shared.config.redis import get_redis_client
         redis_client = get_redis_client()
         if redis_client:
             # 清除规则相关的缓存键

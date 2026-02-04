@@ -103,7 +103,7 @@ async def list_training_batches(
 ):
     """获取训练批次列表"""
     try:
-        from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+        from shared.config.database import get_mysql_connection, return_mysql_connection
         
         conn = get_mysql_connection()
         try:
@@ -226,7 +226,7 @@ async def extract_keyword_rules(
 async def get_stats():
     """获取训练数据统计信息"""
     try:
-        from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+        from shared.config.database import get_mysql_connection, return_mysql_connection
         
         conn = get_mysql_connection()
         try:

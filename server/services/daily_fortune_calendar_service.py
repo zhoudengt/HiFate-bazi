@@ -17,7 +17,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.calendar_api_service import CalendarAPIService
-from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+from shared.config.database import get_mysql_connection, return_mysql_connection
 
 logger = logging.getLogger(__name__)
 
@@ -1097,7 +1097,7 @@ class DailyFortuneCalendarService:
         """
         try:
             from server.utils.cache_multi_level import get_multi_cache
-            from server.config.redis_config import get_redis_client
+            from shared.config.redis import get_redis_client
             
             # 1. 清理本地L1缓存
             cache = get_multi_cache()

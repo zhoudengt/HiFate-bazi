@@ -12,7 +12,7 @@ import os
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from server.config.redis_config import get_redis_client
+from shared.config.redis import get_redis_client
 
 def clear_fortune_display_cache():
     """清理大运流年流月展示相关的缓存"""

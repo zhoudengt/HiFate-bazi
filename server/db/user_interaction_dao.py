@@ -9,7 +9,7 @@ import uuid
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from server.config.mysql_config import get_mysql_connection, return_mysql_connection
+from shared.config.database import get_mysql_connection, return_mysql_connection
 from server.config.database_config import MYSQL_CONFIG
 
 logger = logging.getLogger(__name__)

@@ -9,7 +9,6 @@ import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, validator
 from typing import Optional
-from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
 # 添加项目根目录到路径
@@ -18,20 +17,22 @@ sys.path.insert(0, project_root)
 
 from server.services.rizhu_liujiazi_service import RizhuLiujiaziService
 from server.services.bazi_service import BaziService
+from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
 from server.utils.data_validator import validate_bazi_data
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.utils.api_cache_helper import (
     generate_cache_key, get_cached_result, set_cached_result, L2_TTL
 )
+from server.utils.async_executor import get_executor
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# 线程池
-import os
-cpu_count = os.cpu_count() or 4
-max_workers = min(cpu_count * 2, 100)
-executor = ThreadPoolExecutor(max_workers=max_workers)
+# 双轨并行：编排层开关，默认启用（日柱数据来自编排层的 bazi 模块）
+USE_ORCHESTRATOR_RIZHU = os.environ.get("USE_ORCHESTRATOR_RIZHU", "true").lower() == "true"
 
 
 class RizhuLiujiaziRequest(BaziBaseRequest):
@@ -85,23 +86,47 @@ async def get_rizhu_liujiazi(request: RizhuLiujiaziRequest):
             return RizhuLiujiaziResponse(success=True, data=cached)
         # >>> 缓存检查结束 <<<
         
-        # 1. 获取八字排盘结果
-        bazi_result = await loop.run_in_executor(
-            executor,
-            BaziService.calculate_bazi_full,
-            final_solar_date,
-            final_solar_time,
-            request.gender
-        )
-        
-        if not bazi_result:
-            return RizhuLiujiaziResponse(
-                success=False,
-                error="八字排盘失败"
+        # 1. 获取八字排盘结果（双轨并行：优先使用编排层）
+        if USE_ORCHESTRATOR_RIZHU:
+            # 使用编排层获取八字数据（统一数据获取，避免重复计算）
+            orchestrator_data = await BaziDataOrchestrator.fetch_data(
+                final_solar_date,
+                final_solar_time,
+                request.gender,
+                modules={"bazi": True},
+                preprocessed=True,
+                calendar_type=request.calendar_type or "solar",
+                location=request.location,
+                latitude=request.latitude,
+                longitude=request.longitude,
             )
+            bazi_result = orchestrator_data.get("bazi") or {}
+            if not bazi_result:
+                return RizhuLiujiaziResponse(
+                    success=False,
+                    error="八字排盘失败（编排层）"
+                )
+            # 提取八字数据
+            bazi_data = bazi_result.get('bazi', bazi_result) if isinstance(bazi_result, dict) else {}
+        else:
+            # 降级方案：直接调用 BaziService
+            bazi_result = await loop.run_in_executor(
+                get_executor(),
+                BaziService.calculate_bazi_full,
+                final_solar_date,
+                final_solar_time,
+                request.gender
+            )
+            
+            if not bazi_result:
+                return RizhuLiujiaziResponse(
+                    success=False,
+                    error="八字排盘失败"
+                )
+            
+            bazi_data = bazi_result.get('bazi', {})
         
-        # 2. 提取日柱
-        bazi_data = bazi_result.get('bazi', {})
+        # 2. 验证并提取日柱
         bazi_data = validate_bazi_data(bazi_data)
         
         bazi_pillars = bazi_data.get('bazi_pillars', {})
@@ -118,23 +143,21 @@ async def get_rizhu_liujiazi(request: RizhuLiujiaziRequest):
         
         rizhu = f"{day_stem}{day_branch}"
         
-        # 3. 查询日柱解析
+        # 3. 查询日柱解析（使用全局线程池）
         analysis_data = await loop.run_in_executor(
-            executor,
+            get_executor(),
             RizhuLiujiaziService.get_rizhu_analysis,
             rizhu
         )
         
         if not analysis_data:
             # 添加详细的错误信息，帮助排查问题
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(f"未找到日柱 {rizhu} 的解析内容（日期: {request.solar_date}, 时间: {request.solar_time}, 性别: {request.gender}）")
             
             # 尝试获取数据库中的总记录数（用于诊断）
             try:
                 total_count = await loop.run_in_executor(
-                    executor,
+                    get_executor(),
                     RizhuLiujiaziService.get_total_count
                 )
                 logger.warning(f"当前数据库中总记录数: {total_count}")

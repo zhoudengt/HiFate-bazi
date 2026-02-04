@@ -122,3 +122,166 @@ def safe_get_nested(data: dict, *keys, default=None):
     except Exception as e:
         logger.debug(f"safe_get_nested 失败: {e}")
         return default
+
+
+# ==================== 自定义业务异常 ====================
+
+class BusinessError(Exception):
+    """
+    业务异常基类
+    
+    用于表示业务逻辑错误，与系统错误区分开来。
+    """
+    def __init__(self, message: str, code: int = 400, error_type: str = "business_error"):
+        self.message = message
+        self.code = code
+        self.error_type = error_type
+        super().__init__(message)
+
+
+class ValidationError(BusinessError):
+    """参数验证错误"""
+    def __init__(self, message: str, field: str = None):
+        self.field = field
+        error_type = f"validation_error:{field}" if field else "validation_error"
+        super().__init__(message, code=400, error_type=error_type)
+
+
+class NotFoundError(BusinessError):
+    """资源不存在错误"""
+    def __init__(self, message: str = "资源不存在", resource: str = None):
+        self.resource = resource
+        super().__init__(message, code=404, error_type="not_found")
+
+
+class AuthenticationError(BusinessError):
+    """认证错误"""
+    def __init__(self, message: str = "认证失败"):
+        super().__init__(message, code=401, error_type="authentication_error")
+
+
+class AuthorizationError(BusinessError):
+    """授权错误"""
+    def __init__(self, message: str = "权限不足"):
+        super().__init__(message, code=403, error_type="authorization_error")
+
+
+class ServiceUnavailableError(BusinessError):
+    """服务不可用错误"""
+    def __init__(self, message: str = "服务暂时不可用", service: str = None):
+        self.service = service
+        super().__init__(message, code=503, error_type="service_unavailable")
+
+
+class RateLimitError(BusinessError):
+    """请求频率限制错误"""
+    def __init__(self, message: str = "请求过于频繁，请稍后重试"):
+        super().__init__(message, code=429, error_type="rate_limit_exceeded")
+
+
+# ==================== API 错误处理装饰器 ====================
+
+import functools
+from typing import Optional, Type, Tuple
+
+def api_error_handler(
+    func: Callable = None,
+    *,
+    catch: Tuple[Type[Exception], ...] = (Exception,),
+    default_error: str = "服务器内部错误",
+    log_errors: bool = True
+):
+    """
+    API 错误处理装饰器
+    
+    用于统一处理 API 端点的异常。
+    
+    使用示例：
+    ```python
+    @router.post("/api/endpoint")
+    @api_error_handler
+    async def my_endpoint():
+        ...
+    
+    # 或者指定捕获的异常类型
+    @router.post("/api/endpoint")
+    @api_error_handler(catch=(ValueError, KeyError), default_error="参数错误")
+    async def my_endpoint():
+        ...
+    ```
+    """
+    def decorator(fn):
+        @functools.wraps(fn)
+        async def async_wrapper(*args, **kwargs):
+            try:
+                return await fn(*args, **kwargs)
+            except BusinessError as e:
+                # 业务异常，返回标准错误响应
+                if log_errors:
+                    logger.warning(f"业务异常 [{fn.__name__}]: {e.message}")
+                return JSONResponse(
+                    status_code=e.code,
+                    content={
+                        "success": False,
+                        "error": e.message,
+                        "error_type": e.error_type
+                    }
+                )
+            except HTTPException:
+                # FastAPI 的 HTTPException 直接抛出
+                raise
+            except catch as e:
+                # 其他捕获的异常
+                if log_errors:
+                    logger.error(f"API 错误 [{fn.__name__}]: {e}", exc_info=True)
+                
+                error_msg = default_error if PRODUCTION_MODE else str(e)
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "success": False,
+                        "error": error_msg,
+                        "error_type": "internal_error"
+                    }
+                )
+        
+        @functools.wraps(fn)
+        def sync_wrapper(*args, **kwargs):
+            try:
+                return fn(*args, **kwargs)
+            except BusinessError as e:
+                if log_errors:
+                    logger.warning(f"业务异常 [{fn.__name__}]: {e.message}")
+                return JSONResponse(
+                    status_code=e.code,
+                    content={
+                        "success": False,
+                        "error": e.message,
+                        "error_type": e.error_type
+                    }
+                )
+            except HTTPException:
+                raise
+            except catch as e:
+                if log_errors:
+                    logger.error(f"API 错误 [{fn.__name__}]: {e}", exc_info=True)
+                
+                error_msg = default_error if PRODUCTION_MODE else str(e)
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "success": False,
+                        "error": error_msg,
+                        "error_type": "internal_error"
+                    }
+                )
+        
+        import asyncio
+        if asyncio.iscoroutinefunction(fn):
+            return async_wrapper
+        return sync_wrapper
+    
+    # 支持 @api_error_handler 和 @api_error_handler(...) 两种用法
+    if func is not None:
+        return decorator(func)
+    return decorator

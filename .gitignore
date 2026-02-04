@@ -49,6 +49,7 @@ coverage.xml
 .env.local
 .env.*.local
 config/services.env
+deploy/scripts/deploy.conf
 
 # Database
 *.db

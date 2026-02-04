@@ -12,7 +12,7 @@ from pymysql.cursors import DictCursor
 from typing import Optional, Dict, List, Any
 from contextlib import contextmanager
 
-from server.config.mysql_config import mysql_config, get_mysql_connection, return_mysql_connection
+from shared.config.database import mysql_config, get_mysql_connection, return_mysql_connection
 
 
 class MySQLConnector:

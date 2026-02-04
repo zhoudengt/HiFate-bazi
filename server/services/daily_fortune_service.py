@@ -790,7 +790,7 @@ class DailyFortuneService:
         """
         try:
             from server.utils.cache_multi_level import get_multi_cache
-            from server.config.redis_config import get_redis_client
+            from shared.config.redis import get_redis_client
             
             # 1. 清理本地L1缓存
             cache = get_multi_cache()

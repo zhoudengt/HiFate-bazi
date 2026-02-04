@@ -2,8 +2,19 @@
 # -*- coding: utf-8 -*-
 
 """
+八字排盘主模块 - WenZhenBazi 类
+
 自动检测并使用项目虚拟环境 (.venv)
 如果检测到项目根目录下有 .venv，自动切换到 .venv/bin/python3
+
+⚠️ 模块化重构说明：
+此文件正在进行渐进式模块化重构，部分功能已迁移到 core/calculators/ 子目录：
+- core/calculators/bazi_core/ - 核心计算（element_relations.py, ten_gods.py）
+- core/calculators/bazi_data/ - 数据构建（待迁移）
+- core/calculators/bazi_rules/ - 规则匹配（待迁移）
+
+新代码可以直接使用模块化版本：from core.calculators.bazi_core import ...
+此文件保留用于向后兼容，后续将逐步迁移。
 """
 import sys
 import os
