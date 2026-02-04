@@ -1,0 +1,101 @@
+name: API Regression Test
+
+# 触发条件
+on:
+  # 推送到 master 分支时触发
+  push:
+    branches: [ master ]
+  # PR 合并到 master 时触发
+  pull_request:
+    branches: [ master ]
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: '测试环境'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      category:
+        description: '测试类别'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - basic
+          - stream
+          - payment
+          - admin
+
+env:
+  PRODUCTION_URL: http://8.210.52.217:8001
+  STAGING_URL: http://47.243.160.43:8001
+
+jobs:
+  api-test:
+    name: API 回归测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+      
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: 安装依赖
+        run: |
+          pip install requests aiohttp
+      
+      - name: 运行基础接口测试
+        if: ${{ github.event.inputs.category == 'all' || github.event.inputs.category == 'basic' || github.event_name != 'workflow_dispatch' }}
+        run: |
+          python scripts/evaluation/api_regression_test.py \
+            --url ${{ env.PRODUCTION_URL }} \
+            --category basic
+        continue-on-error: false
+      
+      - name: 运行流式接口测试（并行）
+        if: ${{ github.event.inputs.category == 'all' || github.event.inputs.category == 'stream' || github.event_name != 'workflow_dispatch' }}
+        run: |
+          python scripts/evaluation/api_regression_test.py \
+            --url ${{ env.PRODUCTION_URL }} \
+            --category stream \
+            --parallel
+        continue-on-error: false
+      
+      - name: 运行管理接口测试
+        if: ${{ github.event.inputs.category == 'all' || github.event.inputs.category == 'admin' || github.event_name != 'workflow_dispatch' }}
+        run: |
+          python scripts/evaluation/api_regression_test.py \
+            --url ${{ env.PRODUCTION_URL }} \
+            --category admin
+        continue-on-error: false
+      
+      - name: 运行支付接口测试（可选）
+        if: ${{ github.event.inputs.category == 'payment' }}
+        run: |
+          python scripts/evaluation/api_regression_test.py \
+            --url ${{ env.PRODUCTION_URL }} \
+            --category payment
+        continue-on-error: true  # 支付测试允许失败（可能配置问题）
+
+  notify-on-failure:
+    name: 失败通知
+    needs: api-test
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 发送失败通知
+        run: |
+          echo "API 回归测试失败！"
+          echo "请检查 GitHub Actions 日志获取详情"
+          # 可以添加钉钉/飞书/企业微信通知
