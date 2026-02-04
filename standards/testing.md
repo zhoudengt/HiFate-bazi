@@ -277,6 +277,69 @@ open htmlcov/index.html
 
 ---
 
+## 11. API 回归测试（生产验证）
+
+### 11.1 回归测试脚本
+
+**脚本位置**：`scripts/evaluation/api_regression_test.py`
+
+**功能特点**：
+- ✅ 覆盖所有核心 API 端点（基础接口、流式接口、支付接口、管理接口）
+- ✅ 支持并行执行流式接口测试（大幅减少测试时间）
+- ✅ 支持多环境切换（local / production）
+- ✅ 自动检测 SSE 流式响应格式
+- ✅ 详细的测试报告输出
+
+### 11.2 使用方法
+
+```bash
+# 本地测试（所有接口）
+python3 scripts/evaluation/api_regression_test.py
+
+# 生产环境测试
+python3 scripts/evaluation/api_regression_test.py --env production
+
+# 并行执行（推荐，大幅提速）
+python3 scripts/evaluation/api_regression_test.py --parallel
+
+# 测试特定类别
+python3 scripts/evaluation/api_regression_test.py --category basic    # 基础接口
+python3 scripts/evaluation/api_regression_test.py --category stream   # 流式接口
+python3 scripts/evaluation/api_regression_test.py --category payment  # 支付接口
+python3 scripts/evaluation/api_regression_test.py --category admin    # 管理接口
+
+# 组合使用
+python3 scripts/evaluation/api_regression_test.py --env production --parallel
+```
+
+### 11.3 测试类别
+
+| 类别 | 说明 | 接口数量 |
+|------|------|----------|
+| `basic` | 基础接口（八字计算、公式分析等） | 8+ |
+| `stream` | 流式接口（LLM 分析、运势等） | 11+ |
+| `payment` | 支付接口（Stripe、PayerMax） | 3 |
+| `admin` | 管理接口（首页内容等） | 1+ |
+
+### 11.4 CI/CD 集成
+
+**GitHub Actions 配置**：`.github/workflows/api-regression-test.yml`
+
+- 触发条件：`push` 到 `master`、`pull_request`、手动触发
+- 自动运行：基础接口、流式接口、管理接口测试
+- 支付接口：可选（`continue-on-error: true`）
+
+### 11.5 部署后验证
+
+**脚本位置**：`deploy/scripts/post_deploy_test.sh`
+
+```bash
+# 部署后自动验证
+bash deploy/scripts/post_deploy_test.sh production
+```
+
+---
+
 ### 📝 测试开发检查清单
 
 每次开发新功能时，必须检查：
@@ -289,6 +352,7 @@ open htmlcov/index.html
 - [ ] 测试是否通过 CI/CD 验证
 - [ ] 覆盖率是否达到要求（≥ 50%）
 - [ ] 是否更新了测试文档
+- [ ] **是否将新接口添加到 API 回归测试**（`api_regression_test.py`）
 
 ---
 

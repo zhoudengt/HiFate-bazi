@@ -38,6 +38,7 @@
 | [performance-monitoring.md](performance-monitoring.md) | 性能监控 | 性能监控 |
 | [database-connection.md](database-connection.md) | 数据库连接规范 | - |
 | [incremental-sync-no-lock.md](incremental-sync-no-lock.md) | 增量同步无锁方案 | - |
+| [payment.md](payment.md) | 支付系统规范（Stripe + PayerMax） | 支付开发 |
 
 ---
 
@@ -45,6 +46,8 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-02-04 | 新增 API 回归测试规范：`scripts/evaluation/api_regression_test.py`、CI/CD 集成、部署后验证 |
+| 2026-02-04 | 支付渠道优化：只启用 Stripe + PayerMax，添加客户端缓存，接口秒出 |
 | 2026-01-31 | 文档精简：删除 docs/、knowledge_base、checklists、需求等；规范统一入口为 standards/；详见 `01_目录结构标准.md` 迁移记录 |
 
 ---
