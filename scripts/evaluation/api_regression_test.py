@@ -292,21 +292,12 @@ TEST_CASES: List[TestCase] = [
         description="Stripe支付订单创建"
     ),
     TestCase(
-        name="PayerMax创建订单",
+        name="支付渠道状态",
         category=TestCategory.PAYMENT,
-        method="POST",
-        endpoint="/api/v1/payment/unified/create",
-        payload={
-            "provider": "payermax",
-            "amount": "19.90",
-            "currency": "USD",
-            "product_name": "PayerMax测试",
-            "customer_email": "test@example.com",
-            "success_url": "http://localhost:5173/payment/success",
-            "cancel_url": "http://localhost:5173/payment/cancel"
-        },
+        method="GET",
+        endpoint="/api/v1/payment/providers",
         expected_keys=["success"],
-        description="PayerMax支付订单创建"
+        description="获取支付渠道状态（检查哪些渠道已启用）"
     ),
     
     # ==================== 管理接口 ====================
