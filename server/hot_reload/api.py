@@ -23,7 +23,8 @@ from pydantic import BaseModel
 from typing import Optional, Dict, List
 
 # 添加项目根目录到路径
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+# api.py 位于 server/hot_reload/，往上 3 层到达项目根目录
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
 from .hot_reload_manager import HotReloadManager
