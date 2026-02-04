@@ -253,7 +253,7 @@ async def payermax_webhook(request: Request):
             logger.error(f"PayerMax Webhook 更新订单失败: {e}")
     
     # 返回成功响应（PayerMax 要求返回 code=SUCCESS）
-    return {"code": "SUCCESS", "msg": "OK"}
+    return {"code": "SUCCESS", "msg": "Success"}
 
 
 @router.get("/payment/webhook/payermax", summary="PayerMax Webhook 测试端点")
