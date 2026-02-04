@@ -297,8 +297,26 @@ TEST_CASES: List[TestCase] = [
         method="GET",
         endpoint="/api/v1/payment/providers",
         expected_keys=["success"],
-        timeout=60,  # 此接口需要检查多个支付渠道，响应较慢
-        description="获取支付渠道状态（检查哪些渠道已启用）"
+        timeout=10,  # 使用缓存后应该秒出
+        description="获取支付渠道状态（Stripe + PayerMax）"
+    ),
+    TestCase(
+        name="PayerMax创建订单",
+        category=TestCategory.PAYMENT,
+        method="POST",
+        endpoint="/api/v1/payment/unified/create",
+        payload={
+            "provider": "payermax",
+            "amount": "19.90",
+            "currency": "USD",
+            "product_name": "PayerMax测试",
+            "customer_email": "test@example.com",
+            "success_url": "http://localhost:5173/payment/success",
+            "cancel_url": "http://localhost:5173/payment/cancel"
+        },
+        expected_keys=["success"],
+        timeout=30,
+        description="PayerMax支付订单创建"
     ),
     
     # ==================== 管理接口 ====================

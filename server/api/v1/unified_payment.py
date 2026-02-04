@@ -507,10 +507,7 @@ def get_payment_providers():
 
     返回各支付渠道的配置状态和适用地区
     """
-    # 获取所有已注册的支付平台状态
-    available_providers = payment_client_factory.get_available_providers()
-
-    # 支付平台信息配置
+    # 支付平台信息配置（只包含启用的渠道）
     provider_info = {
         "stripe": {
             "name": "Stripe",
@@ -518,43 +515,16 @@ def get_payment_providers():
             "currencies": ["USD", "EUR", "HKD", "PHP", "GBP", "AUD", "CAD", "SGD", "JPY", "CNY"],
             "description": "全球领先的在线支付平台，支持信用卡和多种本地支付方式"
         },
-        "paypal": {
-            "name": "PayPal",
-            "regions": ["全球"],
-            "currencies": ["USD", "EUR", "HKD", "GBP", "AUD"],
-            "description": "全球认知度最高的支付平台，支持多种支付方式"
-        },
-        "payssion": {
-            "name": "Payssion",
-            "regions": ["台湾", "日本", "泰国", "香港", "中国", "全球"],
-            "currencies": ["USD", "HKD", "TWD", "JPY", "THB", "CNY", "EUR"],
-            "description": "第三方支付聚合平台，香港公司可用于台湾 LINE Pay"
-        },
         "payermax": {
             "name": "PayerMax",
             "regions": ["全球", "东南亚", "欧洲", "美洲", "中东", "非洲"],
             "currencies": ["USD", "HKD", "EUR", "GBP", "SGD", "AUD", "CAD", "JPY", "CNY", "THB", "PHP", "MYR", "IDR", "VND"],
             "description": "全球支付聚合平台，支持600+支付方式"
-        },
-        "alipay": {
-            "name": "支付宝国际版",
-            "regions": ["中国", "香港", "澳门"],
-            "currencies": ["CNY", "HKD", "USD"],
-            "description": "中国用户首选支付方式"
-        },
-        "wechat": {
-            "name": "微信支付",
-            "regions": ["中国", "香港", "澳门"],
-            "currencies": ["CNY", "HKD"],
-            "description": "中国用户常用支付方式"
-        },
-        "linepay": {
-            "name": "Line Pay",
-            "regions": ["台湾", "日本", "泰国"],
-            "currencies": ["TWD", "JPY", "THB", "USD"],
-            "description": "台湾、日本、泰国地区常用支付方式（需要台湾公司账号）"
         }
     }
+
+    # 获取启用的支付平台状态（使用缓存，秒出）
+    available_providers = payment_client_factory.get_available_providers()
 
     providers = []
     for provider_id, enabled in available_providers.items():
@@ -583,76 +553,21 @@ def recommend_payment_provider(
     """
     根据地区和货币推荐最合适的支付渠道
 
-    **地区参数：**
-    - global: 全球
-    - americas: 美洲
-    - europe: 欧洲
-    - hongkong: 香港
-    - philippines: 菲律宾
-    - china: 中国大陆
-    - taiwan: 台湾
-    - japan: 日本
-    - thailand: 泰国
+    当前启用渠道：Stripe, PayerMax
+    - Stripe: 全球主流，支持信用卡
+    - PayerMax: 新兴市场，支持600+本地支付方式
     """
-    # 获取可用的支付平台
+    # 获取可用的支付平台（使用缓存，秒出）
     available_providers = payment_client_factory.get_available_providers()
     enabled_providers = [p for p, enabled in available_providers.items() if enabled]
 
-    recommendations = []
-
-    # 智能推荐逻辑
-    if region == "taiwan":
-        # 台湾优先推荐 LINE Pay（通过 Payssion）
-        if "payssion" in enabled_providers:
-            recommendations.append("payssion")
-        elif "linepay" in enabled_providers:
-            recommendations.append("linepay")
-        # 备选方案
-        recommendations.extend([p for p in ["stripe", "paypal", "payermax"] if p in enabled_providers])
-    elif region in ["japan", "thailand"]:
-        # 日本、泰国优先 LINE Pay
-        if "linepay" in enabled_providers:
-            recommendations.append("linepay")
-        elif "payssion" in enabled_providers:
-            recommendations.append("payssion")
-        recommendations.extend([p for p in ["stripe", "paypal", "payermax"] if p in enabled_providers])
-    elif region == "china":
-        # 中国大陆优先本地支付
-        recommendations.extend([p for p in ["alipay", "wechat"] if p in enabled_providers])
-        recommendations.extend([p for p in ["stripe", "paypal", "payermax"] if p in enabled_providers])
-    elif region == "hongkong":
-        # 香港支持多种支付
-        recommendations.extend([p for p in ["stripe", "paypal", "alipay", "wechat", "payermax"] if p in enabled_providers])
-    elif region in ["americas", "europe"]:
-        # 美洲、欧洲优先 Stripe 和 PayPal
-        recommendations.extend([p for p in ["stripe", "paypal", "payermax"] if p in enabled_providers])
-    elif region == "philippines":
-        # 菲律宾优先 Stripe（支持PHP）
-        recommendations.extend([p for p in ["stripe", "paypal", "payermax"] if p in enabled_providers])
-    else:  # global 或其他地区
-        # 全局推荐所有可用支付
-        recommendations = enabled_providers.copy()
-
-    # 根据货币进一步优化推荐
-    if currency == "CNY":
-        # 人民币优先支付宝和微信
-        china_payments = [p for p in ["alipay", "wechat"] if p in recommendations]
-        other_payments = [p for p in recommendations if p not in ["alipay", "wechat"]]
-        recommendations = china_payments + other_payments
-    elif currency in ["TWD", "JPY", "THB"]:
-        # 亚洲货币优先 LINE Pay 相关
-        linepay_payments = [p for p in ["linepay", "payssion"] if p in recommendations]
-        other_payments = [p for p in recommendations if p not in ["linepay", "payssion"]]
-        recommendations = linepay_payments + other_payments
-    elif currency in ["HKD", "PHP"]:
-        # 特定货币优先支持的平台
-        currency_supported = [p for p in recommendations if currency in get_payment_client(p).get_supported_currencies()]
-        currency_supported.extend([p for p in recommendations if p not in currency_supported])
-        recommendations = currency_supported[:len(recommendations)]  # 保持原有长度
-
-    # 移除重复并保持顺序
-    seen = set()
-    recommendations = [p for p in recommendations if not (p in seen or seen.add(p))]
+    # 简化推荐逻辑：只有 Stripe 和 PayerMax
+    # 东南亚、中东、非洲等新兴市场优先 PayerMax
+    if region in ["southeast_asia", "middle_east", "africa", "philippines", "thailand", "indonesia", "vietnam", "malaysia"]:
+        recommendations = [p for p in ["payermax", "stripe"] if p in enabled_providers]
+    else:
+        # 其他地区优先 Stripe
+        recommendations = [p for p in ["stripe", "payermax"] if p in enabled_providers]
 
     return {
         "success": True,
