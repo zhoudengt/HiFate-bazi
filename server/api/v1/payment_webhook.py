@@ -187,21 +187,34 @@ async def payermax_webhook(request: Request):
     
     logger.info(f"收到PayerMax Webhook通知: {json.dumps(data, ensure_ascii=False)[:500]}")
     
-    # 提取关键字段
-    out_trade_no = data.get('outTradeNo')  # 商户订单号
-    trade_token = data.get('tradeToken')    # PayerMax 交易号
-    trade_status = data.get('tradeStatus')  # 交易状态: SUCCESS / FAILED
-    total_amount = data.get('totalAmount')  # 金额
-    currency = data.get('currency')         # 货币
+    # PayerMax 回调数据结构：关键字段在嵌套的 data 对象中
+    # {
+    #   "code": "APPLY_SUCCESS",
+    #   "data": {
+    #     "outTradeNo": "...",
+    #     "tradeToken": "...",
+    #     "tradeStatus": "SUCCESS",
+    #     ...
+    #   }
+    # }
+    nested_data = data.get('data', {})
     
-    logger.info(f"PayerMax回调: outTradeNo={out_trade_no}, tradeToken={trade_token}, status={trade_status}")
+    # 提取关键字段（优先从嵌套 data 中取，兼容直接传递的情况）
+    out_trade_no = nested_data.get('outTradeNo') or data.get('outTradeNo')  # 商户订单号
+    trade_token = nested_data.get('tradeToken') or data.get('tradeToken')    # PayerMax 交易号
+    trade_status = nested_data.get('tradeStatus') or data.get('tradeStatus')  # 交易状态: SUCCESS / FAILED
+    total_amount = nested_data.get('totalAmount') or data.get('totalAmount')  # 金额
+    currency = nested_data.get('currency') or data.get('currency')         # 货币
+    response_code = data.get('code')  # 顶层响应码：APPLY_SUCCESS 等
+    
+    logger.info(f"PayerMax回调: code={response_code}, outTradeNo={out_trade_no}, tradeToken={trade_token}, status={trade_status}")
     
     if not out_trade_no:
         logger.warning("PayerMax Webhook 缺少 outTradeNo")
         return {"code": "FAIL", "msg": "缺少 outTradeNo"}
     
     # 更新订单状态（如果有 PaymentTransactionDAO）
-    if PaymentTransactionDAO and trade_status:
+    if PaymentTransactionDAO and (trade_status or response_code):
         try:
             from datetime import datetime
             
@@ -211,7 +224,11 @@ async def payermax_webhook(request: Request):
                 'FAILED': 'failed',
                 'PENDING': 'pending'
             }
-            new_status = status_map.get(trade_status, 'pending')
+            # 优先使用 tradeStatus，否则根据 response_code 判断
+            if trade_status:
+                new_status = status_map.get(trade_status, 'pending')
+            else:
+                new_status = 'success' if response_code == 'APPLY_SUCCESS' else 'pending'
             
             # 查找交易记录
             transaction = PaymentTransactionDAO.get_transaction_by_order_id(order_id=out_trade_no)
