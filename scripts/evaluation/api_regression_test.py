@@ -297,6 +297,7 @@ TEST_CASES: List[TestCase] = [
         method="GET",
         endpoint="/api/v1/payment/providers",
         expected_keys=["success"],
+        timeout=60,  # 此接口需要检查多个支付渠道，响应较慢
         description="获取支付渠道状态（检查哪些渠道已启用）"
     ),
     
