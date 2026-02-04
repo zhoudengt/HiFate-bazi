@@ -38,7 +38,10 @@ except ImportError:
     def get_config_from_db_only(key: str) -> Optional[str]:
         raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
 from server.api.v1.general_review_analysis import organize_special_liunians_by_dayun
-from server.utils.prompt_builders import format_health_input_data_for_coze as format_input_data_for_coze
+from server.utils.prompt_builders import (
+    format_health_input_data_for_coze as format_input_data_for_coze,
+    format_health_for_llm
+)
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
 from server.services.user_interaction_logger import get_user_interaction_logger
@@ -429,10 +432,10 @@ async def health_analysis_stream_generator(
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 10. 格式化数据为 Coze Bot 输入格式（方案2，与V2保持一致）
-        formatted_data = format_input_data_for_coze(input_data)
-        logger.info(f"格式化数据长度: {len(formatted_data)} 字符")
-        logger.debug(f"格式化数据前500字符: {formatted_data[:500]}")
+        # 10. ⚠️ 优化：使用精简中文文本格式（Token 减少 86%）
+        formatted_data = format_health_for_llm(input_data)
+        logger.info(f"格式化数据长度: {len(formatted_data)} 字符（优化后）")
+        logger.debug(f"格式化数据:\n{formatted_data}")
         
         # ✅ 性能优化：检查 LLM 缓存
         input_data_hash = compute_input_data_hash(input_data)

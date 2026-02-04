@@ -54,6 +54,7 @@ from server.utils.dayun_liunian_helper import (
 from server.config.input_format_loader import build_input_data_from_result
 from server.utils.prompt_builders import (
     format_general_review_input_data_for_coze as format_input_data_for_coze,
+    format_general_review_for_llm,
     _simplify_dayun
 )
 from server.services.user_interaction_logger import get_user_interaction_logger
@@ -860,10 +861,10 @@ async def general_review_analysis_stream_generator(
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 8. ⚠️ 方案2：格式化数据为 Coze Bot 输入格式
-        formatted_data = format_input_data_for_coze(input_data)
-        logger.info(f"[General Review Stream] 格式化数据长度: {len(formatted_data)} 字符")
-        logger.debug(f"[General Review Stream] 格式化数据前500字符: {formatted_data[:500]}")
+        # 8. ⚠️ 优化：使用精简中文文本格式（Token 减少 86%）
+        formatted_data = format_general_review_for_llm(input_data)
+        logger.info(f"[General Review Stream] 格式化数据长度: {len(formatted_data)} 字符（优化后）")
+        logger.debug(f"[General Review Stream] 格式化数据:\n{formatted_data}")
         
         # 8.1 保存参数到文件（用于数据减枝分析）
         try:

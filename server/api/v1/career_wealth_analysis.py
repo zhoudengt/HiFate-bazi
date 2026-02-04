@@ -48,7 +48,10 @@ from server.utils.dayun_liunian_helper import (
     build_enhanced_dayun_structure
 )
 from server.config.input_format_loader import build_input_data_from_result
-from server.utils.prompt_builders import format_career_wealth_input_data_for_coze as format_input_data_for_coze
+from server.utils.prompt_builders import (
+    format_career_wealth_input_data_for_coze as format_input_data_for_coze,
+    format_career_wealth_for_llm
+)
 
 # ✅ 性能优化：导入流式缓存工具
 from server.utils.stream_cache_helper import (
@@ -1298,10 +1301,10 @@ async def career_wealth_stream_generator(
         
         logger.info("✓ 数据完整性验证通过")
         
-        # 8. ⚠️ 方案2：格式化数据为 Coze Bot 输入格式
-        formatted_data = format_input_data_for_coze(input_data)
-        logger.info(f"格式化数据长度: {len(formatted_data)} 字符")
-        logger.debug(f"格式化数据前500字符: {formatted_data[:500]}")
+        # 8. ⚠️ 优化：使用精简中文文本格式（Token 减少 85%）
+        formatted_data = format_career_wealth_for_llm(input_data)
+        logger.info(f"格式化数据长度: {len(formatted_data)} 字符（优化后）")
+        logger.debug(f"格式化数据:\n{formatted_data}")
         
         # ✅ 性能优化：检查 LLM 缓存
         input_data_hash = compute_input_data_hash(input_data)

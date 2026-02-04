@@ -24,6 +24,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.config.input_format_loader import get_format_loader, build_input_data
+from server.utils.prompt_builders import format_smart_fortune_for_llm
 
 # 导入配置加载器（从数据库读取配置）
 from server.config.config_loader import get_config_from_db_only
@@ -473,45 +474,26 @@ class FortuneLLMClient:
             {}
         )
         
-        # ==================== 精简模式：使用分层数据结构 ====================
+        # ==================== 精简模式：使用中文文本格式（Token 减少 84%） ====================
         if minimal_mode:
-            # 构建分层数据
-            input_data = {
-                # 第一层：基础数据（每次完整传递）
-                'base_data': {
-                    'bazi': {
-                        'pillars': bazi_pillars,
-                        'pillars_str': pillars_str,
-                        'day_stem': day_stem,
-                        'basic_info': basic_info,
-                        'ten_gods_stats': ten_gods_stats,
-                        'element_counts': element_counts
-                    },
-                    'fortune_context': self._extract_fortune_context(fortune_context, question),
-                    'matched_rules': self._extract_rules_summary(matched_rules, intent)
-                },
-                
-                # 第二层：当前问题（完整传递）
-                'current_query': {
-                    'question': question,
-                    'intent': intent,
-                    'category': category
-                },
-                
-                # 第三层：历史上下文（压缩后传递）
-                'history_context': {
-                    'total_rounds': len(history_context) if history_context else 0,
-                    'recent_rounds': history_context or []
-                },
-                
-                'language_style': '通俗易懂，避免专业术语，面向普通用户。用日常语言解释命理概念，如"正官"可以说成"稳定的工作机会"，"七杀"可以说成"挑战和压力"。'
-            }
+            # 使用中文文本格式化函数
+            formatted_text = format_smart_fortune_for_llm(
+                bazi_data=bazi_data,
+                fortune_context=fortune_context,
+                matched_rules=matched_rules or [],
+                question=question,
+                intent=intent,
+                category=category,
+                history_context=history_context
+            )
+            
+            # 返回包含 prompt 字段的字典，_call_coze_api_stream 会直接使用 prompt 内容
+            input_data = {'prompt': formatted_text}
             
             # 日志
-            import json
-            data_size = len(json.dumps(input_data, ensure_ascii=False))
             history_rounds = len(history_context) if history_context else 0
-            logger.info(f"[分层模式] 发送给LLM: intent={intent}, category={category}, pillars={pillars_str}, history_rounds={history_rounds}, size={data_size}字符")
+            logger.info(f"[精简文本模式] 发送给LLM: intent={intent}, category={category}, pillars={pillars_str}, history_rounds={history_rounds}, size={len(formatted_text)}字符（优化后）")
+            logger.debug(f"[精简文本模式] 格式化数据:\n{formatted_text}")
             return input_data
         
         # 完整模式：传递所有数据（场景1使用）

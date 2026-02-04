@@ -27,6 +27,7 @@ from server.utils.data_validator import validate_bazi_data
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
 from server.services.annual_report_service import AnnualReportService
+from server.utils.prompt_builders import format_annual_report_for_llm
 
 # 导入配置加载器（从数据库读取配置）
 try:
@@ -373,10 +374,10 @@ async def annual_report_stream_generator(
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 8. 格式化数据为 Coze Bot 输入格式
-        formatted_data = AnnualReportService.format_input_data_for_coze(input_data)
-        logger.info(f"[Annual Report Stream] 格式化数据长度: {len(formatted_data)} 字符")
-        logger.debug(f"[Annual Report Stream] 格式化数据前500字符: {formatted_data[:500]}")
+        # 8. ⚠️ 优化：使用精简中文文本格式（Token 减少 82%）
+        formatted_data = format_annual_report_for_llm(input_data)
+        logger.info(f"[Annual Report Stream] 格式化数据长度: {len(formatted_data)} 字符（优化后）")
+        logger.debug(f"[Annual Report Stream] 格式化数据:\n{formatted_data}")
         
         # 9. 创建 LLM 流式服务（支持 Coze 和百炼平台）
         try:
