@@ -831,7 +831,7 @@ def format_marriage_for_llm(input_data: Dict[str, Any]) -> str:
     # 12. 喜忌
     xi_ji_text = format_xi_ji_text(xi_ji)
     if xi_ji_text:
-        lines.append(f"【喜神忌神】{xi_ji_text}")
+        lines.append(f"【喜忌】{xi_ji_text}")
     
     return '\n'.join(lines)
 
@@ -1081,7 +1081,7 @@ def format_career_wealth_for_llm(input_data: Dict[str, Any]) -> str:
     xi_ji = tiyun.get('xi_ji', {})
     xi_ji_text = format_xi_ji_text(xi_ji)
     if xi_ji_text:
-        lines.append(f"【喜神忌神】{xi_ji_text}")
+        lines.append(f"【喜忌】{xi_ji_text}")
     
     # 15. 方位建议
     fangwei = tiyun.get('fangwei', {})
@@ -1290,7 +1290,7 @@ def format_children_study_for_llm(input_data: Dict[str, Any]) -> str:
     xi_ji = yangyu.get('xi_ji', {})
     xi_ji_text = format_xi_ji_text(xi_ji)
     if xi_ji_text:
-        lines.append(f"【喜神忌神】{xi_ji_text}")
+        lines.append(f"【喜忌】{xi_ji_text}")
     
     return '\n'.join(lines)
 
@@ -1471,7 +1471,7 @@ def format_health_for_llm(input_data: Dict[str, Any]) -> str:
     xi_ji = tizhi_tiaoli.get('xi_ji', {})
     xi_ji_text = format_xi_ji_text(xi_ji)
     if xi_ji_text:
-        lines.append(f"【喜神忌神】{xi_ji_text}")
+        lines.append(f"【喜忌】{xi_ji_text}")
     
     # 11. 调理建议
     wuxing_tiaohe = tizhi_tiaoli.get('wuxing_tiaohe', {})
@@ -1735,7 +1735,7 @@ def format_general_review_for_llm(input_data: Dict[str, Any]) -> str:
     if xishen_wuxing or jishen_wuxing:
         xi_text = ''.join(xishen_wuxing) if xishen_wuxing else '无'
         ji_text = ''.join(jishen_wuxing) if jishen_wuxing else '无'
-        lines.append(f"【喜神忌神】喜{xi_text}，忌{ji_text}")
+        lines.append(f"【喜忌】喜{xi_text}，忌{ji_text}")
     
     # 13. 方位建议
     fangwei = zhongsheng.get('fangwei_xuanze', {})
@@ -1855,7 +1855,7 @@ def format_smart_fortune_for_llm(
         if xi_elements or ji_elements:
             xi_text = ''.join(xi_elements) if xi_elements else '无'
             ji_text = ''.join(ji_elements) if ji_elements else '无'
-            lines.append(f"【喜神忌神】喜{xi_text}，忌{ji_text}")
+            lines.append(f"【喜忌】喜{xi_text}，忌{ji_text}")
     
     # 7. 大运流年
     if fortune_context:
@@ -1955,7 +1955,7 @@ def format_annual_report_for_llm(input_data: Dict[str, Any]) -> str:
     xi_ji = mingpan.get('xi_ji', {})
     xi_ji_text = format_xi_ji_text(xi_ji)
     if xi_ji_text:
-        lines.append(f"【喜神忌神】{xi_ji_text}")
+        lines.append(f"【喜忌】{xi_ji_text}")
     
     # 5. 流年信息
     year = monthly.get('year', taisui.get('year', ''))
