@@ -11,6 +11,7 @@ import sys
 import json
 import asyncio
 import logging
+import concurrent.futures
 from typing import Dict, Any, Optional, AsyncGenerator
 from dataclasses import dataclass
 
@@ -76,7 +77,10 @@ class BailianClient:
         **kwargs
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        流式调用百炼智能体应用
+        流式调用百炼智能体应用（优化版：线程队列模式）
+        
+        使用后台线程迭代 DashScope 响应，通过 asyncio.Queue 传递到主线程，
+        实现真正的异步流式响应，降低首 token 延迟。
         
         Args:
             app_id: 智能体应用 ID
@@ -93,79 +97,118 @@ class BailianClient:
         
         logger.info(f"🚀 调用百炼智能体: app_id={app_id}, prompt长度={len(prompt)}")
         
-        try:
-            # 构建请求参数
-            call_params = {
-                "app_id": app_id,
-                "prompt": prompt,
-                "stream": True,
-                "incremental_output": True,  # 增量输出
-            }
+        # 创建异步队列用于线程间通信
+        queue: asyncio.Queue = asyncio.Queue()
+        DONE_SENTINEL = object()  # 结束标记
+        
+        # 构建请求参数
+        call_params = {
+            "app_id": app_id,
+            "prompt": prompt,
+            "stream": True,
+            "incremental_output": True,  # 增量输出
+        }
+        
+        if session_id:
+            call_params["session_id"] = session_id
+        
+        # 获取当前事件循环
+        loop = asyncio.get_event_loop()
+        
+        def sync_iterate():
+            """
+            在后台线程中执行同步迭代
             
-            if session_id:
-                call_params["session_id"] = session_id
-            
-            # 在线程池中运行同步的流式调用
-            loop = asyncio.get_event_loop()
-            
-            # 使用同步方式调用，然后异步处理结果
+            将每个响应通过队列传递到主线程，实现真正的异步流式响应。
+            """
             buffer = ""
             has_content = False
             
-            def sync_call():
-                """同步调用百炼 API"""
-                return Application.call(**call_params)
-            
-            # 执行调用
-            responses = await loop.run_in_executor(None, sync_call)
-            
-            # 处理流式响应
-            for response in responses:
-                await asyncio.sleep(0)  # 让出控制权
+            try:
+                # 调用 DashScope API（返回迭代器）
+                responses = Application.call(**call_params)
                 
-                if response.status_code != 200:
-                    error_msg = f"百炼 API 错误: {response.code} - {response.message}"
-                    logger.error(f"❌ {error_msg}")
-                    yield {
-                        'type': 'error',
-                        'content': error_msg
-                    }
-                    return
+                # 在后台线程中迭代响应
+                for response in responses:
+                    if response.status_code != 200:
+                        error_msg = f"百炼 API 错误: {response.code} - {response.message}"
+                        logger.error(f"❌ {error_msg}")
+                        asyncio.run_coroutine_threadsafe(
+                            queue.put({'type': 'error', 'content': error_msg}),
+                            loop
+                        ).result(timeout=5)
+                        return
+                    
+                    # 提取输出内容
+                    output = response.output
+                    if output:
+                        text = output.get('text', '')
+                        if text:
+                            # 增量内容
+                            new_content = text[len(buffer):] if text.startswith(buffer) else text
+                            if new_content:
+                                has_content = True
+                                buffer = text
+                                # 将响应放入队列
+                                asyncio.run_coroutine_threadsafe(
+                                    queue.put({'type': 'progress', 'content': new_content}),
+                                    loop
+                                ).result(timeout=5)
                 
-                # 提取输出内容
-                output = response.output
-                if output:
-                    text = output.get('text', '')
-                    if text:
-                        # 增量内容
-                        new_content = text[len(buffer):] if text.startswith(buffer) else text
-                        if new_content:
-                            has_content = True
-                            buffer = text
-                            yield {
-                                'type': 'progress',
-                                'content': new_content
-                            }
-            
-            # 流结束
-            if has_content:
-                yield {
-                    'type': 'complete',
-                    'content': ''
-                }
-            else:
-                yield {
-                    'type': 'error',
-                    'content': '百炼 API 返回空内容'
-                }
+                # 流结束，发送完成标记
+                if has_content:
+                    asyncio.run_coroutine_threadsafe(
+                        queue.put({'type': 'complete', 'content': ''}),
+                        loop
+                    ).result(timeout=5)
+                else:
+                    asyncio.run_coroutine_threadsafe(
+                        queue.put({'type': 'error', 'content': '百炼 API 返回空内容'}),
+                        loop
+                    ).result(timeout=5)
+                    
+            except Exception as e:
+                error_msg = f"百炼 API 调用异常: {str(e)}"
+                logger.error(f"❌ {error_msg}")
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        queue.put({'type': 'error', 'content': error_msg}),
+                        loop
+                    ).result(timeout=5)
+                except Exception:
+                    pass  # 忽略队列放入失败
+            finally:
+                # 总是发送结束标记
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        queue.put(DONE_SENTINEL),
+                        loop
+                    ).result(timeout=5)
+                except Exception:
+                    pass
+        
+        # 启动后台线程执行迭代
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        executor.submit(sync_iterate)
+        
+        try:
+            # 异步从队列获取响应
+            while True:
+                item = await queue.get()
                 
-        except Exception as e:
-            error_msg = f"百炼 API 调用异常: {str(e)}"
-            logger.error(f"❌ {error_msg}")
-            yield {
-                'type': 'error',
-                'content': error_msg
-            }
+                # 检查是否结束
+                if item is DONE_SENTINEL:
+                    break
+                
+                # 直接 yield 响应
+                yield item
+                
+                # 如果是错误或完成，退出循环
+                if item.get('type') in ('error', 'complete'):
+                    break
+        finally:
+            # 清理线程池
+            executor.shutdown(wait=False)
     
     async def call_sync(
         self,
