@@ -195,7 +195,7 @@ class FortuneRuleEngine:
         logger.info("\n" + "="*80)
         logger.info("🔍 手相规则匹配")
         logger.info("="*80)
-        logger.info(f"手相特征: {hand_features}", flush=True)
+        logger.info(f"手相特征: {hand_features}")
         insights = []
         
         # 手型规则（支持连续值，根据ratio和confidence个性化）
@@ -611,7 +611,7 @@ class FortuneRuleEngine:
                 })
         
         logger.info(f"✅ 手相规则匹配完成，共匹配到 {len(insights)} 条规则")
-        logger.info("="*80 + "\n", flush=True)
+        logger.info("="*80 + "\n")
         return insights
     
     def match_face_rules(self, face_features: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -619,7 +619,7 @@ class FortuneRuleEngine:
         logger.info("\n" + "="*80)
         logger.info("🔍 面相规则匹配")
         logger.info("="*80)
-        logger.info(f"面相特征: {face_features}", flush=True)
+        logger.info(f"面相特征: {face_features}")
         insights = []
         scanned_rules = []  # 记录所有扫描的规则
         max_insights = 25  # 性能优化：最多匹配25条规则
@@ -1429,7 +1429,7 @@ class FortuneRuleEngine:
         for i, insight in enumerate(insights, 1):
             logger.info(f"    {i}. [{insight['category']}] {insight['content']} (置信度: {insight['confidence']})")
         logger.info("="*80)
-        logger.info(f"✅ 面相规则匹配完成，共扫描 {len(scanned_rules)} 条规则，匹配到 {len(insights)} 条规则（已合并去重）\n", flush=True)
+        logger.info(f"✅ 面相规则匹配完成，共扫描 {len(scanned_rules)} 条规则，匹配到 {len(insights)} 条规则（已合并去重）\n")
         return insights
     
     def integrate_with_bazi(
@@ -2293,7 +2293,7 @@ class FortuneRuleEngine:
         for i, insight in enumerate(integrated_insights, 1):
             logger.info(f"    {i}. [{insight['category']}] {insight['content']} (置信度: {insight['confidence']})")
         logger.info("="*80)
-        logger.info(f"✅ 融合分析完成，共扫描 {len(scanned_rules)} 条规则，匹配到 {len(integrated_insights)} 条规则\n", flush=True)
+        logger.info(f"✅ 融合分析完成，共扫描 {len(scanned_rules)} 条规则，匹配到 {len(integrated_insights)} 条规则\n")
         
         # 合并和提炼重复内容
         integrated_insights = self._merge_and_refine_insights(integrated_insights)

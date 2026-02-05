@@ -36,7 +36,7 @@ class BaziFortuneServicer(bazi_fortune_pb2_grpc.BaziFortuneServiceServicer):
         """计算大运流年"""
         import datetime
         request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(f"[{request_time}] 📥 bazi-fortune-service: 收到请求 - solar_date={request.solar_date}, solar_time={request.solar_time}, gender={request.gender}, current_time={request.current_time}", flush=True)
+        logger.info(f"[{request_time}] 📥 bazi-fortune-service: 收到请求 - solar_date={request.solar_date}, solar_time={request.solar_time}, gender={request.gender}, current_time={request.current_time}")
         
         try:
             # 解析当前时间
@@ -65,18 +65,18 @@ class BaziFortuneServicer(bazi_fortune_pb2_grpc.BaziFortuneServiceServicer):
             }
             response.metadata_json = json.dumps(metadata, ensure_ascii=False)
             
-            logger.info(f"[{request_time}] ✅ bazi-fortune-service: 响应已返回", flush=True)
+            logger.info(f"[{request_time}] ✅ bazi-fortune-service: 响应已返回")
             return response
             
         except ValueError as e:
-            logger.info(f"[{request_time}] ❌ bazi-fortune-service: 参数错误 - {str(e)}", flush=True)
+            logger.info(f"[{request_time}] ❌ bazi-fortune-service: 参数错误 - {str(e)}")
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details(str(e))
             return bazi_fortune_pb2.BaziFortuneResponse()
         except Exception as e:
             import traceback
             error_msg = f"运势计算失败: {str(e)}\n{traceback.format_exc()}"
-            logger.info(f"[{request_time}] ❌ bazi-fortune-service: 错误 - {error_msg}", flush=True)
+            logger.info(f"[{request_time}] ❌ bazi-fortune-service: 错误 - {error_msg}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"运势计算失败: {str(e)}")
             return bazi_fortune_pb2.BaziFortuneResponse()

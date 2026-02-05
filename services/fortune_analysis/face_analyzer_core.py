@@ -58,21 +58,21 @@ class FaceAnalyzerCore:
             logger.info("\n" + "="*80)
             logger.info("🔮 面相分析流程开始")
             logger.info("="*80)
-            logger.info(f"[{request_time}] 📸 开始面相分析", flush=True)
+            logger.info(f"[{request_time}] 📸 开始面相分析")
             
             # 1. 提取面部特征（性能优化：默认关闭特殊特征检测）
-            logger.info(f"[{request_time}] 📋 步骤1: 提取面部特征...", flush=True)
+            logger.info(f"[{request_time}] 📋 步骤1: 提取面部特征...")
             face_result = self.face_analyzer.analyze(image_bytes, image_format, enable_special_features=False)
             
             if not face_result.get("success"):
-                logger.info(f"[{request_time}] ❌ 面部特征提取失败: {face_result.get('error', '未知错误')}", flush=True)
+                logger.info(f"[{request_time}] ❌ 面部特征提取失败: {face_result.get('error', '未知错误')}")
                 return face_result
             
             face_features = face_result.get("features", {})
-            logger.info(f"[{request_time}] ✅ 面部特征提取完成", flush=True)
+            logger.info(f"[{request_time}] ✅ 面部特征提取完成")
             
             # 2. 规则匹配和八字融合（调用 fortune_rule 微服务）
-            logger.info(f"\n[{request_time}] 📋 步骤2: 规则匹配和八字融合...", flush=True)
+            logger.info(f"\n[{request_time}] 📋 步骤2: 规则匹配和八字融合...")
             bazi_info_dict = None
             if bazi_info and bazi_info.use_bazi:
                 bazi_info_dict = {
@@ -81,12 +81,12 @@ class FaceAnalyzerCore:
                     "gender": bazi_info.gender,
                     "use_bazi": True
                 }
-                logger.info(f"[{request_time}] 📅 八字信息: {bazi_info.solar_date} {bazi_info.solar_time} {bazi_info.gender}", flush=True)
+                logger.info(f"[{request_time}] 📅 八字信息: {bazi_info.solar_date} {bazi_info.solar_time} {bazi_info.gender}")
             else:
-                logger.info(f"[{request_time}] ⚠️  未提供八字信息，仅进行面相规则匹配", flush=True)
+                logger.info(f"[{request_time}] ⚠️  未提供八字信息，仅进行面相规则匹配")
             
             # 调用 fortune_rule 微服务
-            logger.info(f"[{request_time}] 🔍 调用 fortune_rule 微服务进行规则匹配...", flush=True)
+            logger.info(f"[{request_time}] 🔍 调用 fortune_rule 微服务进行规则匹配...")
             rule_result = self.rule_client.match_face_rules(
                 face_features=face_features,
                 bazi_info=bazi_info_dict,
@@ -94,7 +94,7 @@ class FaceAnalyzerCore:
             )
             
             if not rule_result.get("success"):
-                logger.info(f"[{request_time}] ❌ 规则匹配失败: {rule_result.get('error', '未知错误')}", flush=True)
+                logger.info(f"[{request_time}] ❌ 规则匹配失败: {rule_result.get('error', '未知错误')}")
                 return {
                     "success": False,
                     "error": rule_result.get("error", "规则匹配失败")
@@ -105,18 +105,18 @@ class FaceAnalyzerCore:
             recommendations = rule_result.get("recommendations", [])
             bazi_data = rule_result.get("bazi_data")
             
-            logger.info(f"[{request_time}] ✅ 规则匹配完成", flush=True)
-            logger.info(f"[{request_time}] 📊 匹配结果:", flush=True)
-            logger.info(f"   面相规则洞察: {len(face_insights)}条", flush=True)
-            logger.info(f"   八字融合洞察: {len(integrated_insights)}条", flush=True)
-            logger.info(f"   建议: {len(recommendations)}条", flush=True)
+            logger.info(f"[{request_time}] ✅ 规则匹配完成")
+            logger.info(f"[{request_time}] 📊 匹配结果:")
+            logger.info(f"   面相规则洞察: {len(face_insights)}条")
+            logger.info(f"   八字融合洞察: {len(integrated_insights)}条")
+            logger.info(f"   建议: {len(recommendations)}条")
             
             # 3. AI 增强（可选，默认关闭以提升性能）
             ai_enhanced_insights = []
             # 如果需要AI增强，可以通过环境变量启用：ENABLE_AI_ENHANCEMENT=true
             enable_ai = os.getenv("ENABLE_AI_ENHANCEMENT", "false").lower() == "true"
             if enable_ai:
-                logger.info(f"\n[{request_time}] 📋 步骤3: AI 增强分析...", flush=True)
+                logger.info(f"\n[{request_time}] 📋 步骤3: AI 增强分析...")
                 try:
                     # 准备数据
                     analysis_data = {
@@ -127,20 +127,20 @@ class FaceAnalyzerCore:
                     }
                     
                     # 调用 Coze API
-                    logger.info(f"[{request_time}] 🤖 调用 Coze API 进行AI增强...", flush=True)
+                    logger.info(f"[{request_time}] 🤖 调用 Coze API 进行AI增强...")
                     ai_result = self.coze_integration.enhance_analysis(analysis_data)
                     if ai_result:
                         ai_enhanced_insights = ai_result.get("enhanced_insights", [])
-                        logger.info(f"[{request_time}] ✅ AI增强完成，新增 {len(ai_enhanced_insights)} 条洞察", flush=True)
+                        logger.info(f"[{request_time}] ✅ AI增强完成，新增 {len(ai_enhanced_insights)} 条洞察")
                     else:
-                        logger.info(f"[{request_time}] ⚠️  AI增强未返回结果", flush=True)
+                        logger.info(f"[{request_time}] ⚠️  AI增强未返回结果")
                 except Exception as e:
-                    logger.info(f"[{request_time}] ⚠️  Coze API 调用失败: {e}", flush=True)
+                    logger.info(f"[{request_time}] ⚠️  Coze API 调用失败: {e}")
             else:
-                logger.info(f"[{request_time}] ⏭️  跳过AI增强（默认关闭以提升性能）", flush=True)
+                logger.info(f"[{request_time}] ⏭️  跳过AI增强（默认关闭以提升性能）")
             
             # 4. 合并所有洞察（去重）
-            logger.info(f"\n[{request_time}] 📋 步骤4: 合并所有洞察并去重...", flush=True)
+            logger.info(f"\n[{request_time}] 📋 步骤4: 合并所有洞察并去重...")
             all_insights = face_insights + integrated_insights + ai_enhanced_insights
             
             # 对合并后的insights进行去重和提炼
@@ -148,15 +148,15 @@ class FaceAnalyzerCore:
             rule_engine = FortuneRuleEngine()
             all_insights = rule_engine._merge_and_refine_insights(all_insights)
             
-            logger.info(f"[{request_time}] ✅ 合并完成，共 {len(all_insights)} 条洞察（已去重）", flush=True)
+            logger.info(f"[{request_time}] ✅ 合并完成，共 {len(all_insights)} 条洞察（已去重）")
             
             # 5. 计算置信度
-            logger.info(f"[{request_time}] 📋 步骤5: 计算置信度...", flush=True)
+            logger.info(f"[{request_time}] 📋 步骤5: 计算置信度...")
             confidence = self._calculate_confidence(face_features, len(all_insights))
-            logger.info(f"[{request_time}] ✅ 置信度计算完成: {confidence:.2%}", flush=True)
+            logger.info(f"[{request_time}] ✅ 置信度计算完成: {confidence:.2%}")
             
             # 6. 构建完整报告
-            logger.info(f"\n[{request_time}] 📋 步骤6: 构建完整报告...", flush=True)
+            logger.info(f"\n[{request_time}] 📋 步骤6: 构建完整报告...")
             report = {
                 "success": True,
                 "features": face_features,

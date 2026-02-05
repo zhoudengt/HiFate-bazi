@@ -259,7 +259,7 @@ class UnifiedLogger:
                 self.log_queue.task_done()
             except Exception as e:
                 # 异步写入失败，输出到控制台
-                logger.info(f"⚠️ 异步日志写入失败: {e}", file=sys.stderr, flush=True)
+                logger.warning(f"⚠️ 异步日志写入失败: {e}")
     
     def _log(self, level: LogLevel, **kwargs):
         """内部日志方法"""
@@ -270,7 +270,7 @@ class UnifiedLogger:
                 self.log_queue.put_nowait(log_entry)
             except Exception as e:
                 # 队列满，同步写入
-                logger.info(f"⚠️ 日志队列满，同步写入: {e}", file=sys.stderr, flush=True)
+                logger.warning(f"⚠️ 日志队列满，同步写入: {e}")
                 self._sync_log(log_entry, level)
         else:
             self._sync_log(log_entry, level)

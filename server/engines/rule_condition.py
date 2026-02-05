@@ -326,10 +326,10 @@ class EnhancedRuleCondition:
                         import json
                         ten_gods_stats = json.loads(ten_gods_stats)
                     except (json.JSONDecodeError, TypeError):
-                        logger.info(f"⚠️  ten_gods_stats 是字符串但无法解析为JSON: {repr(ten_gods_stats)[:100]}", flush=True)
+                        logger.info(f"⚠️  ten_gods_stats 是字符串但无法解析为JSON: {repr(ten_gods_stats)[:100]}")
                         ten_gods_stats = {}
                 elif not isinstance(ten_gods_stats, dict):
-                    logger.info(f"⚠️  ten_gods_stats 不是字典类型: {type(ten_gods_stats)}, 值: {repr(ten_gods_stats)[:100]}", flush=True)
+                    logger.info(f"⚠️  ten_gods_stats 不是字典类型: {type(ten_gods_stats)}, 值: {repr(ten_gods_stats)[:100]}")
                     ten_gods_stats = {}
                 
                 stats = ten_gods_stats.get(stats_key_map[key], {})
@@ -339,10 +339,10 @@ class EnhancedRuleCondition:
                         import json
                         stats = json.loads(stats)
                     except (json.JSONDecodeError, TypeError):
-                        logger.info(f"⚠️  stats ({stats_key_map[key]}) 是字符串但无法解析为JSON: {repr(stats)[:100]}", flush=True)
+                        logger.info(f"⚠️  stats ({stats_key_map[key]}) 是字符串但无法解析为JSON: {repr(stats)[:100]}")
                         stats = {}
                 elif not isinstance(stats, dict):
-                    logger.info(f"⚠️  stats ({stats_key_map[key]}) 不是字典类型: {type(stats)}, 值: {repr(stats)[:100]}", flush=True)
+                    logger.info(f"⚠️  stats ({stats_key_map[key]}) 不是字典类型: {type(stats)}, 值: {repr(stats)[:100]}")
                     stats = {}
                 
                 return EnhancedRuleCondition._match_ten_gods_stats(stats, value)
@@ -371,7 +371,7 @@ class EnhancedRuleCondition:
                         return wangshuai_status in value
                     return wangshuai_status == value
                 except Exception as e:
-                    logger.info(f"⚠️  旺衰条件匹配失败: {e}", flush=True)
+                    logger.info(f"⚠️  旺衰条件匹配失败: {e}")
                     return False
             
             # ========== 季节条件 ==========
@@ -418,10 +418,10 @@ class EnhancedRuleCondition:
                             return actual_season in value
                         return actual_season == value
                     except Exception as e:
-                        logger.info(f"⚠️  季节判断失败: {e}", flush=True)
+                        logger.info(f"⚠️  季节判断失败: {e}")
                         return False
                 except Exception as e:
-                    logger.info(f"⚠️  季节条件匹配失败: {e}", flush=True)
+                    logger.info(f"⚠️  季节条件匹配失败: {e}")
                     return False
             
             # ========== 时辰范围条件 ==========
@@ -2218,12 +2218,12 @@ class EnhancedRuleCondition:
         """
         # 确保 stats_map 是字典类型
         if not isinstance(stats_map, dict):
-            logger.info(f"⚠️  _match_ten_gods_stats: stats_map 不是字典类型: {type(stats_map)}, 值: {repr(stats_map)[:100]}", flush=True)
+            logger.info(f"⚠️  _match_ten_gods_stats: stats_map 不是字典类型: {type(stats_map)}, 值: {repr(stats_map)[:100]}")
             return False
         
         # 确保 spec 是字典类型
         if not isinstance(spec, dict):
-            logger.info(f"⚠️  _match_ten_gods_stats: spec 不是字典类型: {type(spec)}, 值: {repr(spec)[:100]}", flush=True)
+            logger.info(f"⚠️  _match_ten_gods_stats: spec 不是字典类型: {type(spec)}, 值: {repr(spec)[:100]}")
             return False
         
         if spec is None:
@@ -2252,10 +2252,10 @@ class EnhancedRuleCondition:
                         # 更新 stats_map 中的值
                         stats_map[name] = entry
                     except (json.JSONDecodeError, TypeError):
-                        logger.info(f"⚠️  _match_ten_gods_stats: entry ({name}) 是字符串但无法解析为JSON: {repr(entry)[:100]}", flush=True)
+                        logger.info(f"⚠️  _match_ten_gods_stats: entry ({name}) 是字符串但无法解析为JSON: {repr(entry)[:100]}")
                         continue
                 else:
-                    logger.info(f"⚠️  _match_ten_gods_stats: entry ({name}) 不是字典类型: {type(entry)}, 值: {repr(entry)[:100]}", flush=True)
+                    logger.info(f"⚠️  _match_ten_gods_stats: entry ({name}) 不是字典类型: {type(entry)}, 值: {repr(entry)[:100]}")
                     continue
             
             # 再次检查 entry 是否是字典（反序列化后）
@@ -2265,7 +2265,7 @@ class EnhancedRuleCondition:
             if pillars:
                 pillar_counts = entry.get("pillars", {})
                 if not isinstance(pillar_counts, dict):
-                    logger.info(f"⚠️  _match_ten_gods_stats: pillar_counts 不是字典类型: {type(pillar_counts)}", flush=True)
+                    logger.info(f"⚠️  _match_ten_gods_stats: pillar_counts 不是字典类型: {type(pillar_counts)}")
                     pillar_counts = {}
                 for pillar in pillars:
                     total_count += pillar_counts.get(pillar, 0)

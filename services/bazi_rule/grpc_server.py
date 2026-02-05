@@ -36,7 +36,7 @@ class BaziRuleServicer(bazi_rule_pb2_grpc.BaziRuleServiceServicer):
         import datetime
         request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         rule_types_str = ", ".join(request.rule_types) if request.rule_types else "全部"
-        logger.info(f"[{request_time}] 📥 bazi-rule-service: 收到请求 - solar_date={request.solar_date}, solar_time={request.solar_time}, gender={request.gender}, rule_types=[{rule_types_str}], use_cache={request.use_cache}", flush=True)
+        logger.info(f"[{request_time}] 📥 bazi-rule-service: 收到请求 - solar_date={request.solar_date}, solar_time={request.solar_time}, gender={request.gender}, rule_types=[{rule_types_str}], use_cache={request.use_cache}")
         
         try:
             import time
@@ -48,7 +48,7 @@ class BaziRuleServicer(bazi_rule_pb2_grpc.BaziRuleServiceServicer):
             # 直接本地计算，不调用微服务（避免循环调用和性能问题）
             calculator.calculate()
             calc_time = time.time() - calc_start
-            logger.info(f"[{request_time}] ✅ bazi-rule-service: 八字计算完成（耗时 {calc_time:.2f}秒）", flush=True)
+            logger.info(f"[{request_time}] ✅ bazi-rule-service: 八字计算完成（耗时 {calc_time:.2f}秒）")
             
             # 2. 构建规则输入（和本地匹配逻辑完全一致）
             build_start = time.time()
@@ -81,7 +81,7 @@ class BaziRuleServicer(bazi_rule_pb2_grpc.BaziRuleServiceServicer):
             unmatched = [r for r in all_rules if (r.get('rule_id') or r.get('rule_code')) not in matched_rule_ids]
             
             match_time = time.time() - match_start
-            logger.info(f"[{request_time}] ✅ bazi-rule-service: 规则匹配完成 - 匹配 {len(matched)} 条，未匹配 {len(unmatched)} 条（耗时 {match_time:.2f}秒，构建 {build_time:.2f}秒，缓存={use_cache_optimized}）", flush=True)
+            logger.info(f"[{request_time}] ✅ bazi-rule-service: 规则匹配完成 - 匹配 {len(matched)} 条，未匹配 {len(unmatched)} 条（耗时 {match_time:.2f}秒，构建 {build_time:.2f}秒，缓存={use_cache_optimized}）")
 
             # 将对象转换为可序列化的 dict（优化：只序列化必要字段，减少数据量）
             matched_serializable = []
@@ -144,7 +144,7 @@ class BaziRuleServicer(bazi_rule_pb2_grpc.BaziRuleServiceServicer):
             response.metadata_json = json.dumps(metadata, ensure_ascii=False)
             
             total_time = time.time() - total_start
-            logger.info(f"[{request_time}] ✅ bazi-rule-service: 响应已返回（总耗时 {total_time:.2f}秒，计算 {calc_time:.2f}秒，匹配 {match_time:.2f}秒，序列化 {serialize_time:.2f}秒，响应大小: matched={matched_size/1024/1024:.2f}MB, unmatched={unmatched_size/1024/1024:.2f}MB, context={context_size/1024/1024:.2f}MB, 总计={total_size/1024/1024:.2f}MB）", flush=True)
+            logger.info(f"[{request_time}] ✅ bazi-rule-service: 响应已返回（总耗时 {total_time:.2f}秒，计算 {calc_time:.2f}秒，匹配 {match_time:.2f}秒，序列化 {serialize_time:.2f}秒，响应大小: matched={matched_size/1024/1024:.2f}MB, unmatched={unmatched_size/1024/1024:.2f}MB, context={context_size/1024/1024:.2f}MB, 总计={total_size/1024/1024:.2f}MB）")
             
             # 强制刷新输出，确保日志及时写入
             import sys
@@ -154,14 +154,14 @@ class BaziRuleServicer(bazi_rule_pb2_grpc.BaziRuleServiceServicer):
             return response
             
         except ValueError as e:
-            logger.info(f"[{request_time}] ❌ bazi-rule-service: 参数错误 - {str(e)}", flush=True)
+            logger.info(f"[{request_time}] ❌ bazi-rule-service: 参数错误 - {str(e)}")
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             context.set_details(str(e))
             return bazi_rule_pb2.BaziRuleMatchResponse()
         except Exception as e:
             import traceback
             error_msg = f"规则匹配失败: {str(e)}\n{traceback.format_exc()}"
-            logger.info(f"[{request_time}] ❌ bazi-rule-service: 错误 - {error_msg}", flush=True)
+            logger.info(f"[{request_time}] ❌ bazi-rule-service: 错误 - {error_msg}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"规则匹配失败: {str(e)}")
             return bazi_rule_pb2.BaziRuleMatchResponse()

@@ -39,10 +39,10 @@ class FortuneRuleServicer(fortune_rule_pb2_grpc.FortuneRuleServiceServicer):
         """手相规则匹配和八字融合"""
         import datetime
         request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(f"[{request_time}] 📥 fortune-rule-service: 收到手相规则匹配请求", flush=True)
-        logger.info(f"[{request_time}] 📋 请求详情:", flush=True)
-        logger.info(f"  手相特征: hand_shape={request.hand_features.hand_shape if request.hand_features else 'N/A'}", flush=True)
-        logger.info(f"  八字信息: use_bazi={request.bazi_info.use_bazi if request.bazi_info else False}, date={request.bazi_info.solar_date if request.bazi_info else 'N/A'}", flush=True)
+        logger.info(f"[{request_time}] 📥 fortune-rule-service: 收到手相规则匹配请求")
+        logger.info(f"[{request_time}] 📋 请求详情:")
+        logger.info(f"  手相特征: hand_shape={request.hand_features.hand_shape if request.hand_features else 'N/A'}")
+        logger.info(f"  八字信息: use_bazi={request.bazi_info.use_bazi if request.bazi_info else False}, date={request.bazi_info.solar_date if request.bazi_info else 'N/A'}")
         
         try:
             # 转换手相特征
@@ -115,38 +115,38 @@ class FortuneRuleServicer(fortune_rule_pb2_grpc.FortuneRuleServiceServicer):
             
             # 如果提供了八字信息但还没有八字数据，需要获取
             if request.bazi_info and request.bazi_info.use_bazi and not bazi_data:
-                logger.info(f"[{request_time}] 📥 开始获取八字数据...", flush=True)
-                logger.info(f"[{request_time}]   日期: {request.bazi_info.solar_date}, 时间: {request.bazi_info.solar_time}, 性别: {request.bazi_info.gender}", flush=True)
+                logger.info(f"[{request_time}] 📥 开始获取八字数据...")
+                logger.info(f"[{request_time}]   日期: {request.bazi_info.solar_date}, 时间: {request.bazi_info.solar_time}, 性别: {request.bazi_info.gender}")
                 bazi_data = self._get_bazi_data(
                     request.bazi_info.solar_date,
                     request.bazi_info.solar_time,
                     request.bazi_info.gender
                 )
                 if bazi_data:
-                    logger.info(f"[{request_time}] ✅ 八字数据获取成功", flush=True)
-                    logger.info(f"[{request_time}]   五行统计: {bazi_data.get('element_counts', {})}", flush=True)
-                    logger.info(f"[{request_time}]   十神统计: {bazi_data.get('ten_gods_stats', {})}", flush=True)
+                    logger.info(f"[{request_time}] ✅ 八字数据获取成功")
+                    logger.info(f"[{request_time}]   五行统计: {bazi_data.get('element_counts', {})}")
+                    logger.info(f"[{request_time}]   十神统计: {bazi_data.get('ten_gods_stats', {})}")
                 else:
-                    logger.info(f"[{request_time}] ⚠️  八字数据获取失败", flush=True)
+                    logger.info(f"[{request_time}] ⚠️  八字数据获取失败")
             
             # 1. 手相规则匹配
-            logger.info(f"[{request_time}] 🔍 开始手相规则匹配...", flush=True)
+            logger.info(f"[{request_time}] 🔍 开始手相规则匹配...")
             hand_insights = self.rule_engine.match_hand_rules(hand_features)
-            logger.info(f"[{request_time}] ✅ 手相规则匹配完成，匹配到 {len(hand_insights)} 条规则", flush=True)
+            logger.info(f"[{request_time}] ✅ 手相规则匹配完成，匹配到 {len(hand_insights)} 条规则")
             
             # 2. 八字融合分析
-            logger.info(f"[{request_time}] 🔍 开始八字融合分析...", flush=True)
+            logger.info(f"[{request_time}] 🔍 开始八字融合分析...")
             integrated_insights = []
             if bazi_data:
-                logger.info(f"[{request_time}] 📊 八字数据已获取，开始融合分析", flush=True)
+                logger.info(f"[{request_time}] 📊 八字数据已获取，开始融合分析")
                 integrated_insights = self.rule_engine.integrate_with_bazi(
                     hand_features,
                     None,  # 面相特征（手相分析时为空）
                     bazi_data
                 )
-                logger.info(f"[{request_time}] ✅ 八字融合分析完成，匹配到 {len(integrated_insights)} 条融合规则", flush=True)
+                logger.info(f"[{request_time}] ✅ 八字融合分析完成，匹配到 {len(integrated_insights)} 条融合规则")
             else:
-                logger.info(f"[{request_time}] ⚠️  八字数据为空，跳过融合分析", flush=True)
+                logger.info(f"[{request_time}] ⚠️  八字数据为空，跳过融合分析")
             
             # 3. 生成建议
             recommendations = self.rule_engine.generate_recommendations(
@@ -238,13 +238,13 @@ class FortuneRuleServicer(fortune_rule_pb2_grpc.FortuneRuleServiceServicer):
                 bazi_data_pb.metadata_json = json.dumps(bazi_data, ensure_ascii=False)
                 response.bazi_data.CopyFrom(bazi_data_pb)
             
-            logger.info(f"[{request_time}] ✅ fortune-rule-service: 手相规则匹配完成", flush=True)
+            logger.info(f"[{request_time}] ✅ fortune-rule-service: 手相规则匹配完成")
             return response
             
         except Exception as e:
             import traceback
             error_msg = f"手相规则匹配失败: {str(e)}\n{traceback.format_exc()}"
-            logger.info(f"[{request_time}] ❌ fortune-rule-service: 错误 - {error_msg}", flush=True)
+            logger.info(f"[{request_time}] ❌ fortune-rule-service: 错误 - {error_msg}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"手相规则匹配失败: {str(e)}")
             response = fortune_rule_pb2.RuleMatchResponse()
@@ -256,10 +256,10 @@ class FortuneRuleServicer(fortune_rule_pb2_grpc.FortuneRuleServiceServicer):
         """面相规则匹配和八字融合"""
         import datetime
         request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(f"[{request_time}] 📥 fortune-rule-service: 收到面相规则匹配请求", flush=True)
-        logger.info(f"[{request_time}] 📋 请求详情:", flush=True)
-        logger.info(f"  面相特征: san_ting={dict(request.face_features.san_ting_ratio) if request.face_features else 'N/A'}", flush=True)
-        logger.info(f"  八字信息: use_bazi={request.bazi_info.use_bazi if request.bazi_info else False}, date={request.bazi_info.solar_date if request.bazi_info else 'N/A'}", flush=True)
+        logger.info(f"[{request_time}] 📥 fortune-rule-service: 收到面相规则匹配请求")
+        logger.info(f"[{request_time}] 📋 请求详情:")
+        logger.info(f"  面相特征: san_ting={dict(request.face_features.san_ting_ratio) if request.face_features else 'N/A'}")
+        logger.info(f"  八字信息: use_bazi={request.bazi_info.use_bazi if request.bazi_info else False}, date={request.bazi_info.solar_date if request.bazi_info else 'N/A'}")
         
         try:
             # 转换面相特征
@@ -313,38 +313,38 @@ class FortuneRuleServicer(fortune_rule_pb2_grpc.FortuneRuleServiceServicer):
             
             # 如果提供了八字信息但还没有八字数据，需要获取
             if request.bazi_info and request.bazi_info.use_bazi and not bazi_data:
-                logger.info(f"[{request_time}] 📥 开始获取八字数据...", flush=True)
-                logger.info(f"[{request_time}]   日期: {request.bazi_info.solar_date}, 时间: {request.bazi_info.solar_time}, 性别: {request.bazi_info.gender}", flush=True)
+                logger.info(f"[{request_time}] 📥 开始获取八字数据...")
+                logger.info(f"[{request_time}]   日期: {request.bazi_info.solar_date}, 时间: {request.bazi_info.solar_time}, 性别: {request.bazi_info.gender}")
                 bazi_data = self._get_bazi_data(
                     request.bazi_info.solar_date,
                     request.bazi_info.solar_time,
                     request.bazi_info.gender
                 )
                 if bazi_data:
-                    logger.info(f"[{request_time}] ✅ 八字数据获取成功", flush=True)
-                    logger.info(f"[{request_time}]   五行统计: {bazi_data.get('element_counts', {})}", flush=True)
-                    logger.info(f"[{request_time}]   十神统计: {bazi_data.get('ten_gods_stats', {})}", flush=True)
+                    logger.info(f"[{request_time}] ✅ 八字数据获取成功")
+                    logger.info(f"[{request_time}]   五行统计: {bazi_data.get('element_counts', {})}")
+                    logger.info(f"[{request_time}]   十神统计: {bazi_data.get('ten_gods_stats', {})}")
                 else:
-                    logger.info(f"[{request_time}] ⚠️  八字数据获取失败", flush=True)
+                    logger.info(f"[{request_time}] ⚠️  八字数据获取失败")
             
             # 1. 面相规则匹配
-            logger.info(f"[{request_time}] 🔍 开始面相规则匹配...", flush=True)
+            logger.info(f"[{request_time}] 🔍 开始面相规则匹配...")
             face_insights = self.rule_engine.match_face_rules(face_features)
-            logger.info(f"[{request_time}] ✅ 面相规则匹配完成，匹配到 {len(face_insights)} 条规则", flush=True)
+            logger.info(f"[{request_time}] ✅ 面相规则匹配完成，匹配到 {len(face_insights)} 条规则")
             
             # 2. 八字融合分析
-            logger.info(f"[{request_time}] 🔍 开始八字融合分析...", flush=True)
+            logger.info(f"[{request_time}] 🔍 开始八字融合分析...")
             integrated_insights = []
             if bazi_data:
-                logger.info(f"[{request_time}] 📊 八字数据已获取，开始融合分析", flush=True)
+                logger.info(f"[{request_time}] 📊 八字数据已获取，开始融合分析")
                 integrated_insights = self.rule_engine.integrate_with_bazi(
                     None,  # 手相特征（面相分析时为空）
                     face_features,
                     bazi_data
                 )
-                logger.info(f"[{request_time}] ✅ 八字融合分析完成，匹配到 {len(integrated_insights)} 条融合规则", flush=True)
+                logger.info(f"[{request_time}] ✅ 八字融合分析完成，匹配到 {len(integrated_insights)} 条融合规则")
             else:
-                logger.info(f"[{request_time}] ⚠️  八字数据为空，跳过融合分析", flush=True)
+                logger.info(f"[{request_time}] ⚠️  八字数据为空，跳过融合分析")
             
             # 3. 生成建议
             recommendations = self.rule_engine.generate_recommendations(
@@ -436,13 +436,13 @@ class FortuneRuleServicer(fortune_rule_pb2_grpc.FortuneRuleServiceServicer):
                 bazi_data_pb.metadata_json = json.dumps(bazi_data, ensure_ascii=False)
                 response.bazi_data.CopyFrom(bazi_data_pb)
             
-            logger.info(f"[{request_time}] ✅ fortune-rule-service: 面相规则匹配完成", flush=True)
+            logger.info(f"[{request_time}] ✅ fortune-rule-service: 面相规则匹配完成")
             return response
             
         except Exception as e:
             import traceback
             error_msg = f"面相规则匹配失败: {str(e)}\n{traceback.format_exc()}"
-            logger.info(f"[{request_time}] ❌ fortune-rule-service: 错误 - {error_msg}", flush=True)
+            logger.info(f"[{request_time}] ❌ fortune-rule-service: 错误 - {error_msg}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"面相规则匹配失败: {str(e)}")
             response = fortune_rule_pb2.RuleMatchResponse()

@@ -48,7 +48,7 @@ class RuleMatcher:
                     continue  # 跳过不匹配的interpretation
                 
                 # 调试日志
-                logger.info(f"[DEBUG] 规则匹配: position={rule.get('position', '')}, feature={feature_desc}, detected={detected_features}, matched=True", flush=True)
+                logger.info(f"[DEBUG] 规则匹配: position={rule.get('position', '')}, feature={feature_desc}, detected={detected_features}, matched=True")
                 
                 # 计算置信度
                 confidence = self._calculate_confidence(feature_desc, features, confidence_scores)

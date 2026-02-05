@@ -41,7 +41,7 @@ class FortuneAnalysisServicer(fortune_analysis_pb2_grpc.FortuneAnalysisServiceSe
         """手相分析"""
         import datetime
         request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(f"[{request_time}] 📥 fortune-analysis-service: 收到手相分析请求", flush=True)
+        logger.info(f"[{request_time}] 📥 fortune-analysis-service: 收到手相分析请求")
         
         try:
             # 调用手相分析器（独立模块）
@@ -97,13 +97,13 @@ class FortuneAnalysisServicer(fortune_analysis_pb2_grpc.FortuneAnalysisServiceSe
             import json
             response.report_json = json.dumps(result, ensure_ascii=False)
             
-            logger.info(f"[{request_time}] ✅ fortune-analysis-service: 手相分析完成", flush=True)
+            logger.info(f"[{request_time}] ✅ fortune-analysis-service: 手相分析完成")
             return response
             
         except Exception as e:
             import traceback
             error_msg = f"手相分析失败: {str(e)}\n{traceback.format_exc()}"
-            logger.info(f"[{request_time}] ❌ fortune-analysis-service: 错误 - {error_msg}", flush=True)
+            logger.info(f"[{request_time}] ❌ fortune-analysis-service: 错误 - {error_msg}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"手相分析失败: {str(e)}")
             response = fortune_analysis_pb2.HandAnalysisResponse()
@@ -115,7 +115,7 @@ class FortuneAnalysisServicer(fortune_analysis_pb2_grpc.FortuneAnalysisServiceSe
         """面相分析"""
         import datetime
         request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(f"[{request_time}] 📥 fortune-analysis-service: 收到面相分析请求", flush=True)
+        logger.info(f"[{request_time}] 📥 fortune-analysis-service: 收到面相分析请求")
         
         try:
             # 调用面相分析器（独立模块）
@@ -171,13 +171,13 @@ class FortuneAnalysisServicer(fortune_analysis_pb2_grpc.FortuneAnalysisServiceSe
             import json
             response.report_json = json.dumps(result, ensure_ascii=False)
             
-            logger.info(f"[{request_time}] ✅ fortune-analysis-service: 面相分析完成", flush=True)
+            logger.info(f"[{request_time}] ✅ fortune-analysis-service: 面相分析完成")
             return response
             
         except Exception as e:
             import traceback
             error_msg = f"面相分析失败: {str(e)}\n{traceback.format_exc()}"
-            logger.info(f"[{request_time}] ❌ fortune-analysis-service: 错误 - {error_msg}", flush=True)
+            logger.info(f"[{request_time}] ❌ fortune-analysis-service: 错误 - {error_msg}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"面相分析失败: {str(e)}")
             response = fortune_analysis_pb2.FaceAnalysisResponse()

@@ -35,7 +35,7 @@ class BaziCoreServicer(bazi_core_pb2_grpc.BaziCoreServiceServicer):
         """计算八字排盘"""
         import datetime
         request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(f"[{request_time}] 📥 bazi-core-service: 收到请求 - solar_date={request.solar_date}, solar_time={request.solar_time}, gender={request.gender}", flush=True)
+        logger.info(f"[{request_time}] 📥 bazi-core-service: 收到请求 - solar_date={request.solar_date}, solar_time={request.solar_time}, gender={request.gender}")
         
         try:
             calculator = BaziCoreCalculator(
@@ -44,7 +44,7 @@ class BaziCoreServicer(bazi_core_pb2_grpc.BaziCoreServiceServicer):
                 gender=request.gender,
             )
             result = calculator.calculate()
-            logger.info(f"[{request_time}] ✅ bazi-core-service: 计算完成", flush=True)
+            logger.info(f"[{request_time}] ✅ bazi-core-service: 计算完成")
             
             if result is None:
                 context.set_code(grpc.StatusCode.INTERNAL)
@@ -121,13 +121,13 @@ class BaziCoreServicer(bazi_core_pb2_grpc.BaziCoreServiceServicer):
             }
             response.metadata_json = json.dumps(metadata, ensure_ascii=False)
             
-            logger.info(f"[{request_time}] ✅ bazi-core-service: 响应已返回", flush=True)
+            logger.info(f"[{request_time}] ✅ bazi-core-service: 响应已返回")
             return response
             
         except Exception as e:
             import traceback
             error_msg = f"计算失败: {str(e)}\n{traceback.format_exc()}"
-            logger.info(f"[{request_time}] ❌ bazi-core-service: 错误 - {error_msg}", flush=True)
+            logger.info(f"[{request_time}] ❌ bazi-core-service: 错误 - {error_msg}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"计算失败: {str(e)}")
             return bazi_core_pb2.BaziCoreResponse()
