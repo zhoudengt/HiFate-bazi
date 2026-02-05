@@ -9,6 +9,7 @@ import json
 import logging
 import sys
 import os
+import time
 from typing import List, Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,11 @@ class HomepageContentDAO:
             List[Dict]: 内容列表，按sort_order排序
         """
         try:
+            # 1. 获取连接耗时
+            conn_start = time.time()
             db = get_db_connection()
+            conn_time = time.time() - conn_start
+            
             if enabled_only:
                 sql = """
                     SELECT id, title, tags, description, image_url, sort_order, enabled,
@@ -52,9 +57,13 @@ class HomepageContentDAO:
                     ORDER BY sort_order ASC, id ASC
                 """
             
+            # 2. SQL 执行耗时
+            sql_start = time.time()
             result = db.execute_query(sql)
+            sql_time = time.time() - sql_start
             
-            # 处理JSON字段
+            # 3. JSON 解析耗时
+            parse_start = time.time()
             for item in result:
                 if item.get('tags') and isinstance(item['tags'], str):
                     try:
@@ -63,6 +72,22 @@ class HomepageContentDAO:
                         item['tags'] = []
                 elif item.get('tags') is None:
                     item['tags'] = []
+            parse_time = time.time() - parse_start
+            
+            logger.info(
+                f"[DAO耗时] get_all_contents - "
+                f"连接获取: {conn_time*1000:.2f}ms, "
+                f"SQL执行: {sql_time*1000:.2f}ms, "
+                f"JSON解析: {parse_time*1000:.2f}ms, "
+                f"记录数: {len(result)}"
+            )
+            
+            # 将耗时信息附加到结果中（通过类属性传递）
+            HomepageContentDAO._last_timing = {
+                "connection_ms": round(conn_time * 1000, 2),
+                "sql_execute_ms": round(sql_time * 1000, 2),
+                "json_parse_ms": round(parse_time * 1000, 2)
+            }
             
             return result
         except Exception as e:
@@ -83,15 +108,25 @@ class HomepageContentDAO:
             Dict: 内容字典，如果不存在返回None
         """
         try:
+            # 1. 获取连接耗时
+            conn_start = time.time()
             db = get_db_connection()
+            conn_time = time.time() - conn_start
+            
             sql = """
                 SELECT id, title, tags, description, image_url, sort_order, enabled,
                        created_at, updated_at
                 FROM homepage_contents
                 WHERE id = %s
             """
-            result = db.execute_query(sql, (content_id,))
             
+            # 2. SQL 执行耗时
+            sql_start = time.time()
+            result = db.execute_query(sql, (content_id,))
+            sql_time = time.time() - sql_start
+            
+            # 3. JSON 解析耗时
+            parse_start = time.time()
             if result and len(result) > 0:
                 item = result[0]
                 # 处理JSON字段
@@ -102,7 +137,23 @@ class HomepageContentDAO:
                         item['tags'] = []
                 elif item.get('tags') is None:
                     item['tags'] = []
+                parse_time = time.time() - parse_start
+                
+                logger.info(
+                    f"[DAO耗时] get_content_by_id({content_id}) - "
+                    f"连接获取: {conn_time*1000:.2f}ms, "
+                    f"SQL执行: {sql_time*1000:.2f}ms, "
+                    f"JSON解析: {parse_time*1000:.2f}ms"
+                )
                 return item
+            
+            parse_time = time.time() - parse_start
+            logger.info(
+                f"[DAO耗时] get_content_by_id({content_id}) - "
+                f"连接获取: {conn_time*1000:.2f}ms, "
+                f"SQL执行: {sql_time*1000:.2f}ms, "
+                f"未找到记录"
+            )
             return None
         except Exception as e:
             logger.warning(f"⚠ 查询首页内容失败: {e}")

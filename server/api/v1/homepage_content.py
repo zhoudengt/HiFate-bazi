@@ -7,6 +7,7 @@
 
 import sys
 import os
+import time
 import logging
 import re
 from fastapi import APIRouter, HTTPException
@@ -112,7 +113,7 @@ class HomepageContentUpdateRequest(BaseModel):
 
 # ==================== 查询接口（前端调用） ====================
 
-@router.get("/homepage/contents", response_model=HomepageContentResponse, summary="获取首页内容列表")
+@router.get("/homepage/contents", summary="获取首页内容列表")
 async def get_homepage_contents(enabled_only: bool = True):
     """
     获取首页内容列表
@@ -140,9 +141,15 @@ async def get_homepage_contents(enabled_only: bool = True):
     ```
     """
     try:
-        contents = HomepageContentDAO.get_all_contents(enabled_only=enabled_only)
+        total_start = time.time()
         
-        # 转换为响应模型
+        # 1. 数据库查询耗时
+        db_start = time.time()
+        contents = HomepageContentDAO.get_all_contents(enabled_only=enabled_only)
+        db_time = time.time() - db_start
+        
+        # 2. 数据处理耗时
+        process_start = time.time()
         content_items = []
         for content in contents:
             # 处理时间字段
@@ -165,11 +172,33 @@ async def get_homepage_contents(enabled_only: bool = True):
                 created_at=created_at,
                 updated_at=updated_at
             ))
+        process_time = time.time() - process_start
         
-        return HomepageContentResponse(
-            success=True,
-            data=content_items
+        total_time = time.time() - total_start
+        logger.info(
+            f"[耗时诊断] /homepage/contents - "
+            f"总耗时: {total_time*1000:.2f}ms, "
+            f"DB查询: {db_time*1000:.2f}ms, "
+            f"数据处理: {process_time*1000:.2f}ms, "
+            f"记录数: {len(contents)}"
         )
+        
+        # 获取 DAO 层的细粒度耗时
+        dao_timing = getattr(HomepageContentDAO, '_last_timing', {})
+        
+        # 返回带耗时诊断信息的响应
+        return {
+            "success": True,
+            "data": content_items,
+            "error": None,
+            "_timing": {
+                "total_ms": round(total_time * 1000, 2),
+                "db_query_ms": round(db_time * 1000, 2),
+                "data_process_ms": round(process_time * 1000, 2),
+                "record_count": len(contents),
+                "dao_detail": dao_timing
+            }
+        }
     except Exception as e:
         logger.error(f"获取首页内容列表失败: {e}", exc_info=True)
         raise HTTPException(
@@ -186,7 +215,12 @@ async def get_homepage_content_detail(content_id: int):
     - **content_id**: 内容ID
     """
     try:
+        total_start = time.time()
+        
+        # 1. 数据库查询耗时
+        db_start = time.time()
         content = HomepageContentDAO.get_content_by_id(content_id)
+        db_time = time.time() - db_start
         
         if not content:
             raise HTTPException(status_code=404, detail=f"内容ID {content_id} 不存在")
@@ -210,6 +244,13 @@ async def get_homepage_content_detail(content_id: int):
             enabled=bool(content.get('enabled', True)),
             created_at=created_at,
             updated_at=updated_at
+        )
+        
+        total_time = time.time() - total_start
+        logger.info(
+            f"[耗时诊断] /homepage/contents/{content_id} - "
+            f"总耗时: {total_time*1000:.2f}ms, "
+            f"DB查询: {db_time*1000:.2f}ms"
         )
         
         return HomepageContentDetailResponse(
@@ -384,3 +425,81 @@ async def update_content_sort_order(content_id: int, request: SortOrderRequest):
             status_code=500,
             detail=f"更新排序失败: {str(e)}"
         )
+
+
+# ==================== 诊断接口 ====================
+
+@router.get("/homepage/diagnose", summary="诊断首页内容接口性能")
+async def diagnose_homepage_contents():
+    """
+    诊断首页内容接口性能，返回详细耗时信息
+    """
+    from server.db.mysql_connector import get_db_connection
+    
+    result = {
+        "success": True,
+        "timing": {},
+        "data_info": {}
+    }
+    
+    total_start = time.time()
+    
+    # 1. 测试获取DB连接耗时
+    conn_start = time.time()
+    db = get_db_connection()
+    result["timing"]["1_get_connection_ms"] = round((time.time() - conn_start) * 1000, 2)
+    
+    # 2. 测试SQL执行耗时
+    sql_start = time.time()
+    sql = """
+        SELECT id, title, tags, description, image_url, sort_order, enabled,
+               created_at, updated_at
+        FROM homepage_contents
+        WHERE enabled = 1
+        ORDER BY sort_order ASC, id ASC
+    """
+    rows = db.execute_query(sql)
+    result["timing"]["2_sql_execute_ms"] = round((time.time() - sql_start) * 1000, 2)
+    result["data_info"]["row_count"] = len(rows)
+    
+    # 3. 测试JSON解析耗时
+    import json
+    parse_start = time.time()
+    for item in rows:
+        if item.get('tags') and isinstance(item['tags'], str):
+            try:
+                item['tags'] = json.loads(item['tags'])
+            except:
+                item['tags'] = []
+    result["timing"]["3_json_parse_ms"] = round((time.time() - parse_start) * 1000, 2)
+    
+    # 4. 测试数据转换耗时
+    convert_start = time.time()
+    content_items = []
+    for content in rows:
+        content_items.append(HomepageContentItem(
+            id=content['id'],
+            title=content['title'],
+            tags=content.get('tags', []),
+            description=content.get('description', ''),
+            image_url=content.get('image_url', ''),
+            sort_order=content.get('sort_order', 0),
+            enabled=bool(content.get('enabled', True)),
+            created_at=str(content.get('created_at', '')),
+            updated_at=str(content.get('updated_at', ''))
+        ))
+    result["timing"]["4_data_convert_ms"] = round((time.time() - convert_start) * 1000, 2)
+    
+    result["timing"]["total_ms"] = round((time.time() - total_start) * 1000, 2)
+    
+    # 计算各环节占比
+    total = result["timing"]["total_ms"]
+    if total > 0:
+        result["timing"]["breakdown"] = {
+            "connection": f"{result['timing']['1_get_connection_ms'] / total * 100:.1f}%",
+            "sql": f"{result['timing']['2_sql_execute_ms'] / total * 100:.1f}%",
+            "json_parse": f"{result['timing']['3_json_parse_ms'] / total * 100:.1f}%",
+            "data_convert": f"{result['timing']['4_data_convert_ms'] / total * 100:.1f}%"
+        }
+    
+    return result
