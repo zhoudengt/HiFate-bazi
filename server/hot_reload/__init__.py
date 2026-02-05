@@ -43,6 +43,12 @@ from .cluster_synchronizer import (
     start_cluster_sync,
     stop_cluster_sync,
 )
+from .worker_sync import (
+    WorkerSyncManager,
+    start_worker_sync,
+    trigger_all_workers,
+    get_worker_sync_status,
+)
 
 __all__ = [
     # 核心管理器
@@ -78,6 +84,12 @@ __all__ = [
     'get_cluster_synchronizer',
     'start_cluster_sync',
     'stop_cluster_sync',
+    
+    # 多 Worker 同步
+    'WorkerSyncManager',
+    'start_worker_sync',
+    'trigger_all_workers',
+    'get_worker_sync_status',
 ]
 
 

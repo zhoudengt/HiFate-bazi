@@ -29,6 +29,7 @@ sys.path.insert(0, project_root)
 
 from .hot_reload_manager import HotReloadManager
 from .version_manager import VersionManager
+from .worker_sync import trigger_all_workers, get_worker_sync_status
 
 logger = logging.getLogger(__name__)
 
@@ -272,10 +273,14 @@ async def reload_module(module_name: str):
         raise HTTPException(status_code=500, detail=f"重载失败: {str(e)}")
 
 
-@router.post("/hot-reload/reload-all", summary="重载所有模块")
+@router.post("/hot-reload/reload-all", summary="重载所有模块（所有 Worker）")
 async def reload_all():
     """
-    按顺序重载所有模块
+    按顺序重载所有模块（通知所有 Worker）
+    
+    🔴 重要改进：
+    - 之前：只重载处理此请求的单个 worker
+    - 现在：通过信号机制通知所有 worker 执行热更新
     
     重载顺序：
     1. config - 配置
@@ -289,14 +294,22 @@ async def reload_all():
     try:
         from .reloaders import reload_all_modules, RELOAD_ORDER
         
+        # 1. 先在当前 worker 执行重载
         results = reload_all_modules()
         
         success_modules = [m for m, s in results.items() if s]
         failed_modules = [m for m, s in results.items() if not s]
         
+        # 2. 🔴 触发所有其他 worker 执行热更新
+        sync_result = trigger_all_workers(success_modules)
+        
+        message = f"重载完成: {len(success_modules)} 成功, {len(failed_modules)} 失败"
+        if sync_result.get('success'):
+            message += f" | 已通知所有 Worker (version: {sync_result.get('version')})"
+        
         return ReloadResponse(
             success=len(failed_modules) == 0,
-            message=f"重载完成: {len(success_modules)} 成功, {len(failed_modules)} 失败",
+            message=message,
             reloaded_modules=success_modules,
             failed_modules=failed_modules if failed_modules else None
         )
@@ -461,6 +474,47 @@ async def get_microservices_status():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取微服务状态失败: {str(e)}")
+
+
+@router.get("/hot-reload/worker-sync", summary="获取多 Worker 同步状态")
+async def get_worker_sync():
+    """
+    获取多 Worker 热更新同步状态
+    
+    返回：
+    - worker_id: 当前处理请求的 worker 进程 ID
+    - running: 同步监控是否在运行
+    - last_signal_version: 最后处理的信号版本号
+    - signal_file: 信号文件路径
+    """
+    try:
+        status = get_worker_sync_status()
+        return {
+            "success": True,
+            "status": status
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取同步状态失败: {str(e)}")
+
+
+@router.post("/hot-reload/trigger-all-workers", summary="触发所有 Worker 热更新")
+async def trigger_all_workers_api():
+    """
+    触发所有 Worker 执行热更新
+    
+    通过写入信号文件，通知所有 worker 进程执行热更新。
+    每个 worker 的后台监控线程会检测到信号并自动执行重载。
+    """
+    try:
+        result = trigger_all_workers()
+        return {
+            "success": result.get('success', False),
+            "message": result.get('message', ''),
+            "version": result.get('version'),
+            "error": result.get('error')
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"触发失败: {str(e)}")
 
 
 

@@ -19,6 +19,7 @@ sys.path.insert(0, project_root)
 from .version_manager import VersionManager
 from .reloaders import get_reloader
 from .file_monitor import get_file_monitor
+from .worker_sync import start_worker_sync, trigger_all_workers, get_worker_sync_status
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,14 @@ class HotReloadManager:
             logger.info("✓ 文件监控器已启动")
         except Exception as e:
             logger.warning(f"⚠ 文件监控器启动失败: {e}")
+        
+        # 🔴 启动多 Worker 同步监控
+        # 当收到信号时，执行 force_reload_all 完成本 worker 的热更新
+        try:
+            start_worker_sync(reload_callback=self.force_reload_all)
+            logger.info("✓ 多 Worker 同步监控已启动")
+        except Exception as e:
+            logger.warning(f"⚠ 多 Worker 同步监控启动失败: {e}")
         
         logger.info(f"✓ 热更新管理器已启动（检查间隔: {self._interval}秒）")
     
@@ -211,6 +220,55 @@ class HotReloadManager:
             'versions': versions,
             'file_monitor': file_status
         }
+    
+    def force_reload_all(self) -> Dict[str, bool]:
+        """
+        强制重载所有模块（供 Worker 同步机制调用）
+        
+        Returns:
+            Dict[str, bool]: 各模块重载结果
+        """
+        from datetime import datetime
+        from .reloaders import reload_all_modules
+        
+        logger.info(f"\n🔄 [Worker-{os.getpid()}] 开始强制重载所有模块...")
+        
+        try:
+            results = reload_all_modules()
+            
+            success_modules = [m for m, s in results.items() if s]
+            failed_modules = [m for m, s in results.items() if not s]
+            
+            if failed_modules:
+                logger.warning(
+                    f"⚠ [Worker-{os.getpid()}] 重载完成: "
+                    f"{len(success_modules)} 成功, {len(failed_modules)} 失败 "
+                    f"({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})"
+                )
+            else:
+                logger.info(
+                    f"✅ [Worker-{os.getpid()}] 重载完成: "
+                    f"{len(success_modules)} 个模块已更新 "
+                    f"({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})"
+                )
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ [Worker-{os.getpid()}] 强制重载失败: {e}")
+            return {}
+    
+    def trigger_all_workers_reload(self, modules: list = None) -> Dict:
+        """
+        触发所有 Worker 执行热更新
+        
+        Args:
+            modules: 要更新的模块列表
+            
+        Returns:
+            Dict: 触发结果
+        """
+        return trigger_all_workers(modules)
     
     def _on_file_changed(self, file_path: str, change_type: str, state: Optional[Dict]):
         """
