@@ -342,8 +342,10 @@ class PayerMaxClient(BasePaymentClient):
 
             logger.info(f"PayerMax请求URL: {url}")
             logger.info(f"PayerMax请求数据: {request_body}")
+            _t0 = __import__('time').time()
             response = requests.post(url, data=request_body, headers=headers, timeout=30)
-            logger.info(f"PayerMax响应状态码: {response.status_code}")
+            _t1 = __import__('time').time()
+            logger.info(f"PayerMax响应状态码: {response.status_code} | PayerMax_API耗时: {int((_t1-_t0)*1000)}ms")
             logger.info(f"PayerMax响应内容: {response.text[:500]}")
 
             if response.status_code == 200:

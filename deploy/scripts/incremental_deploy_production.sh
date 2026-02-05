@@ -704,7 +704,12 @@ else
     echo -e "${GREEN}✅ 双机 Git 版本一致（${NODE1_COMMIT:0:8}）${NC}"
 fi
 
-# 检查双机关键文件一致性
+# 检查双机关键文件一致性（仅部署 Node1 时跳过）
+if [ "$SKIP_NODE2" = "true" ]; then
+    echo ""
+    echo "🔍 双机关键文件一致性检查已跳过（本次仅部署 Node1）"
+    echo -e "${GREEN}✅ Node1 验证通过${NC}"
+else
 echo ""
 echo "🔍 检查双机关键文件一致性..."
 KEY_FILES=(
@@ -755,6 +760,7 @@ if [ ${#INCONSISTENT_FILES[@]} -gt 0 ]; then
 fi
 
 echo -e "${GREEN}✅ 双机关键文件一致性检查通过${NC}"
+fi
 
 echo ""
 
@@ -949,18 +955,21 @@ if ! check_health $NODE1_PUBLIC_IP "Node1"; then
     exit 1
 fi
 
-# 检查 Node2
-if ! check_health $NODE2_PUBLIC_IP "Node2"; then
-    echo -e "${RED}❌ Node2 健康检查失败，自动回滚...${NC}"
-    curl -s --max-time 10 -X POST "http://$NODE2_PUBLIC_IP:8001/api/v1/hot-reload/rollback" || true
-    exit 1
+# 检查 Node2（仅部署 Node1 时跳过）
+if [ "$SKIP_NODE2" != "true" ]; then
+    if ! check_health $NODE2_PUBLIC_IP "Node2"; then
+        echo -e "${RED}❌ Node2 健康检查失败，自动回滚...${NC}"
+        curl -s --max-time 10 -X POST "http://$NODE2_PUBLIC_IP:8001/api/v1/hot-reload/rollback" || true
+        exit 1
+    fi
+else
+    echo "🏥 Node2 健康检查已跳过（本次仅部署 Node1）"
 fi
 
 # 6.2 热更新状态检查
 echo ""
 echo "🔍 检查热更新状态..."
 NODE1_STATUS=$(curl -s --max-time 5 "http://$NODE1_PUBLIC_IP:8001/api/v1/hot-reload/status" 2>/dev/null || echo "{}")
-NODE2_STATUS=$(curl -s --max-time 5 "http://$NODE2_PUBLIC_IP:8001/api/v1/hot-reload/status" 2>/dev/null || echo "{}")
 
 if echo "$NODE1_STATUS" | grep -q "error\|失败" && [ -n "$NODE1_STATUS" ]; then
     echo -e "${YELLOW}⚠️  Node1 热更新状态异常${NC}"
@@ -968,10 +977,15 @@ else
     echo -e "${GREEN}✅ Node1 热更新状态正常${NC}"
 fi
 
-if echo "$NODE2_STATUS" | grep -q "error\|失败" && [ -n "$NODE2_STATUS" ]; then
-    echo -e "${YELLOW}⚠️  Node2 热更新状态异常${NC}"
+if [ "$SKIP_NODE2" != "true" ]; then
+    NODE2_STATUS=$(curl -s --max-time 5 "http://$NODE2_PUBLIC_IP:8001/api/v1/hot-reload/status" 2>/dev/null || echo "{}")
+    if echo "$NODE2_STATUS" | grep -q "error\|失败" && [ -n "$NODE2_STATUS" ]; then
+        echo -e "${YELLOW}⚠️  Node2 热更新状态异常${NC}"
+    else
+        echo -e "${GREEN}✅ Node2 热更新状态正常${NC}"
+    fi
 else
-    echo -e "${GREEN}✅ Node2 热更新状态正常${NC}"
+    echo "🔍 Node2 热更新状态检查已跳过（本次仅部署 Node1）"
 fi
 
 # 6.3 功能验证（可选，快速检查关键 API）
@@ -992,91 +1006,102 @@ fi
 echo ""
 
 # ==================== 第七步：双机代码一致性验证 ====================
-echo -e "${BLUE}🔍 第七步：双机代码一致性验证（严格执行）${NC}"
+echo -e "${BLUE}🔍 第七步：代码一致性验证${NC}"
 echo "----------------------------------------"
 
-echo "🔍 验证 Node1 与 Node2 代码一致性..."
-
-# 获取双机 Git 版本
 NODE1_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
-NODE2_COMMIT=$(ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
 
-if [ -z "$NODE1_COMMIT" ] || [ -z "$NODE2_COMMIT" ]; then
-    echo -e "${RED}❌ 错误：无法获取双机 Git 版本${NC}"
-    exit 1
-fi
-
-echo "  Node1 Git 版本: ${NODE1_COMMIT:0:8}"
-echo "  Node2 Git 版本: ${NODE2_COMMIT:0:8}"
-
-if [ "$NODE1_COMMIT" != "$NODE2_COMMIT" ]; then
-    echo -e "${RED}❌ 错误：Node1 与 Node2 Git 版本不一致！${NC}"
-    echo -e "${RED}🔴 违反规范：双机代码必须完全一致（严格执行）${NC}"
-    echo -e "${RED}🔴 停止部署：必须修复双机代码不一致后才能继续${NC}"
-    echo ""
-    echo "修复步骤："
-    echo "  1. 在 Node1 和 Node2 上执行: git pull origin master"
-    echo "  2. 验证双机 Git 版本一致"
-    echo "  3. 重新执行增量部署脚本"
-    echo ""
-    echo "修复方法："
-    echo "  1. 在 Node1 上执行: git reset --hard origin/master && git pull origin master"
-    echo "  2. 在 Node2 上执行: git reset --hard origin/master && git pull origin master"
-    echo "  3. 重新运行增量部署脚本"
-    exit 1
-fi
-
-echo -e "${GREEN}✅ Node1 与 Node2 Git 版本一致${NC}"
-
-# 验证关键文件一致性
-echo ""
-echo "🔍 验证关键文件一致性..."
-
-KEY_FILES=(
-    "server/api/grpc_gateway.py"
-    "server/api/v2/desk_fengshui_api.py"
-    "deploy/docker/docker-compose.prod.yml"
-    "requirements.txt"
-)
-
-ALL_FILES_MATCH=true
-for file in "${KEY_FILES[@]}"; do
-    NODE1_HASH=$(ssh_exec $NODE1_PUBLIC_IP "md5sum $PROJECT_DIR/$file 2>/dev/null | cut -d' ' -f1" || echo "")
-    NODE2_HASH=$(ssh_exec_node2_via_node1 "md5sum $PROJECT_DIR/$file 2>/dev/null | cut -d' ' -f1" || echo "")
-    
-    if [ -z "$NODE1_HASH" ] || [ -z "$NODE2_HASH" ]; then
-        echo -e "${YELLOW}⚠️  无法验证 $file${NC}"
-        continue
+if [ "$SKIP_NODE2" = "true" ]; then
+    echo "🔍 验证 Node1 代码版本（Node2 已跳过）..."
+    if [ -z "$NODE1_COMMIT" ]; then
+        echo -e "${RED}❌ 错误：无法获取 Node1 Git 版本${NC}"
+        exit 1
     fi
-    
-    if [ "$NODE1_HASH" != "$NODE2_HASH" ]; then
-        echo -e "${RED}❌ 错误：$file 在 Node1 和 Node2 不一致！${NC}"
-        echo "    Node1: ${NODE1_HASH:0:16}..."
-        echo "    Node2: ${NODE2_HASH:0:16}..."
-        echo -e "${RED}   违反规范：双机代码必须完全一致（严格执行）${NC}"
-        ALL_FILES_MATCH=false
+    echo "  Node1 Git 版本: ${NODE1_COMMIT:0:8}"
+    echo -e "${GREEN}✅ Node1 代码验证通过（${NODE1_COMMIT:0:8}）${NC}"
+else
+    echo "🔍 验证 Node1 与 Node2 代码一致性..."
+
+    # 获取双机 Git 版本
+    NODE2_COMMIT=$(ssh_exec_node2_via_node1 "cd $PROJECT_DIR && git rev-parse HEAD 2>/dev/null" || echo "")
+
+    if [ -z "$NODE1_COMMIT" ] || [ -z "$NODE2_COMMIT" ]; then
+        echo -e "${RED}❌ 错误：无法获取双机 Git 版本${NC}"
+        exit 1
     fi
-done
 
-if [ "$ALL_FILES_MATCH" = false ]; then
+    echo "  Node1 Git 版本: ${NODE1_COMMIT:0:8}"
+    echo "  Node2 Git 版本: ${NODE2_COMMIT:0:8}"
+
+    if [ "$NODE1_COMMIT" != "$NODE2_COMMIT" ]; then
+        echo -e "${RED}❌ 错误：Node1 与 Node2 Git 版本不一致！${NC}"
+        echo -e "${RED}🔴 违反规范：双机代码必须完全一致（严格执行）${NC}"
+        echo -e "${RED}🔴 停止部署：必须修复双机代码不一致后才能继续${NC}"
+        echo ""
+        echo "修复步骤："
+        echo "  1. 在 Node1 和 Node2 上执行: git pull origin master"
+        echo "  2. 验证双机 Git 版本一致"
+        echo "  3. 重新执行增量部署脚本"
+        echo ""
+        echo "修复方法："
+        echo "  1. 在 Node1 上执行: git reset --hard origin/master && git pull origin master"
+        echo "  2. 在 Node2 上执行: git reset --hard origin/master && git pull origin master"
+        echo "  3. 重新运行增量部署脚本"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✅ Node1 与 Node2 Git 版本一致${NC}"
+
+    # 验证关键文件一致性
     echo ""
-    echo -e "${RED}❌ 双机文件一致性验证失败（违反双机代码一致性规范）${NC}"
-    echo -e "${RED}🔴 严格执行：Node1 与 Node2 代码必须完全一致${NC}"
-    echo -e "${RED}🔴 停止部署：必须修复双机代码不一致后才能继续${NC}"
+    echo "🔍 验证关键文件一致性..."
+
+    KEY_FILES=(
+        "server/api/grpc_gateway.py"
+        "server/api/v2/desk_fengshui_api.py"
+        "deploy/docker/docker-compose.prod.yml"
+        "requirements.txt"
+    )
+
+    ALL_FILES_MATCH=true
+    for file in "${KEY_FILES[@]}"; do
+        NODE1_HASH=$(ssh_exec $NODE1_PUBLIC_IP "md5sum $PROJECT_DIR/$file 2>/dev/null | cut -d' ' -f1" || echo "")
+        NODE2_HASH=$(ssh_exec_node2_via_node1 "md5sum $PROJECT_DIR/$file 2>/dev/null | cut -d' ' -f1" || echo "")
+        
+        if [ -z "$NODE1_HASH" ] || [ -z "$NODE2_HASH" ]; then
+            echo -e "${YELLOW}⚠️  无法验证 $file${NC}"
+            continue
+        fi
+        
+        if [ "$NODE1_HASH" != "$NODE2_HASH" ]; then
+            echo -e "${RED}❌ 错误：$file 在 Node1 和 Node2 不一致！${NC}"
+            echo "    Node1: ${NODE1_HASH:0:16}..."
+            echo "    Node2: ${NODE2_HASH:0:16}..."
+            echo -e "${RED}   违反规范：双机代码必须完全一致（严格执行）${NC}"
+            ALL_FILES_MATCH=false
+        fi
+    done
+
+    if [ "$ALL_FILES_MATCH" = false ]; then
+        echo ""
+        echo -e "${RED}❌ 双机文件一致性验证失败（违反双机代码一致性规范）${NC}"
+        echo -e "${RED}🔴 严格执行：Node1 与 Node2 代码必须完全一致${NC}"
+        echo -e "${RED}🔴 停止部署：必须修复双机代码不一致后才能继续${NC}"
+        echo ""
+        echo "修复步骤："
+        echo "  1. 确保代码已推送到 GitHub: git push origin master"
+        echo "  2. 在 Node1 上执行: cd /opt/HiFate-bazi && git reset --hard origin/master && git pull origin master"
+        echo "  3. 在 Node2 上执行: cd /opt/HiFate-bazi && git reset --hard origin/master && git pull origin master"
+        echo "  4. 验证双机代码一致性: bash scripts/check_code_consistency.sh"
+        echo "  5. 重新运行增量部署脚本"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✅ 关键文件一致性验证通过${NC}"
     echo ""
-    echo "修复步骤："
-    echo "  1. 确保代码已推送到 GitHub: git push origin master"
-    echo "  2. 在 Node1 上执行: cd /opt/HiFate-bazi && git reset --hard origin/master && git pull origin master"
-    echo "  3. 在 Node2 上执行: cd /opt/HiFate-bazi && git reset --hard origin/master && git pull origin master"
-    echo "  4. 验证双机代码一致性: bash scripts/check_code_consistency.sh"
-    echo "  5. 重新运行增量部署脚本"
-    exit 1
+    echo -e "${GREEN}✅ 双机代码一致性验证通过（严格执行，符合规范）${NC}"
+    echo -e "${GREEN}✅ Node1 与 Node2 代码完全一致（${NODE1_COMMIT:0:8}）${NC}"
 fi
-
-echo -e "${GREEN}✅ 关键文件一致性验证通过${NC}"
-echo ""
-echo -e "${GREEN}✅ 双机代码一致性验证通过（严格执行，符合规范）${NC}"
-echo -e "${GREEN}✅ Node1 与 Node2 代码完全一致（${NODE1_COMMIT:0:8}）${NC}"
 echo ""
 
 # ==================== 完成 ====================
@@ -1086,17 +1111,27 @@ echo "========================================"
 echo ""
 echo "访问地址："
 echo "  Node1: http://$NODE1_PUBLIC_IP"
-echo "  Node2: http://$NODE2_PUBLIC_IP"
+if [ "$SKIP_NODE2" != "true" ] && [ -n "$NODE2_PUBLIC_IP" ]; then
+    echo "  Node2: http://$NODE2_PUBLIC_IP"
+fi
 echo ""
 echo "健康检查："
 echo "  Node1: http://$NODE1_PUBLIC_IP:8001/health"
-echo "  Node2: http://$NODE2_PUBLIC_IP:8001/health"
+if [ "$SKIP_NODE2" != "true" ] && [ -n "$NODE2_PUBLIC_IP" ]; then
+    echo "  Node2: http://$NODE2_PUBLIC_IP:8001/health"
+fi
 echo ""
 echo "热更新状态："
 echo "  Node1: http://$NODE1_PUBLIC_IP:8001/api/v1/hot-reload/status"
-echo "  Node2: http://$NODE2_PUBLIC_IP:8001/api/v1/hot-reload/status"
+if [ "$SKIP_NODE2" != "true" ] && [ -n "$NODE2_PUBLIC_IP" ]; then
+    echo "  Node2: http://$NODE2_PUBLIC_IP:8001/api/v1/hot-reload/status"
+fi
 echo ""
-echo -e "${GREEN}✅ 双机代码版本一致: ${NODE1_COMMIT:0:8}（严格执行，符合规范）${NC}"
+if [ "$SKIP_NODE2" = "true" ]; then
+    echo -e "${GREEN}✅ Node1 代码版本: ${NODE1_COMMIT:0:8}（仅部署 Node1）${NC}"
+else
+    echo -e "${GREEN}✅ 双机代码版本一致: ${NODE1_COMMIT:0:8}（严格执行，符合规范）${NC}"
+fi
 echo "部署时间: $(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 

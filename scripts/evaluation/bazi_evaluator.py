@@ -234,7 +234,18 @@ class BaziEvaluator:
             result['geju'] = '、'.join(geju_names) if geju_names else ''
         
         # 大运流年（8步大运 + 每步大运下的所有流年）
+        # 格式要求：丙辰(劫财) [4-13岁] 流年:1981:辛酉(偏财), 1982:壬戌(正官), ...
         dayun_data = data.get('dayun', [])
+        
+        # 构建流年 main_star 映射（从顶层 liunian 获取）
+        liunian_star_map = {}
+        top_liunian = data.get('liunian', [])
+        for ln in top_liunian:
+            if isinstance(ln, dict):
+                year = ln.get('year')
+                if year:
+                    liunian_star_map[year] = ln.get('main_star', '')
+        
         if dayun_data and isinstance(dayun_data, list):
             dayun_parts = []
             for dy in dayun_data[:8]:  # 取前8步大运
@@ -254,18 +265,26 @@ class BaziEvaluator:
                         if start_age and end_age:
                             dy_str += f" [{start_age}-{end_age}岁]"
                         
-                        # 该大运下的流年
-                        liunian_seq = dy.get('liunian_sequence', [])
-                        if liunian_seq:
+                        # 该大运下的流年（优先使用 liunian_simple，兼容 liunian_sequence）
+                        liunian_list = dy.get('liunian_simple', []) or dy.get('liunian_sequence', [])
+                        if liunian_list:
                             ln_parts = []
-                            for ln in liunian_seq:
+                            for ln in liunian_list:
                                 if isinstance(ln, dict):
                                     ln_year = ln.get('year', '')
-                                    ln_stem = ln.get('stem', '')
-                                    ln_branch = ln.get('branch', '')
-                                    ln_star = ln.get('main_star', '')
-                                    if ln_year and ln_stem and ln_branch:
-                                        ln_str = f"{ln_year}:{ln_stem}{ln_branch}"
+                                    # liunian_simple 格式: {year, ganzhi}
+                                    # liunian_sequence 格式: {year, stem, branch, main_star}
+                                    ln_ganzhi = ln.get('ganzhi', '')
+                                    if not ln_ganzhi:
+                                        ln_stem = ln.get('stem', '')
+                                        ln_branch = ln.get('branch', '')
+                                        ln_ganzhi = f"{ln_stem}{ln_branch}"
+                                    
+                                    # 从映射或 ln 自身获取 main_star
+                                    ln_star = ln.get('main_star', '') or liunian_star_map.get(ln_year, '')
+                                    
+                                    if ln_year and ln_ganzhi:
+                                        ln_str = f"{ln_year}:{ln_ganzhi}"
                                         if ln_star:
                                             ln_str += f"({ln_star})"
                                         ln_parts.append(ln_str)
