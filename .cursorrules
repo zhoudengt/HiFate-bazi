@@ -97,8 +97,10 @@ python3 scripts/ai/completeness_validator.py --type api --name xxx
 
 **API接口**：
 - `/api/v1/hot-reload/status` - 获取热更新状态
-- `/api/v1/hot-reload/trigger` - 手动触发热更新
-- `/api/v1/hot-reload/verify` - 验证热更新
+- `/api/v1/hot-reload/check` - 手动触发热更新检查
+- `/api/v1/hot-reload/reload-all` - 重载所有模块（**自动通知所有 Worker**）
+- `/api/v1/hot-reload/worker-sync` - 查看多 Worker 同步状态
+- `/api/v1/hot-reload/trigger-all-workers` - 手动触发所有 Worker 热更新
 
 **严格禁止**：
 - ❌ `docker restart` / `docker-compose restart` / `systemctl restart`
