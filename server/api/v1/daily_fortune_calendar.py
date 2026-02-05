@@ -21,6 +21,7 @@ sys.path.insert(0, project_root)
 
 from server.services.daily_fortune_calendar_service import DailyFortuneCalendarService
 from server.utils.bazi_input_processor import BaziInputProcessor
+from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.api_cache_helper import (
     generate_cache_key, get_cached_result, set_cached_result, L2_TTL, get_current_date_str
@@ -418,34 +419,76 @@ async def daily_fortune_stream_generator(
         bot_id: Coze Bot ID（可选）
     """
     import traceback
+    import logging
+    logger = logging.getLogger(__name__)
     
     try:
-        # 1. 处理用户生辰的农历输入和时区转换
-        user_final_solar_date = request.solar_date
-        user_final_solar_time = request.solar_time
+        # 1. 判断是否有完整的用户生辰信息
+        has_user_info = request.solar_date and request.solar_time and request.gender
         
-        if request.solar_date and request.solar_time and request.gender:
+        # 2. 获取每日运势数据（走统一编排，首包快）
+        if has_user_info:
+            # ✅ 有用户信息，走 BaziDataOrchestrator 编排（并行 + 缓存）
+            modules = {
+                'daily_fortune_calendar': {
+                    'date': request.date  # 查询日期
+                }
+            }
+            
             try:
-                user_final_solar_date, user_final_solar_time, _ = BaziInputProcessor.process_input(
-                    request.solar_date,
-                    request.solar_time,
-                    request.calendar_type or "solar",
-                    request.location,
-                    request.latitude,
-                    request.longitude
+                orchestrator_result = await BaziDataOrchestrator.fetch_data(
+                    solar_date=request.solar_date,
+                    solar_time=request.solar_time,
+                    gender=request.gender,
+                    modules=modules,
+                    use_cache=True,
+                    parallel=True,
+                    calendar_type=request.calendar_type or "solar",
+                    location=request.location,
+                    latitude=request.latitude,
+                    longitude=request.longitude
                 )
+                result = orchestrator_result.get('daily_fortune_calendar', {})
+                
+                if not result:
+                    # 编排返回空结果，回退到直接调用
+                    logger.warning("编排返回空结果，回退到直接调用服务")
+                    loop = asyncio.get_event_loop()
+                    result = await loop.run_in_executor(
+                        None,
+                        lambda: DailyFortuneCalendarService.get_daily_fortune_calendar(
+                            date_str=request.date,
+                            user_solar_date=request.solar_date,
+                            user_solar_time=request.solar_time,
+                            user_gender=request.gender
+                        )
+                    )
             except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"用户生辰转换失败，使用原始值: {e}")
-        
-        # 2. 获取每日运势数据
-        result = DailyFortuneCalendarService.get_daily_fortune_calendar(
-            date_str=request.date,
-            user_solar_date=user_final_solar_date,
-            user_solar_time=user_final_solar_time,
-            user_gender=request.gender
-        )
+                # 编排失败，回退到直接调用（放入线程池避免阻塞）
+                logger.warning(f"编排调用失败，回退到直接调用服务: {e}")
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: DailyFortuneCalendarService.get_daily_fortune_calendar(
+                        date_str=request.date,
+                        user_solar_date=request.solar_date,
+                        user_solar_time=request.solar_time,
+                        user_gender=request.gender
+                    )
+                )
+        else:
+            # ✅ 没有用户信息，直接调用服务（放入线程池避免阻塞）
+            # 此时不涉及八字计算，本身较快
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: DailyFortuneCalendarService.get_daily_fortune_calendar(
+                    date_str=request.date,
+                    user_solar_date=None,
+                    user_solar_time=None,
+                    user_gender=None
+                )
+            )
         
         if not result.get('success'):
             error_msg = {

@@ -342,6 +342,21 @@ class BaziDataOrchestrator:
             )
             tasks.append(('monthly_fortune', monthly_fortune_task))
         
+        # ✅ 优化：将 daily_fortune_calendar 放入并行任务（避免同步阻塞）
+        if modules.get('daily_fortune_calendar'):
+            # 支持传入查询日期，如果没有则使用 None（服务内部会默认为今天）
+            calendar_config = modules['daily_fortune_calendar']
+            query_date = calendar_config.get('date') if isinstance(calendar_config, dict) else None
+            
+            daily_fortune_calendar_task = loop.run_in_executor(
+                executor, DailyFortuneCalendarService.get_daily_fortune_calendar,
+                query_date,           # date_str（查询日期）
+                final_solar_date,     # user_solar_date（用户出生日期）
+                final_solar_time,     # user_solar_time
+                gender                # user_gender
+            )
+            tasks.append(('daily_fortune_calendar', daily_fortune_calendar_task))
+        
         # 7. 其他模块
         if modules.get('bazi_ai'):
             ai_question = modules['bazi_ai'].get('question') if isinstance(modules.get('bazi_ai'), dict) else None
@@ -850,11 +865,9 @@ class BaziDataOrchestrator:
         if modules.get('monthly_fortune'):
             result['monthly_fortune'] = task_data.get('monthly_fortune')
         
+        # ✅ 优化：从并行任务结果中获取（避免同步阻塞）
         if modules.get('daily_fortune_calendar'):
-            calendar_data = DailyFortuneCalendarService.get_daily_fortune_calendar(
-                final_solar_date, final_solar_time, gender
-            )
-            result['daily_fortune_calendar'] = calendar_data
+            result['daily_fortune_calendar'] = task_data.get('daily_fortune_calendar')
         
         # 处理其他模块
         if modules.get('bazi_interface'):

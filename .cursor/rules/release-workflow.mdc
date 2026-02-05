@@ -1,0 +1,64 @@
+# 上线流程规范（所有 AI 模型必须遵循）
+
+## 核心流程
+
+```
+本地开发 → 本地测试 → Git 提交 → 增量部署 → 生产验证
+```
+
+## 开发前必读
+
+- **数据编排规范**: `standards/08_数据编排架构规范.md`
+- **上线流程规范**: `standards/10_上线流程与CI-CD规范.md`
+- **热更新规范**: `standards/hot-reload.md`
+
+## 必须测试的接口
+
+修改代码后，在本地测试以下接口（根据修改范围选择）：
+
+| 接口 | 命令 | 验收标准 |
+|------|------|----------|
+| 健康检查 | `curl -s http://localhost:8001/api/v1/health` | 返回 `{"status":"ok"}` |
+| 每日运势 | `curl -s -w "\nTTFB: %{time_starttransfer}s\n" --max-time 60 -X POST http://localhost:8001/api/v1/daily-fortune-calendar/stream -H "Content-Type: application/json" -d '{"date": "2025-02-05", "solar_date": "1992-01-15", "solar_time": "12:00", "gender": "male"}' -o /dev/null` | TTFB < 100ms |
+| 五行占比 | `curl -s -w "\nTTFB: %{time_starttransfer}s\n" --max-time 60 -X POST http://localhost:8001/api/v1/bazi/wuxing-proportion/stream -H "Content-Type: application/json" -d '{"solar_date": "1992-01-15", "solar_time": "12:00", "gender": "male"}' -o /dev/null` | TTFB < 100ms |
+
+## 部署步骤
+
+1. **提交代码**
+   ```bash
+   git add <files>
+   git commit -m "<type>: <description>"
+   git push origin master
+   ```
+
+2. **增量部署**
+   ```bash
+   ./deploy/scripts/incremental_deploy_production.sh
+   ```
+
+3. **生产验证**
+   ```bash
+   # 健康检查
+   curl -s http://8.210.52.217:8001/api/v1/health
+   
+   # 验证修改的接口（替换为实际接口）
+   curl -s -w "\nTTFB: %{time_starttransfer}s\n" --max-time 60 \
+     -X POST http://8.210.52.217:8001/api/v1/<接口路径> \
+     -H "Content-Type: application/json" \
+     -d '<请求体>'
+   ```
+
+## 禁止操作
+
+- ❌ 直接在服务器上修改代码
+- ❌ 跳过本地测试
+- ❌ 跳过 Git 提交
+- ❌ 重启服务（必须用热更新）
+- ❌ 修改底层接口不告知用户
+
+## 流式接口首包优化原则
+
+- ✅ 走统一编排 `BaziDataOrchestrator.fetch_data()`
+- ✅ 基本信息秒出（TTFB < 100ms）
+- ✅ 耗时操作放入并行任务或线程池
+- ✅ LLM 调用在首包之后
