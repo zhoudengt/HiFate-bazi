@@ -155,13 +155,19 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
         try:
             payment_client = get_payment_client(provider_str)
         except ValueError as e:
-            # 如果客户端未注册，尝试重新加载支付服务模块
+            # 如果客户端未注册，尝试重新加载支付服务模块（包括所有子模块）
             if "不支持的支付平台" in str(e):
                 try:
-                    if 'services.payment_service' in sys.modules:
-                        importlib.reload(sys.modules['services.payment_service'])
-                    # 再次尝试获取客户端
-                    payment_client = get_payment_client(provider_str)
+                    # 删除所有支付服务子模块，强制重新导入
+                    modules_to_remove = [k for k in list(sys.modules.keys()) if k.startswith('services.payment_service')]
+                    for mod_name in modules_to_remove:
+                        del sys.modules[mod_name]
+                    logger.info("已清除支付服务模块缓存: %s", modules_to_remove)
+                    # 重新导入支付服务模块
+                    import services.payment_service
+                    from services.payment_service.client_factory import get_payment_client as _get_client
+                    payment_client = _get_client(provider_str)
+                    logger.info("支付客户端 %s 重新加载成功", provider_str)
                 except Exception as reload_error:
                     logger.warning("重新加载支付服务模块失败: %s", reload_error)
                     registered = payment_client_factory.list_clients()
@@ -363,13 +369,19 @@ def verify_unified_payment(request: VerifyPaymentRequest):
         try:
             payment_client = get_payment_client(provider_str)
         except ValueError as e:
-            # 如果客户端未注册，尝试重新加载支付服务模块
+            # 如果客户端未注册，尝试重新加载支付服务模块（包括所有子模块）
             if "不支持的支付平台" in str(e):
                 try:
-                    if 'services.payment_service' in sys.modules:
-                        importlib.reload(sys.modules['services.payment_service'])
-                    # 再次尝试获取客户端
-                    payment_client = get_payment_client(provider_str)
+                    # 删除所有支付服务子模块，强制重新导入
+                    modules_to_remove = [k for k in list(sys.modules.keys()) if k.startswith('services.payment_service')]
+                    for mod_name in modules_to_remove:
+                        del sys.modules[mod_name]
+                    logger.info("已清除支付服务模块缓存: %s", modules_to_remove)
+                    # 重新导入支付服务模块
+                    import services.payment_service
+                    from services.payment_service.client_factory import get_payment_client as _get_client
+                    payment_client = _get_client(provider_str)
+                    logger.info("支付客户端 %s 重新加载成功", provider_str)
                 except Exception as reload_error:
                     logger.warning("重新加载支付服务模块失败: %s", reload_error)
                     registered = payment_client_factory.list_clients()

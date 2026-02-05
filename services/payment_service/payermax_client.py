@@ -29,7 +29,7 @@ except ImportError:
     # 降级到环境变量
     def get_payment_config(provider: str, config_key: str, environment: str = 'production', default: Optional[str] = None) -> Optional[str]:
         return os.getenv(f"{provider.upper()}_{config_key.upper()}", default)
-    def get_payment_environment(default: str = 'production') -> str:
+    def get_payment_environment(provider: str = 'linepay', default: str = 'production') -> str:
         return os.getenv("PAYMENT_ENVIRONMENT", default)
 
 # 导入支付工具

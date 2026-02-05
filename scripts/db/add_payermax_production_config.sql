@@ -31,11 +31,11 @@ WHERE provider = 'payermax'
 INSERT INTO payment_configs 
   (provider, config_key, config_value, config_type, environment, description, is_active, created_at, updated_at)
 VALUES
-  -- app_id (如果生产环境不同，请修改此值)
-  ('payermax', 'app_id', 'dbe50c5313384571a2f9aa36a5153576', 'string', 'production', 'PayerMax 生产环境应用ID', 1, NOW(), NOW()),
+  -- app_id (生产环境)
+  ('payermax', 'app_id', '63f132d5aed74094a218f185346338d7', 'string', 'production', 'PayerMax 生产环境应用ID', 1, NOW(), NOW()),
   
-  -- merchant_no (如果生产环境不同，请修改此值)
-  ('payermax', 'merchant_no', 'SDP01010117296213', 'string', 'production', 'PayerMax 生产环境商户号', 1, NOW(), NOW()),
+  -- merchant_no (生产环境)
+  ('payermax', 'merchant_no', 'P01010120902468', 'string', 'production', 'PayerMax 生产环境商户号', 1, NOW(), NOW()),
   
   -- 生产环境私钥路径 (商户私钥，用于签名请求)
   ('payermax', 'private_key_path', '/opt/secure/keys/payermax_private_key_prod.pem', 'string', 'production', 'PayerMax 生产环境商户私钥路径', 1, NOW(), NOW()),
