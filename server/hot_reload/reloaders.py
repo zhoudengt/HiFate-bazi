@@ -419,6 +419,40 @@ class SourceCodeReloader:
                     })
                     logger.error(f"  ❌ 重载模块 {module_name} 失败: {error_msg}")
             
+            # ────────────────────────────────────────────────────────────
+            # 🔴 最终步骤：所有模块重载完成后，重新注册路由
+            # 原因：os.walk 遍历时 server/main.py 在 server/hot_reload/api.py 之前，
+            # 导致 server.main 重载时看到的是旧的 hot_reload router。
+            # 这里确保在所有模块都已更新后，用最新的 router 对象重新注册。
+            # ────────────────────────────────────────────────────────────
+            try:
+                from server.utils.router_manager import RouterManager
+                router_manager = RouterManager.get_instance()
+                if router_manager and 'server.main' in sys.modules:
+                    main_module = sys.modules['server.main']
+                    
+                    # 1. 重新绑定 server.main 中的 router 变量到最新的模块对象
+                    router_bindings = {
+                        'server.hot_reload.api': 'hot_reload_router',
+                    }
+                    for src_module, var_name in router_bindings.items():
+                        if src_module in sys.modules:
+                            new_router = getattr(sys.modules[src_module], 'router', None)
+                            if new_router and hasattr(main_module, var_name):
+                                setattr(main_module, var_name, new_router)
+                    
+                    # 2. 重新注册路由信息到管理器
+                    if hasattr(main_module, '_register_all_routers_to_manager'):
+                        main_module._register_all_routers_to_manager()
+                    
+                    # 3. 强制重新注册到 FastAPI 应用
+                    router_manager.clear_registered_state()
+                    results = router_manager.register_all_routers(force=True)
+                    success_count_r = sum(1 for v in results.values() if v)
+                    logger.info(f"  🔄 最终路由重新注册: {success_count_r} 个路由已挂载")
+            except Exception as e:
+                logger.warning(f"  ⚠️  最终路由重新注册失败（不影响模块重载）: {e}")
+            
             # 打印总结
             logger.info("\n" + "-"*60)
             if reloaded_modules:

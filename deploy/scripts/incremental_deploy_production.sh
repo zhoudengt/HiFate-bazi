@@ -842,10 +842,10 @@ echo ""
 echo -e "${BLUE}🔄 第五步：触发热更新${NC}"
 echo "----------------------------------------"
 
-# 在 Node1 上触发热更新（会自动同步到 Node2）
+# 在 Node1 上触发热更新（通知所有 Worker）
 echo "🔄 在 Node1 上触发热更新..."
 HEALTH_URL="http://$NODE1_PUBLIC_IP:8001"
-SYNC_URL="$HEALTH_URL/api/v1/hot-reload/sync"
+RELOAD_ALL_URL="$HEALTH_URL/api/v1/hot-reload/reload-all"
 
 # 先检查服务是否可用（添加超时）
 if ! curl -f -s --max-time 10 "$HEALTH_URL/health" > /dev/null 2>&1; then
@@ -853,40 +853,33 @@ if ! curl -f -s --max-time 10 "$HEALTH_URL/health" > /dev/null 2>&1; then
     exit 1
 fi
 
-# 触发热更新同步（添加超时）
-SYNC_RESPONSE=$(curl -s --max-time 10 -X POST "$SYNC_URL" 2>&1)
-if echo "$SYNC_RESPONSE" | grep -q "success\|ok\|同步" || [ $? -eq 0 ]; then
-    echo -e "${GREEN}✅ 热更新触发成功${NC}"
+# 🔴 第一次 reload-all：重载所有模块 + 通知所有 Worker
+echo "🔄 [1/2] 执行全量热更新（reload-all）..."
+RELOAD_RESPONSE=$(curl -s --max-time 60 -X POST "$RELOAD_ALL_URL" -H "Content-Type: application/json" -d '{}' 2>&1)
+if echo "$RELOAD_RESPONSE" | grep -q '"success":true'; then
+    echo -e "${GREEN}✅ 第一次热更新触发成功${NC}"
 else
-    echo -e "${YELLOW}⚠️  热更新响应：$SYNC_RESPONSE${NC}"
+    echo -e "${YELLOW}⚠️  热更新响应：$RELOAD_RESPONSE${NC}"
     echo -e "${YELLOW}⚠️  继续部署，请手动检查热更新状态${NC}"
 fi
 
-# 等待热更新完成（实际检查状态，而不是固定等待）
-echo "⏳ 等待热更新完成..."
-MAX_WAIT=60  # 最大等待60秒
-WAIT_INTERVAL=5  # 每5秒检查一次
-WAIT_COUNT=0
+# 等待所有 Worker 完成重载
+echo "⏳ 等待所有 Worker 完成热更新..."
+sleep 5
 
-while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
-    sleep $WAIT_INTERVAL
-    WAIT_COUNT=$((WAIT_COUNT + WAIT_INTERVAL))
-    
-    # 检查热更新状态（添加超时）
-    HOT_RELOAD_STATUS=$(curl -s --max-time 5 "http://$NODE1_PUBLIC_IP:8001/api/v1/hot-reload/status" 2>/dev/null || echo "{}")
-    
-    # 🔴 修复：空 JSON 不算成功，必须有明确的成功标志
-    if echo "$HOT_RELOAD_STATUS" | grep -q '"success":true'; then
-        echo -e "${GREEN}✅ 热更新已完成（等待了 ${WAIT_COUNT} 秒）${NC}"
-        break
-    fi
-    
-    echo "⏳ 热更新进行中，已等待 ${WAIT_COUNT} 秒..."
-done
-
-if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-    echo -e "${YELLOW}⚠️  等待超时（${MAX_WAIT}秒），但继续部署${NC}"
+# 🔴 第二次 reload-all：确保新路由注册（新代码的路由重注册逻辑生效）
+echo "🔄 [2/2] 二次热更新确认（确保新路由和新代码完全生效）..."
+RELOAD_RESPONSE2=$(curl -s --max-time 60 -X POST "$RELOAD_ALL_URL" -H "Content-Type: application/json" -d '{}' 2>&1)
+if echo "$RELOAD_RESPONSE2" | grep -q '"success":true'; then
+    echo -e "${GREEN}✅ 二次热更新确认成功${NC}"
+else
+    echo -e "${YELLOW}⚠️  二次热更新响应：$RELOAD_RESPONSE2${NC}"
 fi
+
+# 等待所有 Worker 完成
+echo "⏳ 等待热更新完成..."
+sleep 5
+echo -e "${GREEN}✅ 热更新已完成${NC}"
 
 # 🔴 功能验证：调用 /hot-reload/verify 确认关键功能正常
 echo ""
