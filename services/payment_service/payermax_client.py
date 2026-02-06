@@ -24,13 +24,19 @@ except ImportError:
 
 # 导入支付配置加载器
 try:
-    from services.payment_service.payment_config_loader import get_payment_config, get_payment_environment
+    from services.payment_service.payment_config_loader import (
+        get_payment_config,
+        get_payment_environment,
+        get_payment_config_loader,
+    )
 except ImportError:
     # 降级到环境变量
     def get_payment_config(provider: str, config_key: str, environment: str = 'production', default: Optional[str] = None) -> Optional[str]:
         return os.getenv(f"{provider.upper()}_{config_key.upper()}", default)
     def get_payment_environment(provider: str = 'linepay', default: str = 'production') -> str:
         return os.getenv("PAYMENT_ENVIRONMENT", default)
+    def get_payment_config_loader():
+        return None
 
 # 导入支付工具
 try:
@@ -61,57 +67,72 @@ class PayerMaxClient(BasePaymentClient):
         Args:
             environment: 环境（production/sandbox），如果为None则自动查找is_active=1的记录
         """
+        import time
+        _t0 = time.perf_counter()
         # 如果未指定环境，自动推断
         if environment is None:
             environment = get_payment_environment('payermax', 'production')
-        
+        _t_env = time.perf_counter() - _t0
+
         super().__init__(environment)
 
-        # 从数据库读取配置
-        self.app_id = get_payment_config('payermax', 'app_id', environment) or os.getenv("PAYERMAX_APP_ID")
-        self.merchant_no = get_payment_config('payermax', 'merchant_no', environment) or os.getenv("PAYERMAX_MERCHANT_NO")
+        # 一次批量从数据库读取 payermax 配置，减少 DB 往返
+        cfg: Dict[str, str] = {}
+        loader = get_payment_config_loader()
+        if loader is not None:
+            cfg = loader.get_all_configs('payermax', environment or 'production')
+        _t_cfg = time.perf_counter() - _t0 - _t_env
 
-        # 读取RSA密钥路径
-        private_key_path = get_payment_config('payermax', 'private_key_path', environment) or os.getenv("PAYERMAX_PRIVATE_KEY_PATH")
-        public_key_path = get_payment_config('payermax', 'public_key_path', environment) or os.getenv("PAYERMAX_PUBLIC_KEY_PATH")
+        self.app_id = (cfg.get('app_id') or os.getenv("PAYERMAX_APP_ID")) or None
+        self.merchant_no = (cfg.get('merchant_no') or os.getenv("PAYERMAX_MERCHANT_NO")) or None
+        private_key_path = cfg.get('private_key_path') or os.getenv("PAYERMAX_PRIVATE_KEY_PATH")
+        public_key_path = cfg.get('public_key_path') or os.getenv("PAYERMAX_PUBLIC_KEY_PATH")
+        mode = cfg.get('mode') or os.getenv("PAYERMAX_MODE", "")
 
         # 加载RSA密钥
         self.private_key = None
         self.public_key = None
-
+        _t_keys = 0.0
         if private_key_path and os.path.exists(private_key_path):
             try:
+                _tk0 = time.perf_counter()
                 with open(private_key_path, 'rb') as f:
                     self.private_key = serialization.load_pem_private_key(
                         f.read(),
                         password=None,
                         backend=default_backend()
                     )
+                _t_keys += time.perf_counter() - _tk0
                 logger.info("PayerMax私钥加载成功")
             except Exception as e:
                 logger.error(f"加载PayerMax私钥失败: {e}")
 
         if public_key_path and os.path.exists(public_key_path):
             try:
+                _tk1 = time.perf_counter()
                 with open(public_key_path, 'rb') as f:
                     self.public_key = serialization.load_pem_public_key(
                         f.read(),
                         backend=default_backend()
                     )
+                _t_keys += time.perf_counter() - _tk1
                 logger.info("PayerMax公钥加载成功")
             except Exception as e:
                 logger.error(f"加载PayerMax公钥失败: {e}")
 
         # 设置API基础URL（根据实际环境或 mode 配置）
-        # 检查是否有 mode 配置（sandbox/production）
-        mode = get_payment_config('payermax', 'mode', environment) or os.getenv("PAYERMAX_MODE", "")
         if mode and mode.lower() == "sandbox":
             self.base_url = "https://pay-gate-uat.payermax.com/aggregate-pay/api/gateway/"
         elif self.environment == "production":
             self.base_url = "https://pay-gate.payermax.com/aggregate-pay/api/gateway/"
         else:
             self.base_url = "https://pay-gate-uat.payermax.com/aggregate-pay/api/gateway/"
-        
+
+        _t_total = (time.perf_counter() - _t0) * 1000
+        logger.info(
+            "PayerMax client init total: %.0fms (env=%.0fms config=%.0fms keys=%.0fms)",
+            _t_total, _t_env * 1000, _t_cfg * 1000, _t_keys * 1000
+        )
         logger.info(f"PayerMax API URL: {self.base_url} (environment={self.environment}, mode={mode})")
 
         if not all([self.app_id, self.merchant_no, self.private_key]):
@@ -288,6 +309,8 @@ class PayerMaxClient(BasePaymentClient):
         cancel_url: Optional[str] = None
     ) -> Dict[str, Any]:
         """创建支付订单的实现"""
+        import time
+        t_start = time.perf_counter()
         if not self.is_enabled:
             return {
                 "success": False,
@@ -333,7 +356,9 @@ class PayerMaxClient(BasePaymentClient):
             
             # 对整个请求体生成签名，放在 Header 中
             signature = self._generate_signature_from_string(request_body)
-            
+            t_before_http = time.perf_counter()
+            build_sign_ms = int((t_before_http - t_start) * 1000)
+
             headers = {
                 "Content-Type": "application/json",
                 "User-Agent": "PayerMax-Client/1.0",
@@ -342,10 +367,11 @@ class PayerMaxClient(BasePaymentClient):
 
             logger.info(f"PayerMax请求URL: {url}")
             logger.info(f"PayerMax请求数据: {request_body}")
-            _t0 = __import__('time').time()
+            _t0 = time.perf_counter()
             response = requests.post(url, data=request_body, headers=headers, timeout=30)
-            _t1 = __import__('time').time()
-            logger.info(f"PayerMax响应状态码: {response.status_code} | PayerMax_API耗时: {int((_t1-_t0)*1000)}ms")
+            _t1 = time.perf_counter()
+            api_ms = int((_t1 - _t0) * 1000)
+            logger.info(f"PayerMax响应状态码: {response.status_code} | PayerMax_API耗时: {api_ms}ms")
             logger.info(f"PayerMax响应内容: {response.text[:500]}")
 
             if response.status_code == 200:
@@ -363,8 +389,10 @@ class PayerMaxClient(BasePaymentClient):
                     redirect_url = response_data.get("redirectUrl")
                     
                     # 记录到数据库
+                    db_ms = 0
                     if PaymentTransactionDAO:
                         try:
+                            _td0 = time.perf_counter()
                             PaymentTransactionDAO().create_transaction(
                                 order_id=order_id,
                                 provider="payermax",
@@ -375,9 +403,14 @@ class PayerMaxClient(BasePaymentClient):
                                 customer_email=customer_email,
                                 metadata={"payment_method": payment_method}
                             )
+                            db_ms = int((time.perf_counter() - _td0) * 1000)
                         except Exception as e:
                             logger.warning(f"记录PayerMax交易到数据库失败: {e}")
 
+                    logger.info(
+                        "PayerMax create_payment timings: build_sign_ms=%s api_ms=%s db_ms=%s",
+                        build_sign_ms, api_ms, db_ms
+                    )
                     return {
                         "success": True,
                         "transaction_id": trade_token,
@@ -405,6 +438,14 @@ class PayerMaxClient(BasePaymentClient):
                 }
 
         except Exception as e:
+            try:
+                _bsm = build_sign_ms
+            except NameError:
+                _bsm = int((time.perf_counter() - t_start) * 1000)
+            logger.info(
+                "PayerMax create_payment timings: build_sign_ms=%s api_error=%s",
+                _bsm, str(e)[:100]
+            )
             logger.error(f"创建PayerMax支付订单失败: {e}")
             return {
                 "success": False,

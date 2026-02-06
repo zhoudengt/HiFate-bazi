@@ -416,6 +416,7 @@ def get_payment_environment(provider: str = 'linepay', default: str = 'productio
     """
     # 尝试从指定支付方式的配置中推断环境
     # 查询任意一个配置键的激活记录，获取其 environment
+    conn = None
     try:
         conn = get_mysql_connection()
         with conn.cursor() as cursor:
@@ -436,12 +437,10 @@ def get_payment_environment(provider: str = 'linepay', default: str = 'productio
                     valid_environments = ['production', 'sandbox', 'test']
                     if env.lower() in valid_environments:
                         return env.lower()
-            
-            return_mysql_connection(conn)
+        return default
     except Exception as e:
         logger.warning(f"⚠️ 无法推断支付环境: {e}，使用默认值: {default}")
-        if conn:
+        return default
+    finally:
+        if conn is not None:
             return_mysql_connection(conn)
-    
-    # 如果无法推断，返回默认值
-    return default

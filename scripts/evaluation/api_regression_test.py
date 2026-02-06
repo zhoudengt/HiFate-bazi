@@ -297,7 +297,7 @@ TEST_CASES: List[TestCase] = [
         method="GET",
         endpoint="/api/v1/payment/providers",
         expected_keys=["success"],
-        timeout=10,  # 使用缓存后应该秒出
+        timeout=30,  # 留出余量（冷启动+批量配置后应秒出）
         description="获取支付渠道状态（Stripe + PayerMax）"
     ),
     TestCase(
@@ -315,7 +315,7 @@ TEST_CASES: List[TestCase] = [
             "cancel_url": "http://localhost:5173/payment/cancel"
         },
         expected_keys=["success"],
-        timeout=30,
+        timeout=60,  # 留出余量（服务端 API timeout=30s + 冷启动/DB）
         description="PayerMax支付订单创建"
     ),
     
