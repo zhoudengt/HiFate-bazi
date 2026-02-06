@@ -820,11 +820,12 @@ class BaziDisplayService:
         else:
             # 只调用一次详细计算（如果指定了大运索引，只计算该大运范围内的流年）
             # 注意：如果第一次调用命中了缓存，第二次调用也会命中缓存（相同的参数）
-            # ✅ 优化：传递 include_* 参数，避免重复计算
+            # ✅ 性能优化：fortune/display 响应只用 details（大运/流年/流月）和 bazi_pillars（四柱），
+            #    include_wangshuai 改为 False（响应中不使用旺衰数据），其余 include_* 由调用方控制
             detail_result = BaziDetailService.calculate_detail_full(
                 solar_date, solar_time, gender, current_time, resolved_dayun_index, target_year,
                 quick_mode=quick_mode, async_warmup=async_warmup,
-                include_wangshuai=True, 
+                include_wangshuai=False, 
                 include_shengong_minggong=include_shengong_minggong,
                 include_rules=include_rules, 
                 include_wuxing_proportion=include_wuxing_proportion, 
@@ -984,39 +985,11 @@ class BaziDisplayService:
                 "deities": sort_shensha(pillar_details.get('deities', []))  # ✅ 神煞按配置排序
             }
         
-        # ✅ 新增：获取司令字段（复用 /bazi/interface 接口的逻辑，不重复计算）
+        # ✅ 性能优化：跳过 generate_interface_full 调用（原用于获取 commander/司令字段）
+        #    原因：fortune/display 前端（fortune.js、fortune-timeline.js）不使用 commander 字段，
+        #    司令信息由 /bazi/pan/display 或 /bazi/shengong-minggong 接口提供。
+        #    此处保留 commander 字段为空字符串，保持响应结构向后兼容。
         commander = ''
-        try:
-            from server.services.bazi_interface_service import BaziInterfaceService
-            
-            interface_result = BaziInterfaceService.generate_interface_full(
-                solar_date=solar_date,
-                solar_time=solar_time,
-                gender=gender,
-                name="",  # 不需要姓名
-                location="未知地",  # 使用默认值
-                latitude=39.00,  # 使用默认值
-                longitude=120.00  # 使用默认值
-            )
-            
-            if interface_result:
-                other_info = interface_result.get('other_info', {})
-                
-                if isinstance(other_info, dict):
-                    commander_element = other_info.get('commander_element', '')
-                else:
-                    commander_element = ''
-            else:
-                commander_element = ''
-            
-            # ✅ 简化：从 "癸水用事" 格式中提取天干部分 "癸"（只取第一个字符）
-            if commander_element:
-                # 提取第一个字符作为天干
-                commander = commander_element[0] if len(commander_element) > 0 else ''
-                
-        except Exception as e:
-            logger.warning(f"获取司令字段失败: {e}", exc_info=True)
-            commander = ''  # 失败时返回空字符串，不影响现有逻辑
         
         result = {
             "success": True,

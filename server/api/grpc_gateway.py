@@ -341,22 +341,31 @@ async def _handle_fortune(payload: Dict[str, Any]):
                 raise ValueError(f"current_time 参数格式错误: {request_model.current_time}")
     
     # 调用服务层（使用统一线程池）
+    # ✅ 性能优化：fortune/display 响应只需要 detail（大运/流年/流月/四柱），
+    #    不需要旺衰、身宫命宫、规则匹配、五行比例、日柱六十甲子，显式关闭以避免无用计算
     import asyncio
     from server.utils.async_executor import get_executor
+    _quick = request_model.quick_mode if request_model.quick_mode is not None else True
+    _warmup = request_model.async_warmup if request_model.async_warmup is not None else True
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
         get_executor(),
-        BaziDisplayService.get_fortune_display,
-        final_solar_date,
-        final_solar_time,
-        request_model.gender,
-        current_time,
-        request_model.dayun_index,
-        request_model.dayun_year_start,
-        request_model.dayun_year_end,
-        request_model.target_year,
-        request_model.quick_mode if request_model.quick_mode is not None else True,
-        request_model.async_warmup if request_model.async_warmup is not None else True
+        lambda: BaziDisplayService.get_fortune_display(
+            solar_date=final_solar_date,
+            solar_time=final_solar_time,
+            gender=request_model.gender,
+            current_time=current_time,
+            dayun_index=request_model.dayun_index,
+            dayun_year_start=request_model.dayun_year_start,
+            dayun_year_end=request_model.dayun_year_end,
+            target_year=request_model.target_year,
+            quick_mode=_quick,
+            async_warmup=_warmup,
+            include_shengong_minggong=False,
+            include_rules=False,
+            include_wuxing_proportion=False,
+            include_rizhu_liujiazi=False
+        )
     )
     
     # 添加转换信息
