@@ -44,8 +44,9 @@ from server.utils.async_executor import get_executor
 # 配置日志
 logger = logging.getLogger(__name__)
 
-# 编排层并行度控制：最多 8 个并行任务，避免瞬时压垮下游
-_ORCHESTRATOR_SEMAPHORE = asyncio.Semaphore(8)
+# 编排层并行度控制：最多 24 个并行任务（从 8 提升以支持高并发场景）
+# 8 个 Uvicorn worker 共享此信号量（进程隔离，每个 worker 独立一份）
+_ORCHESTRATOR_SEMAPHORE = asyncio.Semaphore(24)
 
 
 async def _fetch_with_semaphore(coro):
@@ -264,7 +265,7 @@ class BaziDataOrchestrator:
         need_detail = (modules.get('detail') or modules.get('dayun') or modules.get('liunian') or modules.get('liuyue') or 
                        modules.get('special_liunian') or modules.get('special_liunians') or 
                        modules.get('fortune_display') or modules.get('fortune_context'))
-        logger.info(f"[DEBUG] 检查是否需要 detail_task: need_detail={need_detail}, special_liunians={modules.get('special_liunians')}")
+        logger.debug(f"[Orchestrator] 检查是否需要 detail_task: need_detail={need_detail}, special_liunians={modules.get('special_liunians')}")
         if need_detail:
             # ✅ 与上一版一致：quick_mode=True；支持 dayun_index 指定大运（切换大运时一次调用）
             # 传参顺序：solar_date, solar_time, gender, current_time, dayun_index, target_year, quick_mode, async_warmup
@@ -278,7 +279,7 @@ class BaziDataOrchestrator:
                 False   # async_warmup
             )
             tasks.append(('detail', detail_task))
-            logger.info(f"[DEBUG] 已添加 detail_task 到 tasks (quick_mode=True, dayun_index={resolved_dayun_index})")
+            logger.debug(f"[Orchestrator] 已添加 detail_task 到 tasks (quick_mode=True, dayun_index={resolved_dayun_index})")
         
         # 3. 规则匹配模块（需要基础八字数据，在获取基础数据后处理）
         # 注意：规则匹配需要在获取八字数据后才能执行，所以不在并行任务中
@@ -366,12 +367,20 @@ class BaziDataOrchestrator:
             )
             tasks.append(('bazi_ai', ai_task))
         
-        # 执行并行任务（受信号量限制，最多 8 个同时执行）
-        logger.info(f"[DEBUG] 执行并行任务: parallel={parallel}, tasks数量={len(tasks)}, task_names={[name for name, _ in tasks]}")
+        # 执行阶段1并行任务（带超时保护，防止单个任务卡住拖垮整个请求）
+        _PHASE1_TIMEOUT = 15  # 阶段1超时15秒（含 bazi 计算 + detail 计算）
+        logger.debug(f"[Orchestrator] 执行阶段1并行任务: parallel={parallel}, tasks数量={len(tasks)}, task_names={[name for name, _ in tasks]}")
         if parallel and tasks:
             wrapped = [_fetch_with_semaphore(task) for _, task in tasks]
-            task_results = await asyncio.gather(*wrapped, return_exceptions=True)
-            logger.info(f"[DEBUG] 并行任务完成，结果数量={len(task_results)}")
+            try:
+                task_results = await asyncio.wait_for(
+                    asyncio.gather(*wrapped, return_exceptions=True),
+                    timeout=_PHASE1_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"[Orchestrator] 阶段1并行任务超时（{_PHASE1_TIMEOUT}s），返回已完成的数据")
+                task_results = [asyncio.TimeoutError(f"Phase1 timeout after {_PHASE1_TIMEOUT}s")] * len(tasks)
+            logger.debug(f"[Orchestrator] 阶段1并行任务完成，结果数量={len(task_results)}")
             
             # 处理任务结果
             task_data = {}
@@ -420,11 +429,9 @@ class BaziDataOrchestrator:
         
         # 提取基础数据
         bazi_data = task_data.get('bazi')
-        logger.info(f"[DEBUG 基础数据提取] bazi_data存在={bazi_data is not None}, type={type(bazi_data) if bazi_data else None}")
+        logger.debug(f"[Orchestrator] bazi_data存在={bazi_data is not None}")
         if bazi_data:
-            logger.info(f"[DEBUG 基础数据提取] bazi_data keys={list(bazi_data.keys()) if isinstance(bazi_data, dict) else 'Not dict'}")
             bazi_data = validate_bazi_data(bazi_data)
-            logger.info(f"[DEBUG 基础数据提取] validate后 bazi_data keys={list(bazi_data.keys()) if isinstance(bazi_data, dict) else 'Not dict'}")
             # 处理嵌套结构：bazi_data 可能是 {bazi: {...}, rizhu: "...", matched_rules: [...]}
             if isinstance(bazi_data, dict) and 'bazi' in bazi_data:
                 result['bazi'] = bazi_data
@@ -454,12 +461,12 @@ class BaziDataOrchestrator:
         
         # 处理大运流年数据
         detail_data = task_data.get('detail')
-        logger.info(f"[DEBUG] detail_data 获取结果: detail_data存在={detail_data is not None}, task_data的键={list(task_data.keys())}")
+        logger.debug(f"[Orchestrator] detail_data存在={detail_data is not None}")
         
         # ✅ 修复：如果启用了 special_liunians 但 detail_data 不存在，需要先获取 detail_data
         if (modules.get('special_liunian') or modules.get('special_liunians')) and not detail_data:
             # 需要获取 detail_data 以获取 dayun_sequence
-            logger.info("special_liunians 已启用但 detail_data 不存在，开始获取 detail_data")
+            logger.debug("special_liunians 已启用但 detail_data 不存在，开始获取 detail_data")
             detail_task = loop.run_in_executor(
                 executor, BaziDetailService.calculate_detail_full,
                 final_solar_date, final_solar_time, gender, current_time
@@ -472,7 +479,7 @@ class BaziDataOrchestrator:
                     dayun_count = len(detail_data.get('details', {}).get('dayun_sequence', []))
                 else:
                     dayun_count = len(detail_data.get('dayun_sequence', []))
-                logger.info(f"detail_data 获取成功，dayun_sequence 数量: {dayun_count}")
+                logger.debug(f"detail_data 获取成功，dayun_sequence 数量: {dayun_count}")
             else:
                 logger.warning("detail_data 获取失败，返回 None")
         
@@ -502,7 +509,7 @@ class BaziDataOrchestrator:
                 )
                 detail_data = await detail_task_2
                 task_data['detail'] = detail_data
-                logger.info(f"[DEBUG] 按年份范围二次获取大运流年: dayun_index={target_step}")
+                logger.debug(f"[Orchestrator] 按年份范围二次获取大运流年: dayun_index={target_step}")
         
         if detail_data:
             # ✅ 修复：detail_data 同时包含顶层和 details 中的 dayun_sequence
@@ -576,7 +583,7 @@ class BaziDataOrchestrator:
                 # 支持两种命名：special_liunian 和 special_liunians
                 special_config = modules.get('special_liunian') or modules.get('special_liunians', {})
                 
-                logger.info(f"[DEBUG] 特殊流年处理: dayun_sequence总数={len(dayun_sequence)}, special_config={special_config}")
+                logger.debug(f"[Orchestrator] 特殊流年处理: dayun_sequence总数={len(dayun_sequence)}")
                 
                 # ✅ 获取目标大运（根据 dayun_config 或使用前N个大运）
                 target_dayuns = dayun_sequence
@@ -589,11 +596,11 @@ class BaziDataOrchestrator:
                         special_count = count  # ✅ 使用 dayun_config 中的 count
                         indices = dayun_config.get('indices')
                         birth_year = int(final_solar_date.split('-')[0])
-                        logger.info(f"[DEBUG] _get_dayun_by_mode调用: mode={mode}, count={count}, dayun_sequence长度={len(dayun_sequence)}")
+                        logger.debug(f"[Orchestrator] _get_dayun_by_mode: mode={mode}, count={count}")
                         target_dayuns = BaziDataOrchestrator._get_dayun_by_mode(
                             dayun_sequence, current_time, birth_year, mode, count, indices
                         )
-                        logger.info(f"[DEBUG] target_dayuns结果: 长度={len(target_dayuns)}, 大运步数={[d.get('step') for d in target_dayuns]}")
+                        logger.debug(f"[Orchestrator] target_dayuns: 长度={len(target_dayuns)}")
                 else:
                     # 如果没有 dayun_config，使用 special_config 中的 count
                     special_count = special_config.get('count', 8) if isinstance(special_config, dict) else 8
@@ -601,13 +608,13 @@ class BaziDataOrchestrator:
                 # ✅ 获取特殊流年（确保每个大运都完整获取，不去重）
                 # ✅ 架构规范：传入已计算的 liunian_sequence，避免 SpecialLiunianService 重复计算
                 # 详见：standards/08_数据编排架构规范.md
-                logger.info(f"[DEBUG] 调用get_special_liunians_batch: target_dayuns长度={len(target_dayuns)}, 大运步数={[d.get('step') for d in target_dayuns]}, special_count={special_count}, liunian_sequence长度={len(liunian_sequence)}")
+                logger.debug(f"[Orchestrator] get_special_liunians_batch: target_dayuns={len(target_dayuns)}, special_count={special_count}")
                 special_liunians = await SpecialLiunianService.get_special_liunians_batch(
                     final_solar_date, final_solar_time, gender,
                     target_dayuns, special_count, current_time,
                     liunian_sequence=liunian_sequence  # ✅ 传入已计算的流年序列
                 )
-                logger.info(f"[DEBUG] get_special_liunians_batch返回: 特殊流年数量={len(special_liunians)}, 大运步数={set(l.get('dayun_step') for l in special_liunians)}")
+                logger.debug(f"[Orchestrator] get_special_liunians_batch返回: 特殊流年数量={len(special_liunians)}")
                 
                 # ✅ 按大运分组，确保格式与 general_review_analysis.py 一致
                 # 格式：{dayun_step: [liunian1, liunian2, ...]}
@@ -638,11 +645,17 @@ class BaziDataOrchestrator:
                 )
                 result['fortune_display'] = fortune_display
         
-        # 处理规则匹配（需要八字数据，在获取基础数据后执行）
-        if modules.get('rules') and bazi_data:
+        # =====================================================================
+        # 阶段2：依赖任务并行执行（rules、fortune_context、personality、rizhu）
+        # 这些任务都依赖 bazi_data，但彼此之间无依赖，可以并行执行
+        # =====================================================================
+        phase2_tasks = []
+        
+        # 规则匹配（需要 bazi_data + wangshuai_data）
+        need_rules = modules.get('rules') and bazi_data
+        if need_rules:
             rule_types = modules['rules'].get('types', [])
             if rule_types:
-                # 准备规则匹配数据
                 rule_data = {
                     'bazi_pillars': bazi_data.get('bazi_pillars', {}),
                     'ten_gods': bazi_data.get('ten_gods', {}),
@@ -650,21 +663,97 @@ class BaziDataOrchestrator:
                     'wangshuai': wangshuai_data.get('wangshuai', '') if wangshuai_data else '',
                     'gender': gender
                 }
-                
-                # RuleService 内部已经处理了连接池，直接调用即可
-                matched_rules = []
-                try:
-                    matched_rules = RuleService.match_rules(
-                        rule_data, rule_types, use_cache=use_cache
-                    )
-                except Exception as e:
-                    logger.error(f"规则匹配失败: {e}")
-                
-                result['rules'] = matched_rules
+                rules_task = loop.run_in_executor(
+                    executor, RuleService.match_rules,
+                    rule_data, rule_types, use_cache
+                )
+                phase2_tasks.append(('rules', rules_task))
+        
+        # fortune_context（需要 detail_data + wangshuai_data）
+        if modules.get('fortune_context') and detail_data:
+            from server.orchestrators.fortune_context_service import FortuneContextService
+            fc_config = modules['fortune_context'] if isinstance(modules.get('fortune_context'), dict) else {}
+            intent_types = fc_config.get('intent_types', ['ALL'])
+            target_years = fc_config.get('target_years')
+            if target_years is None:
+                current_year = datetime.now().year
+                target_years = list(range(current_year, current_year + 6))
+            fortune_ctx_task = loop.run_in_executor(
+                executor, FortuneContextService.get_fortune_context,
+                final_solar_date, final_solar_time, gender,
+                intent_types, target_years,
+                detail_data,
+                wangshuai_data or task_data.get('wangshuai')
+            )
+            phase2_tasks.append(('fortune_context', fortune_ctx_task))
+        
+        # personality（需要 bazi_data）
+        if modules.get('personality') and bazi_data:
+            _inner = bazi_data.get('bazi', bazi_data) if isinstance(bazi_data, dict) and 'bazi' in bazi_data else bazi_data
+            _pillars = _inner.get('bazi_pillars', {})
+            def _calc_personality(pillars=_pillars, g=gender):
+                analyzer = RizhuGenderAnalyzer(pillars, g)
+                return analyzer.analyze_rizhu_gender()
+            personality_task = loop.run_in_executor(executor, _calc_personality)
+            phase2_tasks.append(('personality', personality_task))
+        
+        # rizhu（需要 bazi_data）
+        if modules.get('rizhu') and bazi_data:
+            _inner = bazi_data.get('bazi', bazi_data) if isinstance(bazi_data, dict) and 'bazi' in bazi_data else bazi_data
+            _pillars = _inner.get('bazi_pillars', {})
+            _day_pillar = _pillars.get('day', {})
+            _rizhu_str = f"{_day_pillar.get('stem', '')}{_day_pillar.get('branch', '')}"
+            if _rizhu_str:
+                rizhu_task = loop.run_in_executor(
+                    executor, RizhuLiujiaziService.get_rizhu_analysis, _rizhu_str
+                )
+                phase2_tasks.append(('rizhu', rizhu_task))
+            else:
+                logger.warning("[Orchestrator] rizhu为空，跳过")
+                result['rizhu'] = None
+        
+        # 执行阶段2并行任务（带超时保护）
+        _PHASE2_TIMEOUT = 10  # 阶段2超时10秒（规则匹配、上下文组装等）
+        if phase2_tasks:
+            phase2_wrapped = [_fetch_with_semaphore(task) for _, task in phase2_tasks]
+            try:
+                phase2_results = await asyncio.wait_for(
+                    asyncio.gather(*phase2_wrapped, return_exceptions=True),
+                    timeout=_PHASE2_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"[Orchestrator] 阶段2并行任务超时（{_PHASE2_TIMEOUT}s）")
+                phase2_results = [asyncio.TimeoutError(f"Phase2 timeout after {_PHASE2_TIMEOUT}s")] * len(phase2_tasks)
+            
+            phase2_data = {}
+            for (name, _), task_result in zip(phase2_tasks, phase2_results):
+                if isinstance(task_result, Exception):
+                    logger.error(f"[Orchestrator] 阶段2任务 {name} 失败: {task_result}")
+                    phase2_data[name] = None
+                else:
+                    phase2_data[name] = task_result
+        else:
+            phase2_data = {}
+        
+        # 提取阶段2结果
+        if need_rules:
+            matched_rules = phase2_data.get('rules') or []
+            result['rules'] = matched_rules
+        
+        if modules.get('fortune_context') and detail_data:
+            fortune_ctx = phase2_data.get('fortune_context')
+            result['fortune_context'] = fortune_ctx
+            if fortune_ctx:
+                logger.info("[BaziDataOrchestrator] fortune_context 已组装（复用 detail/wangshuai）")
+        
+        if modules.get('personality') and bazi_data:
+            result['personality'] = phase2_data.get('personality')
+        
+        if modules.get('rizhu') and bazi_data and 'rizhu' not in result:
+            result['rizhu'] = phase2_data.get('rizhu')
         
         # 处理喜神忌神模块（优先使用组装数据，需要在 rules 处理之后）
         if modules.get('xishen_jishen'):
-            # 如果所需数据已获取，自动组装
             rules_module_data = result.get('rules', [])
             
             if inner_bazi_data and wangshuai_data:
@@ -682,11 +771,9 @@ class BaziDataOrchestrator:
                 )
                 if xishen_jishen_data:
                     result['xishen_jishen'] = xishen_jishen_data
-                    logger.info("[BaziDataOrchestrator] ✅ 喜神忌神数据已自动组装")
+                    logger.info("[BaziDataOrchestrator] 喜神忌神数据已自动组装")
                 else:
-                    # 组装失败，降级到接口调用结果
                     if xishen_jishen_data_from_task:
-                        # ✅ 修复：确保 XishenJishenResponse 转换为字典
                         if isinstance(xishen_jishen_data_from_task, dict):
                             result['xishen_jishen'] = xishen_jishen_data_from_task
                         elif hasattr(xishen_jishen_data_from_task, 'model_dump'):
@@ -695,11 +782,9 @@ class BaziDataOrchestrator:
                             result['xishen_jishen'] = xishen_jishen_data_from_task.dict()
                         else:
                             result['xishen_jishen'] = xishen_jishen_data_from_task
-                    logger.warning("[BaziDataOrchestrator] ⚠️ 喜神忌神数据组装失败，使用接口调用结果")
+                    logger.warning("[BaziDataOrchestrator] 喜神忌神数据组装失败，使用接口调用结果")
             else:
-                # 数据不完整，使用接口调用结果
                 if xishen_jishen_data_from_task:
-                    # ✅ 修复：确保 XishenJishenResponse 转换为字典
                     if isinstance(xishen_jishen_data_from_task, dict):
                         result['xishen_jishen'] = xishen_jishen_data_from_task
                     elif hasattr(xishen_jishen_data_from_task, 'model_dump'):
@@ -713,66 +798,6 @@ class BaziDataOrchestrator:
         # 处理分析模块
         if modules.get('health'):
             result['health'] = task_data.get('health')
-        
-        # 处理 fortune_context 模块（流年大运上下文，依赖 detail + wangshuai）
-        if modules.get('fortune_context') and detail_data:
-            try:
-                from server.orchestrators.fortune_context_service import FortuneContextService
-                fc_config = modules['fortune_context'] if isinstance(modules.get('fortune_context'), dict) else {}
-                intent_types = fc_config.get('intent_types', ['ALL'])
-                target_years = fc_config.get('target_years')
-                if target_years is None:
-                    current_year = datetime.now().year
-                    target_years = list(range(current_year, current_year + 6))
-                fortune_ctx = FortuneContextService.get_fortune_context(
-                    solar_date=final_solar_date,
-                    solar_time=final_solar_time,
-                    gender=gender,
-                    intent_types=intent_types,
-                    target_years=target_years,
-                    detail_result=detail_data,
-                    wangshuai_result=wangshuai_data or task_data.get('wangshuai')
-                )
-                result['fortune_context'] = fortune_ctx
-                if fortune_ctx:
-                    logger.info("[BaziDataOrchestrator] ✅ fortune_context 已组装（复用 detail/wangshuai）")
-            except Exception as e:
-                logger.warning(f"[BaziDataOrchestrator] fortune_context 组装失败: {e}")
-                result['fortune_context'] = None
-        
-        if modules.get('personality') and bazi_data:
-            # RizhuGenderAnalyzer 需要先创建实例
-            # ⚠️ 修复：bazi_data 可能是嵌套结构，需要从 bazi_data['bazi'] 中提取
-            inner_bazi_data = bazi_data.get('bazi', bazi_data) if isinstance(bazi_data, dict) and 'bazi' in bazi_data else bazi_data
-            bazi_pillars = inner_bazi_data.get('bazi_pillars', {})
-            analyzer = RizhuGenderAnalyzer(bazi_pillars, gender)
-            personality_result = analyzer.analyze_rizhu_gender()
-            result['personality'] = personality_result
-        
-        logger.info(f"[DEBUG 模块处理] modules.get('rizhu')={modules.get('rizhu')}, bazi_data存在={bazi_data is not None}")
-        if modules.get('rizhu') and bazi_data:
-            # RizhuLiujiaziService.get_rizhu_analysis 需要日柱字符串
-            # ⚠️ 修复：bazi_data 可能是嵌套结构 {bazi: {...}, rizhu: "庚寅", matched_rules: [...]}
-            # 需要从 bazi_data['bazi'] 中提取 bazi_pillars
-            logger.info(f"[DEBUG rizhu模块] bazi_data type={type(bazi_data)}, has 'bazi' key={'bazi' in bazi_data if isinstance(bazi_data, dict) else False}")
-            inner_bazi_data = bazi_data.get('bazi', bazi_data) if isinstance(bazi_data, dict) and 'bazi' in bazi_data else bazi_data
-            logger.info(f"[DEBUG rizhu模块] inner_bazi_data keys={list(inner_bazi_data.keys()) if isinstance(inner_bazi_data, dict) else 'Not dict'}")
-            bazi_pillars = inner_bazi_data.get('bazi_pillars', {})
-            logger.info(f"[DEBUG rizhu模块] bazi_pillars={bazi_pillars}")
-            day_pillar = bazi_pillars.get('day', {})
-            logger.info(f"[DEBUG rizhu模块] day_pillar={day_pillar}")
-            rizhu = f"{day_pillar.get('stem', '')}{day_pillar.get('branch', '')}"
-            logger.info(f"[DEBUG rizhu模块] rizhu={rizhu}")
-            if rizhu and rizhu != '':  # ⚠️ 确保日柱不为空
-                rizhu_result = RizhuLiujiaziService.get_rizhu_analysis(rizhu)
-                logger.info(f"[DEBUG rizhu模块] rizhu_result type={type(rizhu_result)}, has data={rizhu_result is not None}")
-                if rizhu_result:
-                    result['rizhu'] = rizhu_result
-                else:
-                    result['rizhu'] = None
-            else:
-                logger.warning(f"[DEBUG rizhu模块] rizhu为空，跳过")
-                result['rizhu'] = None
         
         # 处理五行占比模块（优先使用组装数据）
         if modules.get('wuxing_proportion'):

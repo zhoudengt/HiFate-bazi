@@ -40,6 +40,7 @@
 | [database-connection.md](database-connection.md) | 数据库连接规范 | - |
 | [incremental-sync-no-lock.md](incremental-sync-no-lock.md) | 增量同步无锁方案 | - |
 | [payment.md](payment.md) | 支付系统规范（Stripe + PayerMax） | 支付开发 |
+| [标准测试接口清单.md](标准测试接口清单.md) | 21个标准测试接口（基本+流式+面相+风水+支付） | 所有开发者 |
 
 ---
 
@@ -47,6 +48,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-02-06 | 性能优化：编排层两阶段并行、信号量8→24、超时保护、日志降级；新增 `标准测试接口清单.md` |
 | 2026-02-06 | 完善热更新与上线流程规范：新增 /verify、/history 端点文档，修正 RELOAD_ORDER，新增 Reload Guard、Worker ACK 机制说明，更新常见问题 |
 | 2026-02-05 | 新增 `10_上线流程与CI-CD规范.md`：完整上线流程、测试接口清单、所有AI模型必须遵循 |
 | 2026-02-05 | 新增 `.cursor/rules/release-workflow.mdc`：上线流程规则文件 |

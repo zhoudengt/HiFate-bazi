@@ -14,6 +14,7 @@ import os
 import sys
 import json
 import requests
+import httpx
 import uuid
 import time
 import logging

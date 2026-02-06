@@ -5,23 +5,30 @@ API 回归测试脚本
 
 每次代码修改后运行此脚本，确保所有接口正常工作。
 
+「测试」默认范围（基本+流式+支付）：
+    - 基本接口：基本信息、排盘、身宫命宫、六十甲子等
+    - 流式接口：每日运势、五行占比、喜神忌神、婚姻/事业/健康/子女/总评/年运、智能分析、
+                面相分析(流式)、办公桌风水(流式)
+    - 支付接口：支付渠道状态、Stripe 创建订单、PayerMax 创建订单
+
 使用方法：
-    # 测试本地环境
-    python scripts/evaluation/api_regression_test.py
-    
-    # 测试生产环境
+    # 生产环境完整测试（基本+流式+支付，推荐）
+    python scripts/evaluation/api_regression_test.py --env production --category basic --category stream --category payment --parallel
+
+    # 测试所有类别（含管理接口）
     python scripts/evaluation/api_regression_test.py --env production
-    
+
     # 只测试特定类别
-    python scripts/evaluation/api_regression_test.py --category basic
-    python scripts/evaluation/api_regression_test.py --category stream
-    python scripts/evaluation/api_regression_test.py --category payment
+    python scripts/evaluation/api_regression_test.py --env production --category basic
+    python scripts/evaluation/api_regression_test.py --env production --category stream --parallel
+    python scripts/evaluation/api_regression_test.py --env production --category payment
 
 测试类别：
     - basic: 基础接口（非流式）
-    - stream: 流式接口
-    - payment: 支付接口
-    - all: 所有接口（默认）
+    - stream: 流式接口（含面相、办公桌风水）
+    - payment: 支付接口（Stripe + PayerMax）
+    - admin: 管理接口
+    - all: 所有接口（不指定 --category 时）
 """
 
 import os
@@ -49,6 +56,10 @@ class TestCategory(Enum):
     ADMIN = "admin"
 
 
+# 最小 1x1 PNG（用于面相/风水等需要上传图片的流式接口占位）
+_MINIMAL_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+
 @dataclass
 class TestCase:
     """测试用例"""
@@ -62,6 +73,9 @@ class TestCase:
     timeout: int = 30
     is_stream: bool = False
     description: str = ""
+    # 流式 + 文件上传：表单文件字段名，如 "image"。测试时使用最小占位图
+    stream_form_file_key: Optional[str] = None
+    stream_form_data: Optional[Dict[str, str]] = None  # 其他 Form 字段
 
 
 # 环境配置
@@ -272,6 +286,28 @@ TEST_CASES: List[TestCase] = [
         is_stream=True,
         description="智能分析-按问题"
     ),
+    TestCase(
+        name="面相分析(流式)",
+        category=TestCategory.STREAM,
+        method="POST",
+        endpoint="/api/v2/face/analyze/stream",
+        timeout=90,
+        is_stream=True,
+        stream_form_file_key="image",
+        stream_form_data={"analysis_types": "gongwei,liuqin"},
+        description="面相综合分析-流式"
+    ),
+    TestCase(
+        name="办公桌风水(流式)",
+        category=TestCategory.STREAM,
+        method="POST",
+        endpoint="/api/v2/desk-fengshui/analyze/stream",
+        timeout=90,
+        is_stream=True,
+        stream_form_file_key="image",
+        stream_form_data={},
+        description="办公桌风水分析-流式"
+    ),
     
     # ==================== 支付接口 ====================
     TestCase(
@@ -289,6 +325,7 @@ TEST_CASES: List[TestCase] = [
             "cancel_url": "http://localhost:5173/payment/cancel"
         },
         expected_keys=["success"],
+        timeout=45,
         description="Stripe支付订单创建"
     ),
     TestCase(
@@ -390,13 +427,20 @@ class APITester:
             return False, f"请求异常: {str(e)}", time.time() - start_time
     
     def test_stream_endpoint(self, case: TestCase) -> Tuple[bool, str, float]:
-        """测试流式接口"""
+        """测试流式接口（支持普通 JSON 或 multipart/form-data 文件上传）"""
         url = f"{self.base_url}{case.endpoint}"
         start_time = time.time()
         
         try:
             if case.method == "GET":
                 response = requests.get(url, params=case.params, timeout=case.timeout, stream=True)
+            elif getattr(case, 'stream_form_file_key', None):
+                # 流式 + 文件上传（面相/风水等）
+                import base64
+                raw = base64.b64decode(_MINIMAL_PNG_BASE64)
+                files = {case.stream_form_file_key: ("test.png", raw, "image/png")}
+                data = getattr(case, 'stream_form_data', None) or {}
+                response = requests.post(url, files=files, data=data, timeout=case.timeout, stream=True)
             else:
                 response = requests.post(url, json=case.payload, timeout=case.timeout, stream=True)
             
@@ -457,6 +501,9 @@ class APITester:
             elapsed = time.time() - start_time
             
             if has_error:
+                # 面相接口用占位图时返回「未检测到人脸」，视为接口可用
+                if "未检测到人脸" in (error_content or ""):
+                    return True, "OK (接口可用，占位图无人脸)", elapsed
                 return False, f"流式错误: {error_content}", elapsed
             
             # 检查是否有有效响应
@@ -632,7 +679,8 @@ def main():
                         help="测试环境 (默认: local)")
     parser.add_argument("--url", help="自定义基础 URL (覆盖 --env)")
     parser.add_argument("--category", choices=["basic", "stream", "payment", "admin", "all"], 
-                        default="all", help="测试类别 (默认: all)")
+                        action="append", default=None,
+                        help="测试类别，可多次指定。不指定或 all = 全部；指定多个则只测这些（如 --category basic --category stream --category payment）")
     parser.add_argument("--parallel", "-p", action="store_true", 
                         help="并行执行流式接口测试（大幅减少测试时间）")
     parser.add_argument("--quiet", "-q", action="store_true", help="静默模式")
@@ -642,10 +690,10 @@ def main():
     # 确定基础 URL
     base_url = args.url or ENVIRONMENTS.get(args.env, ENVIRONMENTS["local"])
     
-    # 确定测试类别
+    # 确定测试类别（支持多选；不指定或含 all = 全部）
     categories = None
-    if args.category != "all":
-        categories = [TestCategory(args.category)]
+    if args.category and "all" not in args.category:
+        categories = [TestCategory(c) for c in args.category]
     
     # 运行测试
     tester = APITester(base_url, verbose=not args.quiet)

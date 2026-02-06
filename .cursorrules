@@ -55,10 +55,12 @@ python3 scripts/ai/completeness_validator.py --type api --name xxx
 ### 🔴 0.1.1 数据编排架构原则（最高优先级）
 > **⚠️ 数据只计算一次，所有接口从 `BaziDataOrchestrator.fetch_data()` 统一获取数据，禁止重复计算！**
 
-**核心架构**：
+**核心架构**（两阶段并行，信号量24，超时保护）：
 ```
 流式接口/API接口 → BaziDataOrchestrator.fetch_data() → 底层服务
                   （统一入口，只计算一次）
+  阶段1（独立任务并行，超时15s）: bazi, wangshuai, detail, health...
+  阶段2（依赖任务并行，超时10s）: rules, fortune_context, personality, rizhu
 ```
 
 **绝对禁止**：

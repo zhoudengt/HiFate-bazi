@@ -53,16 +53,32 @@
 
 **步骤**：
 
-1. **并行获取独立数据**
+1. **通过 BaziDataOrchestrator 统一获取数据（推荐）**
    ```python
-   # ✅ 正确：并行获取独立数据
+   # ✅ 推荐：通过编排层统一获取（两阶段并行，带超时保护）
+   orchestrator_data = await BaziDataOrchestrator.fetch_data(
+       final_solar_date, final_solar_time, gender,
+       modules={
+           'bazi': True, 'wangshuai': True, 'detail': True,
+           'rules': {'types': ['shishen']},
+           'fortune_context': {'intent_types': ['ALL']}
+       },
+       preprocessed=True
+   )
+   # 编排层内部自动两阶段并行：
+   # 阶段1: bazi + wangshuai + detail（独立任务，超时15s）
+   # 阶段2: rules + fortune_context + personality + rizhu（依赖任务，超时10s）
+   ```
+
+   ```python
+   # ⚠️ 仅在无法使用编排层时才直接调用：
    loop = asyncio.get_event_loop()
    executor = None
    
    bazi_result, wangshuai_result, detail_result = await asyncio.gather(
        loop.run_in_executor(executor, BaziService.calculate_bazi_full, final_solar_date, final_solar_time, gender),
        loop.run_in_executor(executor, WangShuaiService.calculate_wangshuai, final_solar_date, final_solar_time, gender),
-       loop.run_in_executor(executor, BaziDetailService.calculate_detail_full, final_solar_date, final_solar_time, gender)  # ⚠️ 大运数据必须！
+       loop.run_in_executor(executor, BaziDetailService.calculate_detail_full, final_solar_date, final_solar_time, gender)
    )
    ```
 
@@ -104,7 +120,7 @@
    ```
 
 **检查清单**：
-- [ ] 已使用 `asyncio.gather()` 并行获取独立数据
+- [ ] 优先通过 `BaziDataOrchestrator.fetch_data()` 获取数据（两阶段并行 + 超时保护）
 - [ ] 已调用 `BaziDetailService.calculate_detail_full()`（如需要大运数据）
 - [ ] 已合并规则查询（如需要多种规则类型）
 - [ ] 已正确提取数据（处理 `'bazi'` 键的情况）

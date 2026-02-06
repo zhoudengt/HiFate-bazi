@@ -118,11 +118,33 @@ result = {
 
 ---
 
+### 🚀 BaziDataOrchestrator 性能配置（2026-02-06 更新）
+
+编排层 `BaziDataOrchestrator.fetch_data()` 的关键性能参数：
+
+| 参数 | 值 | 说明 |
+|------|------|------|
+| 并发信号量 | 24 | 每个 Uvicorn worker 独立（从 8 提升到 24） |
+| 阶段1超时 | 15s | 独立任务并行（bazi, wangshuai, detail, health...） |
+| 阶段2超时 | 10s | 依赖任务并行（rules, fortune_context, personality, rizhu） |
+| 线程池大小 | CPU*2, max 100 | 生产环境，本地开发 max 16 |
+| 日志级别 | DEBUG | 编排层调试日志使用 logger.debug，生产环境不输出 |
+
+**两阶段并行执行时序**：
+- **阶段1**（独立任务）：bazi + wangshuai + detail + health + fortune... 并行执行
+- **阶段2**（依赖任务）：rules + fortune_context + personality + rizhu 并行执行
+- **阶段3**（顺序组装）：xishen_jishen、wuxing_proportion 组装
+
+**超时策略**：超时后返回已完成的数据，未完成模块降级为 None，不会导致请求失败。
+
+---
+
 **核心要点**：
 - **所有智能运势分析流程必须使用 `PerformanceMonitor` 记录性能**
 - **性能摘要必须包含在API响应中**
 - **必须识别并记录性能瓶颈（>1秒）**
 - **必须记录失败的阶段和错误信息**
+- **编排层调试日志使用 `logger.debug`，禁止使用 `logger.info` 输出调试信息**
 
 ---
 

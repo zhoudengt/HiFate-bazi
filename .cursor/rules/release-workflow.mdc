@@ -87,12 +87,16 @@ curl -s --max-time 30 http://localhost:8001/api/v1/payment/providers
 # 期望：{"success":true, "providers":[...]} 包含 stripe 和 payermax
 ```
 
-### 完整回归测试
+### 完整回归测试（基本+流式+面相/风水流式+两种支付）
+
+用户说「测试」即指运行以下全部接口：
 
 ```bash
-# 运行全量 API 回归测试
-python3 scripts/evaluation/api_regression_test.py --env production --category all
+# 基本接口 + 流式接口（含面相、办公桌风水）+ 支付（Stripe + PayerMax）
+python3 scripts/evaluation/api_regression_test.py --env production --category basic --category stream --category payment --parallel
 ```
+
+覆盖：基本 5 个、流式 13 个（含面相分析流式、办公桌风水流式）、支付 3 个（渠道状态、Stripe 创建订单、PayerMax 创建订单）。
 
 ---
 
@@ -209,7 +213,18 @@ config(1) → rules(2) → content(3) → source(4) → singleton(5) → microse
 
 ## 流式接口首包优化原则
 
-- 走统一编排 `BaziDataOrchestrator.fetch_data()`
+- 走统一编排 `BaziDataOrchestrator.fetch_data()`（两阶段并行，信号量24）
 - 基本信息秒出（TTFB < 100ms）
 - 耗时操作放入并行任务或线程池
 - LLM 调用在首包之后
+- 编排层阶段1超时15s、阶段2超时10s，超时降级不阻塞
+- 编排层调试日志使用 `logger.debug`，生产环境不输出
+
+## 标准测试接口
+
+提到「测试」时，运行以下 21 个接口的回归测试（详见 `standards/标准测试接口清单.md`）：
+
+```bash
+# 完整测试：基本(5) + 流式(13，含面相/风水) + 支付(3)
+python3 scripts/evaluation/api_regression_test.py --env production --category basic --category stream --category payment --parallel
+```
