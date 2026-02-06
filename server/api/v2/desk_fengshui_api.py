@@ -38,12 +38,17 @@ class DeskAnalysisResponse(BaseModel):
     error: Optional[str] = None
 
 
-@router.post("/analyze", response_model=DeskAnalysisResponse, summary="分析办公桌风水")
+@router.post("/analyze", response_model=DeskAnalysisResponse, summary="分析办公桌风水", deprecated=True)
 async def analyze_desk_fengshui(
     image: UploadFile = File(..., description="办公桌照片")
 ):
     """
     分析办公桌风水布局
+    
+    ⚠️ **接口已标记为下线（deprecated）**
+    
+    此接口已标记为下线，建议使用流式接口：`POST /api/v2/desk-fengshui/analyze/stream`
+    流式接口返回相同的基础数据（type: 'data'），并额外提供流式LLM分析。
     
     **功能说明**：
     1. 上传办公桌照片
@@ -74,6 +79,7 @@ async def analyze_desk_fengshui(
     - **score**: 综合评分（0-100）
     - **summary**: 分析总结
     """
+    logger.warning("⚠️ [DEPRECATED] 非流式接口 /api/v2/desk-fengshui/analyze 已标记为下线，建议使用流式接口 /api/v2/desk-fengshui/analyze/stream")
     try:
         logger.info(f"收到办公桌风水分析请求: {image.filename}")
         

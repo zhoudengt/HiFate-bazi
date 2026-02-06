@@ -126,10 +126,15 @@ class WuxingProportionResponse(BaseModel):
     error: Optional[str] = None
 
 
-@router.post("/bazi/wuxing-proportion", response_model=WuxingProportionResponse, summary="查询五行占比")
+@router.post("/bazi/wuxing-proportion", response_model=WuxingProportionResponse, summary="查询五行占比", deprecated=True)
 async def get_wuxing_proportion(request: WuxingProportionRequest):
     """
     查询五行占比分析
+    
+    ⚠️ **接口已标记为下线（deprecated）**
+    
+    此接口已标记为下线，建议使用流式接口：`POST /api/v1/bazi/wuxing-proportion/stream`
+    流式接口返回相同的基础数据（type: 'data'），并额外提供流式LLM分析。
     
     基于生辰八字统计五行占比（金木水火土），包括：
     - 五行占比统计（天干+地支，8个位置）
@@ -144,6 +149,7 @@ async def get_wuxing_proportion(request: WuxingProportionRequest):
     
     返回五行占比分析数据
     """
+    logger.warning("⚠️ [DEPRECATED] 非流式接口 /bazi/wuxing-proportion 已标记为下线，建议使用流式接口 /bazi/wuxing-proportion/stream")
     try:
         # 处理农历输入和时区转换
         final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(

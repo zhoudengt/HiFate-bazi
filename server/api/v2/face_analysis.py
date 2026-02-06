@@ -42,7 +42,7 @@ def get_knowledge_service():
     return knowledge_service
 
 
-@router.post("/analyze", summary="面相综合分析")
+@router.post("/analyze", summary="面相综合分析", deprecated=True)
 async def analyze_face(
     image: UploadFile = File(..., description="面相照片"),
     analysis_types: Optional[str] = Form(default="gongwei,liuqin,shishen", description="分析类型（逗号分隔）"),
@@ -55,10 +55,16 @@ async def analyze_face(
     """
     面相综合分析接口
     
+    ⚠️ **接口已标记为下线（deprecated）**
+    
+    此接口已标记为下线，建议使用流式接口：`POST /api/v2/face/analyze/stream`
+    流式接口返回相同的基础数据（type: 'data'），并额外提供流式LLM分析。
+    
     - 上传人脸照片进行分析
     - 支持多种分析类型：宫位(gongwei)、六亲(liuqin)、十神(shishen)、特征(features)
     - 可选：提供八字信息进行综合分析
     """
+    logger.warning("⚠️ [DEPRECATED] 非流式接口 /api/v2/face/analyze 已标记为下线，建议使用流式接口 /api/v2/face/analyze/stream")
     try:
         # 读取图片数据
         image_data = await image.read()

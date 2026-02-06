@@ -141,11 +141,16 @@ class DailyFortuneCalendarResponse(BaseModel):
     error: Optional[str] = None
 
 
-@router.post("/daily-fortune-calendar/query", response_model=DailyFortuneCalendarResponse, summary="查询每日运势日历")
+@router.post("/daily-fortune-calendar/query", response_model=DailyFortuneCalendarResponse, summary="查询每日运势日历", deprecated=True)
 @api_error_handler
 async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
     """
     查询每日运势日历信息
+    
+    ⚠️ **接口已标记为下线（deprecated）**
+    
+    此接口已标记为下线，建议使用流式接口：`POST /api/v1/daily-fortune-calendar/stream`
+    流式接口返回相同的基础数据（type: 'data'），并额外提供流式行动建议。
     
     基于万年历接口，提供完整的每日运势信息，包括：
     - 基础万年历信息（阳历、阴历、星期、宜忌、吉凶等级、神煞方位、冲合煞、建除）
@@ -170,6 +175,7 @@ async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
     
     返回完整的每日运势信息
     """
+    logger.warning("⚠️ [DEPRECATED] 非流式接口 /daily-fortune-calendar/query 已标记为下线，建议使用流式接口 /daily-fortune-calendar/stream")
     # 处理用户生辰的农历输入和时区转换（如果提供了生辰信息）
     user_final_solar_date = request.solar_date
     user_final_solar_time = request.solar_time

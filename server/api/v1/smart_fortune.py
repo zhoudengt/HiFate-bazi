@@ -73,7 +73,7 @@ def _extract_rule_types_from_question(question: str) -> list:
     return rule_types if rule_types else ["ALL"]
 
 
-@router.get("/smart-analyze")
+@router.get("/smart-analyze", deprecated=True)
 async def smart_analyze(
     question: str = Query(..., description="用户问题"),
     year: int = Query(..., description="出生年份"),
@@ -87,8 +87,16 @@ async def smart_analyze(
     """
     智能运势分析
     
+    ⚠️ **接口已标记为下线（deprecated）**
+    
+    此接口已标记为下线，建议使用流式接口：`GET /api/v1/smart-fortune/smart-analyze-stream`
+    流式接口返回相同的分析结果，并额外提供流式输出体验。
+    
     自动识别用户问题意图，返回针对性的分析结果
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning("⚠️ [DEPRECATED] 非流式接口 /smart-fortune/smart-analyze 已标记为下线，建议使用流式接口 /smart-fortune/smart-analyze-stream")
     # 初始化性能监控器
     monitor = PerformanceMonitor()
     

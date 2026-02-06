@@ -143,10 +143,15 @@ class XishenJishenResponse(BaseModel):
     error: Optional[str] = None
 
 
-@router.post("/bazi/xishen-jishen", response_model=XishenJishenResponse, summary="获取喜神忌神和十神命格")
+@router.post("/bazi/xishen-jishen", response_model=XishenJishenResponse, summary="获取喜神忌神和十神命格", deprecated=True)
 async def get_xishen_jishen(request: XishenJishenRequest):
     """
     获取喜神五行、忌神五行和十神命格
+    
+    ⚠️ **接口已标记为下线（deprecated）**
+    
+    此接口已标记为下线，建议使用流式接口：`POST /api/v1/bazi/xishen-jishen/stream`
+    流式接口返回相同的基础数据（type: 'data'），并额外提供流式LLM分析。
     
     根据用户的生辰（与基础八字排盘生辰同）：
     1. 从旺衰分析中获取喜神五行和忌神五行
@@ -158,6 +163,7 @@ async def get_xishen_jishen(request: XishenJishenRequest):
         - ji_shen_elements: 忌神五行列表（包含名称和ID）
         - shishen_mingge: 十神命格列表（包含名称和ID）
     """
+    logger.warning("⚠️ [DEPRECATED] 非流式接口 /bazi/xishen-jishen 已标记为下线，建议使用流式接口 /bazi/xishen-jishen/stream")
     logger.info(f"📥 收到喜神忌神请求: {request.solar_date} {request.solar_time} {request.gender}")
     
     try:
