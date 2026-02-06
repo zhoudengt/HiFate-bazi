@@ -517,6 +517,80 @@ async def trigger_all_workers_api():
         raise HTTPException(status_code=500, detail=f"触发失败: {str(e)}")
 
 
+@router.post("/hot-reload/reload-payment-config", summary="刷新支付配置")
+async def reload_payment_config_api(provider: Optional[str] = None):
+    """
+    刷新支付配置（清除缓存并重建客户端实例）
+    
+    当修改数据库中的支付配置（如切换 is_active 环境）后，
+    调用此接口使新配置立即生效。
+    
+    Args:
+        provider: 支付渠道名称（可选），如 payermax、stripe。
+                  不指定则刷新所有支付渠道的配置。
+    
+    Returns:
+        刷新结果，包含清除的缓存信息
+    """
+    result = {
+        "success": True,
+        "message": "",
+        "details": {
+            "config_cache_cleared": False,
+            "client_cache_cleared": False
+        }
+    }
+    
+    try:
+        # 1. 清除支付配置缓存（从数据库重新读取）
+        try:
+            from services.payment_service.payment_config_loader import reload_payment_config
+            reload_payment_config(provider=provider)
+            result["details"]["config_cache_cleared"] = True
+            logger.info(f"✓ 支付配置缓存已清除 (provider={provider or 'all'})")
+        except ImportError as e:
+            logger.warning(f"⚠ 支付配置模块未加载: {e}")
+            result["details"]["config_cache_error"] = str(e)
+        except Exception as e:
+            logger.error(f"❌ 清除支付配置缓存失败: {e}")
+            result["details"]["config_cache_error"] = str(e)
+        
+        # 2. 清除支付客户端实例缓存（下次请求时重新创建客户端）
+        try:
+            from services.payment_service.client_factory import payment_client_factory
+            payment_client_factory.clear_cache()
+            result["details"]["client_cache_cleared"] = True
+            logger.info("✓ 支付客户端实例缓存已清除")
+        except ImportError as e:
+            logger.warning(f"⚠ 支付客户端模块未加载: {e}")
+            result["details"]["client_cache_error"] = str(e)
+        except Exception as e:
+            logger.error(f"❌ 清除支付客户端缓存失败: {e}")
+            result["details"]["client_cache_error"] = str(e)
+        
+        # 3. 触发所有 Worker 同步
+        try:
+            sync_result = trigger_all_workers(['config', 'cache'])
+            result["details"]["worker_sync"] = sync_result
+            logger.info(f"✓ 已通知所有 Worker 刷新支付配置")
+        except Exception as e:
+            logger.warning(f"⚠ Worker 同步失败: {e}")
+            result["details"]["worker_sync_error"] = str(e)
+        
+        # 汇总结果
+        if result["details"]["config_cache_cleared"] and result["details"]["client_cache_cleared"]:
+            result["message"] = f"支付配置刷新成功 (provider={provider or 'all'})"
+        else:
+            result["success"] = False
+            result["message"] = "支付配置刷新部分失败，请查看 details"
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ 刷新支付配置失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"刷新支付配置失败: {str(e)}")
+
+
 
 
 

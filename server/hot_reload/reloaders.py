@@ -169,6 +169,17 @@ class CacheReloader:
             logger.warning(f"   ⚠ ConfigService 缓存清理失败: {e}")
             # 不设置 success = False，因为这是可选的
         
+        # 4. 清理支付客户端实例缓存（使配置修改生效）
+        try:
+            from services.payment_service.client_factory import payment_client_factory
+            payment_client_factory.clear_cache()
+            logger.info("   ✓ 支付客户端实例缓存已清理")
+        except (ImportError, AttributeError) as e:
+            logger.debug(f"   ⚠ 支付客户端模块未加载（可忽略）: {e}")
+        except Exception as e:
+            logger.warning(f"   ⚠ 支付客户端缓存清理失败: {e}")
+            # 不设置 success = False，因为这是可选的
+        
         if success:
             logger.info("✓ 缓存重载完成")
         else:
@@ -566,6 +577,16 @@ class ConfigReloaderEnhanced:
                 logger.info("   ✓ Redis 连接已刷新")
             except (ImportError, AttributeError):
                 pass
+            
+            # 5. 重新加载支付配置缓存（从数据库重新读取）
+            try:
+                from services.payment_service.payment_config_loader import reload_payment_config
+                reload_payment_config()  # 清除所有支付配置缓存
+                logger.info("   ✓ 支付配置缓存已清除")
+            except (ImportError, AttributeError) as e:
+                logger.debug(f"   ⚠ 支付配置模块未加载（可忽略）: {e}")
+            except Exception as e:
+                logger.warning(f"   ⚠ 支付配置缓存清除失败: {e}")
             
             logger.info("✓ 配置重载完成")
             return True
