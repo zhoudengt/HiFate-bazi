@@ -875,8 +875,8 @@ while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
     # 检查热更新状态（添加超时）
     HOT_RELOAD_STATUS=$(curl -s --max-time 5 "http://$NODE1_PUBLIC_IP:8001/api/v1/hot-reload/status" 2>/dev/null || echo "{}")
     
-    # 如果热更新完成，退出循环
-    if echo "$HOT_RELOAD_STATUS" | grep -q '"status":"ok"\|"success":true\|"enabled":true' || [ "$HOT_RELOAD_STATUS" = "{}" ]; then
+    # 🔴 修复：空 JSON 不算成功，必须有明确的成功标志
+    if echo "$HOT_RELOAD_STATUS" | grep -q '"success":true'; then
         echo -e "${GREEN}✅ 热更新已完成（等待了 ${WAIT_COUNT} 秒）${NC}"
         break
     fi
@@ -886,6 +886,21 @@ done
 
 if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
     echo -e "${YELLOW}⚠️  等待超时（${MAX_WAIT}秒），但继续部署${NC}"
+fi
+
+# 🔴 功能验证：调用 /hot-reload/verify 确认关键功能正常
+echo ""
+echo "🔍 执行热更新功能验证..."
+VERIFY_RESPONSE=$(curl -s --max-time 15 -X POST "http://$NODE1_PUBLIC_IP:8001/api/v1/hot-reload/verify" 2>/dev/null || echo "{}")
+
+if echo "$VERIFY_RESPONSE" | grep -q '"success":true'; then
+    echo -e "${GREEN}✅ 热更新功能验证通过${NC}"
+elif echo "$VERIFY_RESPONSE" | grep -q '"success":false'; then
+    echo -e "${RED}❌ 热更新功能验证失败！${NC}"
+    echo "验证结果: $VERIFY_RESPONSE"
+    echo -e "${YELLOW}⚠️  请立即检查支付、gRPC 等关键功能是否正常${NC}"
+else
+    echo -e "${YELLOW}⚠️  功能验证端点不可用（可能版本较旧），跳过${NC}"
 fi
 
 echo ""

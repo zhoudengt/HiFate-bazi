@@ -39,6 +39,7 @@ class WorkerSyncManager:
     
     # 信号文件路径（使用 /tmp 确保所有进程可访问）
     SIGNAL_FILE = "/tmp/hifate_hot_reload_signal.json"
+    ACK_DIR = "/tmp/hifate_hot_reload_ack"  # ACK 确认目录
     
     # 单例实例
     _instance: Optional['WorkerSyncManager'] = None
@@ -51,6 +52,8 @@ class WorkerSyncManager:
         self._check_interval = 2  # 每 2 秒检查一次信号文件
         self._reload_callback: Optional[Callable] = None
         self._worker_id = f"{os.getpid()}"
+        self._last_reload_success = None  # 上次重载是否成功
+        self._last_reload_time = 0  # 上次重载时间
         
     @classmethod
     def get_instance(cls) -> 'WorkerSyncManager':
@@ -134,33 +137,62 @@ class WorkerSyncManager:
                 self._last_signal_time = signal_time
                 
                 # 执行热更新回调
+                reload_success = False
                 if self._reload_callback:
                     try:
                         logger.info(f"🔄 [Worker-{self._worker_id}] 开始执行热更新...")
                         self._reload_callback()
+                        reload_success = True
+                        self._last_reload_success = True
+                        self._last_reload_time = time.time()
                         logger.info(f"✅ [Worker-{self._worker_id}] 热更新完成")
                     except Exception as e:
+                        self._last_reload_success = False
+                        self._last_reload_time = time.time()
                         logger.error(f"❌ [Worker-{self._worker_id}] 热更新执行失败: {e}")
                 else:
                     logger.warning(f"[Worker-{self._worker_id}] 未设置热更新回调")
+                
+                # 🔴 写入 ACK 确认文件
+                self._write_ack(signal_version, reload_success)
                     
         except json.JSONDecodeError as e:
             logger.warning(f"[Worker-{self._worker_id}] 信号文件格式错误: {e}")
         except Exception as e:
             logger.warning(f"[Worker-{self._worker_id}] 读取信号文件失败: {e}")
     
+    def _write_ack(self, version: int, success: bool):
+        """写入 ACK 确认文件"""
+        try:
+            os.makedirs(self.ACK_DIR, exist_ok=True)
+            ack_file = os.path.join(self.ACK_DIR, f"worker_{self._worker_id}.json")
+            ack_data = {
+                "worker_id": self._worker_id,
+                "version": version,
+                "success": success,
+                "timestamp": time.time(),
+                "ack_time": time.strftime('%Y-%m-%d %H:%M:%S')
+            }
+            with open(ack_file, 'w') as f:
+                json.dump(ack_data, f, indent=2)
+        except Exception as e:
+            logger.warning(f"[Worker-{self._worker_id}] 写入 ACK 失败: {e}")
+    
     @classmethod
-    def trigger_all_workers(cls, modules: list = None) -> Dict[str, Any]:
+    def trigger_all_workers(cls, modules: list = None, wait_ack: bool = True, ack_timeout: float = 10.0) -> Dict[str, Any]:
         """
         触发所有 worker 执行热更新
         
-        通过写入信号文件，通知所有 worker 进程执行热更新
+        通过写入信号文件，通知所有 worker 进程执行热更新。
+        可选等待 ACK 确认。
         
         Args:
             modules: 要更新的模块列表（可选，用于记录）
+            wait_ack: 是否等待 worker 确认（默认 True）
+            ack_timeout: ACK 等待超时（秒，默认 10）
             
         Returns:
-            dict: 触发结果
+            dict: 触发结果（含 ACK 统计）
         """
         try:
             # 读取当前版本号
@@ -172,6 +204,14 @@ class WorkerSyncManager:
                         current_version = data.get('version', 0)
                 except:
                     pass
+            
+            # 🔴 清理旧 ACK 文件
+            if os.path.exists(cls.ACK_DIR):
+                for f in os.listdir(cls.ACK_DIR):
+                    try:
+                        os.remove(os.path.join(cls.ACK_DIR, f))
+                    except:
+                        pass
             
             # 写入新信号
             new_version = current_version + 1
@@ -192,10 +232,19 @@ class WorkerSyncManager:
             
             logger.info(f"📢 热更新信号已广播 (version: {new_version})")
             
+            # 🔴 等待 ACK 确认
+            ack_results = {}
+            if wait_ack:
+                ack_results = cls._wait_for_acks(new_version, ack_timeout)
+                ack_count = len(ack_results)
+                ack_success = sum(1 for v in ack_results.values() if v.get('success'))
+                logger.info(f"📋 Worker ACK: {ack_success}/{ack_count} 成功确认")
+            
             return {
                 'success': True,
                 'version': new_version,
-                'message': f'热更新信号已广播到所有 worker (version: {new_version})'
+                'message': f'热更新信号已广播到所有 worker (version: {new_version})',
+                'ack': ack_results
             }
             
         except Exception as e:
@@ -206,6 +255,60 @@ class WorkerSyncManager:
                 'message': f'广播热更新信号失败: {e}'
             }
     
+    @classmethod
+    def _wait_for_acks(cls, version: int, timeout: float) -> Dict[str, Any]:
+        """
+        等待 worker ACK 确认
+        
+        Args:
+            version: 信号版本号
+            timeout: 超时时间（秒）
+            
+        Returns:
+            各 worker 的 ACK 状态
+        """
+        start = time.time()
+        acks = {}
+        
+        while time.time() - start < timeout:
+            if os.path.exists(cls.ACK_DIR):
+                for fname in os.listdir(cls.ACK_DIR):
+                    if not fname.endswith('.json'):
+                        continue
+                    fpath = os.path.join(cls.ACK_DIR, fname)
+                    try:
+                        with open(fpath, 'r') as f:
+                            data = json.load(f)
+                        worker_id = data.get('worker_id', fname)
+                        if data.get('version') == version and worker_id not in acks:
+                            acks[worker_id] = data
+                    except:
+                        pass
+            
+            # 如果已经收到至少 1 个 ACK 且等了至少 3 秒，可以提前结束
+            if acks and (time.time() - start) >= 3:
+                # 再等 1 秒看有没有新的
+                time.sleep(1)
+                # 再检查一次
+                if os.path.exists(cls.ACK_DIR):
+                    for fname in os.listdir(cls.ACK_DIR):
+                        if not fname.endswith('.json'):
+                            continue
+                        fpath = os.path.join(cls.ACK_DIR, fname)
+                        try:
+                            with open(fpath, 'r') as f:
+                                data = json.load(f)
+                            worker_id = data.get('worker_id', fname)
+                            if data.get('version') == version and worker_id not in acks:
+                                acks[worker_id] = data
+                        except:
+                            pass
+                break
+            
+            time.sleep(0.5)
+        
+        return acks
+    
     def get_status(self) -> Dict[str, Any]:
         """获取同步状态"""
         return {
@@ -214,7 +317,10 @@ class WorkerSyncManager:
             'check_interval': self._check_interval,
             'last_signal_version': self._last_signal_version,
             'last_signal_time': self._last_signal_time,
-            'signal_file': self.SIGNAL_FILE
+            'last_reload_success': self._last_reload_success,
+            'last_reload_time': self._last_reload_time,
+            'signal_file': self.SIGNAL_FILE,
+            'ack_dir': self.ACK_DIR
         }
 
 

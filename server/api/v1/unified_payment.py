@@ -11,11 +11,28 @@ import time
 import logging
 import importlib
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, Dict, Literal
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+
+def _check_reload_guard():
+    """
+    检查是否正在热更新中，如果是则抛出 503。
+    保护支付等关键端点在热更新窗口期不会因模块未就绪而报错。
+    """
+    try:
+        from server.hot_reload.reloaders import is_reload_in_progress
+        if is_reload_in_progress():
+            raise HTTPException(
+                status_code=503,
+                detail="服务正在更新中，请稍后重试（热更新进行中）"
+            )
+    except ImportError:
+        pass  # 热更新模块未加载，忽略
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -146,32 +163,28 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
     - 系统会根据用户所在区域检查是否开放支付
     - 如果区域关闭，只有白名单用户可以使用支付功能
     """
+    # 🔴 热更新保护：重载期间返回 503 而非报错
+    _check_reload_guard()
+    
     try:
         provider = request.provider
         # 确保 provider 是字符串（如果是枚举，转换为值）
         provider_str = provider.value if hasattr(provider, 'value') else str(provider)
 
-        # 获取支付客户端（如果失败，尝试重新加载模块）
+        # 获取支付客户端（如果失败，安全重试：清缓存 + 重新获取）
         try:
             payment_client = get_payment_client(provider_str)
         except ValueError as e:
-            # 如果客户端未注册，尝试重新加载支付服务模块（包括所有子模块）
             if "不支持的支付平台" in str(e):
+                # 🔴 安全重试：清除实例缓存后重新获取，不删除 sys.modules（避免竞态条件）
                 try:
-                    # 删除所有支付服务子模块，强制重新导入
-                    modules_to_remove = [k for k in list(sys.modules.keys()) if k.startswith('services.payment_service')]
-                    for mod_name in modules_to_remove:
-                        del sys.modules[mod_name]
-                    logger.info("已清除支付服务模块缓存: %s", modules_to_remove)
-                    # 重新导入支付服务模块
-                    import services.payment_service
-                    from services.payment_service.client_factory import get_payment_client as _get_client
-                    payment_client = _get_client(provider_str)
-                    logger.info("支付客户端 %s 重新加载成功", provider_str)
-                except Exception as reload_error:
-                    logger.warning("重新加载支付服务模块失败: %s", reload_error)
+                    logger.warning("支付客户端 %s 未注册，尝试清缓存后重新获取...", provider_str)
+                    payment_client_factory.clear_cache()
+                    payment_client = get_payment_client(provider_str)
+                    logger.info("支付客户端 %s 重新获取成功", provider_str)
+                except Exception as retry_error:
                     registered = payment_client_factory.list_clients()
-                    logger.warning("当前已注册支付平台: %s", registered)
+                    logger.warning("重新获取支付客户端失败: %s，当前已注册: %s", retry_error, registered)
                     raise HTTPException(status_code=400, detail=str(e))
             else:
                 registered = payment_client_factory.list_clients()
@@ -360,32 +373,28 @@ def verify_unified_payment(request: VerifyPaymentRequest):
     - **WeChat**: order_id
     - **Line Pay**: transaction_id
     """
+    # 🔴 热更新保护：重载期间返回 503 而非报错
+    _check_reload_guard()
+    
     try:
         provider = request.provider
         # 确保 provider 是字符串（如果是枚举，转换为值）
         provider_str = provider.value if hasattr(provider, 'value') else str(provider)
 
-        # 获取支付客户端（如果失败，尝试重新加载模块）
+        # 获取支付客户端（如果失败，安全重试：清缓存 + 重新获取）
         try:
             payment_client = get_payment_client(provider_str)
         except ValueError as e:
-            # 如果客户端未注册，尝试重新加载支付服务模块（包括所有子模块）
             if "不支持的支付平台" in str(e):
+                # 🔴 安全重试：清除实例缓存后重新获取，不删除 sys.modules（避免竞态条件）
                 try:
-                    # 删除所有支付服务子模块，强制重新导入
-                    modules_to_remove = [k for k in list(sys.modules.keys()) if k.startswith('services.payment_service')]
-                    for mod_name in modules_to_remove:
-                        del sys.modules[mod_name]
-                    logger.info("已清除支付服务模块缓存: %s", modules_to_remove)
-                    # 重新导入支付服务模块
-                    import services.payment_service
-                    from services.payment_service.client_factory import get_payment_client as _get_client
-                    payment_client = _get_client(provider_str)
-                    logger.info("支付客户端 %s 重新加载成功", provider_str)
-                except Exception as reload_error:
-                    logger.warning("重新加载支付服务模块失败: %s", reload_error)
+                    logger.warning("支付客户端 %s 未注册，尝试清缓存后重新获取...", provider_str)
+                    payment_client_factory.clear_cache()
+                    payment_client = get_payment_client(provider_str)
+                    logger.info("支付客户端 %s 重新获取成功", provider_str)
+                except Exception as retry_error:
                     registered = payment_client_factory.list_clients()
-                    logger.warning("当前已注册支付平台: %s", registered)
+                    logger.warning("重新获取支付客户端失败: %s，当前已注册: %s", retry_error, registered)
                     raise HTTPException(status_code=400, detail=str(e))
             else:
                 registered = payment_client_factory.list_clients()

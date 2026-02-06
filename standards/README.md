@@ -47,6 +47,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-02-06 | 完善热更新与上线流程规范：新增 /verify、/history 端点文档，修正 RELOAD_ORDER，新增 Reload Guard、Worker ACK 机制说明，更新常见问题 |
 | 2026-02-05 | 新增 `10_上线流程与CI-CD规范.md`：完整上线流程、测试接口清单、所有AI模型必须遵循 |
 | 2026-02-05 | 新增 `.cursor/rules/release-workflow.mdc`：上线流程规则文件 |
 | 2026-02-04 | 新增 API 回归测试规范：`scripts/evaluation/api_regression_test.py`、CI/CD 集成、部署后验证 |

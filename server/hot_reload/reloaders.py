@@ -25,6 +25,27 @@ sys.path.insert(0, project_root)
 
 logger = logging.getLogger(__name__)
 
+# ============================================================
+# 全局重载保护标志
+# 在 reload_all_modules() 执行期间为 True
+# 支付等关键端点检查此标志，在重载窗口期返回 503 而非报错
+# ============================================================
+_reload_in_progress = False
+
+# 重载事件历史记录（内存中保存最近 20 条）
+_reload_history: list = []
+_RELOAD_HISTORY_MAX = 20
+
+
+def is_reload_in_progress() -> bool:
+    """检查当前是否正在执行热更新重载"""
+    return _reload_in_progress
+
+
+def get_reload_history() -> list:
+    """获取重载事件历史（最新在前）"""
+    return list(reversed(_reload_history))
+
 
 class RuleReloader:
     """规则重载器"""
@@ -608,12 +629,16 @@ RELOADERS = {
 }
 
 # 重载顺序（按依赖关系）
+# 🔴 重要：singleton 必须在 source 之后！
+# 原因：source 重载会触发 __init__.py 重新注册支付客户端等组件。
+# 如果 singleton 先执行（重置 _clients=None），则 source 重载前的窗口期
+# 内任何支付请求都会失败。正确顺序：先加载新代码 → 再清理旧状态。
 RELOAD_ORDER = [
-    'config',       # 1. 先更新配置
-    'singleton',    # 2. 重置单例
-    'rules',        # 3. 更新规则
-    'content',      # 4. 更新内容
-    'source',       # 5. 更新源代码
+    'config',       # 1. 先更新配置（环境变量、数据库连接等）
+    'rules',        # 2. 更新规则
+    'content',      # 3. 更新内容
+    'source',       # 4. 更新源代码（触发模块重新导入和注册）
+    'singleton',    # 5. 重置单例（清理旧实例，强制用新代码重建）
     'microservice', # 6. 更新微服务
     'cache',        # 7. 最后清理缓存
 ]
@@ -625,32 +650,57 @@ def get_reloader(module_name: str) -> Optional[Any]:
 
 
 def reload_all_modules() -> Dict[str, bool]:
-    """按顺序重载所有模块"""
+    """按顺序重载所有模块（带保护标志）"""
+    global _reload_in_progress
     from datetime import datetime
+    import time as _time
     
     logger.info("\n" + "="*60)
     logger.info(f"🔄 全量热更新开始 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("="*60)
     
+    # 🔴 设置保护标志：重载期间阻止关键端点处理请求
+    _reload_in_progress = True
+    _t_start = _time.perf_counter()
+    
     results = {}
-    for module_name in RELOAD_ORDER:
-        reloader = RELOADERS.get(module_name)
-        if reloader:
-            try:
-                results[module_name] = reloader.reload()
-            except Exception as e:
-                logger.error(f"❌ {module_name} 重载失败: {e}")
-                results[module_name] = False
+    try:
+        for module_name in RELOAD_ORDER:
+            reloader = RELOADERS.get(module_name)
+            if reloader:
+                try:
+                    results[module_name] = reloader.reload()
+                except Exception as e:
+                    logger.error(f"❌ {module_name} 重载失败: {e}")
+                    results[module_name] = False
+    finally:
+        # 🔴 无论成功失败，必须清除保护标志
+        _reload_in_progress = False
+        _elapsed_ms = int((_time.perf_counter() - _t_start) * 1000)
     
     success_count = sum(1 for v in results.values() if v)
     failed_count = len(results) - success_count
     
     logger.info("\n" + "-"*60)
     if failed_count > 0:
-        logger.warning(f"⚠ 全量热更新完成: {success_count} 成功, {failed_count} 失败")
+        logger.warning(f"⚠ 全量热更新完成: {success_count} 成功, {failed_count} 失败 (耗时: {_elapsed_ms}ms)")
     else:
-        logger.info(f"✅ 全量热更新完成: 所有 {success_count} 个模块更新成功")
+        logger.info(f"✅ 全量热更新完成: 所有 {success_count} 个模块更新成功 (耗时: {_elapsed_ms}ms)")
     logger.info("="*60 + "\n")
+    
+    # 🔴 记录重载事件到历史
+    event = {
+        "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        "worker_pid": os.getpid(),
+        "elapsed_ms": _elapsed_ms,
+        "success_count": success_count,
+        "failed_count": failed_count,
+        "results": {k: v for k, v in results.items()},
+        "all_success": failed_count == 0
+    }
+    _reload_history.append(event)
+    if len(_reload_history) > _RELOAD_HISTORY_MAX:
+        _reload_history.pop(0)
     
     return results
 

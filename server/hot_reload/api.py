@@ -284,10 +284,10 @@ async def reload_all():
     
     重载顺序：
     1. config - 配置
-    2. singleton - 单例重置
-    3. rules - 规则
-    4. content - 内容
-    5. source - 源代码
+    2. rules - 规则
+    3. content - 内容
+    4. source - 源代码（触发模块重新注册）
+    5. singleton - 重置单例（清理旧实例）
     6. microservice - 微服务
     7. cache - 缓存
     """
@@ -515,6 +515,209 @@ async def trigger_all_workers_api():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"触发失败: {str(e)}")
+
+
+class VerifyResponse(BaseModel):
+    """验证响应模型"""
+    success: bool
+    message: str
+    checks: Dict
+
+
+@router.post("/hot-reload/verify", summary="热更新后功能验证")
+async def verify_after_reload():
+    """
+    热更新后的功能验证端点
+    
+    验证以下关键组件是否正常工作：
+    1. 支付客户端是否已注册（stripe, payermax）
+    2. gRPC 网关端点是否存在
+    3. 关键单例服务是否可用
+    4. MySQL/Redis 连接是否正常
+    
+    🔴 重要：每次热更新后必须调用此端点确认功能完整
+    """
+    checks = {}
+    all_ok = True
+    
+    # 1. 检查支付客户端注册状态（最关键！）
+    try:
+        from services.payment_service.client_factory import payment_client_factory
+        registered = payment_client_factory.list_clients()
+        expected = {"stripe", "payermax"}
+        missing = expected - set(registered)
+        
+        if missing:
+            checks["payment_clients"] = {
+                "ok": False,
+                "detail": f"缺少支付客户端: {list(missing)}，已注册: {registered}"
+            }
+            all_ok = False
+            logger.error(f"[VERIFY] 支付客户端缺失: {missing}")
+        else:
+            # 进一步检查是否能成功获取客户端实例
+            client_errors = []
+            for provider in expected:
+                try:
+                    client = payment_client_factory.get_client(provider)
+                    if not client.is_enabled:
+                        client_errors.append(f"{provider}(未启用)")
+                except Exception as e:
+                    client_errors.append(f"{provider}({e})")
+            
+            if client_errors:
+                checks["payment_clients"] = {
+                    "ok": False,
+                    "detail": f"支付客户端异常: {client_errors}"
+                }
+                all_ok = False
+            else:
+                checks["payment_clients"] = {
+                    "ok": True,
+                    "detail": f"已注册且可用: {registered}"
+                }
+    except Exception as e:
+        checks["payment_clients"] = {
+            "ok": False,
+            "detail": f"检查异常: {e}"
+        }
+        all_ok = False
+    
+    # 2. 检查 gRPC 网关端点
+    try:
+        from server.api.grpc_gateway import SUPPORTED_ENDPOINTS
+        endpoint_count = len(SUPPORTED_ENDPOINTS)
+        key_endpoints = ['/bazi/interface', '/daily-fortune-calendar/query']
+        missing_eps = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
+        
+        if endpoint_count == 0:
+            checks["grpc_endpoints"] = {
+                "ok": False,
+                "detail": "gRPC 端点数量为 0"
+            }
+            all_ok = False
+        elif missing_eps:
+            checks["grpc_endpoints"] = {
+                "ok": False,
+                "detail": f"缺少关键端点: {missing_eps}（总数: {endpoint_count}）"
+            }
+            all_ok = False
+        else:
+            checks["grpc_endpoints"] = {
+                "ok": True,
+                "detail": f"端点数量: {endpoint_count}，关键端点均在线"
+            }
+    except Exception as e:
+        checks["grpc_endpoints"] = {
+            "ok": False,
+            "detail": f"检查异常: {e}"
+        }
+        all_ok = False
+    
+    # 3. 检查 MySQL 连接
+    try:
+        from shared.config.database import get_connection_pool_stats
+        pool_stats = get_connection_pool_stats()
+        status = pool_stats.get("status", "unknown")
+        
+        if status == "active":
+            checks["mysql"] = {
+                "ok": True,
+                "detail": f"连接池正常 (当前连接: {pool_stats.get('current_connections')}/{pool_stats.get('max_connections')})"
+            }
+        else:
+            checks["mysql"] = {
+                "ok": False,
+                "detail": f"连接池状态异常: {status}"
+            }
+            all_ok = False
+    except Exception as e:
+        checks["mysql"] = {
+            "ok": False,
+            "detail": f"检查异常: {e}"
+        }
+        all_ok = False
+    
+    # 4. 检查 Redis 连接
+    try:
+        from shared.config.redis import get_redis_client
+        redis_client = get_redis_client()
+        if redis_client:
+            redis_client.ping()
+            checks["redis"] = {
+                "ok": True,
+                "detail": "Redis 连接正常"
+            }
+        else:
+            checks["redis"] = {
+                "ok": False,
+                "detail": "Redis 客户端为 None"
+            }
+            all_ok = False
+    except Exception as e:
+        checks["redis"] = {
+            "ok": False,
+            "detail": f"检查异常: {e}"
+        }
+        all_ok = False
+    
+    # 5. 检查 Worker 同步状态
+    try:
+        sync_status = get_worker_sync_status()
+        if sync_status.get("running"):
+            checks["worker_sync"] = {
+                "ok": True,
+                "detail": f"Worker-{sync_status.get('worker_id')} 同步监控运行中 (版本: {sync_status.get('last_signal_version')})"
+            }
+        else:
+            checks["worker_sync"] = {
+                "ok": False,
+                "detail": "Worker 同步监控未运行"
+            }
+            all_ok = False
+    except Exception as e:
+        checks["worker_sync"] = {
+            "ok": False,
+            "detail": f"检查异常: {e}"
+        }
+        all_ok = False
+    
+    # 记录验证结果
+    if all_ok:
+        logger.info("[VERIFY] 热更新功能验证全部通过")
+    else:
+        failed = [k for k, v in checks.items() if not v.get("ok")]
+        logger.error(f"[VERIFY] 热更新功能验证失败: {failed}")
+    
+    return VerifyResponse(
+        success=all_ok,
+        message="所有检查通过" if all_ok else f"部分检查失败: {[k for k, v in checks.items() if not v.get('ok')]}",
+        checks=checks
+    )
+
+
+@router.get("/hot-reload/history", summary="获取热更新历史记录")
+async def get_reload_history():
+    """
+    获取最近 20 次热更新事件的历史记录
+    
+    每条记录包含：
+    - timestamp: 触发时间
+    - worker_pid: 执行的 Worker 进程 ID
+    - elapsed_ms: 耗时（毫秒）
+    - success_count / failed_count: 成功/失败模块数
+    - results: 各模块的重载结果
+    """
+    try:
+        from .reloaders import get_reload_history
+        history = get_reload_history()
+        return {
+            "success": True,
+            "count": len(history),
+            "history": history
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取历史记录失败: {str(e)}")
 
 
 @router.post("/hot-reload/reload-payment-config", summary="刷新支付配置")

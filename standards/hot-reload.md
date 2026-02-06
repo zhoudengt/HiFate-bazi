@@ -70,15 +70,34 @@
 | 接口 | 方法 | 功能 | 说明 |
 |------|------|------|------|
 | `/api/v1/hot-reload/status` | GET | 获取热更新状态 | 查看所有服务的热更新状态 |
-| `/api/v1/hot-reload/check` | POST | 手动触发检查 | 立即检查并更新所有变化的模块 |
+| `/api/v1/hot-reload/check` | POST | 手动触发检查 | 仅当前 Worker 检查并更新（**不用于生产部署**） |
 | `/api/v1/hot-reload/versions` | GET | 获取版本号 | 查看所有模块的当前版本号 |
 | `/api/v1/hot-reload/reload/{module}` | POST | 重载指定模块 | 强制重载指定模块 |
-| `/api/v1/hot-reload/reload-all` | POST | 重载所有模块 | **自动通知所有 Worker** |
+| `/api/v1/hot-reload/reload-all` | POST | 重载所有模块 | **生产部署必须用此端点！自动通知所有 Worker，返回 ACK 确认** |
+| `/api/v1/hot-reload/verify` | POST | 功能验证 | **部署后必须调用！检查支付客户端、gRPC端点、MySQL/Redis连接、Worker同步** |
+| `/api/v1/hot-reload/history` | GET | 热更新历史 | 查看最近的热更新事件记录（时间、模块、成功/失败） |
 | `/api/v1/hot-reload/rollback` | POST | 回滚到上一版本 | 紧急回滚到上一个稳定版本 |
 | `/api/v1/hot-reload/sync` | POST | 同步所有节点 | 触发双机同步更新 |
 | `/api/v1/hot-reload/health` | GET | 健康检查 | 检查热更新系统健康状态 |
 | `/api/v1/hot-reload/worker-sync` | GET | 多 Worker 同步状态 | 查看 Worker 同步监控状态 |
 | `/api/v1/hot-reload/trigger-all-workers` | POST | 触发所有 Worker | 手动触发所有 Worker 热更新 |
+
+### 端点选择指南（重要！）
+
+- **生产部署热更新**：必须用 `/reload-all`（通知所有 Worker + ACK 确认）
+- **部署后验证**：必须用 `/verify`（功能完整性检查）
+- **查看历史**：用 `/history`（排查问题时使用）
+- **开发调试**：可用 `/check`（仅影响单个 Worker，不可用于生产）
+
+### /verify 端点检查项
+
+| 检查项 | 说明 | 失败影响 |
+|--------|------|---------|
+| `payment_clients` | PaymentClientFactory 中 stripe/payermax 客户端已注册 | 支付功能不可用 |
+| `grpc_endpoints` | gRPC 网关端点数量 ≥ 预期值 | 部分 API 无法访问 |
+| `mysql_connection` | MySQL 连接池可用 | 数据查询失败 |
+| `redis_connection` | Redis 连接可用 | 缓存/同步失败 |
+| `worker_sync` | WorkerSyncManager 正在运行 | 热更新无法同步到所有 Worker |
 
 ## 热更新模块类型
 
@@ -119,16 +138,49 @@ except SyntaxError:
 ### 2. 依赖顺序
 
 ```python
-# 按依赖关系顺序更新
+# 按依赖关系顺序更新（顺序非常重要！）
 RELOAD_ORDER = [
-    'config',      # 1. 先更新配置
-    'rules',       # 2. 更新规则
-    'content',     # 3. 更新内容
-    'source',      # 4. 更新源代码
-    'microservice', # 5. 更新微服务
-    'cache',       # 6. 最后清理缓存
+    'config',       # 1. 先更新配置（环境变量、数据库连接等）
+    'rules',        # 2. 更新规则
+    'content',      # 3. 更新内容
+    'source',       # 4. 更新源代码（触发模块重新导入和注册）
+    'singleton',    # 5. 重置单例（清理旧实例，强制用新代码重建）
+    'microservice', # 6. 更新微服务
+    'cache',        # 7. 最后清理缓存
 ]
 ```
+
+> **⚠️ 关键：`singleton` 必须在 `source` 之后！**
+> 如果 `singleton` 在 `source` 之前执行，会导致：先清理了支付客户端等单例缓存，
+> 而新代码还没加载完成，在这个窗口期内支付等功能不可用。
+> 正确顺序：先加载新代码（source 阶段会重新注册组件），再清理旧缓存（singleton 阶段）。
+
+### 2.1 热更新期间请求保护（Reload Guard）
+
+热更新期间，关键端点（如支付创建、支付验证）会返回 HTTP 503，避免在模块不一致状态下处理请求：
+
+```python
+# 在关键端点中检查
+from server.hot_reload.reloaders import is_reload_in_progress
+if is_reload_in_progress():
+    raise HTTPException(status_code=503, detail="系统正在更新，请稍后重试")
+```
+
+受保护的端点：
+- `POST /api/v1/payment/create` - 统一支付创建
+- `POST /api/v1/payment/verify` - 支付验证
+
+### 2.2 Worker ACK 确认机制
+
+`/reload-all` 端点触发热更新后，会等待所有 Worker 进程写入 ACK 文件确认重载完成：
+
+```
+reload-all 调用 → 写入信号文件 → 各 Worker 检测到信号 → 执行重载 → 写入 ACK 文件
+                                                                          ↓
+                                                    reload-all 轮询 ACK → 返回结果
+```
+
+ACK 文件位置：`/tmp/hifate_hot_reload_acks/worker_{pid}.json`
 
 ### 3. 单例重置
 
@@ -264,7 +316,7 @@ uvicorn.run("server.main:app", workers=8, ...)
 {
   "version": 1,
   "timestamp": 1738756800.123,
-  "modules": ["config", "singleton", "rules", "content", "source", "microservice", "cache"],
+  "modules": ["config", "rules", "content", "source", "singleton", "microservice", "cache"],
   "trigger_time": "2026-02-05 14:00:00",
   "trigger_pid": 12345
 }

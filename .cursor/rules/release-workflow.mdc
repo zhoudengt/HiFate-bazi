@@ -1,64 +1,215 @@
+---
+description: 上线流程规范（开发→测试→提交→部署→验证的完整工程化流程）
+alwaysApply: true
+---
+
 # 上线流程规范（所有 AI 模型必须遵循）
 
 ## 核心流程
 
 ```
-本地开发 → 本地测试 → Git 提交 → 增量部署 → 生产验证
+本地开发 → 热更新验证 → 功能测试 → Git 提交 → 增量部署 → 生产功能验证
 ```
 
-## 开发前必读
+**每一步都不可跳过。跳过任何步骤都可能导致生产事故。**
 
-- **数据编排规范**: `standards/08_数据编排架构规范.md`
-- **上线流程规范**: `standards/10_上线流程与CI-CD规范.md`
-- **热更新规范**: `standards/hot-reload.md`
+---
 
-## 必须测试的接口
+## 第一步：本地开发
 
-修改代码后，在本地测试以下接口（根据修改范围选择）：
+修改代码前先阅读相关规范：
+- 数据编排：`standards/08_数据编排架构规范.md`
+- 热更新：`standards/hot-reload.md`
+- 支付相关：`standards/payment.md`
 
-| 接口 | 命令 | 验收标准 |
-|------|------|----------|
-| 健康检查 | `curl -s http://localhost:8001/api/v1/health` | 返回 `{"status":"ok"}` |
-| 每日运势 | `curl -s -w "\nTTFB: %{time_starttransfer}s\n" --max-time 60 -X POST http://localhost:8001/api/v1/daily-fortune-calendar/stream -H "Content-Type: application/json" -d '{"date": "2025-02-05", "solar_date": "1992-01-15", "solar_time": "12:00", "gender": "male"}' -o /dev/null` | TTFB < 100ms |
-| 五行占比 | `curl -s -w "\nTTFB: %{time_starttransfer}s\n" --max-time 60 -X POST http://localhost:8001/api/v1/bazi/wuxing-proportion/stream -H "Content-Type: application/json" -d '{"solar_date": "1992-01-15", "solar_time": "12:00", "gender": "male"}' -o /dev/null` | TTFB < 100ms |
+### 代码修改原则
+- 禁止修改底层计算逻辑（`core/calculators/`、`server/engines/`），必须先告知用户
+- 只加不删，保持向后兼容
+- 新增 API 端点必须在 `server/api/grpc_gateway.py` 注册
 
-## 部署步骤
+---
 
-1. **提交代码**
-   ```bash
-   git add <files>
-   git commit -m "<type>: <description>"
-   git push origin master
-   ```
+## 第二步：本地热更新验证（如有本地服务）
 
-2. **增量部署**
-   ```bash
-   ./deploy/scripts/incremental_deploy_production.sh
-   ```
+如果本地运行了开发服务（`localhost:8001`），修改代码后触发热更新：
 
-3. **生产验证**
-   ```bash
-   # 健康检查
-   curl -s http://8.210.52.217:8001/api/v1/health
-   
-   # 验证修改的接口（替换为实际接口）
-   curl -s -w "\nTTFB: %{time_starttransfer}s\n" --max-time 60 \
-     -X POST http://8.210.52.217:8001/api/v1/<接口路径> \
-     -H "Content-Type: application/json" \
-     -d '<请求体>'
-   ```
+```bash
+# 触发全量热更新（通知所有 Worker）
+python3 scripts/ai/auto_hot_reload.py --trigger
 
-## 禁止操作
+# 验证热更新状态
+python3 scripts/ai/auto_hot_reload.py --verify
+```
 
-- ❌ 直接在服务器上修改代码
-- ❌ 跳过本地测试
-- ❌ 跳过 Git 提交
-- ❌ 重启服务（必须用热更新）
-- ❌ 修改底层接口不告知用户
+**注意**：`auto_hot_reload.py` 调用 `/hot-reload/reload-all`（全量重载 + 通知所有 Worker），不是 `/hot-reload/check`（仅单 Worker）。
+
+---
+
+## 第三步：功能测试
+
+根据修改范围选择测试项，**必须在提交前验证**：
+
+### 基础接口测试
+
+```bash
+# 健康检查
+curl -s http://localhost:8001/api/v1/health
+# 期望：{"status":"ok"}
+
+# 热更新功能验证（检查支付客户端、gRPC端点、数据库连接）
+curl -s -X POST http://localhost:8001/api/v1/hot-reload/verify
+# 期望：{"success":true, "checks":{...}} 所有 checks.*.ok 为 true
+```
+
+### 流式接口测试（TTFB < 100ms）
+
+```bash
+# 每日运势
+curl -s -w "\nTTFB: %{time_starttransfer}s\n" --max-time 60 \
+  -X POST http://localhost:8001/api/v1/daily-fortune-calendar/stream \
+  -H "Content-Type: application/json" \
+  -d '{"date":"2025-02-05","solar_date":"1992-01-15","solar_time":"12:00","gender":"male"}' \
+  -o /dev/null
+
+# 五行占比
+curl -s -w "\nTTFB: %{time_starttransfer}s\n" --max-time 60 \
+  -X POST http://localhost:8001/api/v1/bazi/wuxing-proportion/stream \
+  -H "Content-Type: application/json" \
+  -d '{"solar_date":"1992-01-15","solar_time":"12:00","gender":"male"}' \
+  -o /dev/null
+```
+
+### 支付相关测试（如修改了支付模块）
+
+```bash
+# 支付渠道状态
+curl -s --max-time 30 http://localhost:8001/api/v1/payment/providers
+# 期望：{"success":true, "providers":[...]} 包含 stripe 和 payermax
+```
+
+### 完整回归测试
+
+```bash
+# 运行全量 API 回归测试
+python3 scripts/evaluation/api_regression_test.py --env production --category all
+```
+
+---
+
+## 第四步：Git 提交
+
+```bash
+git add <修改的文件>
+git commit -m "<type>: <简要描述>"
+git push origin master
+```
+
+**commit type 规范**：
+- `feat`: 新功能
+- `fix`: 修复 bug
+- `refactor`: 重构（不改变功能）
+- `perf`: 性能优化
+- `docs`: 文档变更
+- `chore`: 构建/工具变更
+
+---
+
+## 第五步：增量部署
+
+### 方式一：部署脚本（推荐）
+
+```bash
+./deploy/scripts/incremental_deploy_production.sh
+```
+
+脚本自动执行：git pull → 热更新 → 功能验证 → 健康检查
+
+### 方式二：手动部署（部署脚本不可用时）
+
+```bash
+# 1. 服务器拉取代码
+ssh hifate-node1 "cd /opt/HiFate-bazi && git pull origin master"
+
+# 2. 触发全量热更新（必须用 reload-all，不要用 check）
+curl -s --max-time 60 -X POST http://8.210.52.217:8001/api/v1/hot-reload/reload-all
+# 期望：{"success":true, "reloaded_modules":[...], "message":"...已通知所有 Worker..."}
+
+# 3. 等待 5 秒让所有 Worker 完成热更新
+sleep 5
+
+# 4. 功能验证（必须！）
+curl -s --max-time 15 -X POST http://8.210.52.217:8001/api/v1/hot-reload/verify
+# 期望：{"success":true, "checks":{...}} 所有检查项通过
+```
+
+### 热更新端点选择（重要！）
+
+| 端点 | 用途 | 是否通知所有 Worker |
+|------|------|-------------------|
+| `/hot-reload/reload-all` | **生产部署必须用这个** | 是 |
+| `/hot-reload/verify` | 部署后功能验证 | N/A（只读） |
+| `/hot-reload/history` | 查看热更新历史 | N/A（只读） |
+| `/hot-reload/check` | 仅开发调试用 | 否（只影响单个 Worker） |
+| `/hot-reload/sync` | 双机集群同步 | 通过 Redis 通知所有节点 |
+
+---
+
+## 第六步：生产功能验证
+
+**部署后必须验证，不验证等于没部署。**
+
+```bash
+# 1. 健康检查
+curl -s http://8.210.52.217:8001/api/v1/health
+
+# 2. 功能验证（支付、gRPC、数据库、Redis）
+curl -s -X POST http://8.210.52.217:8001/api/v1/hot-reload/verify
+# 重点检查 checks.payment_clients.ok 是否为 true
+
+# 3. 验证修改的具体接口
+curl -s --max-time 60 -X POST http://8.210.52.217:8001/api/v1/<接口路径> \
+  -H "Content-Type: application/json" -d '<请求体>'
+
+# 4. 查看热更新历史（确认所有模块加载成功）
+curl -s http://8.210.52.217:8001/api/v1/hot-reload/history | python3 -m json.tool | head -30
+```
+
+### 验证不通过的处理
+
+如果 `/hot-reload/verify` 返回 `success: false`：
+
+1. 查看具体哪个 check 失败
+2. 如果是 `payment_clients` 失败：手动触发 `curl -X POST .../hot-reload/reload-all`
+3. 如果是 `grpc_endpoints` 失败：`curl -X POST .../hot-reload/reload-endpoints`
+4. 如果多次重试仍然失败：检查服务器日志 `ssh hifate-node1 "docker logs hifate-web --since=5m 2>&1 | tail -50"`
+
+---
+
+## 绝对禁止的操作
+
+- **禁止** 直接在服务器上修改代码（必须：本地 → Git → 服务器 pull）
+- **禁止** 跳过 Git 提交直接部署
+- **禁止** 重启服务（`docker restart`、`docker-compose restart`），必须用热更新
+- **禁止** 使用 `/hot-reload/check` 做生产部署（只影响单个 Worker）
+- **禁止** 跳过功能验证（`/hot-reload/verify`）就认为部署成功
+- **禁止** 修改底层计算逻辑不告知用户
+- **禁止** 在支付代码中使用 `del sys.modules`（会导致竞态条件）
+
+---
+
+## 热更新重载顺序（了解即可）
+
+```
+config(1) → rules(2) → content(3) → source(4) → singleton(5) → microservice(6) → cache(7)
+```
+
+**关键点**：singleton（重置单例缓存）在 source（重新加载代码）之后，确保新代码先注册组件，再清理旧缓存。如果顺序反了，热更新窗口期支付等功能会中断。
+
+---
 
 ## 流式接口首包优化原则
 
-- ✅ 走统一编排 `BaziDataOrchestrator.fetch_data()`
-- ✅ 基本信息秒出（TTFB < 100ms）
-- ✅ 耗时操作放入并行任务或线程池
-- ✅ LLM 调用在首包之后
+- 走统一编排 `BaziDataOrchestrator.fetch_data()`
+- 基本信息秒出（TTFB < 100ms）
+- 耗时操作放入并行任务或线程池
+- LLM 调用在首包之后

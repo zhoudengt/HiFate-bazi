@@ -38,7 +38,8 @@ NC = '\033[0m'  # No Color
 # 配置
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8001")
 HOT_RELOAD_API = f"{API_BASE_URL}/api/v1/hot-reload"
-HOT_RELOAD_CHECK_API = f"{HOT_RELOAD_API}/check"
+HOT_RELOAD_RELOAD_ALL_API = f"{HOT_RELOAD_API}/reload-all"  # 全量重载（通知所有 Worker）
+HOT_RELOAD_VERIFY_API = f"{HOT_RELOAD_API}/verify"  # 功能验证
 HOT_RELOAD_STATUS_API = f"{HOT_RELOAD_API}/status"
 HOT_RELOAD_ROLLBACK_API = f"{HOT_RELOAD_API}/rollback"
 
@@ -69,7 +70,9 @@ class AutoHotReload:
     
     def __init__(self, api_base_url: str = API_BASE_URL):
         self.api_base_url = api_base_url
-        self.hot_reload_check_api = f"{api_base_url}/api/v1/hot-reload/check"
+        # 🔴 重要：使用 reload-all 而非 check，确保通知所有 Worker
+        self.hot_reload_api = f"{api_base_url}/api/v1/hot-reload/reload-all"
+        self.hot_reload_verify_api = f"{api_base_url}/api/v1/hot-reload/verify"
         self.hot_reload_status_api = f"{api_base_url}/api/v1/hot-reload/status"
         self.hot_reload_rollback_api = f"{api_base_url}/api/v1/hot-reload/rollback"
         self.last_trigger_time = 0
@@ -78,7 +81,7 @@ class AutoHotReload:
         
     def trigger_hot_reload(self, module_name: Optional[str] = None) -> Dict:
         """
-        触发热更新
+        触发热更新（使用 reload-all，确保通知所有 Worker）
         
         Args:
             module_name: 模块名称（可选）
@@ -96,24 +99,30 @@ class AutoHotReload:
             }
         
         try:
-            print(f"{BLUE}🔄 触发热更新...{NC}")
+            print(f"{BLUE}🔄 触发全量热更新（reload-all，通知所有 Worker）...{NC}")
             
-            # 调用热更新 API
+            # 🔴 调用 reload-all（而非 check），确保所有 Worker 都执行重载
             response = requests.post(
-                self.hot_reload_check_api,
-                json={"module_name": module_name} if module_name else {},
-                timeout=30
+                self.hot_reload_api,
+                json={},
+                timeout=60  # reload-all 需要更长超时
             )
             
             if response.status_code == 200:
                 result = response.json()
                 self.last_trigger_time = current_time
-                print(f"{GREEN}✅ 热更新触发成功{NC}")
+                
+                failed = result.get("failed_modules", [])
+                if failed:
+                    print(f"{YELLOW}⚠️  热更新部分失败: {failed}{NC}")
+                else:
+                    print(f"{GREEN}✅ 热更新触发成功（所有 Worker 已通知）{NC}")
+                
                 return {
-                    "success": True,
+                    "success": result.get("success", True),
                     "message": result.get("message", "热更新完成"),
                     "reloaded_modules": result.get("reloaded_modules", []),
-                    "failed_modules": result.get("failed_modules", [])
+                    "failed_modules": failed
                 }
             else:
                 error_msg = f"热更新API返回错误: {response.status_code}"
@@ -135,11 +144,53 @@ class AutoHotReload:
     
     def verify_hot_reload_status(self) -> Dict:
         """
-        验证热更新状态
+        验证热更新状态（包含功能验证）
+        
+        优先调用 /hot-reload/verify（功能验证），如果端点不存在则回退到 /hot-reload/status
         
         Returns:
             热更新状态信息
         """
+        # 1. 优先调用功能验证端点
+        try:
+            print(f"{BLUE}🔍 执行热更新功能验证...{NC}")
+            
+            response = requests.post(self.hot_reload_verify_api, timeout=15)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("success"):
+                    print(f"{GREEN}✅ 热更新功能验证通过{NC}")
+                    checks = result.get("checks", {})
+                    for name, check in checks.items():
+                        status_icon = "✅" if check.get("ok") else "❌"
+                        print(f"   {status_icon} {name}: {check.get('detail', '')}")
+                    return {
+                        "success": True,
+                        "status": result,
+                        "message": "热更新功能验证通过"
+                    }
+                else:
+                    failed_checks = {k: v for k, v in result.get("checks", {}).items() if not v.get("ok")}
+                    error_msg = f"热更新功能验证失败: {list(failed_checks.keys())}"
+                    print(f"{RED}❌ {error_msg}{NC}")
+                    for name, check in failed_checks.items():
+                        print(f"   ❌ {name}: {check.get('detail', '')}")
+                    return {
+                        "success": False,
+                        "status": result,
+                        "message": error_msg
+                    }
+            elif response.status_code == 404:
+                # verify 端点不存在，回退到 status
+                print(f"{YELLOW}⚠️  /verify 端点不存在，回退到 /status{NC}")
+            else:
+                print(f"{YELLOW}⚠️  /verify 返回 {response.status_code}，回退到 /status{NC}")
+                
+        except requests.exceptions.RequestException as e:
+            print(f"{YELLOW}⚠️  /verify 调用失败: {e}，回退到 /status{NC}")
+        
+        # 2. 回退：调用状态检查端点
         try:
             print(f"{BLUE}🔍 验证热更新状态...{NC}")
             
