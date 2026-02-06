@@ -299,7 +299,10 @@ class DeskFengshuiAnalyzer:
                 'using_backup': detection_result.get('using_backup', False),
                 'warning': detection_result.get('warning')
             }
-            
+            # 不向前端输出检测物品列表与物品级分析（内部仍用于规则与建议）
+            response['items'] = []
+            response['item_analyses'] = []
+
             # 日志已在上面记录
             return response
             
@@ -474,7 +477,10 @@ class DeskFengshuiAnalyzer:
             if detection_result.get('warning'):
                 response['warning'] = detection_result['warning']
                 logger.warning(f"⚠️ 检测警告: {response['warning']}")
-            
+            # 不向前端输出检测物品列表与物品级分析（内部仍用于规则与建议）
+            response['items'] = []
+            response['item_analyses'] = []
+
             logger.info(f"分析完成，耗时 {duration}ms，评分 {response['score']}分")
             
             return response
