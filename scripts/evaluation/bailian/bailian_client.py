@@ -62,6 +62,11 @@ class BailianClient:
         """设置 DashScope SDK"""
         try:
             import dashscope
+            
+            # 设置 dashscope 日志级别为 WARNING，避免其内部日志调用可能的参数问题
+            # 修复: Logger._log() got an unexpected keyword argument 'flush'
+            logging.getLogger("dashscope").setLevel(logging.WARNING)
+            
             dashscope.api_key = self.config.api_key
             self._dashscope = dashscope
             logger.info("百炼平台 SDK 初始化成功")
