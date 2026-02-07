@@ -331,7 +331,13 @@ async def _handle_fortune(payload: Dict[str, Any]):
     
     ✅ 架构统一：通过 BaziDataOrchestrator.fetch_data() 获取数据，
        与 REST 端、流式接口使用同一编排层，数据只计算一次。
+    ✅ 带 L1+L2 缓存（与 REST 端保持一致）。
     """
+    from server.utils.api_cache_helper import (
+        generate_cache_key, get_cached_result, set_cached_result,
+        L2_TTL, get_current_date_str
+    )
+    
     # ✅ 特殊处理：在创建 Pydantic 模型前处理 "今" 参数
     use_jin_mode = False
     if payload.get('current_time') == "今":
@@ -367,6 +373,21 @@ async def _handle_fortune(payload: Dict[str, Any]):
     if current_time is None:
         current_time = datetime.now()
     
+    # ✅ L1+L2 缓存检查（与 REST 端 bazi_display.py 同一 key 规则）
+    current_date = get_current_date_str()
+    cache_key = generate_cache_key(
+        "fortune", final_solar_date, final_solar_time, request_model.gender, current_date,
+        dayun_index=request_model.dayun_index,
+        dayun_year_start=request_model.dayun_year_start,
+        dayun_year_end=request_model.dayun_year_end,
+        target_year=request_model.target_year
+    )
+    cached = get_cached_result(cache_key, "grpc/fortune/display")
+    if cached:
+        if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+            cached['conversion_info'] = conversion_info
+        return cached
+    
     # ✅ 通过编排层统一获取数据（与 REST 端 bazi_display.py 同一模式）
     modules = get_modules_config('fortune_display')
     orchestrator_data = await BaziDataOrchestrator.fetch_data(
@@ -396,6 +417,10 @@ async def _handle_fortune(payload: Dict[str, Any]):
         request_model.dayun_year_end,
         request_model.target_year
     )
+    
+    # ✅ 写入缓存
+    if result.get('success'):
+        set_cached_result(cache_key, result, L2_TTL)
     
     # 添加转换信息
     if result.get('success') and (conversion_info.get('converted') or conversion_info.get('timezone_info')):
@@ -504,8 +529,13 @@ async def _handle_shengong_minggong(payload: Dict[str, Any]):
     ✅ 架构统一：通过 BaziDataOrchestrator.fetch_data() 获取数据，
        与 /bazi/fortune/display、REST 端、流式接口使用同一编排层。
        大运/流年/流月数据从编排器直接取，不再调 get_fortune_display。
+    ✅ 带 L1+L2 缓存。
     """
     from datetime import datetime
+    from server.utils.api_cache_helper import (
+        generate_cache_key, get_cached_result, set_cached_result,
+        L2_TTL, get_current_date_str
+    )
     
     request_model = ShengongMinggongRequest(**payload)
     
@@ -528,6 +558,20 @@ async def _handle_shengong_minggong(payload: Dict[str, Any]):
             pass
     if current_time is None:
         current_time = datetime.now()
+    
+    # ✅ L1+L2 缓存检查
+    current_date = get_current_date_str()
+    cache_key = generate_cache_key(
+        "shengong", final_solar_date, final_solar_time, request_model.gender, current_date,
+        dayun_year_start=request_model.dayun_year_start,
+        dayun_year_end=request_model.dayun_year_end,
+        target_year=request_model.target_year
+    )
+    cached = get_cached_result(cache_key, "grpc/shengong-minggong")
+    if cached:
+        if conversion_info.get('converted') or conversion_info.get('timezone_info'):
+            cached['conversion_info'] = conversion_info
+        return cached
     
     # ✅ 通过编排层统一获取数据
     modules = get_modules_config('shengong_minggong')
@@ -558,6 +602,10 @@ async def _handle_shengong_minggong(payload: Dict[str, Any]):
         request_model.dayun_year_end,
         request_model.target_year
     )
+    
+    # ✅ 写入缓存
+    if result.get('success'):
+        set_cached_result(cache_key, result, L2_TTL)
     
     # 添加转换信息
     if result.get('success') and (conversion_info.get('converted') or conversion_info.get('timezone_info')):
