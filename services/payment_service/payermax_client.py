@@ -11,7 +11,7 @@ import json
 import base64
 import hashlib
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
@@ -411,6 +411,10 @@ class PayerMaxClient(BasePaymentClient):
                         "PayerMax create_payment timings: build_sign_ms=%s api_ms=%s db_ms=%s",
                         build_sign_ms, api_ms, db_ms
                     )
+                    beijing_tz = timezone(timedelta(hours=8))
+                    now_bj = datetime.now(beijing_tz)
+                    created_at_str = now_bj.strftime('%Y-%m-%d %H:%M:%S')
+                    expires_at_str = (now_bj + timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M:%S')
                     return {
                         "success": True,
                         "transaction_id": trade_token,
@@ -418,7 +422,9 @@ class PayerMaxClient(BasePaymentClient):
                         "payment_url": redirect_url,
                         "status": "created",
                         "payment_method": payment_method,
-                        "message": "PayerMax支付订单创建成功"
+                        "message": "PayerMax支付订单创建成功",
+                        "created_at": created_at_str,
+                        "expires_at": expires_at_str,
                     }
                 else:
                     # 根据官方 API，错误消息字段是 msg
