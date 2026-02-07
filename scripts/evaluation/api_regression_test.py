@@ -9,7 +9,7 @@ API 回归测试脚本
     - 基本接口：基本信息、排盘、身宫命宫、六十甲子等
     - 流式接口：每日运势、五行占比、喜神忌神、婚姻/事业/健康/子女/总评/年运、智能分析、
                 面相分析(流式)、办公桌风水(流式)
-    - 支付接口：支付渠道状态、Stripe 创建订单、PayerMax 创建订单
+    - 支付接口：支付渠道状态、Stripe 创建订单、PayerMax 创建订单、Stripe 验证支付、PayerMax 验证支付
 
 使用方法：
     # 生产环境完整测试（基本+流式+支付，推荐）
@@ -76,6 +76,7 @@ class TestCase:
     # 流式 + 文件上传：表单文件字段名，如 "image"。测试时使用最小占位图
     stream_form_file_key: Optional[str] = None
     stream_form_data: Optional[Dict[str, str]] = None  # 其他 Form 字段
+    allow_success_false: bool = False  # 允许 success=false（如验证过期/无效订单，接口本身正常）
 
 
 # 环境配置
@@ -355,6 +356,34 @@ TEST_CASES: List[TestCase] = [
         timeout=60,  # 留出余量（服务端 API timeout=30s + 冷启动/DB）
         description="PayerMax支付订单创建"
     ),
+    TestCase(
+        name="Stripe验证支付",
+        category=TestCategory.PAYMENT,
+        method="POST",
+        endpoint="/api/v1/payment/unified/verify",
+        payload={
+            "provider": "stripe",
+            "session_id": "cs_test_a1DJKIgGajESSae6O5lAziGPZBqkZ4itG0Ic7SZzMQ64BvJsh1qzP4ZR49"
+        },
+        expected_keys=["success", "provider"],
+        timeout=15,
+        allow_success_false=True,  # 测试订单可能已过期，接口正常返回即算通过
+        description="Stripe支付状态验证"
+    ),
+    TestCase(
+        name="PayerMax验证支付",
+        category=TestCategory.PAYMENT,
+        method="POST",
+        endpoint="/api/v1/payment/unified/verify",
+        payload={
+            "provider": "payermax",
+            "order_id": "PAYERMAX_1770444279059"
+        },
+        expected_keys=["success", "provider"],
+        timeout=15,
+        allow_success_false=True,  # 测试订单可能已过期，接口正常返回即算通过
+        description="PayerMax支付状态验证"
+    ),
     
     # ==================== 管理接口 ====================
     TestCase(
@@ -415,7 +444,7 @@ class APITester:
                     return False, f"缺少字段: {missing}", elapsed
             
             # 检查 success 字段
-            if 'success' in data and not data['success']:
+            if 'success' in data and not data['success'] and not case.allow_success_false:
                 error = data.get('error', data.get('message', '未知错误'))
                 return False, f"接口返回失败: {error}", elapsed
             
