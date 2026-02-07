@@ -68,13 +68,14 @@ class BaziDetailService:
         
         # 1. 生成缓存键（包含所有影响结果的参数）
         # 支持部分缓存：基础数据和每个大运独立缓存
-        current_time_iso = current_time.isoformat() if current_time else None
+        # ✅ 性能优化：current_time 用日期级粒度（quick_mode 下仅影响当前大运/流年，日期足够）
+        current_time_iso = current_time.strftime('%Y-%m-%d') if current_time else 'default'
         cache_key_parts = [
             'bazi_detail',
             solar_date,
             solar_time,
             gender,
-            current_time_iso or 'default',
+            current_time_iso,
             str(dayun_index) if dayun_index is not None else 'all',
             str(target_year) if target_year is not None else 'all'
         ]

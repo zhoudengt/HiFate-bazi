@@ -168,8 +168,84 @@ async def get_pan_display(request: BaziDisplayRequest):
         set_cached_result(cache_key, result, L2_TTL)
         if conversion_info.get('converted') or conversion_info.get('timezone_info'):
             result['conversion_info'] = conversion_info
+        # ✅ 后台预热专业排盘 + 身宫命宫胎元（切 tab 时命中 service 缓存，秒出）
+        _prefetch_params = {
+            "solar_date": final_solar_date,
+            "solar_time": final_solar_time,
+            "gender": request.gender,
+            "calendar_type": request.calendar_type or "solar",
+            "location": request.location,
+            "latitude": request.latitude,
+            "longitude": request.longitude,
+        }
+        asyncio.ensure_future(_prefetch_fortune_display(**_prefetch_params))
+        asyncio.ensure_future(_prefetch_shengong_minggong(**_prefetch_params))
         return result
     raise HTTPException(status_code=500, detail=result.get('error', '计算失败'))
+
+
+async def _prefetch_fortune_display(
+    solar_date: str,
+    solar_time: str,
+    gender: str,
+    calendar_type: str = "solar",
+    location: Optional[str] = None,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+) -> None:
+    """
+    后台预取专业排盘（大运流年流月）数据，仅用于预热 service 层缓存。
+    不阻塞 pan_display 响应，不写入 API 层缓存（由正式请求写入）。
+    """
+    try:
+        modules = get_modules_config('fortune_display')
+        await BaziDataOrchestrator.fetch_data(
+            solar_date,
+            solar_time,
+            gender,
+            modules=modules,
+            current_time=datetime.now(),
+            preprocessed=True,
+            calendar_type=calendar_type,
+            location=location,
+            latitude=latitude,
+            longitude=longitude,
+        )
+        logger.debug("prefetch fortune_display 完成")
+    except Exception as e:
+        logger.debug(f"prefetch fortune_display 忽略错误: {e}")
+
+
+async def _prefetch_shengong_minggong(
+    solar_date: str,
+    solar_time: str,
+    gender: str,
+    calendar_type: str = "solar",
+    location: Optional[str] = None,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+) -> None:
+    """
+    后台预取身宫命宫胎元数据，仅用于预热 service 层缓存（bazi、bazi_interface、detail）。
+    用户打开「胎命身」tab 时命中缓存，秒出。
+    """
+    try:
+        modules = get_modules_config('shengong_minggong')
+        await BaziDataOrchestrator.fetch_data(
+            solar_date,
+            solar_time,
+            gender,
+            modules=modules,
+            current_time=datetime.now(),
+            preprocessed=True,
+            calendar_type=calendar_type,
+            location=location,
+            latitude=latitude,
+            longitude=longitude,
+        )
+        logger.debug("prefetch shengong_minggong 完成")
+    except Exception as e:
+        logger.debug(f"prefetch shengong_minggong 忽略错误: {e}")
 
 
 def _assemble_pan_display_response(orchestrator_data: Dict[str, Any]) -> Dict[str, Any]:

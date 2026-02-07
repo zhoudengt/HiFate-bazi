@@ -36,6 +36,19 @@ class BaziService:
         Returns:
             dict: 格式化的八字数据
         """
+        # 0. 查 L1+L2 缓存（八字四柱只取决于出生时间，无 current_time）
+        cache_key = f"bazi_full:{solar_date}:{solar_time}:{gender}"
+        try:
+            from server.utils.cache_multi_level import get_multi_cache
+            cache = get_multi_cache()
+            cache.l2.ttl = 86400  # 24h
+            cached_result = cache.get(cache_key)
+            if cached_result:
+                logger.debug("✅ [缓存命中] BaziService.calculate_bazi_full")
+                return cached_result
+        except Exception as e:
+            logger.debug(f"BaziService 缓存不可用: {e}")
+
         # 1. 优先尝试调用 bazi-core-service（使用较短的超时时间，快速失败）
         bazi_result = None
         core_service_url = os.getenv("BAZI_CORE_SERVICE_URL")
@@ -115,12 +128,20 @@ class BaziService:
         # 这里只返回空列表，避免重复调用和超时
         matched_rules = []
         
-        # 4. 格式化输出
-        return {
+        # 4. 格式化输出并写入缓存
+        result = {
             "bazi": BaziService._format_bazi_result(bazi_result),
             "rizhu": rizhu,
             "matched_rules": matched_rules
         }
+        try:
+            from server.utils.cache_multi_level import get_multi_cache
+            cache = get_multi_cache()
+            cache.l2.ttl = 86400
+            cache.set(cache_key, result, ttl=86400)
+        except Exception:
+            pass
+        return result
     
     @staticmethod
     def _format_bazi_result(bazi_result: dict) -> dict:
