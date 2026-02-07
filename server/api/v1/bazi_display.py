@@ -679,3 +679,337 @@ def _assemble_fortune_display_response(
         }
     }
 
+
+def _assemble_shengong_minggong_response(
+    orchestrator_data: Dict[str, Any],
+    solar_date: str,
+    solar_time: str,
+    gender: str,
+    current_time: datetime,
+    dayun_year_start: Optional[int] = None,
+    dayun_year_end: Optional[int] = None,
+    target_year: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    从编排层数据组装 shengong-minggong 响应
+    
+    数据全部来自 BaziDataOrchestrator.fetch_data()，不再单独调用
+    BaziDisplayService.get_fortune_display() 或 calculate_detail_full()。
+    
+    大运/流年/流月的组装逻辑与 _assemble_fortune_display_response() 一致，
+    宫位属性（主星、藏干等）在此函数中从编排器已有数据计算。
+    
+    Args:
+        orchestrator_data: 编排层返回的数据
+        solar_date: 阳历日期
+        solar_time: 出生时间
+        gender: 性别
+        current_time: 当前时间
+        dayun_year_start: 大运起始年份（可选）
+        dayun_year_end: 大运结束年份（可选）
+        target_year: 目标年份（可选）
+    """
+    from server.utils.data_validator import DataValidator, ensure_dict
+    from core.config.ten_gods_config import TenGodsCalculator
+    from core.config.star_fortune_config import StarFortuneCalculator
+    from core.config.deities_config import DeitiesCalculator
+    from core.data.constants import HIDDEN_STEMS, NAYIN_MAP
+    from core.calculators.bazi_calculator import WenZhenBazi
+    
+    # 1. 提取编排层数据
+    bazi_data = orchestrator_data.get('bazi', {})
+    interface_data = orchestrator_data.get('bazi_interface', {})
+    detail_data = orchestrator_data.get('detail', {})
+    dayun_sequence = orchestrator_data.get('dayun', [])
+    liunian_sequence = orchestrator_data.get('liunian', [])
+    liuyue_sequence = orchestrator_data.get('liuyue', [])
+    
+    if not bazi_data:
+        return {"success": False, "error": "八字计算失败"}
+    
+    # 2. 提取日干和四柱
+    bazi_pillars = ensure_dict(bazi_data.get('bazi_pillars', {}), default={})
+    day_stem = bazi_pillars.get('day', {}).get('stem', '')
+    if not day_stem:
+        return {"success": False, "error": "无法获取日干信息"}
+    
+    # 3. 提取身宫、命宫、胎元干支（来自 bazi_interface）
+    interface_data = ensure_dict(interface_data, default={})
+    palaces = ensure_dict(interface_data.get('palaces', {}), default={})
+    
+    shengong_ganzhi = ''
+    minggong_ganzhi = ''
+    taiyuan_ganzhi = ''
+    
+    if palaces:
+        body_palace_info = palaces.get('body_palace', {})
+        if isinstance(body_palace_info, dict):
+            shengong_ganzhi = body_palace_info.get('ganzhi', '') or ''
+        else:
+            shengong_ganzhi = str(body_palace_info) if body_palace_info else ''
+        
+        life_palace_info = palaces.get('life_palace', {})
+        if isinstance(life_palace_info, dict):
+            minggong_ganzhi = life_palace_info.get('ganzhi', '') or ''
+        else:
+            minggong_ganzhi = str(life_palace_info) if life_palace_info else ''
+        
+        fetal_origin_info = palaces.get('fetal_origin', {})
+        if isinstance(fetal_origin_info, dict):
+            taiyuan_ganzhi = fetal_origin_info.get('ganzhi', '') or ''
+        else:
+            taiyuan_ganzhi = str(fetal_origin_info) if fetal_origin_info else ''
+    
+    # 兼容旧格式（从顶层获取）
+    if not shengong_ganzhi:
+        shengong_ganzhi = str(interface_data.get('body_palace', '') or '')
+    if not minggong_ganzhi:
+        minggong_ganzhi = str(interface_data.get('life_palace', '') or '')
+    if not taiyuan_ganzhi:
+        taiyuan_ganzhi = str(interface_data.get('fetal_origin', '') or '')
+    
+    # 回退机制：重新计算
+    if not shengong_ganzhi or not minggong_ganzhi:
+        logger.warning("无法从 interface_data 获取身宫或命宫，尝试重新计算")
+        try:
+            from core.analyzers.bazi_interface_analyzer import BaziInterfaceAnalyzer
+            from core.calculators.LunarConverter import LunarConverter
+            
+            analyzer = BaziInterfaceAnalyzer()
+            converter = LunarConverter()
+            lunar_result = converter.solar_to_lunar(solar_date, solar_time)
+            lunar_date = ensure_dict(lunar_result.get('lunar_date', {}), default={})
+            lunar_year = int(lunar_date.get('year', 0))
+            lunar_month = int(lunar_date.get('month', 0))
+            lunar_day = int(lunar_date.get('day', 0))
+            bazi_pillars_result = ensure_dict(lunar_result.get('bazi_pillars', {}), default={})
+            hour_branch = bazi_pillars_result.get('hour', {}).get('branch', '')
+            month_branch = bazi_pillars_result.get('month', {}).get('branch', '')
+            
+            shengong_ganzhi = analyzer.get_body_palace(lunar_year, lunar_month, lunar_day, hour_branch, month_branch)
+            minggong_ganzhi = analyzer.get_life_palace(lunar_year, lunar_month, lunar_day, hour_branch, month_branch)
+        except Exception as e:
+            logger.error(f"重新计算身宫命宫失败: {e}", exc_info=True)
+            return {"success": False, "error": f"无法计算身宫或命宫: {e}"}
+    
+    # 胎元回退
+    if not taiyuan_ganzhi or len(taiyuan_ganzhi) != 2:
+        try:
+            month_pillar = bazi_pillars.get('month', {})
+            month_stem = month_pillar.get('stem', '')
+            month_branch_char = month_pillar.get('branch', '')
+            if month_stem and month_branch_char:
+                from core.analyzers.bazi_interface_analyzer import BaziInterfaceAnalyzer
+                analyzer = BaziInterfaceAnalyzer()
+                taiyuan_ganzhi = analyzer.get_fetal_origin(month_stem + month_branch_char)
+        except Exception as e:
+            logger.warning(f"计算胎元失败: {e}")
+    
+    # 4. 验证干支格式
+    if not shengong_ganzhi or len(shengong_ganzhi) != 2:
+        return {"success": False, "error": f"身宫干支格式错误: {shengong_ganzhi}"}
+    if not minggong_ganzhi or len(minggong_ganzhi) != 2:
+        return {"success": False, "error": f"命宫干支格式错误: {minggong_ganzhi}"}
+    if not taiyuan_ganzhi or len(taiyuan_ganzhi) != 2:
+        return {"success": False, "error": f"胎元干支格式错误: {taiyuan_ganzhi}"}
+    
+    # 5. 计算宫位详细属性
+    bazi_calc = WenZhenBazi(solar_date, solar_time, gender)
+    ten_gods_calc = TenGodsCalculator()
+    star_fortune_calc = StarFortuneCalculator()
+    deities_calc = DeitiesCalculator()
+    
+    def _calc_palace_details(ganzhi: str, label: str) -> Dict[str, Any]:
+        """计算单个宫位的详细信息"""
+        stem, branch = ganzhi[0], ganzhi[1]
+        return {
+            "stem": {"char": stem},
+            "branch": {"char": branch},
+            "main_star": bazi_calc.get_main_star(day_stem, stem, 'month'),
+            "hidden_stems": HIDDEN_STEMS.get(branch, []),
+            "star_fortune": star_fortune_calc.get_stem_fortune(day_stem, branch),
+            "self_sitting": star_fortune_calc.get_stem_fortune(stem, branch),
+            "kongwang": star_fortune_calc.get_kongwang(ganzhi),
+            "nayin": NAYIN_MAP.get((stem, branch), ''),
+            "deities": sort_shensha(deities_calc.calculate_day_deities(stem, branch, bazi_pillars))
+        }
+    
+    shengong_detail = _calc_palace_details(shengong_ganzhi, "身宫")
+    minggong_detail = _calc_palace_details(minggong_ganzhi, "命宫")
+    taiyuan_detail = _calc_palace_details(taiyuan_ganzhi, "胎元")
+    
+    # 6. 格式化四柱
+    bazi_details = bazi_data.get('details', {})
+    formatted_pillars = {}
+    for pillar_type in ['year', 'month', 'day', 'hour']:
+        pillar_data = bazi_details.get(pillar_type, {})
+        pillar_info = bazi_pillars.get(pillar_type, {})
+        formatted_pillars[pillar_type] = {
+            "stem": {"char": pillar_info.get('stem', '')},
+            "branch": {"char": pillar_info.get('branch', '')},
+            "main_star": pillar_data.get('main_star', ''),
+            "hidden_stems": pillar_data.get('hidden_stems', []),
+            "star_fortune": pillar_data.get('star_fortune', ''),
+            "self_sitting": pillar_data.get('self_sitting', ''),
+            "kongwang": pillar_data.get('kongwang', ''),
+            "nayin": pillar_data.get('nayin', ''),
+            "deities": sort_shensha(pillar_data.get('deities', []))
+        }
+    
+    # 7. 组装大运/流年/流月（与 _assemble_fortune_display_response 同一逻辑）
+    details = detail_data.get('details', {}) if detail_data else {}
+    qiyun_info = details.get('qiyun', {})
+    jiaoyun_info = details.get('jiaoyun', {})
+    
+    if not dayun_sequence:
+        dayun_sequence = details.get('dayun_sequence', [])
+    
+    # 确定当前大运
+    birth_year = int(solar_date.split('-')[0])
+    current_dayun = None
+    if jiaoyun_info:
+        current_dayun = _determine_current_dayun_by_jiaoyun(
+            current_time, dayun_sequence, jiaoyun_info, birth_year
+        )
+    if current_dayun is None:
+        current_year = current_time.year
+        current_age = current_year - birth_year + 1
+        for dayun in dayun_sequence:
+            age_range = dayun.get('age_range', {})
+            if age_range:
+                if age_range.get('start', 0) <= current_age <= age_range.get('end', 0):
+                    current_dayun = dayun
+                    break
+    
+    # 大运年份匹配（内存查找，无额外计算）
+    target_dayun = None
+    resolved_dayun_index = None
+    if dayun_year_start is not None and dayun_year_end is not None:
+        for dayun in dayun_sequence:
+            ys = dayun.get('year_start')
+            ye = dayun.get('year_end')
+            step = dayun.get('step')
+            if ys == dayun_year_start and ye == dayun_year_end:
+                resolved_dayun_index = step
+                break
+            elif ys and ye and ys <= dayun_year_start <= ye:
+                resolved_dayun_index = step
+                break
+    
+    if resolved_dayun_index is not None:
+        for dayun in dayun_sequence:
+            if dayun.get('step') == resolved_dayun_index:
+                target_dayun = dayun
+                break
+    else:
+        target_dayun = current_dayun
+    if not target_dayun:
+        target_dayun = current_dayun or (dayun_sequence[0] if dayun_sequence else None)
+    
+    # 格式化大运列表
+    formatted_dayun_list = []
+    for dayun in dayun_sequence:
+        formatted = BaziDisplayService._format_dayun_item(dayun)
+        if current_dayun and dayun.get('step') == current_dayun.get('step'):
+            formatted['is_current'] = True
+        formatted_dayun_list.append(formatted)
+    
+    dayun_data = {
+        "current": BaziDisplayService._format_dayun_item(current_dayun or details.get('dayun', {})),
+        "list": formatted_dayun_list,
+        "qiyun": {
+            "date": qiyun_info.get('date', ''),
+            "age_display": qiyun_info.get('age_display', ''),
+            "description": qiyun_info.get('description', '')
+        },
+        "jiaoyun": {
+            "date": jiaoyun_info.get('date', ''),
+            "age_display": jiaoyun_info.get('age_display', ''),
+            "description": jiaoyun_info.get('description', '')
+        }
+    }
+    
+    # 流年
+    current_year = current_time.year
+    if current_dayun and not current_dayun.get('is_xiaoyun', False):
+        liunian_sequence = current_dayun.get('liunian_sequence', liunian_sequence)
+    elif not liunian_sequence:
+        liunian_sequence = details.get('liunian_sequence', [])
+    
+    current_liunian = None
+    for liunian in liunian_sequence:
+        if liunian.get('year') == current_year:
+            current_liunian = liunian
+            break
+    if current_liunian is None:
+        day_stem_for_liunian = bazi_pillars.get('day', {}).get('stem', '')
+        current_liunian = _calculate_default_liunian(current_year, birth_year, day_stem_for_liunian)
+    
+    formatted_liunian_list = []
+    for liunian in liunian_sequence:
+        formatted = BaziDisplayService._format_liunian_item(liunian)
+        if liunian.get('year') == current_year:
+            formatted['is_current'] = True
+        formatted_liunian_list.append(formatted)
+    
+    liunian_data = {
+        "current": BaziDisplayService._format_liunian_item(current_liunian) if current_liunian else None,
+        "list": formatted_liunian_list
+    }
+    
+    # 流月
+    target_year_for_liuyue = target_year or (current_liunian.get('year') if current_liunian else current_year)
+    target_liunian = None
+    for liunian in liunian_sequence:
+        if liunian.get('year') == target_year_for_liuyue:
+            target_liunian = liunian
+            break
+    if target_liunian:
+        liuyue_sequence = target_liunian.get('liuyue_sequence', liuyue_sequence)
+    elif not liuyue_sequence:
+        liuyue_sequence = details.get('liuyue_sequence', [])
+    
+    current_month = current_time.month
+    current_liuyue = None
+    for liuyue in liuyue_sequence:
+        if liuyue.get('month') == current_month:
+            current_liuyue = liuyue
+            break
+    
+    formatted_liuyue_list = []
+    for liuyue in liuyue_sequence:
+        formatted = BaziDisplayService._format_liuyue_item(liuyue)
+        if current_liuyue and liuyue.get('month') == current_liuyue.get('month'):
+            formatted['is_current'] = True
+        formatted_liuyue_list.append(formatted)
+    
+    liuyue_data = {
+        "current": BaziDisplayService._format_liuyue_item(current_liuyue or (liuyue_sequence[0] if liuyue_sequence else {})),
+        "list": formatted_liuyue_list,
+        "target_year": target_year_for_liuyue
+    }
+    
+    # 8. 司令字段
+    commander = ''
+    try:
+        other_info = ensure_dict(interface_data.get('other_info', {}), default={})
+        if isinstance(other_info, dict):
+            commander_element = other_info.get('commander_element', '')
+            if commander_element:
+                commander = commander_element[0] if len(commander_element) > 0 else ''
+    except Exception:
+        commander = ''
+    
+    # 9. 组装响应（与原 _calculate_shengong_minggong_details 返回格式完全一致）
+    return {
+        "success": True,
+        "commander": commander,
+        "shengong": shengong_detail,
+        "minggong": minggong_detail,
+        "taiyuan": taiyuan_detail,
+        "pillars": formatted_pillars,
+        "dayun": dayun_data,
+        "liunian": liunian_data,
+        "liuyue": liuyue_data
+    }
+

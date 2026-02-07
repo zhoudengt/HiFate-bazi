@@ -40,7 +40,11 @@ from server.api.v1.bazi_display import (
     FortuneDisplayRequest,
     get_fortune_display,
     get_pan_display,
+    _assemble_fortune_display_response,
+    _assemble_shengong_minggong_response,
 )
+from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
+from server.orchestrators.modules_config import get_modules_config
 from server.api.v1.wangshuai import WangShuaiRequest, calculate_wangshuai
 from server.api.v1.payment import (
     CreatePaymentSessionRequest,
@@ -230,18 +234,38 @@ def _reload_endpoints():
                     )
                     return {"success": True, "data": result}
                 
-                # 手动注册 /bazi/shengong-minggong
+                # 手动注册 /bazi/shengong-minggong（统一走编排器）
                 async def _handle_shengong_minggong(payload: Dict[str, Any]):
-                    from fastapi import Request
-                    from unittest.mock import MagicMock
+                    from datetime import datetime
                     request_model = ShengongMinggongRequest(**payload)
-                    mock_request = MagicMock(spec=Request)
-                    result = await get_shengong_minggong(request_model, mock_request)
-                    if hasattr(result, 'model_dump'):
-                        return result.model_dump()
-                    elif hasattr(result, 'dict'):
-                        return result.dict()
-                    return result
+                    final_solar_date, final_solar_time, _ = BaziInputProcessor.process_input(
+                        request_model.solar_date, request_model.solar_time,
+                        request_model.calendar_type or "solar",
+                        request_model.location, request_model.latitude, request_model.longitude
+                    )
+                    current_time = datetime.now()
+                    if request_model.current_time:
+                        try:
+                            current_time = datetime.strptime(request_model.current_time, "%Y-%m-%d %H:%M")
+                        except ValueError:
+                            pass
+                    modules = get_modules_config('shengong_minggong')
+                    orchestrator_data = await BaziDataOrchestrator.fetch_data(
+                        final_solar_date, final_solar_time, request_model.gender,
+                        modules=modules, current_time=current_time, preprocessed=True,
+                        calendar_type=request_model.calendar_type or "solar",
+                        location=request_model.location, latitude=request_model.latitude,
+                        longitude=request_model.longitude,
+                        dayun_year_start=request_model.dayun_year_start,
+                        dayun_year_end=request_model.dayun_year_end,
+                        target_year=request_model.target_year
+                    )
+                    return _assemble_shengong_minggong_response(
+                        orchestrator_data, final_solar_date, final_solar_time,
+                        request_model.gender, current_time,
+                        request_model.dayun_year_start, request_model.dayun_year_end,
+                        request_model.target_year
+                    )
                 
                 # 手动注册 /bazi/rizhu-liujiazi 端点
                 from server.api.v1.rizhu_liujiazi import (
@@ -303,7 +327,11 @@ async def _handle_pan(payload: Dict[str, Any]):
 
 @_register("/bazi/fortune/display")
 async def _handle_fortune(payload: Dict[str, Any]):
-    """处理大运流年流月展示请求（gRPC-Web 转发）"""
+    """处理大运流年流月展示请求（gRPC-Web 转发）
+    
+    ✅ 架构统一：通过 BaziDataOrchestrator.fetch_data() 获取数据，
+       与 REST 端、流式接口使用同一编排层，数据只计算一次。
+    """
     # ✅ 特殊处理：在创建 Pydantic 模型前处理 "今" 参数
     use_jin_mode = False
     if payload.get('current_time') == "今":
@@ -314,9 +342,6 @@ async def _handle_fortune(payload: Dict[str, Any]):
     # 创建请求模型对象（此时 current_time 已经是时间字符串，不会触发验证错误）
     request_model = FortuneDisplayRequest(**payload)
     
-    # ✅ 调用内部处理函数（复用 get_fortune_display 的逻辑）
-    from server.services.bazi_display_service import BaziDisplayService
-    from server.utils.bazi_input_processor import BaziInputProcessor
     from datetime import datetime
     
     # 处理农历输入和时区转换
@@ -329,7 +354,7 @@ async def _handle_fortune(payload: Dict[str, Any]):
         request_model.longitude
     )
     
-    # 解析 current_time（如果使用"今"模式，使用当前时间；否则解析时间字符串）
+    # 解析 current_time
     current_time = None
     if request_model.current_time:
         if use_jin_mode:
@@ -339,33 +364,37 @@ async def _handle_fortune(payload: Dict[str, Any]):
                 current_time = datetime.strptime(request_model.current_time, "%Y-%m-%d %H:%M")
             except ValueError:
                 raise ValueError(f"current_time 参数格式错误: {request_model.current_time}")
+    if current_time is None:
+        current_time = datetime.now()
     
-    # 调用服务层（使用统一线程池）
-    # ✅ 性能优化：fortune/display 响应只需要 detail（大运/流年/流月/四柱），
-    #    不需要旺衰、身宫命宫、规则匹配、五行比例、日柱六十甲子，显式关闭以避免无用计算
-    import asyncio
-    from server.utils.async_executor import get_executor
-    _quick = request_model.quick_mode if request_model.quick_mode is not None else True
-    _warmup = request_model.async_warmup if request_model.async_warmup is not None else True
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(
-        get_executor(),
-        lambda: BaziDisplayService.get_fortune_display(
-            solar_date=final_solar_date,
-            solar_time=final_solar_time,
-            gender=request_model.gender,
-            current_time=current_time,
-            dayun_index=request_model.dayun_index,
-            dayun_year_start=request_model.dayun_year_start,
-            dayun_year_end=request_model.dayun_year_end,
-            target_year=request_model.target_year,
-            quick_mode=_quick,
-            async_warmup=_warmup,
-            include_shengong_minggong=False,
-            include_rules=False,
-            include_wuxing_proportion=False,
-            include_rizhu_liujiazi=False
-        )
+    # ✅ 通过编排层统一获取数据（与 REST 端 bazi_display.py 同一模式）
+    modules = get_modules_config('fortune_display')
+    orchestrator_data = await BaziDataOrchestrator.fetch_data(
+        final_solar_date,
+        final_solar_time,
+        request_model.gender,
+        modules=modules,
+        current_time=current_time,
+        preprocessed=True,
+        calendar_type=request_model.calendar_type or "solar",
+        location=request_model.location,
+        latitude=request_model.latitude,
+        longitude=request_model.longitude,
+        dayun_index=request_model.dayun_index,
+        dayun_year_start=request_model.dayun_year_start,
+        dayun_year_end=request_model.dayun_year_end,
+        target_year=request_model.target_year
+    )
+    
+    # ✅ 从编排层数据组装响应（复用 bazi_display.py 的组装函数）
+    result = _assemble_fortune_display_response(
+        orchestrator_data,
+        final_solar_date,
+        current_time,
+        request_model.dayun_index,
+        request_model.dayun_year_start,
+        request_model.dayun_year_end,
+        request_model.target_year
     )
     
     # 添加转换信息
@@ -470,20 +499,70 @@ async def _handle_bazi_interface(payload: Dict[str, Any]):
 
 @_register("/bazi/shengong-minggong")
 async def _handle_shengong_minggong(payload: Dict[str, Any]):
-    """处理身宫命宫详细信息请求"""
-    from fastapi import Request
-    from unittest.mock import MagicMock
+    """处理身宫命宫详细信息请求
+    
+    ✅ 架构统一：通过 BaziDataOrchestrator.fetch_data() 获取数据，
+       与 /bazi/fortune/display、REST 端、流式接口使用同一编排层。
+       大运/流年/流月数据从编排器直接取，不再调 get_fortune_display。
+    """
+    from datetime import datetime
     
     request_model = ShengongMinggongRequest(**payload)
-    # 创建一个模拟的Request对象（gRPC网关不需要真实的Request）
-    mock_request = MagicMock(spec=Request)
-    result = await get_shengong_minggong(request_model, mock_request)
     
-    # 处理 BaziResponse 对象
-    if hasattr(result, 'model_dump'):
-        return result.model_dump()
-    elif hasattr(result, 'dict'):
-        return result.dict()
+    # 处理农历输入和时区转换
+    final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
+        request_model.solar_date,
+        request_model.solar_time,
+        request_model.calendar_type or "solar",
+        request_model.location,
+        request_model.latitude,
+        request_model.longitude
+    )
+    
+    # 解析 current_time
+    current_time = None
+    if request_model.current_time:
+        try:
+            current_time = datetime.strptime(request_model.current_time, "%Y-%m-%d %H:%M")
+        except ValueError:
+            pass
+    if current_time is None:
+        current_time = datetime.now()
+    
+    # ✅ 通过编排层统一获取数据
+    modules = get_modules_config('shengong_minggong')
+    orchestrator_data = await BaziDataOrchestrator.fetch_data(
+        final_solar_date,
+        final_solar_time,
+        request_model.gender,
+        modules=modules,
+        current_time=current_time,
+        preprocessed=True,
+        calendar_type=request_model.calendar_type or "solar",
+        location=request_model.location,
+        latitude=request_model.latitude,
+        longitude=request_model.longitude,
+        dayun_year_start=request_model.dayun_year_start,
+        dayun_year_end=request_model.dayun_year_end,
+        target_year=request_model.target_year
+    )
+    
+    # ✅ 从编排层数据组装响应
+    result = _assemble_shengong_minggong_response(
+        orchestrator_data,
+        final_solar_date,
+        final_solar_time,
+        request_model.gender,
+        current_time,
+        request_model.dayun_year_start,
+        request_model.dayun_year_end,
+        request_model.target_year
+    )
+    
+    # 添加转换信息
+    if result.get('success') and (conversion_info.get('converted') or conversion_info.get('timezone_info')):
+        result['conversion_info'] = conversion_info
+    
     return result
 
 
@@ -1904,18 +1983,37 @@ def _ensure_endpoints_registered():
             if "/bazi/shengong-minggong" in missing_endpoints:
                 try:
                     from server.api.v1.bazi import ShengongMinggongRequest, get_shengong_minggong
-                    from fastapi import Request
-                    from unittest.mock import MagicMock
+                    from datetime import datetime as dt_manual
                     async def _handle_shengong_minggong_manual(payload: Dict[str, Any]):
-                        """处理身宫命宫请求（手动注册）"""
+                        """处理身宫命宫请求（手动注册，走编排器）"""
                         request_model = ShengongMinggongRequest(**payload)
-                        mock_request = MagicMock(spec=Request)
-                        result = await get_shengong_minggong(request_model, mock_request)
-                        if hasattr(result, 'model_dump'):
-                            return result.model_dump()
-                        elif hasattr(result, 'dict'):
-                            return result.dict()
-                        return result
+                        final_sd, final_st, _ = BaziInputProcessor.process_input(
+                            request_model.solar_date, request_model.solar_time,
+                            request_model.calendar_type or "solar",
+                            request_model.location, request_model.latitude, request_model.longitude
+                        )
+                        ct = dt_manual.now()
+                        if request_model.current_time:
+                            try:
+                                ct = dt_manual.strptime(request_model.current_time, "%Y-%m-%d %H:%M")
+                            except ValueError:
+                                pass
+                        mods = get_modules_config('shengong_minggong')
+                        odata = await BaziDataOrchestrator.fetch_data(
+                            final_sd, final_st, request_model.gender,
+                            modules=mods, current_time=ct, preprocessed=True,
+                            calendar_type=request_model.calendar_type or "solar",
+                            location=request_model.location, latitude=request_model.latitude,
+                            longitude=request_model.longitude,
+                            dayun_year_start=request_model.dayun_year_start,
+                            dayun_year_end=request_model.dayun_year_end,
+                            target_year=request_model.target_year
+                        )
+                        return _assemble_shengong_minggong_response(
+                            odata, final_sd, final_st, request_model.gender, ct,
+                            request_model.dayun_year_start, request_model.dayun_year_end,
+                            request_model.target_year
+                        )
                     SUPPORTED_ENDPOINTS["/bazi/shengong-minggong"] = _handle_shengong_minggong_manual
                     logger.error("🚨 手动注册端点: /bazi/shengong-minggong")
                 except Exception as e:
