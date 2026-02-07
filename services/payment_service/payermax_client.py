@@ -493,9 +493,9 @@ class PayerMaxClient(BasePaymentClient):
             }
 
         try:
-            # 构建请求数据
+            # 构建请求数据（按 PayerMax 官方 orderQuery 文档）
             request_data = {
-                "version": "1.1",
+                "version": "1.4",
                 "keyVersion": "1",
                 "requestTime": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000+00:00"),
                 "appId": self.app_id,
@@ -504,9 +504,9 @@ class PayerMaxClient(BasePaymentClient):
             }
 
             if transaction_id:
-                request_data["data"]["transactionNo"] = transaction_id
+                request_data["data"]["tradeToken"] = transaction_id
             if order_id:
-                request_data["data"]["merchantOrderNo"] = order_id
+                request_data["data"]["outTradeNo"] = order_id
 
             # 发送请求
             url = f"{self.base_url}orderQuery"
@@ -535,36 +535,34 @@ class PayerMaxClient(BasePaymentClient):
                     logger.warning("PayerMax响应签名验证失败")
 
                 if result.get("code") == "APPLY_SUCCESS":
-                    order_info = response_data.get("orderInfo", {})
-                    pay_status = order_info.get("payStatus", "")
+                    # 按 PayerMax 官方 orderQuery 响应格式，字段直接在 data 下（非嵌套）
+                    pay_status = response_data.get("status", "")
 
                     # 转换状态
                     status_mapping = {
                         "SUCCESS": "success",
                         "PENDING": "pending",
                         "FAILED": "failed",
-                        "CANCELLED": "cancelled"
+                        "CANCELLED": "cancelled",
+                        "CLOSED": "closed"
                     }
 
                     status = status_mapping.get(pay_status, pay_status)
                     paid = status == "success"
 
-                    amount_info = order_info.get("amount", {})
-                    currency_info = order_info.get("currency", {})
-
                     return {
                         "success": True,
                         "status": status,
                         "paid": paid,
-                        "transaction_id": order_info.get("transactionNo"),
-                        "order_id": order_info.get("merchantOrderNo"),
-                        "amount": amount_info.get("value"),
-                        "currency": amount_info.get("currency"),
-                        "paid_time": order_info.get("payTime"),
+                        "transaction_id": response_data.get("tradeToken"),
+                        "order_id": response_data.get("outTradeNo"),
+                        "amount": str(response_data.get("totalAmount", "")),
+                        "currency": response_data.get("currency"),
+                        "paid_time": response_data.get("completeTime"),
                         "message": f"支付状态: {status}"
                     }
                 else:
-                    error_msg = result.get("message", "查询失败")
+                    error_msg = result.get("msg", result.get("message", "查询失败"))
                     logger.error(f"查询PayerMax订单失败: {error_msg}")
                     return {
                         "success": False,
