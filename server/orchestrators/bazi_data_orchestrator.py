@@ -217,6 +217,18 @@ class BaziDataOrchestrator:
         
         result = {}
         
+        # =====================================================================
+        # ✅ 自动依赖推导：衍生模块隐式依赖基础模块
+        # daily_fortune_calendar 依赖 bazi（提取 birth_stem）和 wangshuai（判断喜用）
+        # =====================================================================
+        if modules.get('daily_fortune_calendar') and final_solar_date and final_solar_time and gender:
+            if not modules.get('bazi'):
+                modules['bazi'] = True  # 隐式依赖
+                logger.debug("[Orchestrator] daily_fortune_calendar 自动依赖 bazi")
+            if not modules.get('wangshuai'):
+                modules['wangshuai'] = True  # 隐式依赖
+                logger.debug("[Orchestrator] daily_fortune_calendar 自动依赖 wangshuai")
+        
         # 准备并行任务列表
         tasks = []
         loop = asyncio.get_event_loop()
@@ -343,20 +355,9 @@ class BaziDataOrchestrator:
             )
             tasks.append(('monthly_fortune', monthly_fortune_task))
         
-        # ✅ 优化：将 daily_fortune_calendar 放入并行任务（避免同步阻塞）
-        if modules.get('daily_fortune_calendar'):
-            # 支持传入查询日期，如果没有则使用 None（服务内部会默认为今天）
-            calendar_config = modules['daily_fortune_calendar']
-            query_date = calendar_config.get('date') if isinstance(calendar_config, dict) else None
-            
-            daily_fortune_calendar_task = loop.run_in_executor(
-                executor, DailyFortuneCalendarService.get_daily_fortune_calendar,
-                query_date,           # date_str（查询日期）
-                final_solar_date,     # user_solar_date（用户出生日期）
-                final_solar_time,     # user_solar_time
-                gender                # user_gender
-            )
-            tasks.append(('daily_fortune_calendar', daily_fortune_calendar_task))
+        # ✅ daily_fortune_calendar 已移到阶段2（依赖 bazi_data + wangshuai_data）
+        # 不再在阶段1独立计算，避免内部重复调用 BaziService/WangShuaiService
+        # 详见下方阶段2的 daily_fortune_calendar 处理逻辑
         
         # 7. 其他模块
         if modules.get('bazi_ai'):
@@ -712,6 +713,32 @@ class BaziDataOrchestrator:
                 logger.warning("[Orchestrator] rizhu为空，跳过")
                 result['rizhu'] = None
         
+        # ✅ daily_fortune_calendar（Stage 2：依赖 bazi_data + wangshuai_data）
+        # 从 Stage 1 的 bazi_data 提取 birth_stem，传入服务避免重复计算
+        if modules.get('daily_fortune_calendar'):
+            calendar_config = modules['daily_fortune_calendar']
+            query_date = calendar_config.get('date') if isinstance(calendar_config, dict) else None
+            
+            # 从数据总线提取 birth_stem（bazi Stage 1 已计算）
+            _birth_stem_for_calendar = None
+            if inner_bazi_data:
+                _birth_stem_for_calendar = inner_bazi_data.get('bazi_pillars', {}).get('day', {}).get('stem')
+                logger.debug(f"[Orchestrator] daily_fortune_calendar 从总线获取 birth_stem={_birth_stem_for_calendar}")
+            
+            # wangshuai_data 直接从 Stage 1 传入
+            _wangshuai_for_calendar = wangshuai_data
+            
+            daily_fortune_calendar_task = loop.run_in_executor(
+                executor, DailyFortuneCalendarService.get_daily_fortune_calendar,
+                query_date,                   # date_str（查询日期）
+                final_solar_date,             # user_solar_date（用户出生日期）
+                final_solar_time,             # user_solar_time
+                gender,                       # user_gender
+                _birth_stem_for_calendar,     # ✅ birth_stem（从数据总线传入）
+                _wangshuai_for_calendar       # ✅ wangshuai_data（从数据总线传入）
+            )
+            phase2_tasks.append(('daily_fortune_calendar', daily_fortune_calendar_task))
+        
         # 执行阶段2并行任务（带超时保护）
         _PHASE2_TIMEOUT = 10  # 阶段2超时10秒（规则匹配、上下文组装等）
         if phase2_tasks:
@@ -751,6 +778,10 @@ class BaziDataOrchestrator:
         
         if modules.get('rizhu') and bazi_data and 'rizhu' not in result:
             result['rizhu'] = phase2_data.get('rizhu')
+        
+        # ✅ 提取 daily_fortune_calendar（Stage 2 结果）
+        if modules.get('daily_fortune_calendar'):
+            result['daily_fortune_calendar'] = phase2_data.get('daily_fortune_calendar')
         
         # 处理喜神忌神模块（优先使用组装数据，需要在 rules 处理之后）
         if modules.get('xishen_jishen'):
@@ -890,9 +921,7 @@ class BaziDataOrchestrator:
         if modules.get('monthly_fortune'):
             result['monthly_fortune'] = task_data.get('monthly_fortune')
         
-        # ✅ 优化：从并行任务结果中获取（避免同步阻塞）
-        if modules.get('daily_fortune_calendar'):
-            result['daily_fortune_calendar'] = task_data.get('daily_fortune_calendar')
+        # ✅ daily_fortune_calendar 已在阶段2处理（从 phase2_data 提取），此处不再从 task_data 获取
         
         # 处理其他模块
         if modules.get('bazi_interface'):

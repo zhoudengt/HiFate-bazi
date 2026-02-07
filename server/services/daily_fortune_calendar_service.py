@@ -9,8 +9,9 @@ import sys
 import os
 import hashlib
 import logging
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime, date
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -74,21 +75,36 @@ class DailyFortuneCalendarService:
         date_str: Optional[str] = None,
         user_solar_date: Optional[str] = None,
         user_solar_time: Optional[str] = None,
-        user_gender: Optional[str] = None
+        user_gender: Optional[str] = None,
+        birth_stem: Optional[str] = None,
+        wangshuai_data: Optional[Dict] = None
     ) -> Dict[str, Any]:
         """
         从数据库查询每日运势日历信息（原有逻辑，用于缓存未命中时调用）
+        
+        ✅ 数据总线感知：支持接收预计算的 birth_stem 和 wangshuai_data，
+        由 BaziDataOrchestrator Stage 1 传入，避免重复调用 BaziService / WangShuaiService。
+        如果未传入，降级到自己计算（保持向后兼容）。
         
         Args:
             date_str: 查询日期（可选，默认为今天），格式：YYYY-MM-DD
             user_solar_date: 用户生辰阳历日期（可选，用于十神提示），格式：YYYY-MM-DD
             user_solar_time: 用户生辰时间（可选），格式：HH:MM
             user_gender: 用户性别（可选），male/female
+            birth_stem: 用户生辰日干（可选，由数据总线传入，避免重复计算）
+            wangshuai_data: 旺衰数据（可选，由数据总线传入，避免重复计算）
             
         Returns:
             dict: 包含完整的每日运势信息
         """
+        import time as _time
+        _t0 = _time.monotonic()
+        
         try:
+            # =====================================================================
+            # 阶段A：基础数据准备（万年历 + 日期计算 + birth_stem 一次性获取）
+            # =====================================================================
+            
             # 1. 获取万年历基础信息
             calendar_service = CalendarAPIService()
             calendar_result = calendar_service.get_calendar(date=date_str)
@@ -100,28 +116,19 @@ class DailyFortuneCalendarService:
                 target_date = date.today()
             
             # ✅ 修复：即使万年历API失败或返回空数据，也尝试返回基本数据
-            # 检查是否成功且有有效数据（weekday 为空说明 lunar_python 失败）
             if not calendar_result.get('success') or not calendar_result.get('weekday'):
-                # 计算星期几（不依赖API，确保始终有值）
                 weekday_en = target_date.strftime('%A')
                 weekday_map = {
-                    'Monday': '星期一',
-                    'Tuesday': '星期二',
-                    'Wednesday': '星期三',
-                    'Thursday': '星期四',
-                    'Friday': '星期五',
-                    'Saturday': '星期六',
-                    'Sunday': '星期日'
+                    'Monday': '星期一', 'Tuesday': '星期二', 'Wednesday': '星期三',
+                    'Thursday': '星期四', 'Friday': '星期五', 'Saturday': '星期六', 'Sunday': '星期日'
                 }
                 weekday_cn = weekday_map.get(weekday_en, weekday_en)
-                
-                # 使用默认值，确保基本功能可用
                 calendar_result = {
                     'success': True,
                     'solar_date': f"{target_date.year}年{target_date.month}月{target_date.day}日",
                     'lunar_date': calendar_result.get('lunar_date', '') if calendar_result.get('success') else '',
-                    'weekday': weekday_cn,  # ✅ 确保有值
-                    'weekday_en': weekday_en,  # ✅ 确保有值
+                    'weekday': weekday_cn,
+                    'weekday_en': weekday_en,
                     'yi': calendar_result.get('yi', []) if calendar_result.get('success') and calendar_result.get('yi') else [],
                     'ji': calendar_result.get('ji', []) if calendar_result.get('success') and calendar_result.get('ji') else [],
                     'luck_level': calendar_result.get('luck_level', '') if calendar_result.get('success') else '',
@@ -130,7 +137,6 @@ class DailyFortuneCalendarService:
                     'other': calendar_result.get('other', {}) if calendar_result.get('success') else {}
                 }
             else:
-                # ✅ 修复：即使API成功，也确保 weekday 和 weekday_en 有值（防止API返回空值）
                 if not calendar_result.get('weekday'):
                     weekday_en = target_date.strftime('%A')
                     weekday_map = {
@@ -144,113 +150,124 @@ class DailyFortuneCalendarService:
             # 2. 计算流年、流月、流日
             liunian, liuyue, liuri = DailyFortuneCalendarService.calculate_liunian_liuyue_liuri(target_date)
             
-            # 3. 获取六十甲子运势
-            # 数据库存储格式是"甲子日"，所以直接使用liuri（已经是"乙卯日"格式）
-            jiazi_fortune = DailyFortuneCalendarService.get_jiazi_fortune(liuri)
-            
-            # 4. 获取十神提示（需要用户生辰）
-            shishen_hint = None
-            if user_solar_date and user_solar_time and user_gender:
-                # 获取当日日干
-                day_stem = DailyFortuneCalendarService._get_day_stem(target_date)
-                
-                # 优先从 /bazi/pan/display 接口获取用户生辰日干
-                birth_stem = None
-                try:
-                    from server.services.bazi_display_service import BaziDisplayService
-                    pan_result = BaziDisplayService.get_pan_display(
-                        user_solar_date, user_solar_time, user_gender
-                    )
-                    if pan_result.get('success'):
-                        # 从返回结果中提取日干：pan.pillars[2].stem.char（日柱是索引2）
-                        pan_data = pan_result.get('pan', {})
-                        pillars = pan_data.get('pillars', [])
-                        if isinstance(pillars, list) and len(pillars) > 2:
-                            # 日柱是索引2
-                            day_pillar = pillars[2]
-                            if isinstance(day_pillar, dict):
-                                stem_data = day_pillar.get('stem', {})
-                                if isinstance(stem_data, dict):
-                                    birth_stem = stem_data.get('char', '')
-                except Exception as e:
-                    import traceback
-                    logger.warning(f"从 /bazi/pan/display 接口获取日干失败，回退到原有方式: {e}", exc_info=True)
-                
-                # 如果接口调用失败，回退到原有方式
-                if not birth_stem:
-                    birth_stem = DailyFortuneCalendarService._get_birth_stem(user_solar_date, user_solar_time, user_gender)
-                
-                if day_stem and birth_stem:
-                    shishen_hint = DailyFortuneCalendarService.get_shishen_hint(day_stem, birth_stem)
-            
-            # 5. 获取生肖刑冲破害
+            # 3. 获取当日日干和日支（后续多个子查询都需要）
+            day_stem = DailyFortuneCalendarService._get_day_stem(target_date)
             day_branch = DailyFortuneCalendarService._get_day_branch(target_date)
-            zodiac_relations = DailyFortuneCalendarService.get_zodiac_relations(day_branch) if day_branch else None
             
-            # 6. 获取建除十二神能量小结（包含能量值）
-            jianchu = calendar_result.get('other', {}).get('zhixing', '')  # 建除十二神
-            jianchu_info = None
-            if jianchu:
-                jianchu_info = DailyFortuneCalendarService.get_jianchu_info(jianchu)
-                # 如果查询失败，至少返回名称
-                if not jianchu_info:
-                    jianchu_info = {'name': jianchu, 'energy': None, 'summary': None}
-            else:
-                # 即使万年历API失败，也尝试从日期计算建除（需要lunar_python）
-                # 如果lunar_python不可用，至少返回一个默认值
+            # 4. ✅ 数据总线：birth_stem 一次性获取（如果总线未传入，降级计算一次）
+            _resolved_birth_stem = birth_stem
+            has_user_info = user_solar_date and user_solar_time and user_gender
+            if has_user_info and not _resolved_birth_stem:
+                # 降级：总线未传入，自己计算一次（仅一次！不再在子方法中重复计算）
+                logger.debug("[DailyFortune] birth_stem 未从数据总线传入，降级计算一次")
+                _resolved_birth_stem = DailyFortuneCalendarService._get_birth_stem(
+                    user_solar_date, user_solar_time, user_gender
+                )
+            elif _resolved_birth_stem:
+                logger.debug("[DailyFortune] ✅ birth_stem 从数据总线获取，跳过重复计算")
+            
+            # 5. 获取建除原始值（后续子查询需要）
+            jianchu = calendar_result.get('other', {}).get('zhixing', '')
+            if not jianchu:
                 try:
                     from lunar_python import Solar
                     solar = Solar.fromYmd(target_date.year, target_date.month, target_date.day)
                     lunar = solar.getLunar()
-                    jianchu = lunar.getDayJianChu()  # 获取建除
-                    if jianchu:
-                        jianchu_info = DailyFortuneCalendarService.get_jianchu_info(jianchu)
-                        if not jianchu_info:
-                            jianchu_info = {'name': jianchu, 'energy': None, 'summary': None}
+                    jianchu = lunar.getDayJianChu() or ''
                 except ImportError:
-                    # lunar_python不可用，跳过
                     pass
                 except Exception as e:
                     logger.warning(f"计算建除失败: {e}")
-                    pass
             
-            # 7. 获取胎神信息
+            _t_prep = _time.monotonic()
+            logger.debug(f"[DailyFortune] 阶段A基础准备耗时: {(_t_prep - _t0)*1000:.1f}ms")
+            
+            # =====================================================================
+            # 阶段B：并行执行无依赖的 DB 查询 + 子计算
+            # =====================================================================
+            
+            # 定义所有可并行的子任务
+            parallel_results = {}
+            
+            def _task_jiazi_fortune():
+                return DailyFortuneCalendarService.get_jiazi_fortune(liuri) if liuri else None
+            
+            def _task_shishen_hint():
+                if has_user_info and day_stem and _resolved_birth_stem:
+                    return DailyFortuneCalendarService.get_shishen_hint(day_stem, _resolved_birth_stem)
+                return None
+            
+            def _task_zodiac_relations():
+                return DailyFortuneCalendarService.get_zodiac_relations(day_branch) if day_branch else None
+            
+            def _task_jianchu_info():
+                if jianchu:
+                    info = DailyFortuneCalendarService.get_jianchu_info(jianchu)
+                    return info if info else {'name': jianchu, 'energy': None, 'summary': None}
+                return None
+            
+            def _task_master_info():
+                return DailyFortuneCalendarService.get_master_info(
+                    target_date, user_solar_date, user_solar_time, user_gender,
+                    birth_stem=_resolved_birth_stem
+                )
+            
+            def _task_lucky_colors():
+                return DailyFortuneCalendarService.get_lucky_colors(
+                    target_date, user_solar_date, user_solar_time, user_gender, calendar_result,
+                    birth_stem=_resolved_birth_stem, wangshuai_data=wangshuai_data
+                )
+            
+            def _task_guiren_directions():
+                return DailyFortuneCalendarService.get_guiren_directions(target_date, calendar_result)
+            
+            def _task_wenshen_directions():
+                return DailyFortuneCalendarService.get_wenshen_directions(target_date, calendar_result)
+            
+            # ✅ 并行执行所有子任务（使用线程池，因为都涉及 DB I/O）
+            task_map = {
+                'jiazi_fortune': _task_jiazi_fortune,
+                'shishen_hint': _task_shishen_hint,
+                'zodiac_relations': _task_zodiac_relations,
+                'jianchu_info': _task_jianchu_info,
+                'master_info': _task_master_info,
+                'wuxing_wear': _task_lucky_colors,
+                'guiren_fangwei': _task_guiren_directions,
+                'wenshen_directions': _task_wenshen_directions,
+            }
+            
+            with ThreadPoolExecutor(max_workers=6, thread_name_prefix='daily_fortune') as pool:
+                futures = {name: pool.submit(fn) for name, fn in task_map.items()}
+                for name, future in futures.items():
+                    try:
+                        parallel_results[name] = future.result(timeout=8)
+                    except Exception as e:
+                        logger.error(f"[DailyFortune] 子任务 {name} 失败: {e}")
+                        parallel_results[name] = None
+            
+            _t_parallel = _time.monotonic()
+            logger.debug(f"[DailyFortune] 阶段B并行子任务耗时: {(_t_parallel - _t_prep)*1000:.1f}ms")
+            
+            # =====================================================================
+            # 阶段C：组装返回结果
+            # =====================================================================
+            
+            # 获取胎神信息
             taishen = calendar_result.get('deities', {}).get('taishen', '')
             taishen_explanation = calendar_result.get('deities', {}).get('taishen_explanation', '')
             
-            # 8. 获取命主信息（即使万年历API失败，也尝试计算日主）
-            master_info = DailyFortuneCalendarService.get_master_info(
-                target_date, user_solar_date, user_solar_time, user_gender
-            )
-            # 如果master_info为None，至少返回日主（不包含今日十神）
+            # master_info 降级处理
+            master_info = parallel_results.get('master_info')
             if not master_info:
                 try:
-                    day_stem = DailyFortuneCalendarService._get_day_stem(target_date)
                     if day_stem:
                         rizhu = DailyFortuneCalendarService._get_stem_element(day_stem)
                         if rizhu:
                             master_info = {'rizhu': rizhu, 'today_shishen': None}
                 except Exception as e:
                     logger.warning(f"计算日主失败: {e}")
-                    pass
             
-            # 9. 获取五行穿搭（原幸运颜色）
-            wuxing_wear = DailyFortuneCalendarService.get_lucky_colors(
-                target_date, user_solar_date, user_solar_time, user_gender, calendar_result
-            )
-            
-            # 10. 获取贵人方位（原贵人指路）
-            guiren_fangwei = DailyFortuneCalendarService.get_guiren_directions(
-                target_date, calendar_result
-            )
-            
-            # 11. 获取瘟神方位
-            wenshen_directions = DailyFortuneCalendarService.get_wenshen_directions(
-                target_date, calendar_result
-            )
-            
-            # 12. 组装返回结果
-            return {
+            result = {
                 'success': True,
                 # 基础万年历信息
                 'solar_date': calendar_result.get('solar_date', ''),
@@ -268,20 +285,25 @@ class DailyFortuneCalendarService:
                 'deities': calendar_result.get('deities', {}),
                 'chong_he_sha': calendar_result.get('chong_he_sha', {}),
                 # 建除信息（包含能量值）
-                'jianchu': jianchu_info,
+                'jianchu': parallel_results.get('jianchu_info'),
                 # 胎神信息
                 'taishen': taishen,
                 'taishen_explanation': taishen_explanation,
                 # 运势内容
-                'jiazi_fortune': jiazi_fortune,
-                'shishen_hint': shishen_hint,
-                'zodiac_relations': zodiac_relations,
+                'jiazi_fortune': parallel_results.get('jiazi_fortune'),
+                'shishen_hint': parallel_results.get('shishen_hint'),
+                'zodiac_relations': parallel_results.get('zodiac_relations'),
                 # 新增功能
                 'master_info': master_info,
-                'wuxing_wear': wuxing_wear,
-                'guiren_fangwei': guiren_fangwei,
-                'wenshen_directions': wenshen_directions
+                'wuxing_wear': parallel_results.get('wuxing_wear'),
+                'guiren_fangwei': parallel_results.get('guiren_fangwei'),
+                'wenshen_directions': parallel_results.get('wenshen_directions')
             }
+            
+            _t_end = _time.monotonic()
+            logger.debug(f"[DailyFortune] 总耗时: {(_t_end - _t0)*1000:.1f}ms (准备:{(_t_prep - _t0)*1000:.1f}ms + 并行:{(_t_parallel - _t_prep)*1000:.1f}ms + 组装:{(_t_end - _t_parallel)*1000:.1f}ms)")
+            
+            return result
             
         except Exception as e:
             import traceback
@@ -295,16 +317,23 @@ class DailyFortuneCalendarService:
         date_str: Optional[str] = None,
         user_solar_date: Optional[str] = None,
         user_solar_time: Optional[str] = None,
-        user_gender: Optional[str] = None
+        user_gender: Optional[str] = None,
+        birth_stem: Optional[str] = None,
+        wangshuai_data: Optional[Dict] = None
     ) -> Dict[str, Any]:
         """
         获取每日运势日历信息（带Redis缓存）
+        
+        ✅ 数据总线感知：支持接收预计算的 birth_stem 和 wangshuai_data，避免重复计算。
+        由 BaziDataOrchestrator 在 Stage 1 计算后传入。
         
         Args:
             date_str: 查询日期（可选，默认为今天），格式：YYYY-MM-DD
             user_solar_date: 用户生辰阳历日期（可选，用于十神提示），格式：YYYY-MM-DD
             user_solar_time: 用户生辰时间（可选），格式：HH:MM
             user_gender: 用户性别（可选），male/female
+            birth_stem: 用户生辰日干（可选，由数据总线传入，避免重复计算 BaziService）
+            wangshuai_data: 旺衰数据（可选，由数据总线传入，避免重复计算 WangShuaiService）
             
         Returns:
             dict: 包含完整的每日运势信息
@@ -336,8 +365,10 @@ class DailyFortuneCalendarService:
             logger.warning(f"⚠️  Redis缓存不可用，降级到数据库查询: {e}")
         
         # 3. 缓存未命中或缓存数据不完整，查询数据库
+        #    ✅ 传入预计算数据（数据总线模式），避免重复计算
         result = DailyFortuneCalendarService._query_from_database(
-            date_str, user_solar_date, user_solar_time, user_gender
+            date_str, user_solar_date, user_solar_time, user_gender,
+            birth_stem=birth_stem, wangshuai_data=wangshuai_data
         )
         
         # 4. 写入缓存（仅成功时）
@@ -500,7 +531,7 @@ class DailyFortuneCalendarService:
             with conn.cursor() as cursor:
                 # 1. 查询十神
                 cursor.execute(
-                    "SELECT shishen FROM daily_fortune_shishen_query WHERE day_stem = %s AND birth_stem = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
+                    "SELECT shishen FROM daily_fortune_shishen_query WHERE BINARY day_stem = %s AND BINARY birth_stem = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
                     (day_stem, birth_stem)
                 )
                 query_result = cursor.fetchone()
@@ -518,7 +549,7 @@ class DailyFortuneCalendarService:
                 
                 # 2. 查询十神象义
                 cursor.execute(
-                    "SELECT hint, hint_keywords FROM daily_fortune_shishen_meaning WHERE shishen = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
+                    "SELECT hint, hint_keywords FROM daily_fortune_shishen_meaning WHERE BINARY shishen = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
                     (mapped_shishen,)
                 )
                 meaning_result = cursor.fetchone()
@@ -672,16 +703,20 @@ class DailyFortuneCalendarService:
         target_date: date,
         user_solar_date: Optional[str] = None,
         user_solar_time: Optional[str] = None,
-        user_gender: Optional[str] = None
+        user_gender: Optional[str] = None,
+        birth_stem: Optional[str] = None
     ) -> Optional[Dict[str, str]]:
         """
         获取命主信息
+        
+        ✅ 数据总线感知：支持接收预计算的 birth_stem，避免重复调用 BaziService。
         
         Args:
             target_date: 目标日期
             user_solar_date: 用户生辰阳历日期（可选）
             user_solar_time: 用户生辰时间（可选）
             user_gender: 用户性别（可选）
+            birth_stem: 用户生辰日干（可选，由数据总线传入）
             
         Returns:
             dict: 包含 rizhu (日主), today_shishen (今日十神) 的字典
@@ -701,17 +736,19 @@ class DailyFortuneCalendarService:
             today_shishen = None
             if user_solar_date and user_solar_time and user_gender:
                 try:
-                    birth_stem = DailyFortuneCalendarService._get_birth_stem(user_solar_date, user_solar_time, user_gender)
-                    if day_stem and birth_stem:
+                    # ✅ 数据总线：优先使用传入的 birth_stem，避免重复计算
+                    _bs = birth_stem
+                    if not _bs:
+                        _bs = DailyFortuneCalendarService._get_birth_stem(user_solar_date, user_solar_time, user_gender)
+                    if day_stem and _bs:
                         # 查询十神
-                        shishen = DailyFortuneCalendarService._get_shishen_from_stems(day_stem, birth_stem)
+                        shishen = DailyFortuneCalendarService._get_shishen_from_stems(day_stem, _bs)
                         if shishen:
                             today_shishen = shishen
                 except:
                     pass  # 十神查询失败不影响日主显示
             else:
                 # 如果没有提供用户生辰信息，返回提示信息
-                # 前端会根据是否有用户登录信息显示不同的提示
                 today_shishen = "需要提供生辰信息"
             
             return {
@@ -762,7 +799,7 @@ class DailyFortuneCalendarService:
                 return None
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "SELECT shishen FROM daily_fortune_shishen_query WHERE day_stem = %s AND birth_stem = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
+                    "SELECT shishen FROM daily_fortune_shishen_query WHERE BINARY day_stem = %s AND BINARY birth_stem = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
                     (day_stem, birth_stem)
                 )
                 result = cursor.fetchone()
@@ -827,10 +864,15 @@ class DailyFortuneCalendarService:
         user_solar_date: Optional[str],
         user_solar_time: Optional[str],
         user_gender: Optional[str],
-        calendar_result: Dict[str, Any]
+        calendar_result: Dict[str, Any],
+        birth_stem: Optional[str] = None,
+        wangshuai_data: Optional[Dict] = None
     ) -> str:
         """
         获取幸运颜色
+        
+        ✅ 数据总线感知：支持接收预计算的 birth_stem 和 wangshuai_data，
+        避免重复调用 BaziService 和 WangShuaiService。
         
         Args:
             target_date: 目标日期
@@ -838,6 +880,8 @@ class DailyFortuneCalendarService:
             user_solar_time: 用户生辰时间（可选）
             user_gender: 用户性别（可选）
             calendar_result: 万年历结果
+            birth_stem: 用户生辰日干（可选，由数据总线传入）
+            wangshuai_data: 旺衰数据（可选，由数据总线传入）
             
         Returns:
             str: 幸运颜色（逗号分隔），如果未找到返回空字符串
@@ -866,7 +910,6 @@ class DailyFortuneCalendarService:
                     if result:
                         colors_str = result.get('colors', '')
                         if colors_str:
-                            # 处理颜色字符串（可能是"、"或","分隔）
                             colors_list = [c.strip() for c in colors_str.replace('、', ',').split(',') if c.strip()]
                             colors.extend(colors_list)
                 
@@ -886,20 +929,23 @@ class DailyFortuneCalendarService:
                 # 3. 查询今日十神颜色（需要用户生辰且为喜用）
                 if user_solar_date and user_solar_time and user_gender:
                     day_stem = DailyFortuneCalendarService._get_day_stem(target_date)
-                    birth_stem = DailyFortuneCalendarService._get_birth_stem(user_solar_date, user_solar_time, user_gender)
+                    # ✅ 数据总线：优先使用传入的 birth_stem
+                    _bs = birth_stem
+                    if not _bs:
+                        _bs = DailyFortuneCalendarService._get_birth_stem(user_solar_date, user_solar_time, user_gender)
                     
-                    if day_stem and birth_stem:
+                    if day_stem and _bs:
                         # 获取今日十神
-                        today_shishen = DailyFortuneCalendarService._get_shishen_from_stems(day_stem, birth_stem)
+                        today_shishen = DailyFortuneCalendarService._get_shishen_from_stems(day_stem, _bs)
                         
                         if today_shishen:
-                            # 判断是否为喜用
+                            # ✅ 数据总线：优先使用传入的 wangshuai_data 判断喜用
                             is_xishen = DailyFortuneCalendarService._is_shishen_xishen(
-                                user_solar_date, user_solar_time, user_gender, today_shishen
+                                user_solar_date, user_solar_time, user_gender, today_shishen,
+                                wangshuai_data=wangshuai_data
                             )
                             
                             if is_xishen:
-                                # 查询十神颜色（使用BINARY比较确保编码正确）
                                 cursor.execute(
                                     "SELECT color FROM daily_fortune_lucky_color_shishen WHERE BINARY shishen = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
                                     (today_shishen,)
@@ -935,24 +981,36 @@ class DailyFortuneCalendarService:
         user_solar_date: str,
         user_solar_time: str,
         user_gender: str,
-        shishen: str
+        shishen: str,
+        wangshuai_data: Optional[Dict] = None
     ) -> bool:
         """
         判断十神是否为喜用神
+        
+        ✅ 数据总线感知：支持接收预计算的 wangshuai_data，避免重复调用 WangShuaiService。
         
         Args:
             user_solar_date: 用户生辰阳历日期
             user_solar_time: 用户生辰时间
             user_gender: 用户性别
             shishen: 十神名称
+            wangshuai_data: 旺衰数据（可选，由数据总线传入）
             
         Returns:
             bool: 是否为喜用神
         """
         try:
+            # ✅ 数据总线：优先使用传入的 wangshuai_data
+            if wangshuai_data:
+                data = wangshuai_data.get('data', wangshuai_data)
+                xi_ji = data.get('xi_ji', {})
+                xi_shen_list = xi_ji.get('xi_shen', [])
+                return shishen in xi_shen_list
+            
+            # 降级：总线未传入，自己计算
+            logger.debug("[DailyFortune] wangshuai_data 未从数据总线传入，降级计算")
             from server.services.wangshuai_service import WangShuaiService
             
-            # 调用旺衰服务获取喜忌神
             wangshuai_result = WangShuaiService.calculate_wangshuai(
                 user_solar_date, user_solar_time, user_gender
             )
@@ -964,7 +1022,6 @@ class DailyFortuneCalendarService:
             xi_ji = data.get('xi_ji', {})
             xi_shen_list = xi_ji.get('xi_shen', [])
             
-            # 判断十神是否在喜神列表中
             return shishen in xi_shen_list
         except Exception as e:
             logger.error(f"判断十神是否为喜用失败: {e}")
@@ -1008,7 +1065,7 @@ class DailyFortuneCalendarService:
                 if conn:
                     with conn.cursor() as cursor:
                         cursor.execute(
-                            "SELECT directions FROM daily_fortune_guiren_direction WHERE day_stem = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
+                            "SELECT directions FROM daily_fortune_guiren_direction WHERE BINARY day_stem = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
                             (day_stem,)
                         )
                         result = cursor.fetchone()
@@ -1066,7 +1123,7 @@ class DailyFortuneCalendarService:
                 if conn:
                     with conn.cursor() as cursor:
                         cursor.execute(
-                            "SELECT direction FROM daily_fortune_wenshen_direction WHERE day_branch = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
+                            "SELECT direction FROM daily_fortune_wenshen_direction WHERE BINARY day_branch = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
                             (day_branch,)
                         )
                         result = cursor.fetchone()
