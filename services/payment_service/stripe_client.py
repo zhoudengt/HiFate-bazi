@@ -294,8 +294,10 @@ class StripeClient(BasePaymentClient):
             expires_at_timestamp = int((datetime.now() + timedelta(minutes=30)).timestamp())
             session_params["expires_at"] = expires_at_timestamp
             
-            # 计算过期时间字符串（用于保存到数据库）
-            expires_at_str = (datetime.now() + timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M:%S')
+            # 计算过期时间字符串（用于保存到数据库，显式使用北京时间 UTC+8）
+            from datetime import timezone
+            beijing_tz = timezone(timedelta(hours=8))
+            expires_at_str = (datetime.now(beijing_tz) + timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M:%S')
             
             # 设置 API key（每次调用前确保设置）
             stripe_module.api_key = self.api_key
@@ -340,7 +342,7 @@ class StripeClient(BasePaymentClient):
                 "checkout_url": session.url,
                 "status": "created",
                 "expires_at": expires_at_str,
-                "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "created_at": datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S'),
                 "needs_conversion": needs_conversion,
                 "original_currency": original_currency,
                 "converted_currency": converted_currency if needs_conversion else original_currency,

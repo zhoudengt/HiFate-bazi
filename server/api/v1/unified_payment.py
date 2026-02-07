@@ -290,9 +290,10 @@ def create_unified_payment(request: CreatePaymentRequest, http_request: Request)
                 detail=result.get('error', f'{provider_str} 支付创建失败')
             )
 
-        # 计算过期时间（30分钟后）和创建时间
-        from datetime import datetime, timedelta
-        created_at = datetime.now()
+        # 计算过期时间（30分钟后）和创建时间（显式使用北京时间 UTC+8）
+        from datetime import datetime, timedelta, timezone
+        beijing_tz = timezone(timedelta(hours=8))
+        created_at = datetime.now(beijing_tz)
         expires_at = created_at + timedelta(minutes=30)
         created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
         expires_at_str = expires_at.strftime('%Y-%m-%d %H:%M:%S')
