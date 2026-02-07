@@ -472,7 +472,13 @@ def _assemble_fortune_display_response(
         dict: 与原接口完全一致的响应结构
     """
     # 1. 提取编排层数据
-    bazi_data = orchestrator_data.get('bazi', {})
+    # ✅ 处理 BaziService.calculate_bazi_full 的嵌套结构 {'bazi': {...actual data...}}
+    bazi_data_raw = orchestrator_data.get('bazi', {})
+    if isinstance(bazi_data_raw, dict) and 'bazi' in bazi_data_raw and isinstance(bazi_data_raw.get('bazi'), dict):
+        bazi_data = bazi_data_raw.get('bazi', {})
+    else:
+        bazi_data = bazi_data_raw
+    
     interface_data = orchestrator_data.get('bazi_interface', {})
     detail_data = orchestrator_data.get('detail', {})
     dayun_sequence = orchestrator_data.get('dayun', [])
@@ -717,7 +723,13 @@ def _assemble_shengong_minggong_response(
     from core.calculators.bazi_calculator import WenZhenBazi
     
     # 1. 提取编排层数据
-    bazi_data = orchestrator_data.get('bazi', {})
+    # ✅ 处理 BaziService.calculate_bazi_full 的嵌套结构 {'bazi': {...actual data...}}
+    bazi_data_raw = orchestrator_data.get('bazi', {})
+    if isinstance(bazi_data_raw, dict) and 'bazi' in bazi_data_raw and isinstance(bazi_data_raw.get('bazi'), dict):
+        bazi_data = bazi_data_raw.get('bazi', {})
+    else:
+        bazi_data = bazi_data_raw
+    
     interface_data = orchestrator_data.get('bazi_interface', {})
     detail_data = orchestrator_data.get('detail', {})
     dayun_sequence = orchestrator_data.get('dayun', [])
