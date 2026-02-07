@@ -42,7 +42,9 @@ DISPLAY_MODULES = {
     # 数据从编排层获取，格式化逻辑在 API 层的 _assemble_fortune_display_response()
     'fortune_display': {
         'bazi': True,               # 八字四柱（用于 pillars 格式化）
-        'bazi_interface': True,     # 获取 commander（司令）
+        # bazi_interface 不需要：前端 fortune/display 页面不使用 commander 字段，
+        # 司令由 /bazi/pan/display 或 /bazi/shengong-minggong 提供。
+        # 移除后 commander 默认为空字符串，响应结构不变。
         'detail': True,             # 大运流年流月完整数据
         'dayun': {                  # 大运筛选配置
             'mode': 'count',
