@@ -438,7 +438,7 @@ def verify_unified_payment(request: VerifyPaymentRequest):
             # PayerMax 支持 transaction_id 或 order_id 验证
             if request.transaction_id:
                 verify_params["transaction_id"] = request.transaction_id
-                # 通过 transaction_id 查找 order_id
+                # 通过 transaction_id 查找 order_id（PayerMax orderQuery 要求 outTradeNo）
                 if PaymentTransactionDAO:
                     transaction = PaymentTransactionDAO.get_transaction_by_provider_payment_id(
                         provider_payment_id=request.transaction_id,
@@ -446,6 +446,7 @@ def verify_unified_payment(request: VerifyPaymentRequest):
                     )
                     if transaction:
                         order_id_for_check = transaction.get('order_id')
+                        verify_params["order_id"] = order_id_for_check
             elif request.order_id:
                 verify_params["order_id"] = request.order_id
                 order_id_for_check = request.order_id
