@@ -1207,6 +1207,15 @@ class FortuneLLMClient:
                                 
                                 # ⭐ 只处理 answer 类型的消息
                                 if msg_type == 'answer' and content and isinstance(content, str) and len(content) > 10:
+                                    # ⭐ 防重复：如果已通过 delta 事件接收过内容，跳过 completed 的完整消息
+                                    # Coze API 会先通过 conversation.message.delta 逐字推送，
+                                    # 再通过 conversation.message.completed 推送完整消息，
+                                    # 如果两者都 yield 会导致前端收到重复内容
+                                    if self._content_received:
+                                        logger.info(f"⏭️ 跳过 message.completed 的 answer 内容（已通过 delta 接收，避免重复），content长度: {len(content)}")
+                                        continue
+                                    
+                                    # 未通过 delta 接收过内容，使用 completed 完整消息作为兜底
                                     # 检查 content 是否是JSON字符串（需要解析）
                                     try:
                                         # 尝试解析JSON
@@ -1237,8 +1246,8 @@ class FortuneLLMClient:
                                         pass
                                     
                                     self._content_received = True
-                                    logger.info(f"📝 收到完整消息 ({msg_type}): {len(content)}字符")
-                                    logger.info(f"[fortune_llm_client] 📝 发送完整消息chunk: {len(content)}字符, 预览: {content[:50]}...")
+                                    logger.info(f"📝 收到完整消息-兜底 ({msg_type}): {len(content)}字符（delta未推送，使用completed消息）")
+                                    logger.info(f"[fortune_llm_client] 📝 发送完整消息chunk（兜底）: {len(content)}字符, 预览: {content[:50]}...")
                                     yield {'type': 'chunk', 'content': content, 'error': None}
                                 elif msg_type != 'answer':
                                     # ⭐ 非 answer 类型，直接跳过
