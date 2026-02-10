@@ -212,7 +212,7 @@ class CacheReloader:
 class SourceCodeReloader:
     """源代码重载器 - 支持Python源代码热更新"""
     
-    _SEARCH_DIRECTORIES = ("src", "server", "services")  # 包含 services 目录
+    _SEARCH_DIRECTORIES = ("core", "src", "server", "services")  # 包含 core 和 services 目录
     _EXCLUDE_DIRS = {"__pycache__", ".mypy_cache", ".pytest_cache"}
     
     @classmethod
@@ -302,58 +302,74 @@ class SourceCodeReloader:
                     # ⭐ 特殊处理：如果是 grpc_gateway 模块，需要先处理端点注册
                     if module_name == 'server.api.grpc_gateway':
                         try:
-                            # 1. 先获取当前的端点字典
                             from server.api.grpc_gateway import SUPPORTED_ENDPOINTS
                             old_count = len(SUPPORTED_ENDPOINTS)
                             logger.info(f"     🔄 重新注册前端点数量: {old_count}")
                             
-                            # 2. 清空端点字典（避免残留旧端点）
+                            # 🔴 备份当前端点（如果 reload 失败可以恢复）
+                            endpoints_backup = dict(SUPPORTED_ENDPOINTS)
+                            
+                            # 清空端点字典（避免残留旧端点）
                             SUPPORTED_ENDPOINTS.clear()
                             
-                            # 3. 重新加载模块（触发装饰器 @_register 重新执行）
-                            importlib.reload(module)
+                            # 重新加载模块（触发装饰器 @_register 重新执行）
+                            try:
+                                importlib.reload(module)
+                            except Exception as reload_err:
+                                # 🔴 reload 失败时恢复备份，避免端点全部丢失
+                                logger.error(f"     ❌ grpc_gateway reload 失败，恢复 {old_count} 个端点: {reload_err}")
+                                SUPPORTED_ENDPOINTS.update(endpoints_backup)
+                                raise
                             
-                            # 4. 重新获取端点字典（装饰器已执行）
+                            # 重新获取端点字典（装饰器已执行）
                             from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as NEW_ENDPOINTS
                             new_count = len(NEW_ENDPOINTS)
                             logger.info(f"     🔄 重新加载后端点数量: {new_count}")
                             
-                            # 5. 如果端点仍未注册，直接调用 _ensure_endpoints_registered 手动注册
+                            # 如果端点仍未注册，直接调用 _ensure_endpoints_registered 手动注册
                             if new_count == 0:
-                                logger.warning(f"     ⚠️  装饰器未注册端点，直接手动注册所有关键端点...")
+                                logger.warning(f"     ⚠️  装饰器未注册端点，手动注册 + 恢复备份...")
                                 try:
                                     from server.api.grpc_gateway import _ensure_endpoints_registered
                                     _ensure_endpoints_registered()
                                     from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_ENDPOINTS
                                     final_count = len(FINAL_ENDPOINTS)
-                                    logger.info(f"     ✅ 手动注册成功（端点数量: {final_count}）")
+                                    if final_count == 0:
+                                        # 手动注册也失败，恢复备份
+                                        logger.warning(f"     ⚠️  手动注册也为空，恢复备份的 {old_count} 个端点")
+                                        SUPPORTED_ENDPOINTS.update(endpoints_backup)
+                                    else:
+                                        logger.info(f"     ✅ 手动注册成功（端点数量: {final_count}）")
                                 except Exception as e:
-                                    logger.error(f"     ❌ 手动注册失败: {e}")
-                                    import traceback
-                                    traceback.print_exc()
+                                    logger.error(f"     ❌ 手动注册失败，恢复备份: {e}")
+                                    SUPPORTED_ENDPOINTS.update(endpoints_backup)
                             else:
                                 logger.info(f"     ✅ gRPC 端点已重新注册（端点数量: {new_count}）")
                             
-                            # 6. 验证关键端点是否已注册（无论端点数量是否为0）
+                            # 验证关键端点是否已注册
                             from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_CHECK
                             key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi', '/daily-fortune-calendar/query']
                             missing_endpoints = [ep for ep in key_endpoints if ep not in FINAL_CHECK]
                             if missing_endpoints:
-                                logger.warning(f"     ⚠️  关键端点未注册: {missing_endpoints}，再次尝试手动注册...")
+                                logger.warning(f"     ⚠️  关键端点未注册: {missing_endpoints}，从备份恢复缺失端点...")
+                                # 仅恢复缺失的端点，不覆盖已更新的
+                                for ep in missing_endpoints:
+                                    if ep in endpoints_backup:
+                                        SUPPORTED_ENDPOINTS[ep] = endpoints_backup[ep]
+                                        logger.info(f"     🔄 从备份恢复端点: {ep}")
+                                # 再次尝试 _ensure_endpoints_registered
                                 try:
                                     from server.api.grpc_gateway import _ensure_endpoints_registered
                                     _ensure_endpoints_registered()
-                                    from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_CHECK2
-                                    final_count2 = len(FINAL_CHECK2)
-                                    missing_endpoints2 = [ep for ep in key_endpoints if ep not in FINAL_CHECK2]
-                                    if missing_endpoints2:
-                                        logger.error(f"     ❌ 关键端点仍然缺失: {missing_endpoints2}")
-                                    else:
-                                        logger.info(f"     ✅ 关键端点验证通过（端点数量: {final_count2}）")
-                                except Exception as e:
-                                    logger.error(f"     ❌ 关键端点恢复失败: {e}")
-                                    import traceback
-                                    traceback.print_exc()
+                                except Exception:
+                                    pass
+                                # 最终验证
+                                from server.api.grpc_gateway import SUPPORTED_ENDPOINTS as FINAL_CHECK2
+                                still_missing = [ep for ep in key_endpoints if ep not in FINAL_CHECK2]
+                                if still_missing:
+                                    logger.error(f"     ❌ 关键端点仍然缺失: {still_missing}")
+                                else:
+                                    logger.info(f"     ✅ 关键端点验证通过（端点数量: {len(FINAL_CHECK2)}）")
                             else:
                                 logger.info(f"     ✅ 关键端点验证通过")
                                 
@@ -528,12 +544,23 @@ class MicroserviceReloaderProxy:
 class SingletonReloader:
     """单例重置器 - 重置所有注册的单例实例"""
     
-    # 需要重置的单例列表
+    # 需要重置的单例列表（完整清单，包含所有已知单例）
     SINGLETON_CLASSES = [
         ('server.services.rule_service', 'RuleService', ['_engine', '_cache', '_cached_content_version', '_cached_rule_version']),
         ('server.observability.metrics_collector', 'MetricsCollector', ['_instance']),
         ('server.observability.alert_manager', 'AlertManager', ['_instance']),
         ('server.observability.tracer', 'Tracer', ['_instance']),
+        # 以下为新增的遗漏单例
+        ('server.config.config_loader', 'ConfigService', ['_instance']),
+        ('server.config.env_config', 'EnvConfig', ['_instance']),
+        ('server.config.input_format_loader', 'InputFormatLoader', ['_instance']),
+        ('server.config.app_config', 'AppConfig', ['_instance']),
+        ('server.utils.cache_version_manager', 'CacheVersionManager', ['_instance']),
+        ('server.utils.secret_manager', 'SecretManager', ['_instance']),
+        ('server.utils.unified_logger', 'UnifiedLogger', ['_instance']),
+        ('server.core.service_registry', 'ServiceRegistry', ['_instance']),
+        ('server.services.shensha_sort_service', 'ShenshaSortService', ['_instance']),
+        ('server.services.user_interaction_logger', 'UserInteractionLogger', ['_instance']),
     ]
     
     @staticmethod
@@ -622,16 +649,20 @@ class ConfigReloaderEnhanced:
                 from shared.config.database import refresh_connection_pool
                 refresh_connection_pool()
                 logger.info("   ✓ MySQL 连接池已刷新")
-            except (ImportError, AttributeError):
-                pass
+            except (ImportError, AttributeError) as e:
+                logger.debug(f"   ⚠ MySQL 连接池模块未加载（可忽略）: {e}")
+            except Exception as e:
+                logger.warning(f"   ⚠ MySQL 连接池刷新失败: {e}")
             
             # 4. 重新加载 Redis 配置
             try:
                 from shared.config.redis import refresh_redis_connection
                 refresh_redis_connection()
                 logger.info("   ✓ Redis 连接已刷新")
-            except (ImportError, AttributeError):
-                pass
+            except (ImportError, AttributeError) as e:
+                logger.debug(f"   ⚠ Redis 连接模块未加载（可忽略）: {e}")
+            except Exception as e:
+                logger.warning(f"   ⚠ Redis 连接刷新失败: {e}")
             
             # 5. 重新加载支付配置缓存（从数据库重新读取）
             try:
