@@ -118,33 +118,28 @@ git push origin master
 
 ---
 
-## 第五步：增量部署
+## 第五步：增量部署（直接执行，不依赖环境变量）
 
-### 方式一：部署脚本（推荐）
-
-```bash
-./deploy/scripts/incremental_deploy_production.sh
-```
-
-脚本自动执行：git pull → 热更新 → 功能验证 → 健康检查
-
-### 方式二：手动部署（部署脚本不可用时）
+**所有 AI 模型统一使用以下 3 条命令部署，无需任何环境变量，无需任何脚本：**
 
 ```bash
-# 1. 服务器拉取代码
+# 步骤 1：服务器拉取代码
 ssh hifate-node1 "cd /opt/HiFate-bazi && git pull origin master"
 
-# 2. 触发全量热更新（必须用 reload-all，不要用 check）
+# 步骤 2：触发全量热更新（必须用 reload-all，不要用 check）
 curl -s --max-time 60 -X POST http://8.210.52.217:8001/api/v1/hot-reload/reload-all
 # 期望：{"success":true, "reloaded_modules":[...], "message":"...已通知所有 Worker..."}
 
-# 3. 等待 5 秒让所有 Worker 完成热更新
+# 步骤 3：等待 Worker 同步后，再触发第二次热更新确保所有模块完全刷新
 sleep 5
-
-# 4. 功能验证（必须！）
-curl -s --max-time 15 -X POST http://8.210.52.217:8001/api/v1/hot-reload/verify
-# 期望：{"success":true, "checks":{...}} 所有检查项通过
+curl -s --max-time 60 -X POST http://8.210.52.217:8001/api/v1/hot-reload/reload-all
+# 期望：{"success":true, ...} 第二次确保所有 Worker 引用更新
+sleep 3
 ```
+
+**为什么要两次热更新？** 单次 reload-all 可能存在 Worker 间模块引用未完全刷新的情况（尤其是跨模块函数签名变更），第二次 reload 确保所有 Worker 引用最新代码。这是生产验证过的安全做法。
+
+> **注意**：`deploy/scripts/incremental_deploy_production.sh` 脚本需要 `NODE1_PUBLIC_IP` 等环境变量，仅适用于 CI/CD 流水线。**AI 模型部署时不要使用该脚本**，直接执行上述 3 条命令即可。
 
 ### 热更新端点选择（重要！）
 
@@ -162,30 +157,38 @@ curl -s --max-time 15 -X POST http://8.210.52.217:8001/api/v1/hot-reload/verify
 
 **部署后必须验证，不验证等于没部署。**
 
+### 快速验证（必做）
+
 ```bash
 # 1. 健康检查
 curl -s http://8.210.52.217:8001/api/v1/health
+# 期望：{"status":"ok"}
+```
 
-# 2. 功能验证（支付、gRPC、数据库、Redis）
-curl -s -X POST http://8.210.52.217:8001/api/v1/hot-reload/verify
-# 重点检查 checks.payment_clients.ok 是否为 true
+### 全接口回归测试（必做）
 
-# 3. 验证修改的具体接口
-curl -s --max-time 60 -X POST http://8.210.52.217:8001/api/v1/<接口路径> \
-  -H "Content-Type: application/json" -d '<请求体>'
-
-# 4. 查看热更新历史（确认所有模块加载成功）
-curl -s http://8.210.52.217:8001/api/v1/hot-reload/history | python3 -m json.tool | head -30
+```bash
+# 2. 运行全接口测试（23个接口：基本5 + 流式13 + 支付5）
+python3 scripts/evaluation/api_regression_test.py --env production --category basic --category stream --category payment --parallel
+# 期望：通过率 100%
 ```
 
 ### 验证不通过的处理
 
-如果 `/hot-reload/verify` 返回 `success: false`：
+如果回归测试有接口失败（尤其是 `unexpected keyword argument` 类错误）：
 
-1. 查看具体哪个 check 失败
-2. 如果是 `payment_clients` 失败：手动触发 `curl -X POST .../hot-reload/reload-all`
-3. 如果是 `grpc_endpoints` 失败：`curl -X POST .../hot-reload/reload-endpoints`
-4. 如果多次重试仍然失败：检查服务器日志 `ssh hifate-node1 "docker logs hifate-web --since=5m 2>&1 | tail -50"`
+1. **再触发一次热更新**（模块引用可能未完全刷新）：
+   ```bash
+   curl -s --max-time 60 -X POST http://8.210.52.217:8001/api/v1/hot-reload/reload-all
+   sleep 5
+   ```
+2. **重新运行测试**，确认修复
+3. 如果连续 3 次热更新后仍然失败：检查服务器日志
+   ```bash
+   ssh hifate-node1 "docker logs hifate-web --since=5m 2>&1 | tail -50"
+   ```
+4. 如果是 `payment_clients` 失败：`curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/reload-all`
+5. 如果多次重试仍然失败且日志无明显错误：作为最后手段，联系用户确认是否需要容器级别的处理
 
 ---
 
