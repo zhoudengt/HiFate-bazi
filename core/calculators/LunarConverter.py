@@ -2,15 +2,27 @@
 # -*- coding: utf-8 -*-
 
 from lunar_python import Solar, Lunar
-from datetime import datetime, timedelta
 
 class LunarConverter:
     """农历转换工具类 - 提供统一的公历转农历方法"""
 
     @staticmethod
+    def _wu_shu_dun(day_stem: str) -> str:
+        """五鼠遁日起时法：根据日干推算子时天干"""
+        mapping = {
+            '甲': '甲', '己': '甲',  # 甲己还加甲
+            '乙': '丙', '庚': '丙',  # 乙庚丙作初
+            '丙': '戊', '辛': '戊',  # 丙辛从戊起
+            '丁': '庚', '壬': '庚',  # 丁壬庚子居
+            '戊': '壬', '癸': '壬',  # 戊癸壬子途
+        }
+        return mapping[day_stem]
+
+    @staticmethod
     def solar_to_lunar(solar_date, solar_time=None):
         """
         将公历日期时间转换为农历信息
+        23:00-23:59 不换日柱，四柱全部基于当天；时柱天干按当天日干五鼠遁推算。
         Args:
             solar_date: 公历日期，格式 'YYYY-MM-DD'
             solar_time: 公历时间，格式 'HH:MM'，可选
@@ -26,57 +38,46 @@ class LunarConverter:
         else:
             hour, minute = 12, 0  # 默认中午12点
 
-        # 处理子时情况（23:00-24:00）
-        adjusted_year, adjusted_month, adjusted_day = year, month, day
-        adjusted_hour, adjusted_minute = hour, minute
-        is_zi_shi_adjusted = False
+        # 23点不换日：始终用原始日期时间创建阳历对象
+        is_zi_shi_adjusted = (hour >= 23)
 
-        if hour >= 23:
-            # 日期加1天，时间设为0点
-            current_date = datetime(year, month, day)
-            next_date = current_date + timedelta(days=1)
-            adjusted_year, adjusted_month, adjusted_day = next_date.year, next_date.month, next_date.day
-            adjusted_hour = 0
-            is_zi_shi_adjusted = True
-
-        # 创建阳历对象（使用调整后的日期时间）
-        solar = Solar.fromYmdHms(adjusted_year, adjusted_month, adjusted_day, adjusted_hour, adjusted_minute, 0)
-
-        # 转换为农历
+        solar = Solar.fromYmdHms(year, month, day, hour, minute, 0)
         lunar = solar.getLunar()
-
-        # 获取八字信息
         bazi = lunar.getBaZi()
 
-        # 获取原始日期的年柱
-        original_solar = Solar.fromYmdHms(year, month, day, hour, minute, 0)
-        original_lunar = original_solar.getLunar()
-        original_bazi = original_lunar.getBaZi()
+        # 四柱：年/月/日直接取库结果；23点时时柱自算（当天日干五鼠遁）
+        if hour >= 23:
+            day_stem = bazi[2][0]
+            hour_stem = LunarConverter._wu_shu_dun(day_stem)
+            hour_branch = '子'
+            bazi_pillars = {
+                'year': {'stem': bazi[0][0], 'branch': bazi[0][1]},
+                'month': {'stem': bazi[1][0], 'branch': bazi[1][1]},
+                'day': {'stem': bazi[2][0], 'branch': bazi[2][1]},
+                'hour': {'stem': hour_stem, 'branch': hour_branch},
+            }
+        else:
+            bazi_pillars = {
+                'year': {'stem': bazi[0][0], 'branch': bazi[0][1]},
+                'month': {'stem': bazi[1][0], 'branch': bazi[1][1]},
+                'day': {'stem': bazi[2][0], 'branch': bazi[2][1]},
+                'hour': {'stem': bazi[3][0], 'branch': bazi[3][1]},
+            }
 
-        # 解析四柱 - 年柱使用原始日期，其他柱使用调整后日期
-        bazi_pillars = {
-            'year': {'stem': original_bazi[0][0], 'branch': original_bazi[0][1]},  # 使用原始日期年柱
-            'month': {'stem': bazi[1][0], 'branch': bazi[1][1]},  # 使用调整后日期
-            'day': {'stem': bazi[2][0], 'branch': bazi[2][1]},    # 使用调整后日期
-            'hour': {'stem': bazi[3][0], 'branch': bazi[3][1]}    # 使用调整后日期
-        }
-
-        # 保存农历日期
         lunar_date = {
             'year': lunar.getYear(),
             'month': lunar.getMonth(),
             'day': lunar.getDay(),
             'month_name': lunar.getMonthInChinese(),
             'day_name': lunar.getDayInChinese(),
-            # 兼容性处理：尝试不同的方法
             'is_leap_month': LunarConverter._get_leap_month_status(lunar)
         }
 
         return {
             'lunar_date': lunar_date,
             'bazi_pillars': bazi_pillars,
-            'adjusted_solar_date': f"{adjusted_year:04d}-{adjusted_month:02d}-{adjusted_day:02d}",
-            'adjusted_solar_time': f"{adjusted_hour:02d}:{adjusted_minute:02d}",
+            'adjusted_solar_date': f"{year:04d}-{month:02d}-{day:02d}",
+            'adjusted_solar_time': f"{hour:02d}:{minute:02d}",
             'is_zi_shi_adjusted': is_zi_shi_adjusted
         }
 

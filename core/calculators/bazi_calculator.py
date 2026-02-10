@@ -91,6 +91,7 @@ from core.data.constants import *
 from core.data.stems_branches import *
 from core.config.deities_config import DeitiesCalculator
 from core.config.star_fortune_config import StarFortuneCalculator
+from core.calculators.LunarConverter import LunarConverter
 from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
 from core.data.relations import (
     STEM_HE,
@@ -288,66 +289,13 @@ class WenZhenBazi:
             raise RuntimeError(f"微服务调用失败，本地计算也失败: {e}") from e
 
     def _calculate_with_lunar(self):
-        """使用lunar-python计算四柱八字和农历日期，修正年柱计算"""
-        # 解析日期时间
-        year, month, day = map(int, self.solar_date.split('-'))
-        hour, minute = map(int, self.solar_time.split(':'))
-
-        # 处理子时情况（23:00-24:00）
-        adjusted_year, adjusted_month, adjusted_day = year, month, day
-        
-        adjusted_hour, adjusted_minute = hour, minute
-
-        self.is_zi_shi_adjusted = False
-
-        if hour >= 23:
-            # 日期加1天，时间设为0点
-            current_date = datetime(year, month, day)
-            next_date = current_date + timedelta(days=1)
-            adjusted_year, adjusted_month, adjusted_day = next_date.year, next_date.month, next_date.day
-            adjusted_hour = 0
-            self.is_zi_shi_adjusted = True
-            logger.info(f"注意：23点以后，日期调整为: {adjusted_year:04d}-{adjusted_month:02d}-{adjusted_day:02d} 00:{minute:02d}")
-
-        # 保存调整后的日期和时间
-        self.adjusted_solar_date = f"{adjusted_year:04d}-{adjusted_month:02d}-{adjusted_day:02d}"
-        self.adjusted_solar_time = f"{adjusted_hour:02d}:{minute:02d}"
-
-        # 创建阳历对象（使用调整后的日期时间）
-        solar = Solar.fromYmdHms(adjusted_year, adjusted_month, adjusted_day, adjusted_hour, adjusted_minute, 0)
-
-        # 转换为农历
-        lunar = solar.getLunar()
-
-        # 获取八字信息
-        bazi = lunar.getBaZi()
-
-        # 【关键修正】确保年柱始终基于原始日期计算
-        # 获取原始日期的年柱
-        original_solar = Solar.fromYmdHms(year, month, day, hour, minute, 0)
-        original_lunar = original_solar.getLunar()
-        original_bazi = original_lunar.getBaZi()
-
-        # 解析四柱 - 年柱使用原始日期，其他柱使用调整后日期
-        self.bazi_pillars = {
-            'year': {'stem': original_bazi[0][0], 'branch': original_bazi[0][1]},  # 使用原始日期年柱
-            'month': {'stem': bazi[1][0], 'branch': bazi[1][1]},  # 使用调整后日期
-            'day': {'stem': bazi[2][0], 'branch': bazi[2][1]},    # 使用调整后日期
-            'hour': {'stem': bazi[3][0], 'branch': bazi[3][1]}    # 使用调整后日期
-        }
-
-        # 保存农历日期
-        self.lunar_date = {
-            'year': lunar.getYear(),
-            'month': lunar.getMonth(),
-            'day': lunar.getDay(),
-            'month_name': lunar.getMonthInChinese(),
-            'day_name': lunar.getDayInChinese()
-        }
-
-        # 输出调试信息
-        if self.is_zi_shi_adjusted:
-            logger.info(f"年柱保持为: {self.bazi_pillars['year']['stem']}{self.bazi_pillars['year']['branch']}")
+        """使用 LunarConverter 统一计算四柱八字和农历日期（含23点不换日柱逻辑）"""
+        lunar_result = LunarConverter.solar_to_lunar(self.solar_date, self.solar_time)
+        self.lunar_date = lunar_result['lunar_date']
+        self.bazi_pillars = lunar_result['bazi_pillars']
+        self.adjusted_solar_date = lunar_result['adjusted_solar_date']
+        self.adjusted_solar_time = lunar_result['adjusted_solar_time']
+        self.is_zi_shi_adjusted = lunar_result['is_zi_shi_adjusted']
 
     def _calculate_ten_gods(self):
         """计算十神 - 使用修正后的计算器"""
