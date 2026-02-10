@@ -54,8 +54,7 @@ _ensure_venv()
 
 import json
 import logging
-from lunar_python import Solar, Lunar
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # 添加模块路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

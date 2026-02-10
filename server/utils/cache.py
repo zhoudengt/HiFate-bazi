@@ -11,7 +11,6 @@
 import hashlib
 import json
 from collections import OrderedDict
-from functools import lru_cache
 from typing import Any, Optional
 import time
 import threading
@@ -117,8 +116,6 @@ class BaziCache:
 
 # 全局缓存实例
 bazi_cache = BaziCache(max_size=10000, ttl=3600)
-
-
 
 
 

@@ -40,7 +40,7 @@ GIT_BRANCH="master"
 PROJECT_DIR="/opt/HiFate-bazi"
 
 # SSH 密码（从环境变量或默认值读取）
-SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+SSH_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 
 # 部署ID（用于日志和报告）
 DEPLOYMENT_ID=$(date +%Y%m%d_%H%M%S)
@@ -441,18 +441,16 @@ echo -e "${GREEN}✅ Node1 健康检查通过${NC}"
 # 4.2 运行完整功能测试
 echo ""
 echo "🧪 运行 Node1 完整功能测试..."
-if [ -f "tests/e2e_node1_test.py" ]; then
-    python3 tests/e2e_node1_test.py --node-url "$HEALTH_URL" || {
-        TEST_ERRORS=$(python3 tests/e2e_node1_test.py --node-url "$HEALTH_URL" --json-output 2>/dev/null || echo '[]')
+if [ -f "deploy/scripts/post_deploy_test.sh" ]; then
+    bash deploy/scripts/post_deploy_test.sh production || {
         echo -e "${RED}❌ Node1 功能测试失败，回滚...${NC}"
         rollback_node1
-        generate_failure_report "function_test" "$TEST_ERRORS"
+        generate_failure_report "function_test" "post_deploy_test failed"
         exit 1
     }
     echo -e "${GREEN}✅ Node1 功能测试全部通过${NC}"
 else
     echo -e "${YELLOW}⚠️  测试脚本不存在，跳过功能测试${NC}"
-    echo -e "${YELLOW}⚠️  建议创建 tests/e2e_node1_test.py 进行完整测试${NC}"
 fi
 
 # 4.3 热更新状态检查
@@ -599,8 +597,8 @@ echo -e "${GREEN}✅ Node2 健康检查通过${NC}"
 # 6.2 关键接口快速测试
 echo ""
 echo "🧪 运行 Node2 关键接口快速测试..."
-if [ -f "tests/e2e_production_test.py" ]; then
-    python3 tests/e2e_production_test.py --node1-url "$HEALTH_URL" --node2-url "$NODE2_HEALTH_URL" --quick-test || {
+if [ -f "deploy/scripts/post_deploy_test.sh" ]; then
+    bash deploy/scripts/post_deploy_test.sh production || {
         echo -e "${YELLOW}⚠️  Node2 快速测试失败，但服务健康检查通过${NC}"
     }
 else

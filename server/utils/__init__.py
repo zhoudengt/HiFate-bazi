@@ -114,5 +114,3 @@ if SQL_SECURITY_AVAILABLE:
 
 
 
-
-

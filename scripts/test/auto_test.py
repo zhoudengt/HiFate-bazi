@@ -155,14 +155,14 @@ class AutoTester:
     
     def run_e2e_tests(self) -> bool:
         """运行端到端测试"""
-        e2e_test_file = PROJECT_ROOT / 'tests/e2e_production_test.py'
+        e2e_test_file = PROJECT_ROOT / 'deploy/scripts/post_deploy_test.sh'
         if not e2e_test_file.exists():
             print(f"  {YELLOW}⚠️  端到端测试文件不存在{NC}")
             return True
         
         try:
             result = subprocess.run(
-                ['python3', str(e2e_test_file)],
+                ['bash', str(e2e_test_file), 'local'],
                 capture_output=True,
                 text=True,
                 cwd=PROJECT_ROOT,
