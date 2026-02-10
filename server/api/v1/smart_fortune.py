@@ -913,7 +913,12 @@ async def _fetch_bazi_data_via_orchestrator(
         'wangshuai': True,
         'detail': True,
         'rules': {'types': ['ALL']},
-        'fortune_context': {'intent_types': ['ALL'], 'target_years': target_years}
+        'fortune_context': {'intent_types': ['ALL'], 'target_years': target_years},
+        # ⚠️ 统一架构：添加 special_liunians 模块，使关键年份数据与其他流式接口一致
+        'special_liunians': {
+            'dayun_config': {'mode': 'current_with_neighbors'},
+            'target_years': target_years[:3] if len(target_years) >= 3 else target_years
+        }
     }
     
     unified_data = await BaziDataOrchestrator.fetch_data(
@@ -938,6 +943,13 @@ async def _fetch_bazi_data_via_orchestrator(
     
     # 流年大运分析（由编排层 fortune_context 模块返回，复用 detail/wangshuai 避免重复计算）
     fortune_context = unified_data.get('fortune_context')
+    
+    # ⚠️ 统一架构：将 special_liunians 注入到 fortune_context 中作为 key_liunians
+    # 数据来源与 fortune/display 一致（BaziDetailService.calculate_detail_full → liunian_sequence.relations）
+    special_liunians_data = unified_data.get('special_liunians', {})
+    special_liunians_list = special_liunians_data.get('list', []) if isinstance(special_liunians_data, dict) else []
+    if fortune_context is not None and special_liunians_list:
+        fortune_context['key_liunians'] = special_liunians_list
     
     complete_bazi_data = {
         "bazi_result": bazi_result,

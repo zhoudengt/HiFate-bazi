@@ -37,13 +37,11 @@ except ImportError:
     # 如果导入失败，抛出错误（不允许降级）
     def get_config_from_db_only(key: str) -> Optional[str]:
         raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
-from server.api.v1.general_review_analysis import organize_special_liunians_by_dayun
 from server.utils.prompt_builders import (
     format_health_input_data_for_coze as format_input_data_for_coze,
     format_health_for_llm
 )
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
-from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
 from server.services.user_interaction_logger import get_user_interaction_logger
 import time
 
@@ -572,135 +570,6 @@ async def health_analysis_stream_generator(
         )
 
 
-def _calculate_ganzhi_elements(stem: str, branch: str) -> Dict[str, int]:
-    """
-    计算干支的五行分布
-    
-    Args:
-        stem: 天干
-        branch: 地支
-        
-    Returns:
-        dict: 五行统计，如 {'木': 1, '火': 1, '土': 0, '金': 0, '水': 0}
-    """
-    elements = {'木': 0, '火': 0, '土': 0, '金': 0, '水': 0}
-    
-    # 天干五行
-    if stem and stem in STEM_ELEMENTS:
-        element = STEM_ELEMENTS[stem]
-        elements[element] = elements.get(element, 0) + 1
-    
-    # 地支五行
-    if branch and branch in BRANCH_ELEMENTS:
-        element = BRANCH_ELEMENTS[branch]
-        elements[element] = elements.get(element, 0) + 1
-    
-    return elements
-
-
-def analyze_dayun_bazi_relation(
-    dayun: Dict[str, Any],
-    bazi_elements: Dict[str, int]
-) -> Optional[str]:
-    """
-    分析大运与原局的生克关系
-    
-    Args:
-        dayun: 大运信息（包含 stem, branch）
-        bazi_elements: 原局五行统计
-        
-    Returns:
-        关系类型字符串，如"水土混战"、"水火交战"等，如果没有特殊关系返回None
-    """
-    # 1. 计算大运的五行
-    dayun_stem = dayun.get('stem', '')
-    dayun_branch = dayun.get('branch', '')
-    dayun_elements = _calculate_ganzhi_elements(dayun_stem, dayun_branch)
-    
-    # 2. 判断是否存在"混战"或"交战"关系
-    # 水土混战：大运土多 + 原局水多，或大运水多 + 原局土多
-    if (dayun_elements.get('土', 0) >= 2 and bazi_elements.get('水', 0) >= 2) or \
-       (dayun_elements.get('水', 0) >= 2 and bazi_elements.get('土', 0) >= 2):
-        return '水土混战'
-    
-    # 水火交战：大运火多 + 原局水多，或大运水多 + 原局火多
-    if (dayun_elements.get('火', 0) >= 2 and bazi_elements.get('水', 0) >= 2) or \
-       (dayun_elements.get('水', 0) >= 2 and bazi_elements.get('火', 0) >= 2):
-        return '水火交战'
-    
-    # 金木相战：大运金多 + 原局木多，或大运木多 + 原局金多
-    if (dayun_elements.get('金', 0) >= 2 and bazi_elements.get('木', 0) >= 2) or \
-       (dayun_elements.get('木', 0) >= 2 and bazi_elements.get('金', 0) >= 2):
-        return '金木相战'
-    
-    # 木土相战：大运木多 + 原局土多，或大运土多 + 原局木多
-    if (dayun_elements.get('木', 0) >= 2 and bazi_elements.get('土', 0) >= 2) or \
-       (dayun_elements.get('土', 0) >= 2 and bazi_elements.get('木', 0) >= 2):
-        return '木土相战'
-    
-    # 火金相战：大运火多 + 原局金多，或大运金多 + 原局火多
-    if (dayun_elements.get('火', 0) >= 2 and bazi_elements.get('金', 0) >= 2) or \
-       (dayun_elements.get('金', 0) >= 2 and bazi_elements.get('火', 0) >= 2):
-        return '火金相战'
-    
-    return None
-
-
-def identify_key_dayuns(
-    dayun_sequence: List[Dict[str, Any]],
-    bazi_elements: Dict[str, int],
-    current_age: int
-) -> Dict[str, Any]:
-    """
-    识别现行运和关键节点大运
-    
-    Args:
-        dayun_sequence: 大运序列
-        bazi_elements: 原局五行统计
-        current_age: 当前年龄
-        
-    Returns:
-        {
-            'current_dayun': {...},  # 现行运
-            'key_dayuns': [...]       # 关键节点大运列表
-        }
-    """
-    current_dayun = None
-    key_dayuns = []
-    
-    # 1. 识别现行运
-    for dayun in dayun_sequence:
-        age_display = dayun.get('age_display', '')
-        if age_display:
-            try:
-                parts = age_display.replace('岁', '').split('-')
-                if len(parts) == 2:
-                    start_age = int(parts[0])
-                    end_age = int(parts[1])
-                    if start_age <= current_age <= end_age:
-                        current_dayun = dayun
-                        break
-            except:
-                pass
-    
-    if not current_dayun and dayun_sequence:
-        current_dayun = dayun_sequence[0]
-    
-    # 2. 识别关键节点大运（与原局有特殊生克关系）
-    for dayun in dayun_sequence:
-        relation_type = analyze_dayun_bazi_relation(dayun, bazi_elements)
-        if relation_type:
-            key_dayuns.append({
-                **dayun,
-                'relation_type': relation_type
-            })
-    
-    return {
-        'current_dayun': current_dayun,
-        'key_dayuns': key_dayuns
-    }
-
-
 def build_health_input_data(
     bazi_data: Dict[str, Any],
     wangshuai_result: Dict[str, Any],
@@ -792,57 +661,24 @@ def build_health_input_data(
         except:
             pass
     
-    # 识别关键大运
-    key_dayuns_result = identify_key_dayuns(dayun_sequence, element_counts, current_age)
-    current_dayun_info = key_dayuns_result.get('current_dayun')
-    key_dayuns_list = key_dayuns_result.get('key_dayuns', [])
-    
-    # ⚠️ 新增：按大运分组特殊流年
+    # ⚠️ 统一架构：使用 KeyYearsProvider 获取关键年份数据
+    # 数据层：special_liunians 来自 orchestrator（与 fortune/display 一致）
+    # 业务层：使用 'health' 策略（五行病理冲突选择关键大运）
     if special_liunians is None:
         special_liunians = []
     
-    dayun_liunians = organize_special_liunians_by_dayun(special_liunians, dayun_sequence)
+    from server.utils.key_years_provider import KeyYearsProvider
+    key_years_result = KeyYearsProvider.build_key_years_structure(
+        dayun_sequence=dayun_sequence,
+        special_liunians=special_liunians,
+        current_age=current_age,
+        business_type='health',
+        bazi_data=bazi_data,
+        gender=gender,
+    )
     
-    # 构建现行运数据（包含流年）
-    current_dayun_data = None
-    if current_dayun_info:
-        current_step = current_dayun_info.get('step')
-        current_dayun_liunians = dayun_liunians.get(current_step, {})
-        current_dayun_data = {
-            'step': current_dayun_info.get('step'),
-            'stem': current_dayun_info.get('stem', ''),
-            'branch': current_dayun_info.get('branch', ''),
-            'age_display': current_dayun_info.get('age_display', ''),
-            'year_start': current_dayun_info.get('year_start', 0),
-            'year_end': current_dayun_info.get('year_end', 0),
-            'liunians': {
-                'tiankedi_chong': current_dayun_liunians.get('tiankedi_chong', []),
-                'tianhedi_he': current_dayun_liunians.get('tianhedi_he', []),
-                'suiyun_binglin': current_dayun_liunians.get('suiyun_binglin', []),
-                'other': current_dayun_liunians.get('other', [])
-            }
-        }
-    
-    # 构建关键节点大运数据（包含流年）
-    key_dayuns_data = []
-    for key_dayun in key_dayuns_list:
-        key_step = key_dayun.get('step')
-        key_dayun_liunians = dayun_liunians.get(key_step, {})
-        key_dayuns_data.append({
-            'step': key_dayun.get('step'),
-            'stem': key_dayun.get('stem', ''),
-            'branch': key_dayun.get('branch', ''),
-            'age_display': key_dayun.get('age_display', ''),
-            'year_start': key_dayun.get('year_start', 0),
-            'year_end': key_dayun.get('year_end', 0),
-            'relation_type': key_dayun.get('relation_type', ''),
-            'liunians': {
-                'tiankedi_chong': key_dayun_liunians.get('tiankedi_chong', []),
-                'tianhedi_he': key_dayun_liunians.get('tianhedi_he', []),
-                'suiyun_binglin': key_dayun_liunians.get('suiyun_binglin', []),
-                'other': key_dayun_liunians.get('other', [])
-            }
-        })
+    current_dayun_data = key_years_result.get('current_dayun')
+    key_dayuns_data = key_years_result.get('key_dayuns', [])
     
     # 保留所有大运列表（用于参考）
     all_dayuns = []

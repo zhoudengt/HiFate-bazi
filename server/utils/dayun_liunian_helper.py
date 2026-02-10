@@ -425,8 +425,8 @@ def organize_liunians_by_dayun_with_priority(
     if dayun_step_normalized_map:
         logger.debug(f"[organize_liunians_by_dayun_with_priority] dayun_step_normalized_map: {dayun_step_normalized_map}")
     
-    # 按关系类型分类流年（复用现有逻辑）
-    from server.api.v1.general_review_analysis import classify_special_liunians
+    # 按关系类型分类流年（使用统一的 KeyYearsProvider 数据层）
+    from server.utils.key_years_provider import classify_special_liunians
     classified = classify_special_liunians(special_liunians)
     
     logger.info(f"[organize_liunians_by_dayun_with_priority] 分类结果: tiankedi_chong={len(classified['tiankedi_chong'])}, tianhedi_he={len(classified['tianhedi_he'])}, suiyun_binglin={len(classified['suiyun_binglin'])}, other={len(classified['other'])}")
@@ -510,31 +510,66 @@ def build_enhanced_dayun_structure(
     special_liunians: List[Dict[str, Any]],
     current_age: int,
     current_dayun: Optional[Dict[str, Any]] = None,
-    birth_year: Optional[int] = None
+    birth_year: Optional[int] = None,
+    business_type: str = 'default',
+    bazi_data: Optional[Dict[str, Any]] = None,
+    gender: str = 'male'
 ) -> Dict[str, Any]:
     """
     构建增强的大运流年结构（包含优先级、描述、备注等）
     
+    === 架构说明 ===
+    - 数据层：special_liunians 必须来自 BaziDataOrchestrator（与 fortune/display 一致）
+    - 业务层：通过 business_type 选择不同的关键大运筛选策略
+    
     Args:
         dayun_sequence: 完整的大运序列
-        special_liunians: 特殊流年列表
+        special_liunians: 特殊流年列表（必须来自 orchestrator）
         current_age: 当前年龄
         current_dayun: 当前大运（可选，如果为None则自动查找）
         birth_year: 出生年份（可选，用于计算流年年龄）
+        business_type: 业务类型（'default'/'health'/'marriage'/'career'/'children' 等）
+            - 'default': 按距离当前大运的优先级选择（总评、年报）
+            - 'health': 按五行病理冲突选择（健康分析）
+            - 'marriage': 按感情星透出选择（婚姻分析）
+            - 'career'/'career_wealth': 按官星/财星透出选择（事业财富）
+            - 'children'/'children_study': 按食伤星透出选择（子女学习）
+        bazi_data: 八字基础数据（业务筛选需要日主天干等）
+        gender: 性别（婚姻分析需要）
         
     Returns:
         Dict[str, Any]: {
-            'current_dayun': {...},  # 当前大运（优先级1）
-            'key_dayuns': [...],      # 关键大运列表（优先级2-10，按优先级排序）
-            'priority_description': {...}  # 优先级说明
+            'current_dayun': {...},       # 当前大运（优先级1）
+            'key_dayuns': [...],          # 关键大运列表（按业务策略选择）
+            'priority_description': {...},# 优先级说明
+            'business_type': '...'        # 使用的业务策略
         }
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     # 1. 如果没有提供当前大运，自动查找
     if current_dayun is None:
         current_dayun = get_current_dayun(dayun_sequence, current_age)
     
-    # ⚠️ 修改：确保所有包含特殊流年的大运都被选中
-    # 先找出所有特殊流年所属的大运 step
+    # === 业务层：根据 business_type 选择关键大运 ===
+    from server.utils.key_years_provider import BUSINESS_SELECTORS, _select_default_key_dayuns
+    
+    selector = BUSINESS_SELECTORS.get(business_type, _select_default_key_dayuns)
+    business_key_dayuns = selector(
+        dayun_sequence=dayun_sequence,
+        current_dayun=current_dayun,
+        current_age=current_age,
+        bazi_data=bazi_data,
+        gender=gender,
+    )
+    
+    logger.info(
+        f"[build_enhanced_dayun_structure] 业务策略={business_type}, "
+        f"选中关键大运={len(business_key_dayuns)}"
+    )
+    
+    # === 数据层：确保所有包含特殊流年的大运都被包含 ===
     special_dayun_steps = set()
     if special_liunians:
         for liunian in special_liunians:
@@ -542,43 +577,73 @@ def build_enhanced_dayun_structure(
             if dayun_step is not None:
                 special_dayun_steps.add(int(dayun_step) if not isinstance(dayun_step, int) else dayun_step)
     
-    # 2. 选择大运：包含所有特殊流年所属的大运，按优先级排序
-    # 先选择基础的10个大运（按优先级）
-    base_selected_dayuns = select_dayuns_with_priority(dayun_sequence, current_dayun, count=10)
-    base_steps = {d.get('step') for d in base_selected_dayuns}
-    
-    # 添加所有包含特殊流年但不在基础选择中的大运
-    additional_dayuns = []
-    for dayun in dayun_sequence:
-        step = dayun.get('step')
-        if step in special_dayun_steps and step not in base_steps:
-            dayun_copy = dayun.copy()
-            # 为额外添加的大运分配较低的优先级（但仍然显示）
-            dayun_copy['priority'] = 100 + len(additional_dayuns)
-            additional_dayuns.append(dayun_copy)
-    
-    # 合并所有选中的大运
-    selected_dayuns = base_selected_dayuns + additional_dayuns
+    # 2. 构建选中大运列表
+    # 对于 default 策略，使用优先级排序（向后兼容）
+    if business_type == 'default' or business_type in ('general_review', 'annual_report', 'smart_fortune'):
+        # 默认策略：按距离优先级选择 + 包含特殊流年大运
+        base_selected_dayuns = select_dayuns_with_priority(dayun_sequence, current_dayun, count=10)
+        base_steps = {d.get('step') for d in base_selected_dayuns}
+        
+        additional_dayuns = []
+        for dayun in dayun_sequence:
+            step = dayun.get('step')
+            if step in special_dayun_steps and step not in base_steps:
+                dayun_copy = dayun.copy()
+                dayun_copy['priority'] = 100 + len(additional_dayuns)
+                additional_dayuns.append(dayun_copy)
+        
+        selected_dayuns = base_selected_dayuns + additional_dayuns
+    else:
+        # 业务策略：当前大运 + 业务选中的大运 + 包含特殊流年的大运
+        selected_steps = set()
+        selected_dayuns = []
+        
+        # 当前大运（优先级1）
+        if current_dayun:
+            cd = current_dayun.copy()
+            cd['priority'] = 1
+            selected_dayuns.append(cd)
+            selected_steps.add(current_dayun.get('step'))
+        
+        # 业务选中的关键大运
+        priority = 2
+        for kd in business_key_dayuns:
+            kd_step = kd.get('step')
+            if kd_step not in selected_steps:
+                kd_copy = kd.copy()
+                kd_copy['priority'] = priority
+                selected_dayuns.append(kd_copy)
+                selected_steps.add(kd_step)
+                priority += 1
+        
+        # 补充包含特殊流年但未选中的大运
+        for dayun in dayun_sequence:
+            step = dayun.get('step')
+            if step in special_dayun_steps and step not in selected_steps:
+                dayun_copy = dayun.copy()
+                dayun_copy['priority'] = 100 + len(selected_dayuns)
+                selected_dayuns.append(dayun_copy)
+                selected_steps.add(step)
     
     # 3. 为每个大运添加元数据
     enhanced_dayuns = []
     for dayun in selected_dayuns:
         priority = dayun.get('priority', 999)
         enhanced_dayun = add_dayun_metadata(dayun, priority)
+        # 保留业务层标注的 relation_type 和 business_reason
+        if 'relation_type' in dayun:
+            enhanced_dayun['relation_type'] = dayun['relation_type']
+        if 'business_reason' in dayun:
+            enhanced_dayun['business_reason'] = dayun['business_reason']
         enhanced_dayuns.append(enhanced_dayun)
     
     # 4. 组织流年（确保归属正确）
-    import logging
-    logger = logging.getLogger(__name__)
-    
     logger.info(f"[build_enhanced_dayun_structure] special_liunians 数量: {len(special_liunians) if special_liunians else 0}")
     if special_liunians:
-        # 诊断：检查前5个流年的 dayun_step 类型和值
         for i, liunian in enumerate(special_liunians[:5]):
             dayun_step = liunian.get('dayun_step')
             logger.debug(f"[build_enhanced_dayun_structure] special_liunians[{i}] dayun_step={dayun_step} (type: {type(dayun_step)})")
     
-    # 诊断：检查 selected_dayuns 的 step 类型和值
     for i, dayun in enumerate(enhanced_dayuns[:5]):
         step = dayun.get('step')
         logger.debug(f"[build_enhanced_dayun_structure] enhanced_dayuns[{i}] step={step} (type: {type(step)})")
@@ -601,16 +666,13 @@ def build_enhanced_dayun_structure(
         priority = dayun.get('priority', 999)
         step = dayun.get('step')
         
-        # 标准化 step 值（统一转换为整数类型，确保与 organize_liunians_by_dayun_with_priority 返回的 key 类型一致）
         try:
             step_normalized = int(step) if step is not None and not isinstance(step, int) else step
         except (ValueError, TypeError):
             step_normalized = step
         
-        # 获取该大运下的流年（尝试使用标准化后的值和原始值）
         liunians = liunians_by_dayun.get(step_normalized, [])
         if not liunians and step_normalized != step:
-            # 如果标准化后的值没有找到，尝试使用原始值
             liunians = liunians_by_dayun.get(step, [])
         
         logger.debug(f"[build_enhanced_dayun_structure] dayun step={step} (normalized: {step_normalized}), 获取到 liunians 数量: {len(liunians)}")
@@ -630,7 +692,8 @@ def build_enhanced_dayun_structure(
             'rule': '优先级1（当前大运）重点说，多说；优先级2-3次之；优先级4-6简要提及；优先级7-10提一下即可',
             'current_dayun_priority': 1,
             'total_dayuns': len(enhanced_dayuns)
-        }
+        },
+        'business_type': business_type
     }
     
     return result

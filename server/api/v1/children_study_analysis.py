@@ -35,7 +35,6 @@ except ImportError:
     def get_config_from_db_only(key: str) -> Optional[str]:
         raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
 from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
-from server.api.v1.general_review_analysis import organize_special_liunians_by_dayun
 from server.services.special_liunian_service import SpecialLiunianService
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
@@ -1064,7 +1063,10 @@ def build_children_study_input_data(
         special_liunians=special_liunians,
         current_age=current_age,
         current_dayun=current_dayun_info,
-        birth_year=birth_year
+        birth_year=birth_year,
+        business_type='children_study',
+        bazi_data=bazi_data,
+        gender=gender
     )
     
     # ⚠️ 优化：添加后处理函数（清理流月流日字段，限制流年数量）

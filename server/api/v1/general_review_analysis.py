@@ -1051,154 +1051,6 @@ async def general_review_analysis_stream_generator(
         )
 
 
-def classify_special_liunians(special_liunians: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-    """
-    按关系类型分类特殊流年（优先级排序）
-    
-    优先级：天克地冲 > 天合地合 > 岁运并临 > 其他
-    
-    Args:
-        special_liunians: 特殊流年列表
-        
-    Returns:
-        dict: 分类后的特殊流年
-            - tiankedi_chong: 天克地冲的流年
-            - tianhedi_he: 天合地合的流年
-            - suiyun_binglin: 岁运并临的流年
-            - other: 其他关系的流年
-    """
-    classified = {
-        'tiankedi_chong': [],
-        'tianhedi_he': [],
-        'suiyun_binglin': [],
-        'other': []
-    }
-    
-    for liunian in special_liunians:
-        relations = liunian.get('relations', [])
-        relation_types = [r.get('type', '') for r in relations]
-        
-        # 检查是否包含优先关系（按优先级顺序）
-        has_tiankedi = any('天克地冲' in rt for rt in relation_types)
-        has_tianhedi = any('天合地合' in rt for rt in relation_types)
-        has_suiyun = any('岁运并临' in rt for rt in relation_types)
-        
-        # 优先级：天克地冲 > 天合地合 > 岁运并临 > 其他
-        if has_tiankedi:
-            classified['tiankedi_chong'].append(liunian)
-        elif has_tianhedi:
-            classified['tianhedi_he'].append(liunian)
-        elif has_suiyun:
-            classified['suiyun_binglin'].append(liunian)
-        else:
-            classified['other'].append(liunian)
-    
-    return classified
-
-
-def organize_special_liunians_by_dayun(
-    special_liunians: List[Dict[str, Any]], 
-    dayun_sequence: List[Dict[str, Any]]
-) -> Dict[int, Dict[str, Any]]:
-    """
-    将特殊流年按大运分组，每个大运下的流年按优先级分类
-    
-    优先级：天克地冲 > 天合地合 > 岁运并临 > 其他
-    
-    Args:
-        special_liunians: 特殊流年列表（包含 dayun_step 字段）
-        dayun_sequence: 大运序列（用于获取大运信息）
-    
-    Returns:
-        dict: {
-            dayun_step: {
-                'dayun_info': {...},  # 大运信息（step, stem, branch, age_display, year_start, year_end）
-                'tiankedi_chong': [...],  # 天克地冲
-                'tianhedi_he': [...],     # 天合地合
-                'suiyun_binglin': [...],  # 岁运并临
-                'other': [...]            # 其他
-            }
-        }
-    """
-    # 1. 先按关系类型分类（优先级排序）
-    classified = classify_special_liunians(special_liunians)
-    
-    # 2. 创建大运映射
-    dayun_map = {}
-    for dayun in dayun_sequence:
-        step = dayun.get('step')
-        if step is not None:
-            dayun_map[step] = {
-                'step': dayun.get('step'),
-                'stem': dayun.get('stem', ''),
-                'branch': dayun.get('branch', ''),
-                'age_display': dayun.get('age_display', ''),
-                'year_start': dayun.get('year_start', 0),
-                'year_end': dayun.get('year_end', 0)
-            }
-    
-    # 3. 按大运分组
-    result = {}
-    
-    # 处理天克地冲
-    for liunian in classified['tiankedi_chong']:
-        step = liunian.get('dayun_step')
-        if step is not None:
-            if step not in result:
-                result[step] = {
-                    'dayun_info': dayun_map.get(step, {}),
-                    'tiankedi_chong': [],
-                    'tianhedi_he': [],
-                    'suiyun_binglin': [],
-                    'other': []
-                }
-            result[step]['tiankedi_chong'].append(liunian)
-    
-    # 处理天合地合
-    for liunian in classified['tianhedi_he']:
-        step = liunian.get('dayun_step')
-        if step is not None:
-            if step not in result:
-                result[step] = {
-                    'dayun_info': dayun_map.get(step, {}),
-                    'tiankedi_chong': [],
-                    'tianhedi_he': [],
-                    'suiyun_binglin': [],
-                    'other': []
-                }
-            result[step]['tianhedi_he'].append(liunian)
-    
-    # 处理岁运并临
-    for liunian in classified['suiyun_binglin']:
-        step = liunian.get('dayun_step')
-        if step is not None:
-            if step not in result:
-                result[step] = {
-                    'dayun_info': dayun_map.get(step, {}),
-                    'tiankedi_chong': [],
-                    'tianhedi_he': [],
-                    'suiyun_binglin': [],
-                    'other': []
-                }
-            result[step]['suiyun_binglin'].append(liunian)
-    
-    # 处理其他
-    for liunian in classified['other']:
-        step = liunian.get('dayun_step')
-        if step is not None:
-            if step not in result:
-                result[step] = {
-                    'dayun_info': dayun_map.get(step, {}),
-                    'tiankedi_chong': [],
-                    'tianhedi_he': [],
-                    'suiyun_binglin': [],
-                    'other': []
-                }
-            result[step]['other'].append(liunian)
-    
-    return result
-
-
 def _build_rizhu_xinming_node(
     day_pillar: Dict[str, Any],
     gender: str,
@@ -1404,7 +1256,10 @@ def build_general_review_input_data(
         special_liunians=special_liunians,
         current_age=current_age,
         current_dayun=current_dayun_info,
-        birth_year=birth_year
+        birth_year=birth_year,
+        business_type='general_review',
+        bazi_data=bazi_data,
+        gender=gender
     )
     
     # ⚠️ 优化：添加后处理函数（清理流月流日字段，限制流年数量）

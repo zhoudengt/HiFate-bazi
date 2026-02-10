@@ -20,6 +20,7 @@
 | [05_功能开发检查清单.md](05_功能开发检查清单.md) | 开发检查清单 | 所有开发者 |
 | [06_服务治理规范.md](06_服务治理规范.md) | 服务注册、熔断、限流 | 所有开发者 |
 | [07_可观测性规范.md](07_可观测性规范.md) | 日志、监控、追踪 | 所有开发者 |
+| [09_关键年份架构规范.md](09_关键年份架构规范.md) | 🔴 关键年份数据层统一 + 业务层策略 | 流式接口开发者 |
 | [10_上线流程与CI-CD规范.md](10_上线流程与CI-CD规范.md) | 🔴 **上线流程（AI必读）** | 所有开发者/AI模型 |
 
 ---
@@ -29,6 +30,7 @@
 | 文档 | 说明 | 对应 .cursorrules 章节 |
 |------|------|----------------------|
 | [08_数据编排架构规范.md](08_数据编排架构规范.md) | 🔴 数据编排架构（最高优先级） | 数据编排架构原则 |
+| [11_流式接口开发规范.md](11_流式接口开发规范.md) | 流式接口基类与迁移 | 新流式接口必须继承 BaseAnalysisStreamHandler |
 | [hot-reload.md](hot-reload.md) | 热更新详细规范 | 热更新强制规范 |
 | [grpc-protocol.md](grpc-protocol.md) | gRPC 协议与序列化 | gRPC 交互规范 |
 | [rule-development.md](rule-development.md) | 规则开发详细规范 | 规则开发规范 |
@@ -41,6 +43,7 @@
 | [incremental-sync-no-lock.md](incremental-sync-no-lock.md) | 增量同步无锁方案 | - |
 | [payment.md](payment.md) | 支付系统规范（Stripe + PayerMax） | 支付开发 |
 | [标准测试接口清单.md](标准测试接口清单.md) | 21个标准测试接口（基本+流式+面相+风水+支付） | 所有开发者 |
+| [专业排盘与身宫命宫加载优化参考.md](专业排盘与身宫命宫加载优化参考.md) | 基本排盘→专业排盘/胎命身 预热与缓存优化方案（后期优化参考） | 性能优化 |
 
 ---
 
@@ -48,6 +51,9 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-02-10 | 新增 `09_关键年份架构规范.md`：统一数据层（special_liunians from orchestrator）+ 业务层策略（health/marriage/career/children），新增 KeyYearsProvider |
+| 2026-02-08 | 新增 `11_流式接口开发规范.md`：BaseAnalysisStreamHandler、WuxingStreamHandler 参考、迁移步骤；编排规范新增 Orchestrator 与 DataAssembler 职责划分 |
+| 2026-02-07 | 新增 `专业排盘与身宫命宫加载优化参考.md`：基本排盘→专业排盘/胎命身 预热与缓存方案，供后期优化参考 |
 | 2026-02-06 | 性能优化：编排层两阶段并行、信号量8→24、超时保护、日志降级；新增 `标准测试接口清单.md` |
 | 2026-02-06 | 完善热更新与上线流程规范：新增 /verify、/history 端点文档，修正 RELOAD_ORDER，新增 Reload Guard、Worker ACK 机制说明，更新常见问题 |
 | 2026-02-05 | 新增 `10_上线流程与CI-CD规范.md`：完整上线流程、测试接口清单、所有AI模型必须遵循 |
