@@ -39,9 +39,11 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 PROJECT_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
 CONFIG_FILE="${SCRIPT_DIR}/deploy.conf"
 
-# 加载配置文件
+# 加载配置文件（仅在环境变量已就绪时才加载，避免 ${:?} 导致 shell 退出）
 if [ -f "$CONFIG_FILE" ]; then
-    source "$CONFIG_FILE"
+    if (source "$CONFIG_FILE") 2>/dev/null; then
+        source "$CONFIG_FILE"
+    fi
 fi
 
 # 从配置或环境变量读取
@@ -264,7 +266,7 @@ if [ "$SKIP_TEST" = false ]; then
     # 身宫命宫测试
     smoke_test "身宫命宫" "/api/v1/bazi/shengong-minggong" \
         '{"solar_date":"1990-01-15","solar_time":"08:30","gender":"male"}' \
-        "data.success" "True"
+        "success" "True"
     
     echo ""
     if [ $SMOKE_FAIL -eq 0 ]; then
