@@ -36,12 +36,14 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - web_logs:/app/logs
-      - /opt/HiFate-bazi/server:/app/server:ro  # 挂载 server 目录，支持热更新
-      - /opt/HiFate-bazi/src:/app/src:ro  # 挂载 src 目录，支持热更新
-      - /opt/HiFate-bazi/services:/app/services:ro  # 挂载 services 目录，支持热更新
-      - /opt/HiFate-bazi/proto:/app/proto:ro  # 挂载 proto 目录，支持热更新（修复 gRPC 代码）
-      - /opt/secure/keys:/opt/secure/keys:ro  # 挂载密钥目录（PayerMax等支付密钥）
-      - /opt/HiFate-bazi/local_frontend:/app/local_frontend:ro  # 挂载前端目录，支持静态文件访问
+      - /opt/HiFate-bazi/core:/app/core:ro         # 核心计算模块（LunarConverter 等）
+      - /opt/HiFate-bazi/shared:/app/shared:ro      # 共享模块（数据库/Redis 配置等）
+      - /opt/HiFate-bazi/server:/app/server:ro      # Web 服务模块
+      - /opt/HiFate-bazi/src:/app/src:ro            # src 模块
+      - /opt/HiFate-bazi/services:/app/services:ro  # 微服务模块
+      - /opt/HiFate-bazi/proto:/app/proto:ro        # gRPC proto 文件
+      - /opt/secure/keys:/opt/secure/keys:ro        # 支付密钥
+      - /opt/HiFate-bazi/local_frontend:/app/local_frontend:ro  # 前端静态文件
     restart: always
     networks:
       - hifate-network
@@ -85,9 +87,11 @@ services:
       SERVICE_PORT: 9001
       TZ: Asia/Shanghai
     volumes:
-      - /opt/HiFate-bazi/proto:/app/proto:ro  # 挂载 proto 目录，支持热更新（修复 gRPC 代码）
-      - /opt/HiFate-bazi/services:/app/services:ro  # 挂载 services 目录，支持热更新
-      - /opt/HiFate-bazi/src:/app/src:ro  # 挂载 src 目录，支持热更新
+      - /opt/HiFate-bazi/core:/app/core:ro         # 核心计算模块
+      - /opt/HiFate-bazi/shared:/app/shared:ro      # 共享模块
+      - /opt/HiFate-bazi/proto:/app/proto:ro
+      - /opt/HiFate-bazi/services:/app/services:ro
+      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/bazi_core/grpc_server.py --port 9001
     restart: always
     networks:
@@ -121,7 +125,9 @@ services:
       SERVICE_PORT: 9002
       TZ: Asia/Shanghai
     volumes:
-      - /opt/HiFate-bazi/proto:/app/proto:ro  # 挂载 proto 目录，支持热更新
+      - /opt/HiFate-bazi/core:/app/core:ro
+      - /opt/HiFate-bazi/shared:/app/shared:ro
+      - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
       - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/bazi_fortune/grpc_server.py --port 9002
@@ -157,6 +163,8 @@ services:
       SERVICE_PORT: 9003
       TZ: Asia/Shanghai
     volumes:
+      - /opt/HiFate-bazi/core:/app/core:ro
+      - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
       - /opt/HiFate-bazi/src:/app/src:ro
@@ -193,6 +201,8 @@ services:
       SERVICE_PORT: 9004
       TZ: Asia/Shanghai
     volumes:
+      - /opt/HiFate-bazi/core:/app/core:ro
+      - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
       - /opt/HiFate-bazi/src:/app/src:ro
@@ -229,6 +239,8 @@ services:
       SERVICE_PORT: 9005
       TZ: Asia/Shanghai
     volumes:
+      - /opt/HiFate-bazi/core:/app/core:ro
+      - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
       - /opt/HiFate-bazi/src:/app/src:ro
@@ -265,6 +277,8 @@ services:
       SERVICE_PORT: 9006
       TZ: Asia/Shanghai
     volumes:
+      - /opt/HiFate-bazi/core:/app/core:ro
+      - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
       - /opt/HiFate-bazi/src:/app/src:ro
@@ -301,6 +315,8 @@ services:
       SERVICE_PORT: 9007
       TZ: Asia/Shanghai
     volumes:
+      - /opt/HiFate-bazi/core:/app/core:ro
+      - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
       - /opt/HiFate-bazi/src:/app/src:ro
@@ -339,6 +355,8 @@ services:
       INTENT_BOT_ID: ${INTENT_BOT_ID:-}
       TZ: Asia/Shanghai
     volumes:
+      - /opt/HiFate-bazi/core:/app/core:ro
+      - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
       - /opt/HiFate-bazi/src:/app/src:ro
@@ -380,6 +398,8 @@ services:
       COZE_BOT_ID: ${COZE_BOT_ID:-}
       TZ: Asia/Shanghai
     volumes:
+      - /opt/HiFate-bazi/core:/app/core:ro
+      - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
       - /opt/HiFate-bazi/src:/app/src:ro

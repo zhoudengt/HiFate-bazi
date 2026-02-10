@@ -124,6 +124,24 @@ class CacheReloader:
         """
         success = True
         
+        # 0. 清理 bazi_cache 内存 LRU 缓存（遍历所有模块引用）
+        # 原因：bazi_cache 是 OrderedDict 实现的内存缓存，importlib.reload 后
+        # 旧模块引用仍持有旧 bazi_cache 实例，必须显式清理所有引用
+        try:
+            cleared_refs = 0
+            for mod_name in list(sys.modules.keys()):
+                mod = sys.modules.get(mod_name)
+                if mod is None:
+                    continue
+                bc = getattr(mod, 'bazi_cache', None)
+                if bc is not None and hasattr(bc, 'clear') and hasattr(bc, '_cache'):
+                    bc.clear()
+                    cleared_refs += 1
+            if cleared_refs > 0:
+                logger.info(f"   ✓ bazi_cache 内存 LRU 缓存已清理（{cleared_refs} 个引用）")
+        except Exception as e:
+            logger.warning(f"   ⚠ bazi_cache 清理失败: {e}")
+        
         # 1. 清理 Redis 缓存（L1内存 + L2 Redis）
         try:
             from server.utils.cache_multi_level import get_multi_cache
@@ -210,17 +228,48 @@ class CacheReloader:
 
 
 class SourceCodeReloader:
-    """源代码重载器 - 支持Python源代码热更新"""
+    """源代码重载器 - 支持Python源代码热更新
     
-    _SEARCH_DIRECTORIES = ("core", "src", "server", "services")  # 包含 core 和 services 目录
+    重载顺序保证（解决 importlib.reload 模块依赖问题）：
+    底层模块先重载，上层模块后重载，确保 from X import Y 绑定到最新的类/函数。
+    
+    顺序：core/ → shared/ → src/ → server/services/ → server/engines/
+          → server/utils/ → server/api/ → server/ (其他) → services/
+    """
+    
+    _SEARCH_DIRECTORIES = ("core", "shared", "src", "server", "services")
     _EXCLUDE_DIRS = {"__pycache__", ".mypy_cache", ".pytest_cache"}
+    
+    # 依赖感知的重载优先级（数值越小越先重载）
+    # 规则：被依赖方先加载，依赖方后加载
+    _RELOAD_PRIORITY = [
+        ("core.",              10),   # 最底层：核心计算
+        ("shared.",            20),   # 共享模块：数据库/Redis
+        ("src.",               30),   # src 模块
+        ("server.config.",     40),   # 服务配置
+        ("server.engines.",    50),   # 规则引擎
+        ("server.services.",   60),   # 业务服务（被 API 层调用）
+        ("server.utils.",      70),   # 工具类
+        ("server.orchestrators.", 75),# 编排器
+        ("server.hot_reload.", 80),   # 热更新自身
+        ("server.api.",        90),   # API 层（最上层消费者）
+        ("server.",           100),   # server 其他
+        ("services.",         110),   # 独立微服务
+    ]
+    
+    @classmethod
+    def _get_module_priority(cls, module_name: str) -> int:
+        """根据模块名返回重载优先级（越小越先重载）"""
+        for prefix, priority in cls._RELOAD_PRIORITY:
+            if module_name.startswith(prefix):
+                return priority
+        return 200  # 未匹配的放最后
     
     @classmethod
     def _discover_source_modules(cls) -> Dict[str, Dict[str, str]]:
         """
         动态扫描项目中的 Python 文件，生成监控列表
-        Returns:
-            Dict[str, Dict[str, str]]: 模块名称 -> 文件信息
+        返回结果按依赖优先级排序：底层模块在前，上层模块在后
         """
         modules: Dict[str, Dict[str, str]] = {}
         for directory in cls._SEARCH_DIRECTORIES:
@@ -239,14 +288,20 @@ class SourceCodeReloader:
                         "file": rel_path,
                         "description": f"自动监控源文件: {rel_path}"
                     }
-        return modules
+        
+        # 按依赖优先级排序：底层模块先重载
+        sorted_modules = dict(
+            sorted(modules.items(),
+                   key=lambda item: (cls._get_module_priority(item[0]), item[0]))
+        )
+        return sorted_modules
     
     MONITORED_MODULES: Dict[str, Dict[str, str]] = {}
     
     @staticmethod
     def reload() -> bool:
         """
-        重新加载源代码模块
+        重新加载源代码模块（依赖感知顺序）
         
         Returns:
             bool: 是否成功
@@ -262,6 +317,7 @@ class SourceCodeReloader:
         
         logger.info("\n" + "="*60)
         logger.info(f"🔄 源代码热更新开始 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"   模块总数: {len(monitored_modules)} | 依赖排序: 已启用")
         logger.info("="*60)
         
         try:
