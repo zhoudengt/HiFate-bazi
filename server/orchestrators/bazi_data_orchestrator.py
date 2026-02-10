@@ -36,10 +36,10 @@ from server.utils.bazi_input_processor import BaziInputProcessor
 from server.utils.data_validator import validate_bazi_data
 from core.analyzers.rizhu_gender_analyzer import RizhuGenderAnalyzer
 from shared.config.database import get_mysql_connection, return_mysql_connection
-from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
 from server.services.config_service import ConfigService
 from server.services.mingge_extractor import extract_mingge_names_from_rules
 from server.utils.async_executor import get_executor
+from server.orchestrators.data_assembler import BaziDataAssembler
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -55,87 +55,52 @@ async def _fetch_with_semaphore(coro):
         return await coro
 
 
+async def _fetch_special_liunians(
+    final_solar_date: str, final_solar_time: str, gender: str, current_time,
+    dayun_sequence: list, liunian_sequence: list, special_config: dict
+) -> dict:
+    """异步获取特殊流年（用于 Phase 2 并行）"""
+    target_dayuns = dayun_sequence
+    special_count = 8
+    if 'dayun_config' in special_config and isinstance(special_config.get('dayun_config'), dict):
+        dc = special_config['dayun_config']
+        mode = dc.get('mode', 'count')
+        count = dc.get('count', 8)
+        special_count = count
+        indices = dc.get('indices')
+        birth_year = int(final_solar_date.split('-')[0])
+        target_dayuns = BaziDataAssembler.get_dayun_by_mode(
+            dayun_sequence, current_time, birth_year, mode, count, indices
+        )
+    else:
+        special_count = special_config.get('count', 8) if isinstance(special_config, dict) else 8
+    # ⚠️ 修复：始终传完整的 dayun_sequence 做流年-大运匹配（而非截断后的 target_dayuns）
+    # 原 BUG：target_dayuns 经 get_dayun_by_mode 截断后（如 current_with_neighbors 只有3个大运），
+    # 导致属于其他大运的特殊流年因找不到匹配大运而被静默丢弃。
+    # target_dayuns 的过滤作用已由下游 build_enhanced_dayun_structure 的 business_type selector 承担。
+    special_liunians = await SpecialLiunianService.get_special_liunians_batch(
+        final_solar_date, final_solar_time, gender,
+        dayun_sequence, special_count, current_time,
+        liunian_sequence=liunian_sequence
+    )
+    special_liunians_by_dayun = {}
+    for liunian in special_liunians:
+        dayun_step = liunian.get('dayun_step')
+        if dayun_step is not None:
+            if dayun_step not in special_liunians_by_dayun:
+                special_liunians_by_dayun[dayun_step] = []
+            special_liunians_by_dayun[dayun_step].append(liunian)
+    return {
+        'list': special_liunians,
+        'by_dayun': special_liunians_by_dayun,
+        'formatted': SpecialLiunianService.format_special_liunians_for_prompt(
+            special_liunians, dayun_sequence
+        ) if special_liunians else ""
+    }
+
+
 class BaziDataOrchestrator:
     """八字数据编排服务 - 统一管理所有数据模块的获取逻辑"""
-    
-    @staticmethod
-    def _get_dayun_by_mode(
-        dayun_sequence: List[Dict],
-        current_time: datetime,
-        birth_year: int,
-        mode: Optional[str] = None,
-        count: Optional[int] = None,
-        indices: Optional[List[int]] = None
-    ) -> List[Dict]:
-        """
-        根据模式获取大运列表
-        
-        Args:
-            dayun_sequence: 完整的大运序列
-            current_time: 当前时间
-            birth_year: 出生年份
-            mode: 查询模式 ('count', 'current', 'current_with_neighbors', 'indices')
-            count: 数量（仅用于 count 模式）
-            indices: 索引列表（用于 indices 模式，如[1,2,3]表示第2-4步大运）
-        
-        Returns:
-            筛选后的大运列表
-        """
-        if not dayun_sequence:
-            return []
-        
-        # 1. 确定当前大运
-        current_age = current_time.year - birth_year + 1  # 虚岁
-        current_dayun_index = None
-        
-        for idx, dayun in enumerate(dayun_sequence):
-            age_range = dayun.get('age_range', {})
-            if age_range:
-                age_start = age_range.get('start', 0)
-                age_end = age_range.get('end', 0)
-                if age_start <= current_age <= age_end:
-                    current_dayun_index = idx
-                    break
-        
-        # 2. 根据模式筛选
-        if mode == 'current':
-            # 仅当前大运
-            if current_dayun_index is not None:
-                return [dayun_sequence[current_dayun_index]]
-            return []
-        
-        elif mode == 'current_with_neighbors':
-            # 当前大运及前后各一个（共3个）
-            if current_dayun_index is None:
-                return []
-            
-            result = []
-            # 前一个大运
-            if current_dayun_index > 0:
-                result.append(dayun_sequence[current_dayun_index - 1])
-            # 当前大运
-            result.append(dayun_sequence[current_dayun_index])
-            # 后一个大运
-            if current_dayun_index < len(dayun_sequence) - 1:
-                result.append(dayun_sequence[current_dayun_index + 1])
-            
-            return result
-        
-        elif mode == 'indices' and indices:
-            # 索引模式：返回指定索引的大运（如[1,2,3]表示第2-4步大运）
-            result = []
-            for idx in indices:
-                if 0 <= idx < len(dayun_sequence):
-                    result.append(dayun_sequence[idx])
-            return result
-        
-        elif mode == 'count' or mode is None:
-            # 数量模式：返回前N个大运
-            count = count or 8  # 默认8个
-            # ✅ 确保返回足够的大运（包括大运9，如果count>=9）
-            return dayun_sequence[:count] if count <= len(dayun_sequence) else dayun_sequence
-        
-        return []
     
     @staticmethod
     async def fetch_data(
@@ -368,19 +333,28 @@ class BaziDataOrchestrator:
             )
             tasks.append(('bazi_ai', ai_task))
         
-        # 执行阶段1并行任务（带超时保护，防止单个任务卡住拖垮整个请求）
+        # 执行阶段1并行任务（带超时保护，超时时保留已完成结果）
         _PHASE1_TIMEOUT = 15  # 阶段1超时15秒（含 bazi 计算 + detail 计算）
         logger.debug(f"[Orchestrator] 执行阶段1并行任务: parallel={parallel}, tasks数量={len(tasks)}, task_names={[name for name, _ in tasks]}")
         if parallel and tasks:
             wrapped = [_fetch_with_semaphore(task) for _, task in tasks]
-            try:
-                task_results = await asyncio.wait_for(
-                    asyncio.gather(*wrapped, return_exceptions=True),
-                    timeout=_PHASE1_TIMEOUT
-                )
-            except asyncio.TimeoutError:
-                logger.error(f"[Orchestrator] 阶段1并行任务超时（{_PHASE1_TIMEOUT}s），返回已完成的数据")
-                task_results = [asyncio.TimeoutError(f"Phase1 timeout after {_PHASE1_TIMEOUT}s")] * len(tasks)
+            task_objs = [asyncio.create_task(w) for w in wrapped]
+            task_to_idx = {t: i for i, t in enumerate(task_objs)}
+            done, pending = await asyncio.wait(task_objs, timeout=_PHASE1_TIMEOUT)
+            for t in pending:
+                t.cancel()
+            task_results = [None] * len(tasks)
+            for t in done:
+                idx = task_to_idx[t]
+                try:
+                    task_results[idx] = t.result()
+                except Exception as e:
+                    task_results[idx] = e
+            for t in pending:
+                idx = task_to_idx[t]
+                task_results[idx] = asyncio.TimeoutError(f"Phase1 timeout after {_PHASE1_TIMEOUT}s")
+            if pending:
+                logger.error(f"[Orchestrator] 阶段1部分任务超时（{_PHASE1_TIMEOUT}s），已完成 {len(done)}/{len(tasks)}")
             logger.debug(f"[Orchestrator] 阶段1并行任务完成，结果数量={len(task_results)}")
             
             # 处理任务结果
@@ -545,7 +519,7 @@ class BaziDataOrchestrator:
                 birth_year = int(final_solar_date.split('-')[0])
                 
                 # 根据模式筛选大运
-                filtered_dayun = BaziDataOrchestrator._get_dayun_by_mode(
+                filtered_dayun = BaziDataAssembler.get_dayun_by_mode(
                     dayun_sequence, current_time, birth_year, mode, count, indices
                 )
                 result['dayun'] = filtered_dayun
@@ -579,65 +553,7 @@ class BaziDataOrchestrator:
                 liuyue_sequence = detail_data.get('liuyue_sequence', [])
                 result['liuyue'] = liuyue_sequence[:liuyue_count] if liuyue_sequence else []
             
-            # ✅ 处理特殊流年（确保按大运分组，格式与 general_review_analysis.py 一致）
-            if modules.get('special_liunian') or modules.get('special_liunians'):
-                # 支持两种命名：special_liunian 和 special_liunians
-                special_config = modules.get('special_liunian') or modules.get('special_liunians', {})
-                
-                logger.debug(f"[Orchestrator] 特殊流年处理: dayun_sequence总数={len(dayun_sequence)}")
-                
-                # ✅ 获取目标大运（根据 dayun_config 或使用前N个大运）
-                target_dayuns = dayun_sequence
-                special_count = 8  # 默认值
-                if 'dayun_config' in special_config:
-                    dayun_config = special_config['dayun_config']
-                    if isinstance(dayun_config, dict):
-                        mode = dayun_config.get('mode', 'count')
-                        count = dayun_config.get('count', 8)
-                        special_count = count  # ✅ 使用 dayun_config 中的 count
-                        indices = dayun_config.get('indices')
-                        birth_year = int(final_solar_date.split('-')[0])
-                        logger.debug(f"[Orchestrator] _get_dayun_by_mode: mode={mode}, count={count}")
-                        target_dayuns = BaziDataOrchestrator._get_dayun_by_mode(
-                            dayun_sequence, current_time, birth_year, mode, count, indices
-                        )
-                        logger.debug(f"[Orchestrator] target_dayuns: 长度={len(target_dayuns)}")
-                else:
-                    # 如果没有 dayun_config，使用 special_config 中的 count
-                    special_count = special_config.get('count', 8) if isinstance(special_config, dict) else 8
-                
-                # ✅ 获取特殊流年（确保每个大运都完整获取，不去重）
-                # ✅ 架构规范：传入已计算的 liunian_sequence，避免 SpecialLiunianService 重复计算
-                # 详见：standards/08_数据编排架构规范.md
-                logger.debug(f"[Orchestrator] get_special_liunians_batch: target_dayuns={len(target_dayuns)}, special_count={special_count}")
-                special_liunians = await SpecialLiunianService.get_special_liunians_batch(
-                    final_solar_date, final_solar_time, gender,
-                    target_dayuns, special_count, current_time,
-                    liunian_sequence=liunian_sequence  # ✅ 传入已计算的流年序列
-                )
-                logger.debug(f"[Orchestrator] get_special_liunians_batch返回: 特殊流年数量={len(special_liunians)}")
-                
-                # ✅ 按大运分组，确保格式与 general_review_analysis.py 一致
-                # 格式：{dayun_step: [liunian1, liunian2, ...]}
-                special_liunians_by_dayun = {}
-                for liunian in special_liunians:
-                    dayun_step = liunian.get('dayun_step')
-                    if dayun_step is not None:
-                        if dayun_step not in special_liunians_by_dayun:
-                            special_liunians_by_dayun[dayun_step] = []
-                        special_liunians_by_dayun[dayun_step].append(liunian)
-                
-                # ✅ 同时提供三种格式：
-                # 1. 原始列表格式（用于兼容）
-                # 2. 按大运分组格式（用于确保每个大运的特殊流年都完整）
-                # 3. 格式化后的提示词（与 general_review_analysis.py 一致，用于 Coze Bot）
-                result['special_liunians'] = {
-                    'list': special_liunians,  # 原始列表（不去重）
-                    'by_dayun': special_liunians_by_dayun,  # 按大运分组（确保完整）
-                    'formatted': SpecialLiunianService.format_special_liunians_for_prompt(
-                        special_liunians, dayun_sequence
-                    ) if special_liunians else ""  # 格式化后的提示词（与 general_review_analysis.py 一致）
-                }
+            # special_liunians 已移至 Phase 2 并行任务，见 phase2_tasks 与 phase2_data 提取
             
             # 处理大运流年流月统一展示
             if modules.get('fortune_display'):
@@ -739,18 +655,36 @@ class BaziDataOrchestrator:
             )
             phase2_tasks.append(('daily_fortune_calendar', daily_fortune_calendar_task))
         
-        # 执行阶段2并行任务（带超时保护）
+        # special_liunians（依赖 detail_data：dayun_sequence, liunian_sequence）
+        if (modules.get('special_liunian') or modules.get('special_liunians')) and detail_data and dayun_sequence:
+            special_config = modules.get('special_liunian') or modules.get('special_liunians', {})
+            special_liunians_coro = _fetch_special_liunians(
+                final_solar_date, final_solar_time, gender, current_time,
+                dayun_sequence, liunian_sequence, special_config
+            )
+            phase2_tasks.append(('special_liunians', special_liunians_coro))
+        
+        # 执行阶段2并行任务（带超时保护，超时时保留已完成结果）
         _PHASE2_TIMEOUT = 10  # 阶段2超时10秒（规则匹配、上下文组装等）
         if phase2_tasks:
             phase2_wrapped = [_fetch_with_semaphore(task) for _, task in phase2_tasks]
-            try:
-                phase2_results = await asyncio.wait_for(
-                    asyncio.gather(*phase2_wrapped, return_exceptions=True),
-                    timeout=_PHASE2_TIMEOUT
-                )
-            except asyncio.TimeoutError:
-                logger.error(f"[Orchestrator] 阶段2并行任务超时（{_PHASE2_TIMEOUT}s）")
-                phase2_results = [asyncio.TimeoutError(f"Phase2 timeout after {_PHASE2_TIMEOUT}s")] * len(phase2_tasks)
+            phase2_task_objs = [asyncio.create_task(w) for w in phase2_wrapped]
+            phase2_task_to_idx = {t: i for i, t in enumerate(phase2_task_objs)}
+            phase2_done, phase2_pending = await asyncio.wait(phase2_task_objs, timeout=_PHASE2_TIMEOUT)
+            for t in phase2_pending:
+                t.cancel()
+            phase2_results = [None] * len(phase2_tasks)
+            for t in phase2_done:
+                idx = phase2_task_to_idx[t]
+                try:
+                    phase2_results[idx] = t.result()
+                except Exception as e:
+                    phase2_results[idx] = e
+            for t in phase2_pending:
+                idx = phase2_task_to_idx[t]
+                phase2_results[idx] = asyncio.TimeoutError(f"Phase2 timeout after {_PHASE2_TIMEOUT}s")
+            if phase2_pending:
+                logger.error(f"[Orchestrator] 阶段2部分任务超时（{_PHASE2_TIMEOUT}s），已完成 {len(phase2_done)}/{len(phase2_tasks)}")
             
             phase2_data = {}
             for (name, _), task_result in zip(phase2_tasks, phase2_results):
@@ -783,12 +717,18 @@ class BaziDataOrchestrator:
         if modules.get('daily_fortune_calendar'):
             result['daily_fortune_calendar'] = phase2_data.get('daily_fortune_calendar')
         
+        # ✅ 提取 special_liunians（Stage 2 并行结果）
+        if modules.get('special_liunian') or modules.get('special_liunians'):
+            sl_data = phase2_data.get('special_liunians')
+            if sl_data:
+                result['special_liunians'] = sl_data
+        
         # 处理喜神忌神模块（优先使用组装数据，需要在 rules 处理之后）
         if modules.get('xishen_jishen'):
             rules_module_data = result.get('rules', [])
             
             if inner_bazi_data and wangshuai_data:
-                xishen_jishen_data = BaziDataOrchestrator._assemble_xishen_jishen_complete_data(
+                xishen_jishen_data = BaziDataAssembler.assemble_xishen_jishen(
                     bazi_data=inner_bazi_data,
                     wangshuai_data=wangshuai_data,
                     rules_data=rules_module_data,
@@ -834,7 +774,7 @@ class BaziDataOrchestrator:
         if modules.get('wuxing_proportion'):
             # 如果 bazi 和 wangshuai 数据已获取，自动组装
             if inner_bazi_data and wangshuai_data:
-                wuxing_proportion_data = BaziDataOrchestrator._assemble_wuxing_proportion_from_data(
+                wuxing_proportion_data = BaziDataAssembler.assemble_wuxing_proportion(
                     bazi_data=inner_bazi_data,
                     wangshuai_data=wangshuai_data,
                     solar_date=final_solar_date,
@@ -962,312 +902,3 @@ class BaziDataOrchestrator:
                 logger.warning(f"[BaziDataOrchestrator] 缓存写入失败（不影响业务）: {e}")
         
         return result
-    
-    @staticmethod
-    def _assemble_wuxing_proportion_from_data(
-        bazi_data: Dict[str, Any],
-        wangshuai_data: Dict[str, Any],
-        solar_date: str,
-        solar_time: str,
-        gender: str
-    ) -> Dict[str, Any]:
-        """
-        从已有数据组装五行占比数据（避免重复计算）
-        
-        使用已有数据：
-        - bazi_data: 包含 bazi_pillars, details, element_counts
-        - wangshuai_data: 包含 wangshuai, total_score, xi_ji, final_xi_ji
-        
-        计算生成：
-        - proportions: 从 bazi_pillars 计算五行占比
-        - element_relations: 从 proportions 分析相生相克关系
-        - ten_gods: 从 details 提取四柱十神信息
-        
-        Returns:
-            dict: 与 WuxingProportionService.calculate_proportion() 格式完全一致
-        """
-        try:
-            # 1. 提取基础数据
-            bazi_pillars = bazi_data.get('bazi_pillars', {})
-            details = bazi_data.get('details', {})
-            
-            if not bazi_pillars or not isinstance(bazi_pillars, dict):
-                logger.warning("[BaziDataOrchestrator] bazi_pillars 数据无效，降级到服务调用")
-                return None
-            
-            # 2. 统计五行占比（天干+地支，8个位置）
-            element_counts = {'金': 0, '木': 0, '水': 0, '火': 0, '土': 0}
-            element_details = {'金': [], '木': [], '水': [], '火': [], '土': []}
-            
-            # 统计天干五行（4个位置）
-            for pillar_name in ['year', 'month', 'day', 'hour']:
-                pillar = bazi_pillars.get(pillar_name, {})
-                stem = pillar.get('stem', '')
-                if stem and stem in STEM_ELEMENTS:
-                    element = STEM_ELEMENTS[stem]
-                    element_counts[element] += 1
-                    element_details[element].append(stem)
-            
-            # 统计地支五行（4个位置）
-            for pillar_name in ['year', 'month', 'day', 'hour']:
-                pillar = bazi_pillars.get(pillar_name, {})
-                branch = pillar.get('branch', '')
-                if branch and branch in BRANCH_ELEMENTS:
-                    element = BRANCH_ELEMENTS[branch]
-                    element_counts[element] += 1
-                    element_details[element].append(branch)
-            
-            # 3. 计算占比（保留两位小数）
-            total = 8
-            proportions = {}
-            for element in ['金', '木', '水', '火', '土']:
-                count = element_counts[element]
-                percentage = round(count / total * 100, 2) if total > 0 else 0.0
-                proportions[element] = {
-                    'count': count,
-                    'percentage': percentage,
-                    'details': element_details[element]
-                }
-            
-            # 4. 提取四柱十神信息（从 details）
-            ten_gods_info = {}
-            for pillar_name in ['year', 'month', 'day', 'hour']:
-                pillar_detail = details.get(pillar_name, {})
-                if not isinstance(pillar_detail, dict):
-                    pillar_detail = {}
-                
-                main_star = pillar_detail.get('main_star', '')
-                hidden_stars = pillar_detail.get('hidden_stars', [])
-                if not isinstance(hidden_stars, list):
-                    hidden_stars = []
-                
-                ten_gods_info[pillar_name] = {
-                    'main_star': main_star,
-                    'hidden_stars': hidden_stars
-                }
-            
-            # 5. 分析相生相克关系（从 proportions）
-            element_relations = BaziDataOrchestrator._calculate_element_relations(proportions)
-            
-            # 6. 提取旺衰数据
-            wangshuai_result = wangshuai_data.get('data', wangshuai_data) if isinstance(wangshuai_data, dict) and 'data' in wangshuai_data else wangshuai_data
-            
-            # 7. 组装完整数据（与 WuxingProportionService.calculate_proportion() 格式一致）
-            return {
-                "success": True,
-                "bazi_pillars": bazi_pillars,
-                "proportions": proportions,
-                "ten_gods": ten_gods_info,
-                "wangshuai": wangshuai_result,
-                "element_relations": element_relations,
-                "bazi_data": bazi_data
-            }
-        except Exception as e:
-            logger.error(f"[BaziDataOrchestrator] 组装五行占比数据失败: {e}", exc_info=True)
-            return None
-    
-    @staticmethod
-    def _calculate_element_relations(proportions: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        分析五行相生相克关系
-        
-        Args:
-            proportions: 五行占比数据
-            
-        Returns:
-            dict: 相生相克关系分析
-        """
-        # 五行生克关系
-        element_relations_map = {
-            '木': {'produces': '火', 'controls': '土', 'produced_by': '水', 'controlled_by': '金'},
-            '火': {'produces': '土', 'controls': '金', 'produced_by': '木', 'controlled_by': '水'},
-            '土': {'produces': '金', 'controls': '水', 'produced_by': '火', 'controlled_by': '木'},
-            '金': {'produces': '水', 'controls': '木', 'produced_by': '土', 'controlled_by': '火'},
-            '水': {'produces': '木', 'controls': '火', 'produced_by': '金', 'controlled_by': '土'}
-        }
-        
-        relations = {
-            'produces': [],  # 生
-            'controls': [],  # 克
-            'produced_by': [],  # 被生
-            'controlled_by': []  # 被克
-        }
-        
-        # 分析每个五行与其他五行的关系
-        for element, data in proportions.items():
-            if data.get('count', 0) == 0:
-                continue
-            
-            element_relation = element_relations_map.get(element, {})
-            
-            # 检查生（我生）
-            produces = element_relation.get('produces', '')
-            if produces and proportions.get(produces, {}).get('count', 0) > 0:
-                relations['produces'].append({
-                    'from': element,
-                    'to': produces,
-                    'from_count': data['count'],
-                    'to_count': proportions[produces]['count']
-                })
-            
-            # 检查克（我克）
-            controls = element_relation.get('controls', '')
-            if controls and proportions.get(controls, {}).get('count', 0) > 0:
-                relations['controls'].append({
-                    'from': element,
-                    'to': controls,
-                    'from_count': data['count'],
-                    'to_count': proportions[controls]['count']
-                })
-            
-            # 检查被生（生我）
-            produced_by = element_relation.get('produced_by', '')
-            if produced_by and proportions.get(produced_by, {}).get('count', 0) > 0:
-                relations['produced_by'].append({
-                    'from': produced_by,
-                    'to': element,
-                    'from_count': proportions[produced_by]['count'],
-                    'to_count': data['count']
-                })
-            
-            # 检查被克（克我）
-            controlled_by = element_relation.get('controlled_by', '')
-            if controlled_by and proportions.get(controlled_by, {}).get('count', 0) > 0:
-                relations['controlled_by'].append({
-                    'from': controlled_by,
-                    'to': element,
-                    'from_count': proportions[controlled_by]['count'],
-                    'to_count': data['count']
-                })
-        
-        return relations
-    
-    @staticmethod
-    def _assemble_xishen_jishen_complete_data(
-        bazi_data: Dict[str, Any],
-        wangshuai_data: Dict[str, Any],
-        rules_data: List[Dict[str, Any]],
-        solar_date: str,
-        solar_time: str,
-        gender: str,
-        calendar_type: Optional[str] = "solar",
-        location: Optional[str] = None,
-        latitude: Optional[float] = None,
-        longitude: Optional[float] = None
-    ) -> Dict[str, Any]:
-        """
-        从已有数据组装喜神忌神完整数据（避免重复计算）
-        
-        使用已有数据：
-        - bazi_data: 包含 bazi_pillars, ten_gods, element_counts, details
-        - wangshuai_data: 包含 xi_shen_elements, ji_shen_elements, wangshuai, total_score, final_xi_ji
-        - rules_data: 包含 shishen 类型的规则
-        
-        Returns:
-            dict: 与 get_xishen_jishen() 格式一致，但包含扩展字段
-        """
-        try:
-            # 1. 提取旺衰数据
-            wangshuai_data_inner = wangshuai_data.get('data', wangshuai_data) if isinstance(wangshuai_data, dict) and 'data' in wangshuai_data else wangshuai_data
-            
-            # 2. 提取喜神五行和忌神五行（优先使用final_xi_ji中的综合结果）
-            final_xi_ji = wangshuai_data_inner.get('final_xi_ji', {})
-            
-            if final_xi_ji and final_xi_ji.get('xi_shen_elements'):
-                # 使用综合调候后的最终结果
-                xi_shen_elements_raw = final_xi_ji.get('xi_shen_elements', [])
-                ji_shen_elements_raw = final_xi_ji.get('ji_shen_elements', [])
-            else:
-                # 使用原始旺衰结果
-                xi_shen_elements_raw = wangshuai_data_inner.get('xi_shen_elements', [])
-                ji_shen_elements_raw = wangshuai_data_inner.get('ji_shen_elements', [])
-            
-            # 3. 从规则数据中提取十神命格
-            shishen_mingge_names = []
-            if rules_data:
-                # 筛选 shishen 类型的规则
-                shishen_rules = []
-                for rule in rules_data:
-                    rule_type = rule.get('rule_type', '')
-                    if rule_type == 'shishen':
-                        shishen_rules.append(rule)
-                
-                if shishen_rules:
-                    shishen_mingge_names = extract_mingge_names_from_rules(shishen_rules)
-            
-            # 4. 映射ID
-            xi_shen_elements = ConfigService.map_elements_to_ids(xi_shen_elements_raw)
-            ji_shen_elements = ConfigService.map_elements_to_ids(ji_shen_elements_raw)
-            shishen_mingge = ConfigService.map_mingge_to_ids(shishen_mingge_names)
-            
-            # 5. 提取八字数据（用于LLM分析）
-            bazi_pillars = bazi_data.get('bazi_pillars', {})
-            day_stem = bazi_pillars.get('day', {}).get('stem', '')
-            
-            # 提取十神数据
-            ten_gods = bazi_data.get('ten_gods', {})
-            if not ten_gods:
-                # 如果 ten_gods 不存在，从 details 中提取
-                details = bazi_data.get('details', {})
-                ten_gods = {}
-                for pillar_name in ['year', 'month', 'day', 'hour']:
-                    pillar_detail = details.get(pillar_name, {})
-                    if isinstance(pillar_detail, dict):
-                        ten_gods[pillar_name] = {
-                            'main_star': pillar_detail.get('main_star', ''),
-                            'hidden_stars': pillar_detail.get('hidden_stars', [])
-                        }
-            
-            # 提取五行统计
-            element_counts = bazi_data.get('element_counts', {})
-            
-            # 提取神煞数据
-            deities = {}
-            details = bazi_data.get('details', {})
-            for pillar_name in ['year', 'month', 'day', 'hour']:
-                pillar_detail = details.get(pillar_name, {})
-                if isinstance(pillar_detail, dict):
-                    deities[pillar_name] = pillar_detail.get('deities', [])
-            
-            # 提取旺衰详细数据
-            wangshuai_detail = {
-                'wangshuai': wangshuai_data_inner.get('wangshuai', ''),
-                'total_score': wangshuai_data_inner.get('total_score', 0)
-            }
-            # 如果有得令、得地、得助信息，也提取
-            if 'de_ling' in wangshuai_data_inner:
-                wangshuai_detail['de_ling'] = wangshuai_data_inner.get('de_ling')
-            if 'de_di' in wangshuai_data_inner:
-                wangshuai_detail['de_di'] = wangshuai_data_inner.get('de_di')
-            if 'de_zhu' in wangshuai_data_inner:
-                wangshuai_detail['de_zhu'] = wangshuai_data_inner.get('de_zhu')
-            
-            # 6. 构建响应数据（与普通接口格式一致，但包含扩展字段）
-            response_data = {
-                # 基础字段（与普通接口一致）
-                'solar_date': solar_date,
-                'solar_time': solar_time,
-                'gender': gender,
-                'xi_shen_elements': xi_shen_elements,
-                'ji_shen_elements': ji_shen_elements,
-                'shishen_mingge': shishen_mingge,
-                'wangshuai': wangshuai_data_inner.get('wangshuai', ''),
-                'total_score': wangshuai_data_inner.get('total_score', 0),
-                
-                # 扩展字段（用于LLM分析，不影响普通接口）
-                'bazi_pillars': bazi_pillars,
-                'day_stem': day_stem,
-                'ten_gods': ten_gods,
-                'element_counts': element_counts,
-                'deities': deities,
-                'wangshuai_detail': wangshuai_detail
-            }
-            
-            return {
-                "success": True,
-                "data": response_data
-            }
-        except Exception as e:
-            logger.error(f"[BaziDataOrchestrator] 组装喜神忌神数据失败: {e}", exc_info=True)
-            return None
-

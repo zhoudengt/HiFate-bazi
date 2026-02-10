@@ -82,8 +82,9 @@ STREAM_MODULES = {
         'wangshuai': True,          # 含喜神、忌神
         'detail': True,
         'special_liunians': {
-            'dayun_config': {'mode': 'current_with_neighbors'},
-            'target_years': [2025, 2026, 2027]
+            'dayun_config': {'mode': 'count', 'count': 13},  # ⚠️ 统一为 count:13（与 fortune/display 一致）
+            'target_years': [2025, 2026, 2027],
+            'count': 200
         },
         'rules': {'types': ['marriage', 'peach_blossom', 'marriage_match', 'zhengyuan']}
     },
@@ -94,8 +95,9 @@ STREAM_MODULES = {
         'wangshuai': True,
         'detail': True,
         'special_liunians': {
-            'dayun_config': {'mode': 'current_with_neighbors'},
-            'target_years': [2025, 2026, 2027]
+            'dayun_config': {'mode': 'count', 'count': 13},  # ⚠️ 统一为 count:13（与 fortune/display 一致）
+            'target_years': [2025, 2026, 2027],
+            'count': 200
         },
         'rules': {'types': ['health']}
     },
@@ -119,8 +121,9 @@ STREAM_MODULES = {
         'wangshuai': True,
         'detail': True,
         'special_liunians': {
-            'dayun_config': {'mode': 'current_with_neighbors'},
-            'target_years': [2025, 2026, 2027]
+            'dayun_config': {'mode': 'count', 'count': 13},  # ⚠️ 统一为 count:13（与 fortune/display 一致）
+            'target_years': [2025, 2026, 2027],
+            'count': 200
         },
         'rules': {'types': ['career', 'wealth', 'summary']}
     },
@@ -131,7 +134,7 @@ STREAM_MODULES = {
         'wangshuai': True,
         'detail': True,
         'special_liunians': {
-            'dayun_config': {'mode': 'count', 'count': 9},
+            'dayun_config': {'mode': 'count', 'count': 13},  # ⚠️ 统一为 count:13（与 fortune/display 一致）
             'target_years': [2025, 2026, 2027],
             'count': 200
         },

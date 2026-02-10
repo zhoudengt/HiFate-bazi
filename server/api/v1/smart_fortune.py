@@ -916,8 +916,9 @@ async def _fetch_bazi_data_via_orchestrator(
         'fortune_context': {'intent_types': ['ALL'], 'target_years': target_years},
         # ⚠️ 统一架构：添加 special_liunians 模块，使关键年份数据与其他流式接口一致
         'special_liunians': {
-            'dayun_config': {'mode': 'current_with_neighbors'},
-            'target_years': target_years[:3] if len(target_years) >= 3 else target_years
+            'dayun_config': {'mode': 'count', 'count': 13},  # ⚠️ 统一为 count:13（与 fortune/display 一致）
+            'target_years': target_years[:3] if len(target_years) >= 3 else target_years,
+            'count': 200
         }
     }
     

@@ -1708,7 +1708,8 @@ def format_general_review_for_llm(input_data: Dict[str, Any]) -> str:
         lines.append(f"【当前大运】第{step}运{ganzhi}({age_display})")
         
         # 特殊流年
-        key_liunians = current_dayun.get('key_liunians', [])
+        # ⚠️ 修复：兼容两种字段名（build_input_data 设 'liunians'，_simplify_dayun 设 'key_liunians'）
+        key_liunians = current_dayun.get('liunians', current_dayun.get('key_liunians', []))
         if key_liunians:
             liunian_text = format_liunian_text(key_liunians, max_count=5)
             if liunian_text:
