@@ -234,7 +234,7 @@ try:
     v = d
     for k in keys:
         v = v.get(k, {}) if isinstance(v, dict) else {}
-    print(v if isinstance(v, str) else '')
+    print(str(v) if v != {} else '')
 except:
     print('')
 " 2>/dev/null)
