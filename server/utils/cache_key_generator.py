@@ -244,7 +244,11 @@ class CacheKeyGenerator:
         # 大运/时间范围参与 key，避免不同 current_time 或 dayun 范围共用缓存
         scope_parts = []
         if current_time is not None:
-            t_str = (current_time.isoformat() if hasattr(current_time, 'isoformat') and callable(getattr(current_time, 'isoformat')) else str(current_time))
+            # 截断到小时级别，避免微秒精度导致缓存永远 miss
+            if hasattr(current_time, 'strftime'):
+                t_str = current_time.strftime('%Y-%m-%dT%H')
+            else:
+                t_str = str(current_time)
             scope_parts.append(f"t_{t_str}")
         if dayun_index is not None:
             scope_parts.append(f"di_{dayun_index}")

@@ -107,13 +107,13 @@ class FortuneContextService:
     @staticmethod
     def _get_cached_detail(solar_date: str, solar_time: str, gender: str, current_time: datetime) -> Optional[dict]:
         """获取缓存的 detail_result"""
-        cache_key = f"{solar_date}_{solar_time}_{gender}_{current_time.isoformat()}"
+        cache_key = f"{solar_date}_{solar_time}_{gender}_{current_time.strftime('%Y-%m-%dT%H')}"
         return FortuneContextService._detail_cache.get(cache_key)
     
     @staticmethod
     def _set_cached_detail(solar_date: str, solar_time: str, gender: str, current_time: datetime, result: dict):
         """缓存 detail_result"""
-        cache_key = f"{solar_date}_{solar_time}_{gender}_{current_time.isoformat()}"
+        cache_key = f"{solar_date}_{solar_time}_{gender}_{current_time.strftime('%Y-%m-%dT%H')}"
         # 简单的LRU：如果缓存满了，删除最旧的
         if len(FortuneContextService._detail_cache) >= FortuneContextService._cache_max_size:
             # 删除第一个（FIFO）

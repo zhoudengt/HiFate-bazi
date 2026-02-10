@@ -63,7 +63,7 @@ class SpecialLiunianService:
         # 提取大运步骤列表并排序，用于缓存键
         dayun_steps = sorted([dayun.get('step') for dayun in dayun_sequence if dayun.get('step') is not None])
         dayun_steps_str = ','.join(map(str, dayun_steps))
-        current_time_iso = current_time.isoformat() if current_time else None
+        current_time_iso = current_time.strftime('%Y-%m-%dT%H') if current_time else None
         cache_key_parts = [
             'special_liunians',
             solar_date,
