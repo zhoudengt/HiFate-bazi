@@ -21,7 +21,7 @@ sys.path.insert(0, project_root)
 
 from services.face_analysis_v2.service import FaceAnalysisService
 from server.services.llm_service_factory import LLMServiceFactory
-from server.services.user_interaction_logger import get_user_interaction_logger
+from server.services.stream_call_logger import get_stream_call_logger
 from server.config.config_loader import get_config_from_db_only
 from server.utils.prompt_builders import format_face_analysis_input_data_for_coze
 
@@ -343,28 +343,24 @@ async def face_analysis_stream_generator(
             if chunk_type in ['complete', 'error']:
                 break
         
-        # 10. 记录交互数据（异步，不阻塞）
+        # 10. 记录流式接口调用（异步，不阻塞）
         api_end_time = time.time()
-        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-        llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
         llm_output = ''.join(llm_output_chunks)
         
-        logger_instance = get_user_interaction_logger()
-        logger_instance.log_function_usage_async(
+        stream_logger = get_stream_call_logger()
+        stream_logger.log_async(
             function_type='face_analysis',
-            function_name='AI智能面相分析V2',
             frontend_api='/api/v2/face/analyze/stream',
             frontend_input=frontend_input,
-            input_data=response_data,
+            input_data=json.dumps(response_data, ensure_ascii=False) if response_data else '',
             llm_output=llm_output,
-            llm_api='bailian_api',
-            api_response_time_ms=api_response_time_ms,
-            llm_first_token_time_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
-            llm_total_time_ms=llm_total_time_ms,
-            round_number=1,
+            api_total_ms=int((api_end_time - api_start_time) * 1000),
+            input_data_gen_ms=None,
+            llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+            llm_total_ms=int((api_end_time - llm_start_time) * 1000) if llm_start_time else None,
             bot_id=used_bot_id,
+            llm_platform='bailian',
             status='success' if has_content else 'failed',
-            streaming=True
         )
         
     except ValueError as e:
@@ -376,25 +372,16 @@ async def face_analysis_stream_generator(
         }
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
         
-        # 记录错误
         api_end_time = time.time()
-        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-        logger_instance = get_user_interaction_logger()
-        logger_instance.log_function_usage_async(
+        stream_logger = get_stream_call_logger()
+        stream_logger.log_async(
             function_type='face_analysis',
-            function_name='AI智能面相分析V2',
             frontend_api='/api/v2/face/analyze/stream',
             frontend_input=frontend_input,
-            input_data={},
-            llm_output='',
-            llm_api='bailian_api',
-            api_response_time_ms=api_response_time_ms,
-            llm_first_token_time_ms=None,
-            llm_total_time_ms=None,
-            round_number=1,
+            api_total_ms=int((api_end_time - api_start_time) * 1000),
+            llm_platform='bailian',
             status='failed',
             error_message=str(e),
-            streaming=True
         )
     except Exception as e:
         # 其他错误
@@ -406,23 +393,14 @@ async def face_analysis_stream_generator(
         }
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
         
-        # 记录错误
         api_end_time = time.time()
-        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-        logger_instance = get_user_interaction_logger()
-        logger_instance.log_function_usage_async(
+        stream_logger = get_stream_call_logger()
+        stream_logger.log_async(
             function_type='face_analysis',
-            function_name='AI智能面相分析V2',
             frontend_api='/api/v2/face/analyze/stream',
             frontend_input=frontend_input,
-            input_data={},
-            llm_output='',
-            llm_api='bailian_api',
-            api_response_time_ms=api_response_time_ms,
-            llm_first_token_time_ms=None,
-            llm_total_time_ms=None,
-            round_number=1,
+            api_total_ms=int((api_end_time - api_start_time) * 1000),
+            llm_platform='bailian',
             status='failed',
             error_message=str(e),
-            streaming=True
         )

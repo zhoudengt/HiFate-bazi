@@ -616,7 +616,7 @@ class SingletonReloader:
         ('server.utils.unified_logger', 'UnifiedLogger', ['_instance']),
         ('server.core.service_registry', 'ServiceRegistry', ['_instance']),
         ('server.services.shensha_sort_service', 'ShenshaSortService', ['_instance']),
-        ('server.services.user_interaction_logger', 'UserInteractionLogger', ['_instance']),
+        ('server.services.stream_call_logger', 'StreamCallLogger', ['_instance']),
     ]
     
     @staticmethod

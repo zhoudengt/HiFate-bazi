@@ -25,7 +25,6 @@ from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.api_cache_helper import (
     generate_cache_key, get_cached_result, set_cached_result, L2_TTL, get_current_date_str
 )
-from server.services.user_interaction_logger import get_user_interaction_logger
 from server.utils.api_error_handler import api_error_handler
 
 # 导入配置加载器（从数据库读取配置）

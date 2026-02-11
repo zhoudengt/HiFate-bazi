@@ -22,7 +22,7 @@ sys.path.insert(0, project_root)
 sys.path.insert(0, os.path.join(project_root, 'services', 'desk_fengshui'))
 
 from server.services.llm_service_factory import LLMServiceFactory
-from server.services.user_interaction_logger import get_user_interaction_logger
+from server.services.stream_call_logger import get_stream_call_logger
 from server.config.config_loader import get_config_from_db_only
 from server.utils.prompt_builders import format_desk_fengshui_input_data_for_coze
 
@@ -58,23 +58,20 @@ async def desk_fengshui_test(
         # 读取图片数据
         image_bytes = await image.read()
         
-        # 调用分析服务
-        # 确保从正确的路径导入（需要支持相对导入）
-        import sys
+        # 调用分析服务（使用 importlib 安全导入，避免 del sys.modules 竞态）
+        import importlib
         desk_fengshui_path = os.path.abspath(os.path.join(project_root, 'services', 'desk_fengshui'))
-        # 清理可能存在的其他 analyzer 模块
-        modules_to_remove = [name for name in sys.modules.keys() if name == 'analyzer']
-        for name in modules_to_remove:
-            del sys.modules[name]
-        # 确保desk_fengshui路径在最前面，这样相对导入才能工作
-        if desk_fengshui_path in sys.path:
-            sys.path.remove(desk_fengshui_path)
-        sys.path.insert(0, desk_fengshui_path)
-        # 切换到desk_fengshui目录以确保相对导入工作
+        if desk_fengshui_path not in sys.path:
+            sys.path.insert(0, desk_fengshui_path)
+        # 使用绝对模块名导入，避免与其他 analyzer 冲突
         old_cwd = os.getcwd()
         try:
             os.chdir(desk_fengshui_path)
-            from analyzer import DeskFengshuiAnalyzer
+            if 'analyzer' in sys.modules:
+                mod = importlib.reload(sys.modules['analyzer'])
+            else:
+                mod = importlib.import_module('analyzer')
+            DeskFengshuiAnalyzer = mod.DeskFengshuiAnalyzer
         finally:
             os.chdir(old_cwd)
         analyzer = DeskFengshuiAnalyzer()
@@ -184,22 +181,19 @@ async def desk_fengshui_stream_generator(
         
         # 5. 调用基础分析服务（异步，带超时）
         try:
-            # 确保从正确的路径导入（需要支持相对导入）
-            import sys
+            # 使用 importlib 安全导入，避免 del sys.modules 竞态
+            import importlib
             desk_fengshui_path = os.path.abspath(os.path.join(project_root, 'services', 'desk_fengshui'))
-            # 清理可能存在的其他 analyzer 模块
-            modules_to_remove = [name for name in sys.modules.keys() if name == 'analyzer']
-            for name in modules_to_remove:
-                del sys.modules[name]
-            # 确保desk_fengshui路径在最前面，这样相对导入才能工作
-            if desk_fengshui_path in sys.path:
-                sys.path.remove(desk_fengshui_path)
-            sys.path.insert(0, desk_fengshui_path)
-            # 切换到desk_fengshui目录以确保相对导入工作
+            if desk_fengshui_path not in sys.path:
+                sys.path.insert(0, desk_fengshui_path)
             old_cwd = os.getcwd()
             try:
                 os.chdir(desk_fengshui_path)
-                from analyzer import DeskFengshuiAnalyzer
+                if 'analyzer' in sys.modules:
+                    mod = importlib.reload(sys.modules['analyzer'])
+                else:
+                    mod = importlib.import_module('analyzer')
+                DeskFengshuiAnalyzer = mod.DeskFengshuiAnalyzer
             finally:
                 os.chdir(old_cwd)
             analyzer = DeskFengshuiAnalyzer()
@@ -309,28 +303,24 @@ async def desk_fengshui_stream_generator(
             if chunk_type in ['complete', 'error']:
                 break
         
-        # 9. 记录交互数据（异步，不阻塞）
+        # 9. 记录流式接口调用（异步，不阻塞）
         api_end_time = time.time()
-        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-        llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
         llm_output = ''.join(llm_output_chunks)
         
-        logger_instance = get_user_interaction_logger()
-        logger_instance.log_function_usage_async(
+        stream_logger = get_stream_call_logger()
+        stream_logger.log_async(
             function_type='desk_fengshui',
-            function_name='办公桌风水分析',
             frontend_api='/api/v2/desk-fengshui/analyze/stream',
             frontend_input=frontend_input,
-            input_data=result,
+            input_data=json.dumps(result, ensure_ascii=False) if result else '',
             llm_output=llm_output,
-            llm_api='bailian_api',
-            api_response_time_ms=api_response_time_ms,
-            llm_first_token_time_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
-            llm_total_time_ms=llm_total_time_ms,
-            round_number=1,
+            api_total_ms=int((api_end_time - api_start_time) * 1000),
+            input_data_gen_ms=None,
+            llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+            llm_total_ms=int((api_end_time - llm_start_time) * 1000) if llm_start_time else None,
             bot_id=used_bot_id,
+            llm_platform='bailian',
             status='success' if has_content else 'failed',
-            streaming=True
         )
         
     except ValueError as e:
@@ -342,25 +332,16 @@ async def desk_fengshui_stream_generator(
         }
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
         
-        # 记录错误
         api_end_time = time.time()
-        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-        logger_instance = get_user_interaction_logger()
-        logger_instance.log_function_usage_async(
+        stream_logger = get_stream_call_logger()
+        stream_logger.log_async(
             function_type='desk_fengshui',
-            function_name='办公桌风水分析',
             frontend_api='/api/v2/desk-fengshui/analyze/stream',
             frontend_input=frontend_input,
-            input_data={},
-            llm_output='',
-            llm_api='bailian_api',
-            api_response_time_ms=api_response_time_ms,
-            llm_first_token_time_ms=None,
-            llm_total_time_ms=None,
-            round_number=1,
+            api_total_ms=int((api_end_time - api_start_time) * 1000),
+            llm_platform='bailian',
             status='failed',
             error_message=str(e),
-            streaming=True
         )
     except Exception as e:
         # 其他错误
@@ -372,23 +353,14 @@ async def desk_fengshui_stream_generator(
         }
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
         
-        # 记录错误
         api_end_time = time.time()
-        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-        logger_instance = get_user_interaction_logger()
-        logger_instance.log_function_usage_async(
+        stream_logger = get_stream_call_logger()
+        stream_logger.log_async(
             function_type='desk_fengshui',
-            function_name='办公桌风水分析',
             frontend_api='/api/v2/desk-fengshui/analyze/stream',
             frontend_input=frontend_input,
-            input_data={},
-            llm_output='',
-            llm_api='bailian_api',
-            api_response_time_ms=api_response_time_ms,
-            llm_first_token_time_ms=None,
-            llm_total_time_ms=None,
-            round_number=1,
+            api_total_ms=int((api_end_time - api_start_time) * 1000),
+            llm_platform='bailian',
             status='failed',
             error_message=str(e),
-            streaming=True
         )

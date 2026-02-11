@@ -57,7 +57,7 @@ from server.utils.prompt_builders import (
     format_general_review_for_llm,
     _simplify_dayun
 )
-from server.services.user_interaction_logger import get_user_interaction_logger
+from server.services.stream_call_logger import get_stream_call_logger
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -828,22 +828,19 @@ async def general_review_analysis_stream_generator(
         llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
         llm_output = ''.join(llm_output_chunks)
         
-        logger_instance = get_user_interaction_logger()
-        logger_instance.log_function_usage_async(
+        stream_logger = get_stream_call_logger()
+        stream_logger.log_async(
             function_type='general',
-            function_name='八字命理-总评分析',
             frontend_api='/api/v1/bazi/general-review/stream',
             frontend_input=frontend_input,
-            input_data=input_data if 'input_data' in locals() else {},
+            input_data=json.dumps(input_data, ensure_ascii=False) if 'input_data' in locals() and input_data else '',
             llm_output=llm_output,
-            llm_api='coze_api',
-            api_response_time_ms=api_response_time_ms,
-            llm_first_token_time_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
-            llm_total_time_ms=llm_total_time_ms,
-            round_number=1,
+            api_total_ms=api_response_time_ms,
+            llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+            llm_total_ms=llm_total_time_ms,
             bot_id=used_bot_id,
-            status='success' if has_content else 'failed',
-            streaming=True
+            llm_platform='coze',
+            status='success' if has_content else 'failed'
         )
                 
     except ValueError as e:
@@ -858,22 +855,20 @@ async def general_review_analysis_stream_generator(
         # 记录错误
         api_end_time = time.time()
         api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-        logger_instance = get_user_interaction_logger()
-        logger_instance.log_function_usage_async(
+        stream_logger = get_stream_call_logger()
+        stream_logger.log_async(
             function_type='general',
-            function_name='八字命理-总评分析',
             frontend_api='/api/v1/bazi/general-review/stream',
             frontend_input=frontend_input,
-            input_data={},
+            input_data='',
             llm_output='',
-            llm_api='coze_api',
-            api_response_time_ms=api_response_time_ms,
-            llm_first_token_time_ms=None,
-            llm_total_time_ms=None,
-            round_number=1,
+            api_total_ms=api_response_time_ms,
+            llm_first_token_ms=None,
+            llm_total_ms=None,
+            bot_id=None,
+            llm_platform='coze',
             status='failed',
-            error_message=str(e),
-            streaming=True
+            error_message=str(e)
         )
     except Exception as e:
         # 其他错误（阶段7：错误处理）
@@ -888,22 +883,20 @@ async def general_review_analysis_stream_generator(
         # 记录错误
         api_end_time = time.time()
         api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-        logger_instance = get_user_interaction_logger()
-        logger_instance.log_function_usage_async(
+        stream_logger = get_stream_call_logger()
+        stream_logger.log_async(
             function_type='general',
-            function_name='八字命理-总评分析',
             frontend_api='/api/v1/bazi/general-review/stream',
             frontend_input=frontend_input,
-            input_data={},
+            input_data='',
             llm_output='',
-            llm_api='coze_api',
-            api_response_time_ms=api_response_time_ms,
-            llm_first_token_time_ms=None,
-            llm_total_time_ms=None,
-            round_number=1,
+            api_total_ms=api_response_time_ms,
+            llm_first_token_ms=None,
+            llm_total_ms=None,
+            bot_id=None,
+            llm_platform='coze',
             status='failed',
-            error_message=str(e),
-            streaming=True
+            error_message=str(e)
         )
 
 
@@ -1274,7 +1267,8 @@ def build_general_review_input_data(
             'current_dayun': current_dayun_data,  # ⚠️ 使用增强的当前大运数据
             'key_dayuns': key_dayuns_data,  # ⚠️ 使用增强的关键大运数据（优先级2-10）
             'dayun_sequence': dayun_sequence,  # ⚠️ 完整的大运序列（保留用于兼容）
-            'chonghe_xinghai': chonghe_xinghai
+            'chonghe_xinghai': chonghe_xinghai,
+            'special_liunians': special_liunians,  # ⚠️ 特殊流年（供公共模块按 dayun_step 分配到各运）
         },
         
         # 7. 终生提点与建议

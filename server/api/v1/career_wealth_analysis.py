@@ -28,7 +28,7 @@ from server.services.rule_service import RuleService
 from server.utils.data_validator import validate_bazi_data
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
-from server.services.user_interaction_logger import get_user_interaction_logger
+from server.services.stream_call_logger import get_stream_call_logger
 import time
 from server.services.industry_service import IndustryService
 
@@ -411,6 +411,7 @@ def build_career_wealth_input_data(
             'current_age': current_age,
             'current_dayun': current_dayun_data,
             'key_dayuns': key_dayuns_data,
+            'special_liunians': special_liunians,  # ⚠️ 特殊流年（供公共模块按 dayun_step 分配到各运）
             'key_liunian': [],
             'chonghe_xinghai': {
                 'dayun_relations': [],
@@ -1412,26 +1413,22 @@ async def career_wealth_stream_generator(
             
             # 记录交互数据（异步，不阻塞）
             api_end_time = time.time()
-            api_response_time_ms = int((api_end_time - api_start_time) * 1000)
             llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
             llm_output = ''.join(llm_output_chunks)
             
-            logger_instance = get_user_interaction_logger()
-            logger_instance.log_function_usage_async(
+            stream_logger = get_stream_call_logger()
+            stream_logger.log_async(
                 function_type='wealth',
-                function_name='八字命理-事业财富',
                 frontend_api='/api/v1/bazi/career-wealth-analysis/stream',
                 frontend_input=frontend_input,
-                input_data=input_data,
+                input_data=json.dumps(input_data, ensure_ascii=False) if input_data else '',
                 llm_output=llm_output,
-                llm_api='coze_api',
-                api_response_time_ms=api_response_time_ms,
-                llm_first_token_time_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
-                llm_total_time_ms=llm_total_time_ms,
-                round_number=1,
+                api_total_ms=int((api_end_time - api_start_time) * 1000),
+                llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+                llm_total_ms=llm_total_time_ms,
                 bot_id=actual_bot_id,
-                status='success' if has_content else 'failed',
-                streaming=True
+                llm_platform='coze',
+                status='success' if has_content else 'failed'
             )
                 
         except Exception as e:
@@ -1442,24 +1439,20 @@ async def career_wealth_stream_generator(
             
             # 记录错误
             api_end_time = time.time()
-            api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-            logger_instance = get_user_interaction_logger()
-            logger_instance.log_function_usage_async(
+            stream_logger = get_stream_call_logger()
+            stream_logger.log_async(
                 function_type='wealth',
-                function_name='八字命理-事业财富',
                 frontend_api='/api/v1/bazi/career-wealth-analysis/stream',
                 frontend_input=frontend_input,
-                input_data=input_data if 'input_data' in locals() else {},
+                input_data=json.dumps(input_data, ensure_ascii=False) if 'input_data' in locals() and input_data else '',
                 llm_output='',
-                llm_api='coze_api',
-                api_response_time_ms=api_response_time_ms,
-                llm_first_token_time_ms=None,
-                llm_total_time_ms=None,
-                round_number=1,
+                api_total_ms=int((api_end_time - api_start_time) * 1000),
+                llm_first_token_ms=None,
+                llm_total_ms=None,
                 bot_id=actual_bot_id if 'actual_bot_id' in locals() else None,
+                llm_platform='coze',
                 status='failed',
-                error_message=str(e),
-                streaming=True
+                error_message=str(e)
             )
             
     except Exception as e:
@@ -1470,22 +1463,18 @@ async def career_wealth_stream_generator(
         
         # 记录错误
         api_end_time = time.time()
-        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-        logger_instance = get_user_interaction_logger()
-        logger_instance.log_function_usage_async(
+        stream_logger = get_stream_call_logger()
+        stream_logger.log_async(
             function_type='wealth',
-            function_name='八字命理-事业财富',
             frontend_api='/api/v1/bazi/career-wealth-analysis/stream',
             frontend_input=frontend_input,
-            input_data={},
+            input_data='',
             llm_output='',
-            llm_api='coze_api',
-            api_response_time_ms=api_response_time_ms,
-            llm_first_token_time_ms=None,
-            llm_total_time_ms=None,
-            round_number=1,
+            api_total_ms=int((api_end_time - api_start_time) * 1000),
+            llm_first_token_ms=None,
+            llm_total_ms=None,
+            llm_platform='coze',
             status='failed',
-            error_message=str(e),
-            streaming=True
+            error_message=str(e)
         )
 

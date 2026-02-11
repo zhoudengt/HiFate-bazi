@@ -675,23 +675,19 @@ async def xishen_jishen_stream_generator(
         has_content = len(llm_output_chunks) > 0
         
         try:
-            from server.services.user_interaction_logger import get_user_interaction_logger
-            logger_instance = get_user_interaction_logger()
-            logger_instance.log_function_usage_async(
+            from server.services.stream_call_logger import get_stream_call_logger
+            stream_logger = get_stream_call_logger()
+            stream_logger.log_async(
                 function_type='xishen_jishen',
-                function_name='八字命理-喜神忌神分析',
                 frontend_api='/api/v1/bazi/xishen-jishen/stream',
                 frontend_input=frontend_input,
-                input_data=input_data,
+                input_data=json.dumps(input_data, ensure_ascii=False) if input_data else '',
                 llm_output=llm_output,
-                api_response_time_ms=api_response_time_ms,
-                llm_first_token_time_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
-                llm_total_time_ms=llm_total_time_ms,
-                round_number=1,
-                bot_id=None,  # 百炼平台不使用 bot_id，Coze 平台需要
-                llm_api='bailian_api' if isinstance(llm_service, BailianStreamService) else 'coze_api',
+                api_total_ms=api_response_time_ms,
+                llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+                llm_total_ms=llm_total_time_ms,
+                llm_platform='bailian' if isinstance(llm_service, BailianStreamService) else 'coze',
                 status='success' if has_content else 'failed',
-                streaming=True
             )
         except Exception as e:
             logger.warning(f"[喜神忌神流式] 数据库记录失败: {e}", exc_info=True)
@@ -707,24 +703,16 @@ async def xishen_jishen_stream_generator(
         try:
             api_end_time = time.time()
             api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-            from server.services.user_interaction_logger import get_user_interaction_logger
-            logger_instance = get_user_interaction_logger()
-            logger_instance.log_function_usage_async(
+            from server.services.stream_call_logger import get_stream_call_logger
+            stream_logger = get_stream_call_logger()
+            stream_logger.log_async(
                 function_type='xishen_jishen',
-                function_name='八字命理-喜神忌神分析',
                 frontend_api='/api/v1/bazi/xishen-jishen/stream',
                 frontend_input=frontend_input,
-                input_data={},
-                llm_output='',
-                api_response_time_ms=api_response_time_ms,
-                llm_first_token_time_ms=None,
-                llm_total_time_ms=None,
-                round_number=1,
-                bot_id=None,
-                llm_api='coze_api',  # 默认值
+                api_total_ms=api_response_time_ms,
+                llm_platform='coze',
                 status='failed',
                 error_message=str(e),
-                streaming=True
             )
         except Exception as log_error:
             logger.warning(f"[喜神忌神流式] 错误记录失败: {log_error}", exc_info=True)

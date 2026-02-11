@@ -42,7 +42,7 @@ from server.utils.prompt_builders import (
     format_health_for_llm
 )
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
-from server.services.user_interaction_logger import get_user_interaction_logger
+from server.services.stream_call_logger import get_stream_call_logger
 import time
 
 # ✅ 性能优化：导入流式缓存工具
@@ -487,26 +487,23 @@ async def health_analysis_stream_generator(
         
         # 记录交互数据（异步，不阻塞）
         api_end_time = time.time()
-        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-        llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
+        api_total_ms = int((api_end_time - api_start_time) * 1000)
+        llm_total_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
         llm_output = ''.join(llm_output_chunks)
         
-        logger_instance = get_user_interaction_logger()
-        logger_instance.log_function_usage_async(
+        stream_logger = get_stream_call_logger()
+        stream_logger.log_async(
             function_type='health',
-            function_name='八字命理-身体健康分析',
             frontend_api='/api/v1/bazi/health/stream',
             frontend_input=frontend_input,
-            input_data=input_data if 'input_data' in locals() else {},
+            input_data=json.dumps(input_data, ensure_ascii=False) if 'input_data' in locals() and input_data else '',
             llm_output=llm_output,
-            llm_api='coze_api',
-            api_response_time_ms=api_response_time_ms,
-            llm_first_token_time_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
-            llm_total_time_ms=llm_total_time_ms,
-            round_number=1,
+            llm_platform='coze',
+            api_total_ms=api_total_ms,
+            llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+            llm_total_ms=llm_total_ms,
             bot_id=used_bot_id,
-            status='success' if has_content else 'failed',
-            streaming=True
+            status='success' if has_content else 'failed'
         )
                 
     except ValueError as e:
@@ -520,23 +517,21 @@ async def health_analysis_stream_generator(
         
         # 记录错误
         api_end_time = time.time()
-        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-        logger_instance = get_user_interaction_logger()
-        logger_instance.log_function_usage_async(
+        api_total_ms = int((api_end_time - api_start_time) * 1000)
+        stream_logger = get_stream_call_logger()
+        stream_logger.log_async(
             function_type='health',
-            function_name='八字命理-身体健康分析',
             frontend_api='/api/v1/bazi/health/stream',
             frontend_input=frontend_input,
-            input_data={},
+            input_data='',
             llm_output='',
-            llm_api='coze_api',
-            api_response_time_ms=api_response_time_ms,
-            llm_first_token_time_ms=None,
-            llm_total_time_ms=None,
-            round_number=1,
+            llm_platform='coze',
+            api_total_ms=api_total_ms,
+            llm_first_token_ms=None,
+            llm_total_ms=None,
             status='failed',
             error_message=str(e),
-            streaming=True
+            bot_id=used_bot_id
         )
     except Exception as e:
         # 其他错误
@@ -550,23 +545,21 @@ async def health_analysis_stream_generator(
         
         # 记录错误
         api_end_time = time.time()
-        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-        logger_instance = get_user_interaction_logger()
-        logger_instance.log_function_usage_async(
+        api_total_ms = int((api_end_time - api_start_time) * 1000)
+        stream_logger = get_stream_call_logger()
+        stream_logger.log_async(
             function_type='health',
-            function_name='八字命理-身体健康分析',
             frontend_api='/api/v1/bazi/health/stream',
             frontend_input=frontend_input,
-            input_data={},
+            input_data='',
             llm_output='',
-            llm_api='coze_api',
-            api_response_time_ms=api_response_time_ms,
-            llm_first_token_time_ms=None,
-            llm_total_time_ms=None,
-            round_number=1,
+            llm_platform='coze',
+            api_total_ms=api_total_ms,
+            llm_first_token_ms=None,
+            llm_total_ms=None,
             status='failed',
             error_message=str(e),
-            streaming=True
+            bot_id=used_bot_id
         )
 
 
@@ -723,6 +716,7 @@ def build_health_input_data(
         'dayun_jiankang': {
             'current_dayun': current_dayun_data,  # ⚠️ 修改：包含流年数据
             'key_dayuns': key_dayuns_data,  # ⚠️ 新增：关键节点大运列表
+            'special_liunians': special_liunians,  # ⚠️ 特殊流年（供公共模块按 dayun_step 分配到各运）
             'all_dayuns': all_dayuns,  # ⚠️ 新增：所有大运列表（用于参考）
             'ten_gods': ten_gods_data
         },

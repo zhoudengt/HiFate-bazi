@@ -19,7 +19,7 @@ sys.path.insert(0, project_root)
 
 from server.services.bazi_service import BaziService
 from core.analyzers.bazi_ai_analyzer import BaziAIAnalyzer
-from server.services.user_interaction_logger import get_user_interaction_logger
+from server.services.stream_call_logger import get_stream_call_logger
 import time
 
 # 尝试导入 Redis（可选）
@@ -301,23 +301,19 @@ class ChatService:
                 api_response_time_ms = int((api_end_time - api_start_time) * 1000)
                 llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
                 
-                logger_instance = get_user_interaction_logger()
-                logger_instance.log_function_usage_async(
+                stream_logger = get_stream_call_logger()
+                stream_logger.log_async(
                     function_type='chat',
-                    function_name='AI问答',
                     frontend_api='/api/v1/bazi/chat/send',
                     frontend_input=frontend_input,
-                    input_data=input_data,
+                    input_data=json.dumps(input_data, ensure_ascii=False) if input_data else '',
                     llm_output=ai_reply,
-                    llm_api='coze_api',
-                    api_response_time_ms=api_response_time_ms,
-                    llm_first_token_time_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
-                    llm_total_time_ms=llm_total_time_ms,
-                    round_number=round_number,
-                    session_id=conversation_id,
+                    api_total_ms=api_response_time_ms,
+                    llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+                    llm_total_ms=llm_total_time_ms,
                     bot_id=bot_id,
+                    llm_platform='coze',
                     status='success',
-                    streaming=False
                 )
                 
                 return {
@@ -334,24 +330,17 @@ class ChatService:
                 api_response_time_ms = int((api_end_time - api_start_time) * 1000)
                 round_number = len([m for m in conversation["messages"] if m["role"] == "user"])
                 
-                logger_instance = get_user_interaction_logger()
-                logger_instance.log_function_usage_async(
+                stream_logger = get_stream_call_logger()
+                stream_logger.log_async(
                     function_type='chat',
-                    function_name='AI问答',
                     frontend_api='/api/v1/bazi/chat/send',
                     frontend_input=frontend_input,
-                    input_data=input_data,
-                    llm_output='',
-                    llm_api='coze_api',
-                    api_response_time_ms=api_response_time_ms,
-                    llm_first_token_time_ms=None,
-                    llm_total_time_ms=None,
-                    round_number=round_number,
-                    session_id=conversation_id,
+                    input_data=json.dumps(input_data, ensure_ascii=False) if input_data else '',
+                    api_total_ms=api_response_time_ms,
                     bot_id=bot_id,
+                    llm_platform='coze',
                     status='failed',
                     error_message=error_msg,
-                    streaming=False
                 )
                 
                 return {
@@ -368,24 +357,17 @@ class ChatService:
             api_response_time_ms = int((api_end_time - api_start_time) * 1000)
             round_number = len([m for m in conversation["messages"] if m["role"] == "user"]) if conversation else 1
             
-            logger_instance = get_user_interaction_logger()
-            logger_instance.log_function_usage_async(
+            stream_logger = get_stream_call_logger()
+            stream_logger.log_async(
                 function_type='chat',
-                function_name='AI问答',
                 frontend_api='/api/v1/bazi/chat/send',
                 frontend_input=frontend_input,
-                input_data=input_data if 'input_data' in locals() else {},
-                llm_output='',
-                llm_api='coze_api',
-                api_response_time_ms=api_response_time_ms,
-                llm_first_token_time_ms=None,
-                llm_total_time_ms=None,
-                round_number=round_number,
-                session_id=conversation_id,
+                input_data=json.dumps(input_data, ensure_ascii=False) if 'input_data' in locals() and input_data else '',
+                api_total_ms=api_response_time_ms,
                 bot_id=bot_id,
+                llm_platform='coze',
                 status='failed',
                 error_message=str(e),
-                streaming=False
             )
             
             return {

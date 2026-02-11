@@ -32,7 +32,7 @@ NAMING_PATTERNS = {
     'variable': re.compile(r'^[a-z][a-z0-9_]*$'),  # snake_case
     'function': re.compile(r'^[a-z][a-z0-9_]*$'),  # snake_case
     'class': re.compile(r'^[A-Z][a-zA-Z0-9]*$'),  # PascalCase
-    'constant': re.compile(r'^[A-Z][A-Z0-9_]*$'),  # UPPER_SNAKE_CASE
+    'constant': re.compile(r'^_?[A-Z][A-Z0-9_]*$'),  # _?UPPER_SNAKE_CASE（允许私有常量）
     'file': re.compile(r'^[a-z][a-z0-9_]*\.py$'),  # snake_case.py
 }
 
@@ -100,11 +100,14 @@ class NamingChecker:
                 if isinstance(target, ast.Name):
                     name = target.id
                     
-                    # 例外：如果赋值为 None 且名称是 PascalCase，视为类占位符（导入降级处理的常见模式）
-                    # 例如：Limiter = None 或 RateLimitExceeded = None
-                    if isinstance(node.value, ast.Constant) and node.value.value is None:
-                        if NAMING_PATTERNS['class'].match(name):
-                            continue  # 类占位符，跳过检查
+                    # 例外：PascalCase 变量名允许用于类引用，包括：
+                    # 1. 类占位符：Limiter = None / RateLimitExceeded = None
+                    # 2. 动态导入的类引用：ClassName = mod.ClassName
+                    if NAMING_PATTERNS['class'].match(name):
+                        if isinstance(node.value, ast.Constant) and node.value.value is None:
+                            continue  # 类占位符
+                        if isinstance(node.value, ast.Attribute):
+                            continue  # 模块属性访问（动态导入类引用）
                     
                     # 判断是常量还是变量
                     if name.isupper() or '_' in name and name.isupper():
