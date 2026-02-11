@@ -20,6 +20,11 @@ from server.services.bazi_service import BaziService
 from server.services.fortune_llm_client import get_fortune_llm_client
 from server.utils.performance_monitor import PerformanceMonitor
 from core.calculators.BaziCalculator import BaziCalculator
+from server.utils.dayun_liunian_helper import (
+    calculate_user_age,
+    get_current_dayun,
+    build_enhanced_dayun_structure
+)
 
 router = APIRouter()
 bazi_service = BaziService()
@@ -952,6 +957,69 @@ async def _fetch_bazi_data_via_orchestrator(
     if fortune_context is not None and special_liunians_list:
         fortune_context['key_liunians'] = special_liunians_list
     
+    # ⚠️ 统一架构：注入 current_dayun / key_dayuns 到 fortune_context（与其他流式接口一致）
+    # format_smart_fortune_for_llm 读 fortune_context['current_dayun'] / fortune_context['key_dayuns']
+    # 但 FortuneContextService 返回的 fortune_context 没有这两个字段，需要用 build_enhanced_dayun_structure 构建
+    details_data = detail_result.get('details', detail_result) if isinstance(detail_result, dict) else {}
+    dayun_sequence = details_data.get('dayun_sequence', [])
+    if fortune_context is not None and dayun_sequence:
+        try:
+            from datetime import datetime as _dt
+            current_age = calculate_user_age(solar_date, _dt.now())
+            current_dayun_info = get_current_dayun(dayun_sequence, current_age)
+            birth_year = int(solar_date.split('-')[0])
+            
+            enhanced_dayun_structure = build_enhanced_dayun_structure(
+                dayun_sequence=dayun_sequence,
+                special_liunians=special_liunians_list,
+                current_age=current_age,
+                current_dayun=current_dayun_info,
+                birth_year=birth_year,
+                business_type='default',
+                bazi_data=bazi_result,
+                gender=gender
+            )
+            
+            # 构建 current_dayun_data（与其他流式接口保持一致的 ganzhi 合成逻辑）
+            current_dayun_enhanced = enhanced_dayun_structure.get('current_dayun')
+            if current_dayun_enhanced:
+                _stem = current_dayun_enhanced.get('gan', current_dayun_enhanced.get('stem', ''))
+                _branch = current_dayun_enhanced.get('zhi', current_dayun_enhanced.get('branch', ''))
+                fortune_context['current_dayun'] = {
+                    'step': str(current_dayun_enhanced.get('step', '')),
+                    'ganzhi': f"{_stem}{_branch}",
+                    'stem': _stem,
+                    'branch': _branch,
+                    'age_display': current_dayun_enhanced.get('age_display', current_dayun_enhanced.get('age_range', '')),
+                    'main_star': current_dayun_enhanced.get('main_star', ''),
+                    'life_stage': current_dayun_enhanced.get('life_stage', ''),
+                    'liunians': current_dayun_enhanced.get('liunians', [])
+                }
+                logger.info(f"✅ fortune_context 注入 current_dayun: {_stem}{_branch}({current_dayun_enhanced.get('age_display', '')})")
+            
+            # 构建 key_dayuns_data（与其他流式接口保持一致的 ganzhi 合成逻辑）
+            key_dayuns_enhanced = enhanced_dayun_structure.get('key_dayuns', [])
+            if key_dayuns_enhanced:
+                key_dayuns_data = []
+                for kd in key_dayuns_enhanced:
+                    _kd_stem = kd.get('gan', kd.get('stem', ''))
+                    _kd_branch = kd.get('zhi', kd.get('branch', ''))
+                    key_dayuns_data.append({
+                        'step': str(kd.get('step', '')),
+                        'ganzhi': f"{_kd_stem}{_kd_branch}",
+                        'stem': _kd_stem,
+                        'branch': _kd_branch,
+                        'age_display': kd.get('age_display', kd.get('age_range', '')),
+                        'main_star': kd.get('main_star', ''),
+                        'life_stage': kd.get('life_stage', ''),
+                        'business_reason': kd.get('business_reason', ''),
+                        'liunians': kd.get('liunians', [])
+                    })
+                fortune_context['key_dayuns'] = key_dayuns_data
+                logger.info(f"✅ fortune_context 注入 key_dayuns: {len(key_dayuns_data)}个关键大运")
+        except Exception as e:
+            logger.error(f"构建增强大运结构失败: {e}", exc_info=True)
+    
     complete_bazi_data = {
         "bazi_result": bazi_result,
         "detail_result": detail_result,
@@ -1564,6 +1632,24 @@ async def _original_scenario_generator(
                     if fortune_context:
                         liunian_list = fortune_context.get('time_analysis', {}).get('liunian_list', [])
                         monitor.add_metric("fortune_context", "liunian_count", len(liunian_list))
+                        
+                        # ⚠️ 旧路径兼容：从 time_analysis.dayun 提取当前大运，注入为 fortune_context['current_dayun']
+                        # 使 format_smart_fortune_for_llm 能通过 fortune_context.get('current_dayun') 读到数据
+                        time_analysis = fortune_context.get('time_analysis', {})
+                        dayun_raw = time_analysis.get('dayun', {})
+                        if dayun_raw and 'current_dayun' not in fortune_context:
+                            _stem = dayun_raw.get('stem', dayun_raw.get('gan', ''))
+                            _branch = dayun_raw.get('branch', dayun_raw.get('zhi', ''))
+                            fortune_context['current_dayun'] = {
+                                'step': str(dayun_raw.get('step', '')),
+                                'ganzhi': f"{_stem}{_branch}",
+                                'stem': _stem,
+                                'branch': _branch,
+                                'age_display': dayun_raw.get('age_display', dayun_raw.get('age_range', '')),
+                                'main_star': dayun_raw.get('main_star', ''),
+                                'life_stage': dayun_raw.get('life_stage', ''),
+                            }
+                            logger.info(f"[旧路径] 从 time_analysis.dayun 注入 current_dayun: {_stem}{_branch}")
                 except Exception as e:
                     logger.error(f"流年大运分析失败: {e}", exc_info=True)
                     monitor.end_stage("fortune_context", success=False, error=str(e))
