@@ -594,36 +594,44 @@ def build_enhanced_dayun_structure(
         
         selected_dayuns = base_selected_dayuns + additional_dayuns
     else:
-        # 业务策略：当前大运 + 业务选中的大运 + 包含特殊流年的大运
+        # 业务策略：当前大运 + 所有含特殊流年的大运（必须与排盘一致）+ 业务标注
+        # ⚠️ 原则：所有含特殊流年的大运都必须出现（与 fortune/display 一致），
+        #          业务选择器只负责标注 business_reason，不负责筛选。
         selected_steps = set()
         selected_dayuns = []
+        business_steps = {kd.get('step') for kd in business_key_dayuns}
+        business_map = {kd.get('step'): kd for kd in business_key_dayuns}
         
         # 当前大运（优先级1）
         if current_dayun:
             cd = current_dayun.copy()
             cd['priority'] = 1
+            # 如果当前大运也被业务选中，保留业务标注
+            biz = business_map.get(current_dayun.get('step'))
+            if biz:
+                cd['relation_type'] = biz.get('relation_type', '')
+                cd['business_reason'] = biz.get('business_reason', '')
             selected_dayuns.append(cd)
             selected_steps.add(current_dayun.get('step'))
         
-        # 业务选中的关键大运
-        priority = 2
-        for kd in business_key_dayuns:
-            kd_step = kd.get('step')
-            if kd_step not in selected_steps:
-                kd_copy = kd.copy()
-                kd_copy['priority'] = priority
-                selected_dayuns.append(kd_copy)
-                selected_steps.add(kd_step)
-                priority += 1
+        # 合并：业务选中的大运 + 含特殊流年的大运（取并集，统一分配优先级）
+        # 先收集所有需要出现的大运 step
+        must_include_steps = special_dayun_steps | business_steps
         
-        # 补充包含特殊流年但未选中的大运
+        priority = 2
         for dayun in dayun_sequence:
             step = dayun.get('step')
-            if step in special_dayun_steps and step not in selected_steps:
+            if step in must_include_steps and step not in selected_steps:
                 dayun_copy = dayun.copy()
-                dayun_copy['priority'] = 100 + len(selected_dayuns)
+                dayun_copy['priority'] = priority
+                # 如果被业务选择器选中，标注 business_reason
+                biz = business_map.get(step)
+                if biz:
+                    dayun_copy['relation_type'] = biz.get('relation_type', '')
+                    dayun_copy['business_reason'] = biz.get('business_reason', '')
                 selected_dayuns.append(dayun_copy)
                 selected_steps.add(step)
+                priority += 1
     
     # 3. 为每个大运添加元数据
     enhanced_dayuns = []

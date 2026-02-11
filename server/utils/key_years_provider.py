@@ -644,11 +644,11 @@ class KeyYearsProvider:
             f"dayun_liunians_groups={len(dayun_liunians)}"
         )
         
-        # === 业务层：差异化选择关键大运 ===
+        # === 业务层：差异化选择关键大运（只标注，不筛选） ===
         
         selector = BUSINESS_SELECTORS.get(business_type, _select_default_key_dayuns)
         
-        key_dayuns = selector(
+        business_key_dayuns = selector(
             dayun_sequence=dayun_sequence,
             current_dayun=current_dayun,
             current_age=current_age,
@@ -656,9 +656,42 @@ class KeyYearsProvider:
             gender=gender,
         )
         
+        # ⚠️ 关键修复：合并业务选中的大运与含特殊流年的大运（取并集）
+        # 原则：所有含特殊流年的大运必须出现在 key_dayuns 中（与 fortune/display 一致），
+        #        业务选择器只负责标注 business_reason，不负责筛选。
+        business_map = {d.get('step'): d for d in business_key_dayuns}
+        current_step = current_dayun.get('step') if current_dayun else None
+        
+        merged_key_dayuns = []
+        merged_steps = set()
+        
+        # 先加入业务选中的大运（保留标注）
+        for d in business_key_dayuns:
+            step = d.get('step')
+            if step != current_step and step not in merged_steps:
+                merged_key_dayuns.append(d)
+                merged_steps.add(step)
+        
+        # 再补充含特殊流年但未被业务选中的大运
+        for step in dayun_liunians:
+            if step not in merged_steps and step != current_step:
+                # 从 dayun_sequence 中找到对应大运
+                for dayun in dayun_sequence:
+                    dayun_step = dayun.get('step')
+                    try:
+                        dayun_step_int = int(dayun_step) if dayun_step is not None and not isinstance(dayun_step, int) else dayun_step
+                    except (ValueError, TypeError):
+                        dayun_step_int = dayun_step
+                    if dayun_step_int == step or dayun_step == step:
+                        merged_key_dayuns.append(dayun.copy())
+                        merged_steps.add(step)
+                        break
+        
         logger.info(
             f"[KeyYearsProvider] 业务层: strategy={business_type}, "
-            f"selected_key_dayuns={len(key_dayuns)}"
+            f"business_selected={len(business_key_dayuns)}, "
+            f"special_liunian_dayuns={len(dayun_liunians)}, "
+            f"merged_key_dayuns={len(merged_key_dayuns)}"
         )
         
         # === 组装结果：为每个大运附加统一的流年数据 ===
@@ -686,8 +719,8 @@ class KeyYearsProvider:
         # 附加流年到当前大运
         current_dayun_result = _attach_liunians(current_dayun) if current_dayun else None
         
-        # 附加流年到关键大运
-        key_dayuns_result = [_attach_liunians(d) for d in key_dayuns]
+        # 附加流年到关键大运（使用合并后的列表）
+        key_dayuns_result = [_attach_liunians(d) for d in merged_key_dayuns]
         
         return {
             'current_dayun': current_dayun_result,

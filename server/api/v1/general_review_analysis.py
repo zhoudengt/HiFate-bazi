@@ -150,92 +150,23 @@ async def general_review_analysis_test(request: GeneralReviewRequest):
         # 提取和验证数据
         bazi_data = validate_bazi_data(bazi_data)
         
-        # ✅ 使用统一数据服务获取大运流年、特殊流年数据（与流式接口保持一致）
-        from server.orchestrators.bazi_data_service import BaziDataService
+        # ✅ 修复：从 orchestrator 的 unified_data 中提取大运序列和特殊流年（确保与 fortune/display 一致）
+        # ⚠️ 不再调用 BaziDataService.get_fortune_data()，避免绕过 orchestrator 导致数据不一致
         
-        fortune_data = await BaziDataService.get_fortune_data(
-            solar_date=final_solar_date,
-            solar_time=final_solar_time,
-            gender=request.gender,
-            calendar_type=request.calendar_type or "solar",
-            location=request.location,
-            latitude=request.latitude,
-            longitude=request.longitude,
-            include_dayun=True,
-            include_liunian=True,
-            include_special_liunian=True,
-            dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,
-            target_years=BaziDataService.DEFAULT_TARGET_YEARS,
-            current_time=None
-        )
+        # 从 detail_result 中提取大运序列和流年序列
+        dayun_sequence = detail_result.get('dayun_sequence', []) if isinstance(detail_result, dict) else []
+        liunian_sequence = detail_result.get('liunian_sequence', []) if isinstance(detail_result, dict) else []
         
-        # 转换为字典格式（与流式接口保持一致）
-        dayun_sequence = []
-        liunian_sequence = []
-        special_liunians = []
+        # 从 unified_data 中提取特殊流年（已由 orchestrator 统一获取，与 fortune/display 一致）
+        special_liunians_data = unified_data.get('special_liunians', {})
+        if isinstance(special_liunians_data, dict):
+            special_liunians = special_liunians_data.get('list', [])
+        elif isinstance(special_liunians_data, list):
+            special_liunians = special_liunians_data
+        else:
+            special_liunians = []
         
-        for dayun in fortune_data.dayun_sequence:
-            dayun_sequence.append({
-                'step': dayun.step,
-                'stem': dayun.stem,
-                'branch': dayun.branch,
-                'year_start': dayun.year_start,
-                'year_end': dayun.year_end,
-                'age_range': dayun.age_range,
-                'age_display': dayun.age_display,
-                'nayin': dayun.nayin,
-                'main_star': dayun.main_star,
-                'hidden_stems': dayun.hidden_stems or [],
-                'hidden_stars': dayun.hidden_stars or [],
-                'star_fortune': dayun.star_fortune,
-                'self_sitting': dayun.self_sitting,
-                'kongwang': dayun.kongwang,
-                'deities': dayun.deities or [],
-                'details': dayun.details or {}
-            })
-        
-        for liunian in fortune_data.liunian_sequence:
-            liunian_sequence.append({
-                'year': liunian.year,
-                'stem': liunian.stem,
-                'branch': liunian.branch,
-                'ganzhi': liunian.ganzhi,
-                'age': liunian.age,
-                'age_display': liunian.age_display,
-                'nayin': liunian.nayin,
-                'main_star': liunian.main_star,
-                'hidden_stems': liunian.hidden_stems or [],
-                'hidden_stars': liunian.hidden_stars or [],
-                'star_fortune': liunian.star_fortune,
-                'self_sitting': liunian.self_sitting,
-                'kongwang': liunian.kongwang,
-                'deities': liunian.deities or [],
-                'details': liunian.details or {}
-            })
-        
-        for special_liunian in fortune_data.special_liunians:
-            special_liunians.append({
-                'year': special_liunian.year,
-                'stem': special_liunian.stem,
-                'branch': special_liunian.branch,
-                'ganzhi': special_liunian.ganzhi,
-                'age': special_liunian.age,
-                'age_display': special_liunian.age_display,
-                'nayin': special_liunian.nayin,
-                'main_star': special_liunian.main_star,
-                'hidden_stems': special_liunian.hidden_stems or [],
-                'hidden_stars': special_liunian.hidden_stars or [],
-                'star_fortune': special_liunian.star_fortune,
-                'self_sitting': special_liunian.self_sitting,
-                'kongwang': special_liunian.kongwang,
-                'deities': special_liunian.deities or [],
-                'relations': special_liunian.relations or [],
-                'dayun_step': special_liunian.dayun_step,
-                'dayun_ganzhi': special_liunian.dayun_ganzhi,
-                'details': special_liunian.details or {}
-            })
-        
-        logger.info(f"[General Review Test] ✅ 统一数据服务获取完成 - dayun: {len(dayun_sequence)}, liunian: {len(liunian_sequence)}, special: {len(special_liunians)}")
+        logger.info(f"[General Review Test] ✅ 从 orchestrator 提取完成 - dayun: {len(dayun_sequence)}, liunian: {len(liunian_sequence)}, special: {len(special_liunians)}")
         
         # 获取喜忌数据（从 unified_data 获取，与流式接口一致）
         xishen_jishen_result = unified_data.get('xishen_jishen', {})
@@ -256,7 +187,7 @@ async def general_review_analysis_test(request: GeneralReviewRequest):
             personality_result,
             rizhu_result,
             health_result,
-            liunian_sequence,  # 使用从 fortune_data 获取的流年序列
+            liunian_sequence,  # 使用从 orchestrator 获取的流年序列
             special_liunians,
             xishen_jishen_result
         )
@@ -357,9 +288,10 @@ async def general_review_analysis_debug(request: GeneralReviewRequest):
                 'special_liunians': {
                     'dayun_config': {
                         'mode': 'count',
-                        'count': 8
+                        'count': 13  # ⚠️ 统一为 count:13（与 fortune/display 一致）
                     },
-                    'count': 100
+                    'target_years': [2025, 2026, 2027],
+                    'count': 200
                 },
                 'personality': True,
                 'rizhu': True,
@@ -628,9 +560,10 @@ async def general_review_analysis_stream_generator(
                 'special_liunians': {
                     'dayun_config': {
                         'mode': 'count',
-                        'count': 8
+                        'count': 13  # ⚠️ 统一为 count:13（与 fortune/display 一致）
                     },
-                    'count': 100
+                    'target_years': [2025, 2026, 2027],
+                    'count': 200
                 },
                 'personality': True,
                 'rizhu': True,  # ⚠️ 启用 rizhu 模块（调用 RizhuLiujiaziService 返回完整分析）
@@ -697,102 +630,25 @@ async def general_review_analysis_stream_generator(
         # 验证八字数据
         bazi_data = validate_bazi_data(bazi_data)
         
-        # ✅ 使用统一数据服务获取大运流年、特殊流年数据（确保数据一致性）
-        # ✅ 性能优化：复用 unified_data 中已获取的 detail_data，避免重复计算
-        from server.orchestrators.bazi_data_service import BaziDataService
+        # ✅ 修复：从 orchestrator 的 unified_data 中提取大运序列和特殊流年（确保与 fortune/display 一致）
+        # ⚠️ 不再调用 BaziDataService.get_fortune_data()，避免绕过 orchestrator 导致数据不一致
         
-        # 获取完整运势数据（包含大运序列、流年序列、特殊流年）
-        # 性能优化：传入已获取的 detail_data，避免重复调用 calculate_detail_full
-        fortune_data = await BaziDataService.get_fortune_data(
-            solar_date=final_solar_date,
-            solar_time=final_solar_time,
-            gender=gender,
-            calendar_type=calendar_type or "solar",
-            location=location,
-            latitude=latitude,
-            longitude=longitude,
-            include_dayun=True,
-            include_liunian=True,
-            include_special_liunian=True,
-            dayun_mode=BaziDataService.DEFAULT_DAYUN_MODE,  # 统一的大运模式
-            target_years=BaziDataService.DEFAULT_TARGET_YEARS,  # 统一的年份范围
-            current_time=None,
-            detail_result=detail_data  # ✅ 性能优化：复用已获取的 detail_data
-        )
+        # 从 detail_data 中提取大运序列（已由 orchestrator 统一获取）
+        dayun_sequence = detail_data.get('dayun_sequence', []) if isinstance(detail_data, dict) else []
         
-        # ✅ 性能优化：使用列表推导式批量转换，减少循环开销
-        # 从统一数据服务获取大运序列和特殊流年
-        # 转换为字典格式（兼容现有代码）- 使用列表推导式优化性能
-        dayun_sequence = [
-            {
-                'step': dayun.step,
-                'stem': dayun.stem,
-                'branch': dayun.branch,
-                'year_start': dayun.year_start,
-                'year_end': dayun.year_end,
-                'age_range': dayun.age_range,
-                'age_display': dayun.age_display,
-                'nayin': dayun.nayin,
-                'main_star': dayun.main_star,
-                'hidden_stems': dayun.hidden_stems or [],
-                'hidden_stars': dayun.hidden_stars or [],
-                'star_fortune': dayun.star_fortune,
-                'self_sitting': dayun.self_sitting,
-                'kongwang': dayun.kongwang,
-                'deities': dayun.deities or [],
-                'details': dayun.details or {}
-            }
-            for dayun in fortune_data.dayun_sequence
-        ]
+        # 从 unified_data 中提取特殊流年（已由 orchestrator 统一获取，与 fortune/display 一致）
+        special_liunians_data = unified_data.get('special_liunians', {})
+        if isinstance(special_liunians_data, dict):
+            special_liunians = special_liunians_data.get('list', [])
+        elif isinstance(special_liunians_data, list):
+            special_liunians = special_liunians_data
+        else:
+            special_liunians = []
         
-        # 转换为字典格式（兼容现有代码）- 使用列表推导式优化性能
-        liunian_sequence = [
-            {
-                'year': liunian.year,
-                'stem': liunian.stem,
-                'branch': liunian.branch,
-                'ganzhi': liunian.ganzhi,
-                'age': liunian.age,
-                'age_display': liunian.age_display,
-                'nayin': liunian.nayin,
-                'main_star': liunian.main_star,
-                'hidden_stems': liunian.hidden_stems or [],
-                'hidden_stars': liunian.hidden_stars or [],
-                'star_fortune': liunian.star_fortune,
-                'self_sitting': liunian.self_sitting,
-                'kongwang': liunian.kongwang,
-                'deities': liunian.deities or [],
-                'details': liunian.details or {}
-            }
-            for liunian in fortune_data.liunian_sequence
-        ]
+        # 从 detail_data 中提取流年序列
+        liunian_sequence = detail_data.get('liunian_sequence', []) if isinstance(detail_data, dict) else []
         
-        # 转换为字典格式（兼容现有代码）- 使用列表推导式优化性能
-        special_liunians = [
-            {
-                'year': special_liunian.year,
-                'stem': special_liunian.stem,
-                'branch': special_liunian.branch,
-                'ganzhi': special_liunian.ganzhi,
-                'age': special_liunian.age,
-                'age_display': special_liunian.age_display,
-                'nayin': special_liunian.nayin,
-                'main_star': special_liunian.main_star,
-                'hidden_stems': special_liunian.hidden_stems or [],
-                'hidden_stars': special_liunian.hidden_stars or [],
-                'star_fortune': special_liunian.star_fortune,
-                'self_sitting': special_liunian.self_sitting,
-                'kongwang': special_liunian.kongwang,
-                'deities': special_liunian.deities or [],
-                'relations': special_liunian.relations or [],
-                'dayun_step': special_liunian.dayun_step,
-                'dayun_ganzhi': special_liunian.dayun_ganzhi,
-                'details': special_liunian.details or {}
-            }
-            for special_liunian in fortune_data.special_liunians
-        ]
-        
-        logger.info(f"[General Review Stream] ✅ 统一数据服务获取完成 - dayun_sequence 数量: {len(dayun_sequence)}, liunian_sequence 数量: {len(liunian_sequence)}, 特殊流年数量: {len(special_liunians)}")
+        logger.info(f"[General Review Stream] ✅ 从 orchestrator 提取完成 - dayun_sequence 数量: {len(dayun_sequence)}, liunian_sequence 数量: {len(liunian_sequence)}, 特殊流年数量: {len(special_liunians)}")
         
         # 提取规则匹配结果（统一接口返回的是列表格式）
         rizhu_rules = []
