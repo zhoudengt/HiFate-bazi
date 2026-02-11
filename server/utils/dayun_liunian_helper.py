@@ -54,8 +54,8 @@ def get_current_dayun(
     """
     # 遍历大运序列，找到包含当前年龄的大运
     for dayun in dayun_sequence:
-        # 跳过"小运"
-        if dayun.get('stem', '') == '小运' or dayun.get('gan', '') == '小运':
+        # 跳过小运（使用 is_xiaoyun 标记，stem 为真实干支而非 '小运'）
+        if dayun.get('is_xiaoyun', False):
             continue
         
         age_range = dayun.get('age_range', {})
@@ -86,9 +86,9 @@ def get_current_dayun(
                 except:
                     pass
     
-    # 如果没找到，返回第一个非"小运"的大运
+    # 如果没找到，返回第一个非小运的大运
     for dayun in dayun_sequence:
-        if dayun.get('stem', '') != '小运' and dayun.get('gan', '') != '小运':
+        if not dayun.get('is_xiaoyun', False):
             return dayun
     
     return None
@@ -122,7 +122,7 @@ def select_dayuns_with_priority(
         # 如果没有当前大运，返回前count个大运
         result = []
         for idx, dayun in enumerate(dayun_sequence[:count]):
-            if dayun.get('stem', '') != '小运' and dayun.get('gan', '') != '小运':
+            if not dayun.get('is_xiaoyun', False):
                 dayun_copy = dayun.copy()
                 dayun_copy['priority'] = idx + 1
                 result.append(dayun_copy)
@@ -150,7 +150,7 @@ def select_dayuns_with_priority(
         # 如果还是没找到，返回前count个大运
         result = []
         for idx, dayun in enumerate(dayun_sequence[:count]):
-            if dayun.get('stem', '') != '小运' and dayun.get('gan', '') != '小运':
+            if not dayun.get('is_xiaoyun', False):
                 dayun_copy = dayun.copy()
                 dayun_copy['priority'] = idx + 1
                 result.append(dayun_copy)
@@ -176,7 +176,7 @@ def select_dayuns_with_priority(
         # 先选择下一个大运
         if forward_index < len(dayun_sequence) and forward_index not in selected_indices:
             dayun = dayun_sequence[forward_index]
-            if dayun.get('stem', '') != '小运' and dayun.get('gan', '') != '小运':
+            if not dayun.get('is_xiaoyun', False):
                 dayun_copy = dayun.copy()
                 dayun_copy['priority'] = priority
                 result.append(dayun_copy)
@@ -189,7 +189,7 @@ def select_dayuns_with_priority(
         # 再选择前一个大运
         if backward_index >= 0 and backward_index not in selected_indices:
             dayun = dayun_sequence[backward_index]
-            if dayun.get('stem', '') != '小运' and dayun.get('gan', '') != '小运':
+            if not dayun.get('is_xiaoyun', False):
                 dayun_copy = dayun.copy()
                 dayun_copy['priority'] = priority
                 result.append(dayun_copy)

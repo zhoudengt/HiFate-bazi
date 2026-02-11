@@ -237,60 +237,175 @@ def format_deities_text(deities: Dict[str, Any]) -> str:
     return '、'.join(all_deities) if all_deities else "无"
 
 
-def format_dayun_text(current_dayun: Optional[Dict[str, Any]], key_dayuns: list = None) -> str:
+def _get_ganzhi(item: Dict[str, Any]) -> str:
+    """公共辅助：从大运/流年数据中提取干支（兼容多种字段名）"""
+    gz = item.get('ganzhi', '')
+    if not gz:
+        stem = item.get('stem', item.get('gan', ''))
+        branch = item.get('branch', item.get('zhi', ''))
+        gz = f"{stem}{branch}"
+    return gz
+
+
+def _normalize_life_stage(age_display: str, life_stage: str = '') -> str:
+    """公共辅助：基于 age_display 标准化人生阶段"""
+    # 提取起始年龄数字
+    try:
+        age_str = age_display.replace('岁', '').split('-')[0].strip()
+        age = int(age_str)
+    except (ValueError, IndexError):
+        return life_stage or ''
+    
+    if age <= 15:
+        return '少年'
+    elif age <= 30:
+        return '青年'
+    elif age <= 55:
+        return '中年'
+    elif age <= 70:
+        return '中晚年'
+    else:
+        return '晚年'
+
+
+def format_key_dayuns_text(
+    key_dayuns: list,
+    current_dayun: Optional[Dict[str, Any]] = None,
+    special_liunians: list = None
+) -> list:
     """
-    格式化大运为简洁中文文本
+    公共模块：格式化关键大运 + 关键流年（所有流式接口统一调用）
+    
+    规则：
+    1. 按 step 升序排列（时间顺序）
+    2. 特殊流年按 dayun_step 归属到对应大运下
+    3. 人生阶段基于 age_display 标准化
     
     Args:
-        current_dayun: 当前大运数据
-        key_dayuns: 关键大运列表（可选）
+        key_dayuns: 关键大运列表
+        current_dayun: 当前大运数据（可选，单独输出）
+        special_liunians: 特殊流年列表（可选，按 dayun_step 分配到大运下）
         
     Returns:
-        str: 格式化文本
+        list: 格式化后的文本行列表（调用方 extend 到 lines 即可）
     """
-    lines = []
+    result_lines = []
     
-    if current_dayun:
-        stem = current_dayun.get('stem', '')
-        branch = current_dayun.get('branch', '')
-        ganzhi = current_dayun.get('ganzhi', f"{stem}{branch}")
+    # --- 当前大运 ---
+    # 跳过小运（is_xiaoyun），不作为正式大运传给 LLM
+    current_step = None
+    if current_dayun and not current_dayun.get('is_xiaoyun', False):
+        ganzhi = _get_ganzhi(current_dayun)
         step = current_dayun.get('step', '')
+        current_step = str(step)
         age_display = current_dayun.get('age_display', '')
         main_star = current_dayun.get('main_star', '')
+        life_stage = _normalize_life_stage(age_display, current_dayun.get('life_stage', ''))
         
-        current_text = f"第{step}运{ganzhi}({age_display})"
+        cur_text = f"第{step}运{ganzhi}({age_display})"
         if main_star:
-            current_text += f"，{main_star}"
-        lines.append(f"【当前大运】{current_text}")
-    
-    if key_dayuns:
-        key_parts = []
-        for dayun in key_dayuns:  # 不限数量，与排盘一致
-            stem = dayun.get('stem', '')
-            branch = dayun.get('branch', '')
-            ganzhi = dayun.get('ganzhi', f"{stem}{branch}")
-            step = dayun.get('step', '')
-            age_display = dayun.get('age_display', '')
-            main_star = dayun.get('main_star', '')
-            business_reason = dayun.get('business_reason', '')
-            
-            text = f"第{step}运{ganzhi}({age_display})"
-            if main_star:
-                text += f"-{main_star}"
-            if business_reason:
-                text += f"[{business_reason}]"
-            key_parts.append(text)
-            
-            # 关键大运的特殊流年
-            liunians = dayun.get('liunians', dayun.get('key_liunians', []))
-            if liunians:
-                liunian_text = format_liunian_text(liunians)
-                if liunian_text:
-                    key_parts.append(f"  流年:{liunian_text}")
+            cur_text += f"，{main_star}"
+        if life_stage:
+            cur_text += f"，{life_stage}"
+        result_lines.append(f"【当前大运】{cur_text}")
         
-        if key_parts:
-            lines.append(f"【关键大运】{'；'.join(key_parts)}")
+        # 当前大运的流年：先取自身 liunians，再从 special_liunians 补充
+        cur_liunians = _collect_liunians_for_step(current_dayun, current_step, special_liunians)
+        if cur_liunians:
+            liunian_text = format_liunian_text(cur_liunians)
+            if liunian_text:
+                result_lines.append(f"  流年：{liunian_text}")
     
+    # --- 关键大运与流年 ---
+    if not key_dayuns:
+        return result_lines
+    
+    # 按 step 升序排列（时间顺序），只取前10个大运及对应关键流年
+    sorted_dayuns = sorted(key_dayuns, key=lambda d: int(d.get('step', 0) or 0))[:10]
+    
+    dayun_lines = []
+    for dayun in sorted_dayuns:
+        if dayun.get('is_xiaoyun', False):
+            continue
+        step = str(dayun.get('step', ''))
+        # 跳过当前大运（已单独输出）
+        if step == current_step:
+            continue
+        
+        ganzhi = _get_ganzhi(dayun)
+        age_display = dayun.get('age_display', '')
+        main_star = dayun.get('main_star', '')
+        life_stage = _normalize_life_stage(age_display, dayun.get('life_stage', ''))
+        business_reason = dayun.get('business_reason', '')
+        
+        text = f"第{step}运{ganzhi}({age_display})"
+        if main_star:
+            text += f"，{main_star}"
+        if life_stage:
+            text += f"，{life_stage}"
+        if business_reason:
+            text += f"[{business_reason}]"
+        dayun_lines.append(text)
+        
+        # 该大运下的流年
+        step_liunians = _collect_liunians_for_step(dayun, step, special_liunians)
+        if step_liunians:
+            liunian_text = format_liunian_text(step_liunians)
+            if liunian_text:
+                dayun_lines.append(f"  流年：{liunian_text}")
+    
+    if dayun_lines:
+        result_lines.append(f"【关键大运与流年】")
+        result_lines.extend(dayun_lines)
+    
+    return result_lines
+
+
+def _collect_liunians_for_step(
+    dayun: Dict[str, Any],
+    step: str,
+    special_liunians: list = None
+) -> list:
+    """
+    公共辅助：收集某步大运下的所有流年
+    1. 先从 dayun 自身的 liunians / key_liunians 取
+    2. 再从 special_liunians 中按 dayun_step 匹配补充（去重）
+    """
+    # 自身流年
+    own_liunians = dayun.get('liunians', dayun.get('key_liunians', []))
+    if isinstance(own_liunians, dict):
+        # 健康接口的 liunians 是 dict 格式 {type: [items]}
+        flat = []
+        for ltype, lyears in own_liunians.items():
+            if lyears:
+                for ly in lyears:
+                    ly_copy = dict(ly)
+                    ly_copy.setdefault('type_display', ltype)
+                    flat.append(ly_copy)
+        own_liunians = flat
+    
+    result = list(own_liunians) if own_liunians else []
+    existing_years = {str(l.get('year', '')) for l in result}
+    
+    # 从 special_liunians 补充
+    if special_liunians:
+        for sl in special_liunians:
+            sl_step = str(sl.get('dayun_step', ''))
+            sl_year = str(sl.get('year', ''))
+            if sl_step == str(step) and sl_year not in existing_years:
+                result.append(sl)
+                existing_years.add(sl_year)
+    
+    # 按年份排序
+    result.sort(key=lambda x: int(x.get('year', 0) or 0))
+    return result
+
+
+def format_dayun_text(current_dayun: Optional[Dict[str, Any]], key_dayuns: list = None) -> str:
+    """
+    格式化大运为简洁中文文本（兼容旧调用，内部委托给 format_key_dayuns_text）
+    """
+    lines = format_key_dayuns_text(key_dayuns or [], current_dayun)
     return '\n'.join(lines)
 
 
@@ -487,9 +602,9 @@ def build_health_prompt(data: dict) -> str:
     # 3. 大运流年健康警示（按照新格式）
     section3 = data.get('dayun_jiankang', {})
     
-    # 现行运
+    # 现行运（跳过小运）
     current_dayun = section3.get('current_dayun')
-    if current_dayun:
+    if current_dayun and not current_dayun.get('is_xiaoyun', False):
         step = current_dayun.get('step', '')
         age_display = current_dayun.get('age_display', '')
         stem = current_dayun.get('stem', '')
@@ -527,14 +642,19 @@ def build_health_prompt(data: dict) -> str:
         
         prompt_lines.append("")
     
-    # 关键节点大运
+    # 关键节点大运（只传前10个及对应关键流年）
     key_dayuns = section3.get('key_dayuns', [])
     if key_dayuns:
         # 获取完整的大运序列（用于格式化流年）
         all_dayuns = section3.get('all_dayuns', [])
         dayun_sequence_for_format = all_dayuns if all_dayuns else []
-        
+        count = 0
         for key_dayun in key_dayuns:
+            if key_dayun.get('is_xiaoyun', False):
+                continue
+            if count >= 10:
+                break
+            count += 1
             step = key_dayun.get('step', '')
             age_display = key_dayun.get('age_display', '')
             stem = key_dayun.get('stem', '')
@@ -785,57 +905,12 @@ def format_marriage_for_llm(input_data: Dict[str, Any]) -> str:
         if judgments_text:
             lines.append(f"【正缘判词】{judgments_text}")
     
-    # 10. 当前大运
-    current_dayun = ganqing.get('current_dayun', {})
-    if current_dayun:
-        stem = current_dayun.get('stem', '')
-        branch = current_dayun.get('branch', '')
-        ganzhi = f"{stem}{branch}"
-        step = current_dayun.get('step', '')
-        age_display = current_dayun.get('age_display', '')
-        main_star = current_dayun.get('main_star', '')
-        
-        dayun_text = f"第{step}运{ganzhi}({age_display})"
-        if main_star:
-            dayun_text += f"，{main_star}"
-        lines.append(f"【当前大运】{dayun_text}")
-        
-        # 当前大运的特殊流年（不限数量）
-        liunians = current_dayun.get('liunians', [])
-        if liunians:
-            liunian_text = format_liunian_text(liunians)
-            if liunian_text:
-                lines.append(f"【当前大运流年】{liunian_text}")
-    
-    # 11. 关键大运（不限数量，与排盘一致）
-    key_dayuns = ganqing.get('key_dayuns', [])
-    if key_dayuns:
-        key_parts = []
-        for dayun in key_dayuns:
-            stem = dayun.get('stem', '')
-            branch = dayun.get('branch', '')
-            ganzhi = f"{stem}{branch}"
-            step = dayun.get('step', '')
-            age_display = dayun.get('age_display', '')
-            main_star = dayun.get('main_star', '')
-            business_reason = dayun.get('business_reason', '')
-            
-            text = f"第{step}运{ganzhi}({age_display})"
-            if main_star:
-                text += f"-{main_star}"
-            if business_reason:
-                text += f"[{business_reason}]"
-            key_parts.append(text)
-            
-            # 关键大运的特殊流年（不限数量）
-            liunians = dayun.get('liunians', [])
-            if liunians:
-                liunian_text = format_liunian_text(liunians)
-                if liunian_text:
-                    key_parts.append(f"  流年:{liunian_text}")
-        
-        if key_parts:
-            lines.append(f"【关键大运】{'；'.join(key_parts)}")
+    # 10-11. 当前大运 + 关键大运与流年（统一使用公共模块）
+    lines.extend(format_key_dayuns_text(
+        key_dayuns=ganqing.get('key_dayuns', []),
+        current_dayun=ganqing.get('current_dayun', {}),
+        special_liunians=ganqing.get('special_liunians', [])
+    ))
     
     # 12. 喜忌
     xi_ji_text = format_xi_ji_text(xi_ji)
@@ -1044,57 +1119,12 @@ def format_career_wealth_for_llm(input_data: Dict[str, Any]) -> str:
         if judgments_text:
             lines.append(f"【财富判词】{judgments_text}")
     
-    # 12. 当前大运
-    current_dayun = shiye_yunshi.get('current_dayun', {})
-    if current_dayun:
-        stem = current_dayun.get('stem', '')
-        branch = current_dayun.get('branch', '')
-        ganzhi = f"{stem}{branch}"
-        step = current_dayun.get('step', '')
-        age_display = current_dayun.get('age_display', '')
-        main_star = current_dayun.get('main_star', '')
-        
-        dayun_text = f"第{step}运{ganzhi}({age_display})"
-        if main_star:
-            dayun_text += f"，{main_star}"
-        lines.append(f"【当前大运】{dayun_text}")
-        
-        # 当前大运的特殊流年（不限数量）
-        liunians = current_dayun.get('liunians', [])
-        if liunians:
-            liunian_text = format_liunian_text(liunians)
-            if liunian_text:
-                lines.append(f"【当前大运流年】{liunian_text}")
-    
-    # 13. 关键大运（不限数量，与排盘一致）
-    key_dayuns = shiye_yunshi.get('key_dayuns', [])
-    if key_dayuns:
-        key_parts = []
-        for dayun in key_dayuns:
-            stem = dayun.get('stem', '')
-            branch = dayun.get('branch', '')
-            ganzhi = f"{stem}{branch}"
-            step = dayun.get('step', '')
-            age_display = dayun.get('age_display', '')
-            main_star = dayun.get('main_star', '')
-            business_reason = dayun.get('business_reason', '')
-            
-            text = f"第{step}运{ganzhi}({age_display})"
-            if main_star:
-                text += f"-{main_star}"
-            if business_reason:
-                text += f"[{business_reason}]"
-            key_parts.append(text)
-            
-            # 关键大运的特殊流年（不限数量）
-            liunians = dayun.get('liunians', [])
-            if liunians:
-                liunian_text = format_liunian_text(liunians)
-                if liunian_text:
-                    key_parts.append(f"  流年:{liunian_text}")
-        
-        if key_parts:
-            lines.append(f"【关键大运】{'；'.join(key_parts)}")
+    # 12-13. 当前大运 + 关键大运与流年（统一使用公共模块）
+    lines.extend(format_key_dayuns_text(
+        key_dayuns=shiye_yunshi.get('key_dayuns', []),
+        current_dayun=shiye_yunshi.get('current_dayun', {}),
+        special_liunians=shiye_yunshi.get('special_liunians', [])
+    ))
     
     # 14. 喜忌
     xi_ji = tiyun.get('xi_ji', {})
@@ -1262,57 +1292,12 @@ def format_children_study_for_llm(input_data: Dict[str, Any]) -> str:
         if judgments_text:
             lines.append(f"【子女判词】{judgments_text}")
     
-    # 8. 当前大运
-    current_dayun = shengyu.get('current_dayun', {})
-    if current_dayun:
-        stem = current_dayun.get('stem', '')
-        branch = current_dayun.get('branch', '')
-        ganzhi = f"{stem}{branch}"
-        step = current_dayun.get('step', '')
-        age_display = current_dayun.get('age_display', '')
-        main_star = current_dayun.get('main_star', '')
-        
-        dayun_text = f"第{step}运{ganzhi}({age_display})"
-        if main_star:
-            dayun_text += f"，{main_star}"
-        lines.append(f"【当前大运】{dayun_text}")
-        
-        # 特殊流年（不限数量）
-        liunians = current_dayun.get('liunians', [])
-        if liunians:
-            liunian_text = format_liunian_text(liunians)
-            if liunian_text:
-                lines.append(f"【生育关注流年】{liunian_text}")
-    
-    # 9. 关键大运（不限数量，与排盘一致）
-    key_dayuns = shengyu.get('key_dayuns', [])
-    if key_dayuns:
-        key_parts = []
-        for dayun in key_dayuns:
-            stem = dayun.get('stem', '')
-            branch = dayun.get('branch', '')
-            ganzhi = f"{stem}{branch}"
-            step = dayun.get('step', '')
-            age_display = dayun.get('age_display', '')
-            main_star = dayun.get('main_star', '')
-            business_reason = dayun.get('business_reason', '')
-            
-            text = f"第{step}运{ganzhi}({age_display})"
-            if main_star:
-                text += f"-{main_star}"
-            if business_reason:
-                text += f"[{business_reason}]"
-            key_parts.append(text)
-            
-            # 关键大运的特殊流年（不限数量）
-            liunians = dayun.get('liunians', [])
-            if liunians:
-                liunian_text = format_liunian_text(liunians)
-                if liunian_text:
-                    key_parts.append(f"  流年:{liunian_text}")
-        
-        if key_parts:
-            lines.append(f"【关键大运】{'；'.join(key_parts)}")
+    # 8-9. 当前大运 + 关键大运与流年（统一使用公共模块）
+    lines.extend(format_key_dayuns_text(
+        key_dayuns=shengyu.get('key_dayuns', []),
+        current_dayun=shengyu.get('current_dayun', {}),
+        special_liunians=shengyu.get('special_liunians', [])
+    ))
     
     # 10. 喜忌
     xi_ji = yangyu.get('xi_ji', {})
@@ -1453,73 +1438,12 @@ def format_health_for_llm(input_data: Dict[str, Any]) -> str:
         if judgments_text:
             lines.append(f"【健康判词】{judgments_text}")
     
-    # 8. 当前大运（统一使用 ganzhi fallback + main_star）
-    current_dayun = dayun_jiankang.get('current_dayun', {})
-    if current_dayun:
-        stem = current_dayun.get('stem', current_dayun.get('gan', ''))
-        branch = current_dayun.get('branch', current_dayun.get('zhi', ''))
-        ganzhi = current_dayun.get('ganzhi', f"{stem}{branch}")
-        age_display = current_dayun.get('age_display', '')
-        step = current_dayun.get('step', '')
-        main_star = current_dayun.get('main_star', '')
-        
-        cur_text = f"第{step}运{ganzhi}({age_display})"
-        if main_star:
-            cur_text += f"，{main_star}"
-        lines.append(f"【当前大运】{cur_text}")
-        
-        # 特殊流年（不限数量，包括所有类型）
-        liunians = current_dayun.get('liunians', {})
-        special_years = []
-        if isinstance(liunians, dict):
-            for ltype, lyears in liunians.items():
-                if lyears:
-                    for ly in lyears:
-                        year = ly.get('year', '')
-                        ly_ganzhi = ly.get('ganzhi', '')
-                        special_years.append(f"{year}{ly_ganzhi}({ltype})")
-        if special_years:
-            lines.append(f"【健康警示流年】{'; '.join(special_years)}")
-    
-    # 9. 关键大运（不限数量，与排盘一致，统一包含 main_star）
-    key_dayuns = dayun_jiankang.get('key_dayuns', [])
-    if key_dayuns:
-        key_parts = []
-        for dayun in key_dayuns:
-            stem = dayun.get('stem', dayun.get('gan', ''))
-            branch = dayun.get('branch', dayun.get('zhi', ''))
-            ganzhi = dayun.get('ganzhi', f"{stem}{branch}")
-            step = dayun.get('step', '')
-            age_display = dayun.get('age_display', '')
-            main_star = dayun.get('main_star', '')
-            relation_type = dayun.get('relation_type', '')
-            business_reason = dayun.get('business_reason', '')
-            
-            text = f"第{step}运{ganzhi}({age_display})"
-            if main_star:
-                text += f"，{main_star}"
-            if relation_type:
-                text += f"-{relation_type}"
-            if business_reason:
-                text += f"[{business_reason}]"
-            key_parts.append(text)
-            
-            # 关键大运的特殊流年（不限数量）
-            liunians = dayun.get('liunians', {})
-            if isinstance(liunians, dict):
-                for ltype, lyears in liunians.items():
-                    if lyears:
-                        for ly in lyears:
-                            year = ly.get('year', '')
-                            ly_ganzhi = ly.get('ganzhi', '')
-                            key_parts.append(f"  流年:{year}{ly_ganzhi}({ltype})")
-            elif isinstance(liunians, list) and liunians:
-                liunian_text = format_liunian_text(liunians)
-                if liunian_text:
-                    key_parts.append(f"  流年:{liunian_text}")
-        
-        if key_parts:
-            lines.append(f"【关键大运】{'；'.join(key_parts)}")
+    # 8-9. 当前大运 + 关键大运与流年（统一使用公共模块）
+    lines.extend(format_key_dayuns_text(
+        key_dayuns=dayun_jiankang.get('key_dayuns', []),
+        current_dayun=dayun_jiankang.get('current_dayun', {}),
+        special_liunians=dayun_jiankang.get('special_liunians', [])
+    ))
     
     # 10. 喜忌
     xi_ji = tizhi_tiaoli.get('xi_ji', {})
@@ -1767,10 +1691,15 @@ def format_general_review_for_llm(input_data: Dict[str, Any]) -> str:
         return gz
     
     # 11. 完整大运序列（让 LLM 知道每步大运的干支和主星）
+    # 跳过小运（is_xiaoyun），只传前10个大运
     dayun_sequence = guanjian.get('dayun_sequence', [])
     if dayun_sequence:
         seq_parts = []
         for dayun in dayun_sequence:
+            if dayun.get('is_xiaoyun', False):
+                continue
+            if len(seq_parts) >= 10:
+                break
             gz = _get_dayun_ganzhi(dayun)
             step = dayun.get('step', '')
             age_display = dayun.get('age_display', '')
@@ -1780,60 +1709,12 @@ def format_general_review_for_llm(input_data: Dict[str, Any]) -> str:
         if seq_parts:
             lines.append(f"【大运序列】{'；'.join(seq_parts)}")
     
-    # 12. 当前大运（重点分析）
-    current_dayun = guanjian.get('current_dayun', {})
-    if current_dayun:
-        ganzhi = _get_dayun_ganzhi(current_dayun)
-        step = current_dayun.get('step', '')
-        age_display = current_dayun.get('age_display', '')
-        main_star = current_dayun.get('main_star', '')
-        life_stage = current_dayun.get('life_stage', '')
-        
-        cur_text = f"第{step}运{ganzhi}({age_display})"
-        if main_star:
-            cur_text += f"，主星：{main_star}"
-        if life_stage:
-            cur_text += f"，{life_stage}"
-        lines.append(f"【当前大运】{cur_text}")
-        
-        # 特殊流年（不限数量）
-        key_liunians = current_dayun.get('liunians', current_dayun.get('key_liunians', []))
-        if key_liunians:
-            liunian_text = format_liunian_text(key_liunians)
-            if liunian_text:
-                lines.append(f"【当前大运关键流年】{liunian_text}")
-    
-    # 13. 关键大运（不限数量，与排盘一致，包含干支+主星+阶段+流年）
-    key_dayuns = guanjian.get('key_dayuns', [])
-    if key_dayuns:
-        key_lines = []
-        for dayun in key_dayuns:
-            ganzhi = _get_dayun_ganzhi(dayun)
-            step = dayun.get('step', '')
-            age_display = dayun.get('age_display', '')
-            main_star = dayun.get('main_star', '')
-            life_stage = dayun.get('life_stage', '')
-            business_reason = dayun.get('business_reason', '')
-            
-            text = f"第{step}运{ganzhi}({age_display})"
-            if main_star:
-                text += f"，{main_star}"
-            if life_stage:
-                text += f"，{life_stage}"
-            if business_reason:
-                text += f"[{business_reason}]"
-            
-            # 关键大运的特殊流年
-            liunians = dayun.get('liunians', dayun.get('key_liunians', []))
-            if liunians:
-                liunian_text = format_liunian_text(liunians)
-                if liunian_text:
-                    text += f"，流年：{liunian_text}"
-            
-            key_lines.append(text)
-        
-        if key_lines:
-            lines.append(f"【关键大运】{'；'.join(key_lines)}")
+    # 12-13. 当前大运 + 关键大运与流年（统一使用公共模块）
+    lines.extend(format_key_dayuns_text(
+        key_dayuns=guanjian.get('key_dayuns', []),
+        current_dayun=guanjian.get('current_dayun', {}),
+        special_liunians=guanjian.get('special_liunians', [])
+    ))
     
     # 12. 喜忌
     xishen_wuxing = zhongsheng.get('xishen_wuxing', [])
@@ -1963,53 +1844,13 @@ def format_smart_fortune_for_llm(
             ji_text = ''.join(ji_elements) if ji_elements else '无'
             lines.append(f"【喜忌】喜{xi_text}，忌{ji_text}")
     
-    # 7. 大运流年（统一使用 ganzhi fallback 兼容 stem+branch）
-    def _get_gz(item: Dict[str, Any]) -> str:
-        gz = item.get('ganzhi', '')
-        if not gz:
-            gz = f"{item.get('stem', item.get('gan', ''))}{item.get('branch', item.get('zhi', ''))}"
-        return gz
-    
+    # 7. 大运流年（统一使用公共模块）
     if fortune_context:
-        current_dayun = fortune_context.get('current_dayun', {})
-        if current_dayun:
-            ganzhi = _get_gz(current_dayun)
-            step = current_dayun.get('step', '')
-            age_display = current_dayun.get('age_display', '')
-            main_star = current_dayun.get('main_star', '')
-            cur_text = f"第{step}运{ganzhi}({age_display})"
-            if main_star:
-                cur_text += f"，{main_star}"
-            lines.append(f"【当前大运】{cur_text}")
-        
-        # 关键流年（不限数量）
-        key_liunians = fortune_context.get('key_liunians', [])
-        if key_liunians:
-            liunian_text = format_liunian_text(key_liunians)
-            if liunian_text:
-                lines.append(f"【关键流年】{liunian_text}")
-        
-        # 关键大运（不限数量，与排盘一致）
-        key_dayuns = fortune_context.get('key_dayuns', [])
-        if key_dayuns:
-            key_parts = []
-            for dayun in key_dayuns:
-                d_ganzhi = _get_gz(dayun)
-                d_step = dayun.get('step', '')
-                d_age = dayun.get('age_display', '')
-                d_main_star = dayun.get('main_star', '')
-                d_text = f"第{d_step}运{d_ganzhi}({d_age})"
-                if d_main_star:
-                    d_text += f"，{d_main_star}"
-                key_parts.append(d_text)
-                
-                liunians = dayun.get('liunians', dayun.get('key_liunians', []))
-                if liunians:
-                    liunian_text = format_liunian_text(liunians)
-                    if liunian_text:
-                        key_parts.append(f"  流年:{liunian_text}")
-            if key_parts:
-                lines.append(f"【关键大运】{'；'.join(key_parts)}")
+        lines.extend(format_key_dayuns_text(
+            key_dayuns=fortune_context.get('key_dayuns', []),
+            current_dayun=fortune_context.get('current_dayun', {}),
+            special_liunians=fortune_context.get('special_liunians', fortune_context.get('key_liunians', []))
+        ))
     
     # 8. 匹配规则（保留完整判词，不只是规则名）
     if matched_rules:
@@ -2261,9 +2102,6 @@ def format_annual_report_for_llm(input_data: Dict[str, Any]) -> str:
         current_dayun = None
         for dayun in dayuns:
             liunians = dayun.get('liunians', [])
-            start_age = dayun.get('start_age')
-            end_age = dayun.get('end_age')
-            # 通过年份匹配或通过特殊流年匹配
             for ln in liunians:
                 if str(ln.get('year', '')) == str(year):
                     current_dayun = dayun
@@ -2271,54 +2109,12 @@ def format_annual_report_for_llm(input_data: Dict[str, Any]) -> str:
             if current_dayun:
                 break
         
-        # ⚠️ 统一 ganzhi 读取（兼容 ganzhi / stem+branch / gan+zhi）
-        def _get_annual_gz(item: Dict[str, Any]) -> str:
-            gz = item.get('ganzhi', '')
-            if not gz:
-                gz = f"{item.get('stem', item.get('gan', ''))}{item.get('branch', item.get('zhi', ''))}"
-            return gz
-        
-        if current_dayun:
-            ganzhi = _get_annual_gz(current_dayun)
-            step = current_dayun.get('step', '')
-            age_display = current_dayun.get('age_display', '')
-            main_star = current_dayun.get('main_star', '')
-            cur_text = f"第{step}运{ganzhi}({age_display})"
-            if main_star:
-                cur_text += f"，{main_star}"
-            lines.append(f"【当前大运】{cur_text}")
-            
-            # 当前大运的特殊流年（不限数量）
-            liunians = current_dayun.get('liunians', [])
-            if liunians:
-                liunian_text = format_liunian_text(liunians)
-                if liunian_text:
-                    lines.append(f"【当前大运特殊流年】{liunian_text}")
-        
-        # 所有含特殊流年的大运（不限数量，与排盘一致）
-        key_dayun_parts = []
-        current_step = current_dayun.get('step') if current_dayun else None
-        for dayun in dayuns:
-            step = dayun.get('step')
-            liunians = dayun.get('liunians', [])
-            if not liunians or step == current_step:
-                continue
-            
-            ganzhi = _get_annual_gz(dayun)
-            age_display = dayun.get('age_display', '')
-            main_star = dayun.get('main_star', '')
-            text = f"第{step}运{ganzhi}({age_display})"
-            if main_star:
-                text += f"，{main_star}"
-            key_dayun_parts.append(text)
-            
-            # 该大运下的特殊流年
-            liunian_text = format_liunian_text(liunians)
-            if liunian_text:
-                key_dayun_parts.append(f"  流年:{liunian_text}")
-        
-        if key_dayun_parts:
-            lines.append(f"【关键大运】{'；'.join(key_dayun_parts)}")
+        # 使用公共模块格式化大运+流年（排序、流年归属、阶段标准化）
+        lines.extend(format_key_dayuns_text(
+            key_dayuns=dayuns,
+            current_dayun=current_dayun,
+            special_liunians=dayun_liunian.get('special_liunians', [])
+        ))
     
     return '\n'.join(lines)
 
