@@ -954,14 +954,20 @@ async def _fetch_bazi_data_via_orchestrator(
     # 数据来源与 fortune/display 一致（BaziDetailService.calculate_detail_full → liunian_sequence.relations）
     special_liunians_data = unified_data.get('special_liunians', {})
     special_liunians_list = special_liunians_data.get('list', []) if isinstance(special_liunians_data, dict) else []
-    if fortune_context is not None and special_liunians_list:
+    if special_liunians_list:
+        if fortune_context is None:
+            fortune_context = {}
         fortune_context['key_liunians'] = special_liunians_list
     
     # ⚠️ 统一架构：注入 current_dayun / key_dayuns 到 fortune_context（与其他流式接口一致）
     # format_smart_fortune_for_llm 读 fortune_context['current_dayun'] / fortune_context['key_dayuns']
     # 但 FortuneContextService 返回的 fortune_context 没有这两个字段，需要用 build_enhanced_dayun_structure 构建
+    # ⚠️ 关键：即使 fortune_context 为 None（FortuneContextService 未返回），也要构建
     details_data = detail_result.get('details', detail_result) if isinstance(detail_result, dict) else {}
     dayun_sequence = details_data.get('dayun_sequence', [])
+    if fortune_context is None and dayun_sequence:
+        fortune_context = {}  # 创建空的 fortune_context，后续注入 current_dayun/key_dayuns
+        logger.info("⚠️ fortune_context 为 None，从 detail_result 构建")
     if fortune_context is not None and dayun_sequence:
         try:
             from datetime import datetime as _dt
