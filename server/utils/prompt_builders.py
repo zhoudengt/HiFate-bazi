@@ -319,8 +319,9 @@ def format_key_dayuns_text(
     if not key_dayuns:
         return result_lines
     
-    # 按 step 升序排列（时间顺序），只取前10个大运及对应关键流年
-    sorted_dayuns = sorted(key_dayuns, key=lambda d: int(d.get('step', 0) or 0))[:10]
+    # 按 step 升序排列（时间顺序），只保留前10步大运（step <= 10）
+    sorted_dayuns = sorted(key_dayuns, key=lambda d: int(d.get('step', 0) or 0))
+    sorted_dayuns = [d for d in sorted_dayuns if int(d.get('step', 0) or 0) <= 10]
     
     dayun_lines = []
     for dayun in sorted_dayuns:
@@ -639,17 +640,16 @@ def build_health_prompt(data: dict) -> str:
         
         prompt_lines.append("")
     
-    # 关键节点大运（只传前10个及对应关键流年）
+    # 关键节点大运（只保留前10步，step <= 10）
     key_dayuns = section3.get('key_dayuns', [])
     if key_dayuns:
         # 获取完整的大运序列（用于格式化流年）
         all_dayuns = section3.get('all_dayuns', [])
         dayun_sequence_for_format = all_dayuns if all_dayuns else []
-        count = 0
         for key_dayun in key_dayuns:
-            if count >= 10:
-                break
-            count += 1
+            step_num = int(key_dayun.get('step', 0) or 0)
+            if step_num > 10:
+                continue
             step = key_dayun.get('step', '')
             age_display = key_dayun.get('age_display', '')
             stem = key_dayun.get('stem', '')
