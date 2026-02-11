@@ -292,9 +292,8 @@ def format_key_dayuns_text(
     result_lines = []
     
     # --- 当前大运 ---
-    # 跳过小运（is_xiaoyun），不作为正式大运传给 LLM
     current_step = None
-    if current_dayun and not current_dayun.get('is_xiaoyun', False):
+    if current_dayun:
         ganzhi = _get_ganzhi(current_dayun)
         step = current_dayun.get('step', '')
         current_step = str(step)
@@ -325,8 +324,6 @@ def format_key_dayuns_text(
     
     dayun_lines = []
     for dayun in sorted_dayuns:
-        if dayun.get('is_xiaoyun', False):
-            continue
         step = str(dayun.get('step', ''))
         # 跳过当前大运（已单独输出）
         if step == current_step:
@@ -602,9 +599,9 @@ def build_health_prompt(data: dict) -> str:
     # 3. 大运流年健康警示（按照新格式）
     section3 = data.get('dayun_jiankang', {})
     
-    # 现行运（跳过小运）
+    # 现行运
     current_dayun = section3.get('current_dayun')
-    if current_dayun and not current_dayun.get('is_xiaoyun', False):
+    if current_dayun:
         step = current_dayun.get('step', '')
         age_display = current_dayun.get('age_display', '')
         stem = current_dayun.get('stem', '')
@@ -650,8 +647,6 @@ def build_health_prompt(data: dict) -> str:
         dayun_sequence_for_format = all_dayuns if all_dayuns else []
         count = 0
         for key_dayun in key_dayuns:
-            if key_dayun.get('is_xiaoyun', False):
-                continue
             if count >= 10:
                 break
             count += 1
@@ -1690,16 +1685,11 @@ def format_general_review_for_llm(input_data: Dict[str, Any]) -> str:
             gz = f"{stem}{branch}"
         return gz
     
-    # 11. 完整大运序列（让 LLM 知道每步大运的干支和主星）
-    # 跳过小运（is_xiaoyun），只传前10个大运
+    # 11. 完整大运序列（让 LLM 知道每步大运的干支和主星），只传前10个
     dayun_sequence = guanjian.get('dayun_sequence', [])
     if dayun_sequence:
         seq_parts = []
-        for dayun in dayun_sequence:
-            if dayun.get('is_xiaoyun', False):
-                continue
-            if len(seq_parts) >= 10:
-                break
+        for dayun in dayun_sequence[:10]:
             gz = _get_dayun_ganzhi(dayun)
             step = dayun.get('step', '')
             age_display = dayun.get('age_display', '')

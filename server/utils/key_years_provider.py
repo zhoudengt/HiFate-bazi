@@ -328,8 +328,6 @@ def _select_health_key_dayuns(
     
     key_dayuns = []
     for dayun in dayun_sequence:
-        if dayun.get('is_xiaoyun', False):
-            continue
         relation_type = _analyze_dayun_health_relation(dayun, element_counts)
         if relation_type:
             dayun_copy = dayun.copy()
@@ -380,8 +378,6 @@ def _select_marriage_key_dayuns(
     current_step = current_dayun.get('step') if current_dayun else None
     
     for dayun in dayun_sequence:
-        if dayun.get('is_xiaoyun', False):
-            continue
         if dayun.get('step') == current_step:
             continue
         
@@ -441,8 +437,6 @@ def _select_career_key_dayuns(
     current_step = current_dayun.get('step') if current_dayun else None
     
     for dayun in dayun_sequence:
-        if dayun.get('is_xiaoyun', False):
-            continue
         if dayun.get('step') == current_step:
             continue
         
@@ -496,8 +490,6 @@ def _select_children_key_dayuns(
     current_step = current_dayun.get('step') if current_dayun else None
     
     for dayun in dayun_sequence:
-        if dayun.get('is_xiaoyun', False):
-            continue
         if dayun.get('step') == current_step:
             continue
         
