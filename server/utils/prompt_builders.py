@@ -1453,43 +1453,51 @@ def format_health_for_llm(input_data: Dict[str, Any]) -> str:
         if judgments_text:
             lines.append(f"【健康判词】{judgments_text}")
     
-    # 8. 当前大运
+    # 8. 当前大运（统一使用 ganzhi fallback + main_star）
     current_dayun = dayun_jiankang.get('current_dayun', {})
     if current_dayun:
-        stem = current_dayun.get('stem', '')
-        branch = current_dayun.get('branch', '')
-        ganzhi = f"{stem}{branch}"
+        stem = current_dayun.get('stem', current_dayun.get('gan', ''))
+        branch = current_dayun.get('branch', current_dayun.get('zhi', ''))
+        ganzhi = current_dayun.get('ganzhi', f"{stem}{branch}")
         age_display = current_dayun.get('age_display', '')
         step = current_dayun.get('step', '')
+        main_star = current_dayun.get('main_star', '')
         
-        lines.append(f"【当前大运】第{step}运{ganzhi}({age_display})")
+        cur_text = f"第{step}运{ganzhi}({age_display})"
+        if main_star:
+            cur_text += f"，{main_star}"
+        lines.append(f"【当前大运】{cur_text}")
         
         # 特殊流年（不限数量，包括所有类型）
         liunians = current_dayun.get('liunians', {})
         special_years = []
-        for ltype, lyears in liunians.items():
-            if lyears:
-                for ly in lyears:
-                    year = ly.get('year', '')
-                    ly_ganzhi = ly.get('ganzhi', '')
-                    special_years.append(f"{year}{ly_ganzhi}({ltype})")
+        if isinstance(liunians, dict):
+            for ltype, lyears in liunians.items():
+                if lyears:
+                    for ly in lyears:
+                        year = ly.get('year', '')
+                        ly_ganzhi = ly.get('ganzhi', '')
+                        special_years.append(f"{year}{ly_ganzhi}({ltype})")
         if special_years:
             lines.append(f"【健康警示流年】{'; '.join(special_years)}")
     
-    # 9. 关键大运（不限数量，与排盘一致）
+    # 9. 关键大运（不限数量，与排盘一致，统一包含 main_star）
     key_dayuns = dayun_jiankang.get('key_dayuns', [])
     if key_dayuns:
         key_parts = []
         for dayun in key_dayuns:
-            stem = dayun.get('stem', '')
-            branch = dayun.get('branch', '')
-            ganzhi = f"{stem}{branch}"
+            stem = dayun.get('stem', dayun.get('gan', ''))
+            branch = dayun.get('branch', dayun.get('zhi', ''))
+            ganzhi = dayun.get('ganzhi', f"{stem}{branch}")
             step = dayun.get('step', '')
             age_display = dayun.get('age_display', '')
+            main_star = dayun.get('main_star', '')
             relation_type = dayun.get('relation_type', '')
             business_reason = dayun.get('business_reason', '')
             
             text = f"第{step}运{ganzhi}({age_display})"
+            if main_star:
+                text += f"，{main_star}"
             if relation_type:
                 text += f"-{relation_type}"
             if business_reason:
@@ -1955,15 +1963,24 @@ def format_smart_fortune_for_llm(
             ji_text = ''.join(ji_elements) if ji_elements else '无'
             lines.append(f"【喜忌】喜{xi_text}，忌{ji_text}")
     
-    # 7. 大运流年
+    # 7. 大运流年（统一使用 ganzhi fallback 兼容 stem+branch）
+    def _get_gz(item: Dict[str, Any]) -> str:
+        gz = item.get('ganzhi', '')
+        if not gz:
+            gz = f"{item.get('stem', item.get('gan', ''))}{item.get('branch', item.get('zhi', ''))}"
+        return gz
+    
     if fortune_context:
         current_dayun = fortune_context.get('current_dayun', {})
         if current_dayun:
-            ganzhi = current_dayun.get('ganzhi', '')
+            ganzhi = _get_gz(current_dayun)
             step = current_dayun.get('step', '')
             age_display = current_dayun.get('age_display', '')
-            if ganzhi:
-                lines.append(f"【当前大运】第{step}运{ganzhi}({age_display})")
+            main_star = current_dayun.get('main_star', '')
+            cur_text = f"第{step}运{ganzhi}({age_display})"
+            if main_star:
+                cur_text += f"，{main_star}"
+            lines.append(f"【当前大运】{cur_text}")
         
         # 关键流年（不限数量）
         key_liunians = fortune_context.get('key_liunians', [])
@@ -1977,10 +1994,13 @@ def format_smart_fortune_for_llm(
         if key_dayuns:
             key_parts = []
             for dayun in key_dayuns:
-                d_ganzhi = dayun.get('ganzhi', '')
+                d_ganzhi = _get_gz(dayun)
                 d_step = dayun.get('step', '')
                 d_age = dayun.get('age_display', '')
+                d_main_star = dayun.get('main_star', '')
                 d_text = f"第{d_step}运{d_ganzhi}({d_age})"
+                if d_main_star:
+                    d_text += f"，{d_main_star}"
                 key_parts.append(d_text)
                 
                 liunians = dayun.get('liunians', dayun.get('key_liunians', []))
@@ -2251,11 +2271,22 @@ def format_annual_report_for_llm(input_data: Dict[str, Any]) -> str:
             if current_dayun:
                 break
         
+        # ⚠️ 统一 ganzhi 读取（兼容 ganzhi / stem+branch / gan+zhi）
+        def _get_annual_gz(item: Dict[str, Any]) -> str:
+            gz = item.get('ganzhi', '')
+            if not gz:
+                gz = f"{item.get('stem', item.get('gan', ''))}{item.get('branch', item.get('zhi', ''))}"
+            return gz
+        
         if current_dayun:
-            ganzhi = current_dayun.get('ganzhi', '')
+            ganzhi = _get_annual_gz(current_dayun)
             step = current_dayun.get('step', '')
             age_display = current_dayun.get('age_display', '')
-            lines.append(f"【当前大运】第{step}运{ganzhi}({age_display})")
+            main_star = current_dayun.get('main_star', '')
+            cur_text = f"第{step}运{ganzhi}({age_display})"
+            if main_star:
+                cur_text += f"，{main_star}"
+            lines.append(f"【当前大运】{cur_text}")
             
             # 当前大运的特殊流年（不限数量）
             liunians = current_dayun.get('liunians', [])
@@ -2273,9 +2304,12 @@ def format_annual_report_for_llm(input_data: Dict[str, Any]) -> str:
             if not liunians or step == current_step:
                 continue
             
-            ganzhi = dayun.get('ganzhi', '')
+            ganzhi = _get_annual_gz(dayun)
             age_display = dayun.get('age_display', '')
+            main_star = dayun.get('main_star', '')
             text = f"第{step}运{ganzhi}({age_display})"
+            if main_star:
+                text += f"，{main_star}"
             key_dayun_parts.append(text)
             
             # 该大运下的特殊流年
