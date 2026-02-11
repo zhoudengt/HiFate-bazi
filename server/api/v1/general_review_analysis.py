@@ -1144,10 +1144,13 @@ def build_general_review_input_data(
         # ⚠️ 不再限制数量，所有流年都显示，按优先级排序
         all_liunians = sorted(cleaned_liunians, key=lambda x: x.get('priority', 999999))
         
+        _stem = current_dayun_enhanced.get('gan', current_dayun_enhanced.get('stem', ''))
+        _branch = current_dayun_enhanced.get('zhi', current_dayun_enhanced.get('branch', ''))
         current_dayun_data = {
             'step': str(current_dayun_enhanced.get('step', '')),
-            'stem': current_dayun_enhanced.get('gan', current_dayun_enhanced.get('stem', '')),
-            'branch': current_dayun_enhanced.get('zhi', current_dayun_enhanced.get('branch', '')),
+            'ganzhi': f"{_stem}{_branch}",  # ⚠️ 关键：合成干支字段，供 format 函数使用
+            'stem': _stem,
+            'branch': _branch,
             'age_display': current_dayun_enhanced.get('age_display', current_dayun_enhanced.get('age_range', '')),
             'main_star': current_dayun_enhanced.get('main_star', ''),
             'priority': current_dayun_enhanced.get('priority', 1),
@@ -1166,16 +1169,20 @@ def build_general_review_input_data(
         # ⚠️ 不再限制数量，所有流年都显示，按优先级排序
         all_liunians_for_dayun = sorted(cleaned_liunians, key=lambda x: x.get('priority', 999999))
         
+        _kd_stem = key_dayun.get('gan', key_dayun.get('stem', ''))
+        _kd_branch = key_dayun.get('zhi', key_dayun.get('branch', ''))
         key_dayuns_data.append({
             'step': str(key_dayun.get('step', '')),
-            'stem': key_dayun.get('gan', key_dayun.get('stem', '')),
-            'branch': key_dayun.get('zhi', key_dayun.get('branch', '')),
+            'ganzhi': f"{_kd_stem}{_kd_branch}",  # ⚠️ 关键：合成干支字段
+            'stem': _kd_stem,
+            'branch': _kd_branch,
             'age_display': key_dayun.get('age_display', key_dayun.get('age_range', '')),
             'main_star': key_dayun.get('main_star', ''),
             'priority': key_dayun.get('priority', 999),
             'life_stage': key_dayun.get('life_stage', ''),
             'description': key_dayun.get('description', ''),
             'note': key_dayun.get('note', ''),
+            'business_reason': key_dayun.get('business_reason', ''),  # ⚠️ 保留业务标注
             'liunians': all_liunians_for_dayun  # ⚠️ 使用全部流年，不限制数量
         })
     
