@@ -1912,6 +1912,14 @@ def format_annual_report_for_llm(input_data: Dict[str, Any]) -> str:
     fengshui = input_data.get('fengshui_info', {})
     dayun_liunian = input_data.get('dayun_liunian', {})
     
+    # ⚠️ 年份锁定指令：防止百炼平台系统提示词中的年份覆盖后端计算的正确年份
+    target_year = monthly.get('year', taisui.get('year', ''))
+    if target_year:
+        lines.append(f"【年份锁定指令 — 最高优先级】")
+        lines.append(f"本报告仅针对{target_year}年。以下所有数据（太岁、九宫飞星、流月、犯太岁属相等）已由系统精确计算完成。")
+        lines.append(f"你必须严格使用下方数据输出报告，禁止替换为其他年份信息。若你的知识与下方数据冲突，以下方数据为准。")
+        lines.append("")
+    
     # 1. 命主基本信息
     bazi_pillars = mingpan.get('bazi_pillars', {})
     pillars_text = format_bazi_pillars_text(bazi_pillars)
