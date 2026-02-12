@@ -12,7 +12,6 @@ from typing import Dict, Any, Optional, List
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
-from core.calculators.LunarConverter import LunarConverter
 from core.data.stems_branches import BRANCH_ZODIAC
 from core.data.relations import BRANCH_CHONG, BRANCH_XING, BRANCH_HAI, BRANCH_PO
 import logging
@@ -20,20 +19,69 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-# 太岁名称映射（根据年份地支）
+# 六十甲子太岁名称完整对照表（按干支组合，非地支）
+# 每六十年一轮回，每年对应一位太岁大将军
 TAISUI_NAMES = {
-    '子': '甲子太岁金辨星君',
-    '丑': '乙丑太岁陈材星君',
-    '寅': '丙寅太岁耿章星君',
-    '卯': '丁卯太岁沈兴星君',
-    '辰': '戊辰太岁赵达星君',
-    '巳': '己巳太岁郭灿星君',
-    '午': '丙午太岁文哲星君',
-    '未': '丁未太岁缪丙星君',
-    '申': '戊申太岁徐浩星君',
-    '酉': '己酉太岁程宝星君',
-    '戌': '庚戌太岁倪秘星君',
-    '亥': '辛亥太岁叶坚星君',
+    '甲子': '甲子太岁金辨大将军',
+    '乙丑': '乙丑太岁陈材大将军',
+    '丙寅': '丙寅太岁耿章大将军',
+    '丁卯': '丁卯太岁沈兴大将军',
+    '戊辰': '戊辰太岁赵达大将军',
+    '己巳': '己巳太岁郭灿大将军',
+    '庚午': '庚午太岁王济大将军',
+    '辛未': '辛未太岁李素大将军',
+    '壬申': '壬申太岁刘旺大将军',
+    '癸酉': '癸酉太岁康志大将军',
+    '甲戌': '甲戌太岁施广大将军',
+    '乙亥': '乙亥太岁任保大将军',
+    '丙子': '丙子太岁郭嘉大将军',
+    '丁丑': '丁丑太岁汪文大将军',
+    '戊寅': '戊寅太岁鲁先大将军',
+    '己卯': '己卯太岁龙仲大将军',
+    '庚辰': '庚辰太岁董德大将军',
+    '辛巳': '辛巳太岁郑但大将军',
+    '壬午': '壬午太岁陆明大将军',
+    '癸未': '癸未太岁魏仁大将军',
+    '甲申': '甲申太岁方杰大将军',
+    '乙酉': '乙酉太岁蒋崇大将军',
+    '丙戌': '丙戌太岁白敏大将军',
+    '丁亥': '丁亥太岁封济大将军',
+    '戊子': '戊子太岁邹铛大将军',
+    '己丑': '己丑太岁傅佑大将军',
+    '庚寅': '庚寅太岁邬桓大将军',
+    '辛卯': '辛卯太岁范宁大将军',
+    '壬辰': '壬辰太岁彭泰大将军',
+    '癸巳': '癸巳太岁徐单大将军',
+    '甲午': '甲午太岁章词大将军',
+    '乙未': '乙未太岁杨仙大将军',
+    '丙申': '丙申太岁管仲大将军',
+    '丁酉': '丁酉太岁唐杰大将军',
+    '戊戌': '戊戌太岁姜武大将军',
+    '己亥': '己亥太岁谢太大将军',
+    '庚子': '庚子太岁卢秘大将军',
+    '辛丑': '辛丑太岁杨信大将军',
+    '壬寅': '壬寅太岁贺谔大将军',
+    '癸卯': '癸卯太岁皮时大将军',
+    '甲辰': '甲辰太岁李诚大将军',
+    '乙巳': '乙巳太岁吴遂大将军',
+    '丙午': '丙午太岁文哲大将军',
+    '丁未': '丁未太岁缪丙大将军',
+    '戊申': '戊申太岁徐浩大将军',
+    '己酉': '己酉太岁程宝大将军',
+    '庚戌': '庚戌太岁倪秘大将军',
+    '辛亥': '辛亥太岁叶坚大将军',
+    '壬子': '壬子太岁丘德大将军',
+    '癸丑': '癸丑太岁朱得大将军',
+    '甲寅': '甲寅太岁张朝大将军',
+    '乙卯': '乙卯太岁万清大将军',
+    '丙辰': '丙辰太岁辛亚大将军',
+    '丁巳': '丁巳太岁杨彦大将军',
+    '戊午': '戊午太岁黎卿大将军',
+    '己未': '己未太岁傅党大将军',
+    '庚申': '庚申太岁毛梓大将军',
+    '辛酉': '辛酉太岁石政大将军',
+    '壬戌': '壬戌太岁洪充大将军',
+    '癸亥': '癸亥太岁虞程大将军',
 }
 
 # 太岁描述映射
@@ -65,35 +113,55 @@ STEM_ELEMENTS = {
 class TaisuiService:
     """太岁服务"""
     
+    # 天干地支序列（用于年干支计算）
+    _STEMS = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']
+    _BRANCHES = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥']
+    
+    @staticmethod
+    def _calc_year_ganzhi(year: int) -> tuple:
+        """
+        根据公历年份计算年干支（标准六十甲子公式）
+        
+        注意：LunarConverter.get_year_ganzhi() 使用 1月1日计算，
+        但1月1日在立春之前，导致返回的是上一年干支。
+        此处使用标准公式直接计算，确保年份与干支一一对应。
+        
+        公式：天干 = (year - 4) % 10，地支 = (year - 4) % 12
+        例如：2025 → 乙巳，2026 → 丙午
+        
+        Args:
+            year: 公历年份
+            
+        Returns:
+            tuple: (天干, 地支)
+        """
+        stem_idx = (year - 4) % 10
+        branch_idx = (year - 4) % 12
+        return TaisuiService._STEMS[stem_idx], TaisuiService._BRANCHES[branch_idx]
+    
     @staticmethod
     def get_taisui_info(year: int) -> Dict[str, Any]:
         """
         获取指定年份的太岁信息
         
         Args:
-            year: 年份（如：2026）
+            year: 年份（如：2025）
             
         Returns:
             dict: 太岁信息
             {
-                'year': 2026,
-                'stem': '丙',
-                'branch': '午',
-                'ganzhi': '丙午',
-                'taisui_name': '丙午太岁文哲星君',
-                'taisui_description': '司火势，主变动',
-                'element': '火'
+                'year': 2025,
+                'stem': '乙',
+                'branch': '巳',
+                'ganzhi': '乙巳',
+                'taisui_name': '乙巳太岁吴遂大将军',
+                'taisui_description': '司火势，主变化',
+                'element': '木'
             }
         """
         try:
-            # 获取年份干支
-            year_ganzhi = LunarConverter.get_year_ganzhi(year)
-            if not year_ganzhi:
-                logger.error(f"无法获取年份 {year} 的干支")
-                return {}
-            
-            stem = year_ganzhi.get('stem', '')
-            branch = year_ganzhi.get('branch', '')
+            # 使用标准公式计算年干支（避免 LunarConverter 的立春偏移问题）
+            stem, branch = TaisuiService._calc_year_ganzhi(year)
             
             if not stem or not branch:
                 logger.error(f"年份 {year} 的干支不完整: {year_ganzhi}")
@@ -120,39 +188,17 @@ class TaisuiService:
     @staticmethod
     def _get_taisui_name(stem: str, branch: str) -> str:
         """
-        获取太岁名称
+        获取太岁名称（从六十甲子完整对照表查询）
         
         Args:
             stem: 天干
             branch: 地支
             
         Returns:
-            str: 太岁名称
+            str: 太岁名称，如 '乙巳太岁吴遂大将军'
         """
-        # 优先使用年份干支对应的太岁名称
         ganzhi = f"{stem}{branch}"
-        
-        # 特殊年份的太岁名称（根据实际年份调整）
-        special_names = {
-            '丙午': '丙午太岁文哲星君',
-            '丁未': '丁未太岁缪丙星君',
-            '戊申': '戊申太岁徐浩星君',
-            '己酉': '己酉太岁程宝星君',
-            '庚戌': '庚戌太岁倪秘星君',
-            '辛亥': '辛亥太岁叶坚星君',
-            '壬子': '壬子太岁丘德星君',
-            '癸丑': '癸丑太岁朱得星君',
-            '甲寅': '甲寅太岁张朝星君',
-            '乙卯': '乙卯太岁万清星君',
-            '丙辰': '丙辰太岁辛亚星君',
-            '丁巳': '丁巳太岁杨彦星君',
-        }
-        
-        if ganzhi in special_names:
-            return special_names[ganzhi]
-        
-        # 默认使用地支对应的太岁名称
-        return TAISUI_NAMES.get(branch, f'{ganzhi}太岁')
+        return TAISUI_NAMES.get(ganzhi, f'{ganzhi}太岁')
     
     @staticmethod
     def check_fanshaisui(user_zodiac: str, taisui_branch: str) -> Dict[str, Any]:
