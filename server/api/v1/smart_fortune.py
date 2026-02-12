@@ -1183,7 +1183,7 @@ async def _scenario_1_generator(
             if len(full_brief_response) > 100:
                 full_brief_response = full_brief_response[:100]
             
-            yield _sse_message("brief_response_end", {"content": full_brief_response})
+            yield _sse_message("brief_response_end", {})
         
         # ==================== 取预设问题结果（已与简短答复并行执行） ====================
         yield _sse_message("status", {"stage": "preset_questions", "message": "正在生成预设问题..."})
