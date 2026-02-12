@@ -1140,7 +1140,7 @@ async def _scenario_1_generator(
         
         with monitor.stage("brief_response", "生成简短答复（百炼）", category=category):
             # ⭐ 使用 LLMServiceFactory 获取百炼服务
-            llm_service = LLMServiceFactory.get_service(scene="smart_fortune_brief")
+            llm_service = LLMServiceFactory.get_service(scene="qa_question_generate")
             
             # 构建简短答复 Prompt
             bazi_result_for_prompt = complete_bazi_data.get("bazi_result", {})
@@ -1269,7 +1269,7 @@ async def _generate_preset_questions_bailian(
 ) -> List[str]:
     """使用百炼平台生成预设问题列表（10-15个）"""
     try:
-        llm_service = LLMServiceFactory.get_service(scene="smart_fortune_brief")
+        llm_service = LLMServiceFactory.get_service(scene="qa_question_generate")
         
         bazi_result = bazi_data.get("bazi_result", {})
         category_names = {
@@ -1330,7 +1330,7 @@ async def _generate_questions_async_bailian(
     """异步生成相关问题（百炼版，使用 LLMServiceFactory）"""
     try:
         # 使用场景2同一个百炼智能体，发送问题生成 Prompt
-        llm_service = LLMServiceFactory.get_service(scene="smart_fortune_analysis")
+        llm_service = LLMServiceFactory.get_service(scene="qa_analysis")
         
         category_names = {
             "事业财富": "事业和财富", "婚姻": "婚姻感情",
@@ -1485,7 +1485,7 @@ async def _scenario_2_generator(
         
         with monitor.stage("llm_analysis", "LLM深度解读（流式）", intent=main_intent):
             # ⭐ 使用 LLMServiceFactory 获取百炼服务（根据数据库 LLM_PLATFORM 配置自动选择）
-            llm_service = LLMServiceFactory.get_service(scene="smart_fortune_analysis")
+            llm_service = LLMServiceFactory.get_service(scene="qa_analysis")
             
             # ⭐ 使用 format_smart_fortune_for_llm 构建精简中文 Prompt（含历史上下文记忆压缩）
             formatted_prompt = format_smart_fortune_for_llm(
