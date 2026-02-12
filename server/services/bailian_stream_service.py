@@ -118,14 +118,14 @@ class BailianStreamService(BaseLLMStreamService):
         Args:
             prompt: 提示词
             trace_id: 请求追踪ID（可选，用于日志关联）
-            **kwargs: 其他参数（如 session_id 等）
+            **kwargs: 其他参数（如 session_id、app_id 覆盖等）
             
         Yields:
             dict: 包含 type 和 content 的字典
                 - type: 'progress' 或 'complete' 或 'error'
                 - content: 内容文本
         """
-        app_id = self.client.config.get_app_id(self.scene)
+        app_id = kwargs.pop('app_id', None) or self.client.config.get_app_id(self.scene)
         if not app_id:
             error_msg = f'百炼平台未配置 {self.scene} 场景的 App ID，请在 service_configs 表中配置 BAILIAN_{self.scene.upper()}_APP_ID'
             logger.error(error_msg)

@@ -50,6 +50,7 @@ class AnnualReportRequest(BaseModel):
     gender: str = Field(..., description="性别：male(男) 或 female(女)", example="male")
     bot_id: Optional[str] = Field(None, description="Coze Bot ID（可选，默认使用数据库配置）")
     year: Optional[int] = Field(None, description="目标年份（可选，默认使用数据库配置 ANNUAL_REPORT_YEAR）")
+    app_id: Optional[str] = Field(None, description="百炼智能体 App ID（可选，覆盖数据库配置）")
 
 
 @router.post("/annual-report/test", summary="测试接口：返回格式化后的数据（用于 Coze Bot）")
@@ -231,7 +232,8 @@ async def annual_report_stream(request: AnnualReportRequest):
             request.solar_time,
             request.gender,
             request.bot_id,
-            request.year
+            request.year,
+            request.app_id
         ),
         media_type="text/event-stream"
     )
@@ -242,7 +244,8 @@ async def annual_report_stream_generator(
     solar_time: str,
     gender: str,
     bot_id: Optional[str] = None,
-    year: Optional[int] = None
+    year: Optional[int] = None,
+    app_id: Optional[str] = None
 ):
     """流式生成年运报告的生成器（一级接口）"""
     try:
@@ -431,7 +434,7 @@ async def annual_report_stream_generator(
         logger.info(f"开始流式生成，Bot ID: {actual_bot_id}, 数据长度: {len(formatted_data)}")
         
         try:
-            async for chunk in llm_service.stream_analysis(formatted_data, bot_id=actual_bot_id):
+            async for chunk in llm_service.stream_analysis(formatted_data, bot_id=actual_bot_id, app_id=app_id):
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
                 if chunk.get('type') in ['complete', 'error']:
                     break
