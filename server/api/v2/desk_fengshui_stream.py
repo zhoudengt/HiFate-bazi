@@ -312,7 +312,7 @@ async def desk_fengshui_stream_generator(
             function_type='desk_fengshui',
             frontend_api='/api/v2/desk-fengshui/analyze/stream',
             frontend_input=frontend_input,
-            input_data=json.dumps(result, ensure_ascii=False) if result else '',
+            input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
             llm_output=llm_output,
             api_total_ms=int((api_end_time - api_start_time) * 1000),
             input_data_gen_ms=None,

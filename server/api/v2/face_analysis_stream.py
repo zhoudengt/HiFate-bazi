@@ -352,7 +352,7 @@ async def face_analysis_stream_generator(
             function_type='face_analysis',
             frontend_api='/api/v2/face/analyze/stream',
             frontend_input=frontend_input,
-            input_data=json.dumps(response_data, ensure_ascii=False) if response_data else '',
+            input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
             llm_output=llm_output,
             api_total_ms=int((api_end_time - api_start_time) * 1000),
             input_data_gen_ms=None,

@@ -681,7 +681,7 @@ async def xishen_jishen_stream_generator(
                 function_type='xishen_jishen',
                 frontend_api='/api/v1/bazi/xishen-jishen/stream',
                 frontend_input=frontend_input,
-                input_data=json.dumps(input_data, ensure_ascii=False) if input_data else '',
+                input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
                 llm_output=llm_output,
                 api_total_ms=api_response_time_ms,
                 llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,

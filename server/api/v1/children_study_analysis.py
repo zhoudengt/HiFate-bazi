@@ -725,7 +725,7 @@ async def children_study_analysis_stream_generator(
             function_type='children',
             frontend_api='/api/v1/bazi/children-study/stream',
             frontend_input=frontend_input,
-            input_data=json.dumps(input_data, ensure_ascii=False) if 'input_data' in locals() and input_data else '',
+            input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
             llm_output=llm_output,
             llm_platform='coze',
             api_total_ms=api_total_ms,
