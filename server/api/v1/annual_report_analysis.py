@@ -49,6 +49,7 @@ class AnnualReportRequest(BaseModel):
     solar_time: str = Field(..., description="出生时间，格式：HH:MM", example="14:30")
     gender: str = Field(..., description="性别：male(男) 或 female(女)", example="male")
     bot_id: Optional[str] = Field(None, description="Coze Bot ID（可选，默认使用数据库配置）")
+    year: Optional[int] = Field(None, description="目标年份（可选，默认使用数据库配置 ANNUAL_REPORT_YEAR）")
 
 
 @router.post("/annual-report/test", summary="测试接口：返回格式化后的数据（用于 Coze Bot）")
@@ -71,19 +72,22 @@ async def annual_report_test(request: AnnualReportRequest):
             request.solar_date, request.solar_time, "solar", None, None, None
         )
         
-        # 2. 从数据库读取年份配置
-        target_year_str = get_config_from_db_only("ANNUAL_REPORT_YEAR")
-        if target_year_str:
-            try:
-                target_year = int(target_year_str)
-            except ValueError:
-                logger.warning(f"年份配置无效: {target_year_str}，使用默认值2026")
-                target_year = 2026
+        # 2. 确定目标年份：优先使用请求参数，否则从数据库配置读取
+        if request.year:
+            target_year = request.year
+            logger.info(f"年运报告使用请求指定年份: {target_year}")
         else:
-            logger.warning("年份配置不存在，使用默认值2026")
-            target_year = 2026
-        
-        logger.info(f"年运报告目标年份: {target_year}")
+            target_year_str = get_config_from_db_only("ANNUAL_REPORT_YEAR")
+            if target_year_str:
+                try:
+                    target_year = int(target_year_str)
+                except ValueError:
+                    logger.warning(f"年份配置无效: {target_year_str}，使用默认值2026")
+                    target_year = 2026
+            else:
+                logger.warning("年份配置不存在，使用默认值2026")
+                target_year = 2026
+            logger.info(f"年运报告使用数据库配置年份: {target_year}")
         
         # 3. 使用统一接口获取数据（增加 special_liunians 获取）
         modules = {
@@ -162,8 +166,8 @@ async def annual_report_test(request: AnnualReportRequest):
                 "input_data": input_data
             }
         
-        # 7. 格式化数据
-        formatted_data = AnnualReportService.format_input_data_for_coze(input_data)
+        # 7. 格式化数据（使用与 stream 端点相同的优化版格式化函数，确保一致性）
+        formatted_data = format_annual_report_for_llm(input_data)
         
         return {
             "success": True,
@@ -226,7 +230,8 @@ async def annual_report_stream(request: AnnualReportRequest):
             request.solar_date,
             request.solar_time,
             request.gender,
-            request.bot_id
+            request.bot_id,
+            request.year
         ),
         media_type="text/event-stream"
     )
@@ -236,7 +241,8 @@ async def annual_report_stream_generator(
     solar_date: str,
     solar_time: str,
     gender: str,
-    bot_id: Optional[str] = None
+    bot_id: Optional[str] = None,
+    year: Optional[int] = None
 ):
     """流式生成年运报告的生成器（一级接口）"""
     try:
@@ -252,19 +258,22 @@ async def annual_report_stream_generator(
             solar_date, solar_time, "solar", None, None, None
         )
         
-        # 3. 从数据库读取年份配置
-        target_year_str = get_config_from_db_only("ANNUAL_REPORT_YEAR")
-        if target_year_str:
-            try:
-                target_year = int(target_year_str)
-            except ValueError:
-                logger.warning(f"年份配置无效: {target_year_str}，使用默认值2026")
-                target_year = 2026
+        # 3. 确定目标年份：优先使用请求参数，否则从数据库配置读取
+        if year:
+            target_year = year
+            logger.info(f"年运报告使用请求指定年份: {target_year}")
         else:
-            logger.warning("年份配置不存在，使用默认值2026")
-            target_year = 2026
-        
-        logger.info(f"年运报告目标年份: {target_year}")
+            target_year_str = get_config_from_db_only("ANNUAL_REPORT_YEAR")
+            if target_year_str:
+                try:
+                    target_year = int(target_year_str)
+                except ValueError:
+                    logger.warning(f"年份配置无效: {target_year_str}，使用默认值2026")
+                    target_year = 2026
+            else:
+                logger.warning("年份配置不存在，使用默认值2026")
+                target_year = 2026
+            logger.info(f"年运报告使用数据库配置年份: {target_year}")
         
         # 4. 使用统一接口获取数据（增加 special_liunians 获取）
         try:
