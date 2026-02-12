@@ -214,9 +214,9 @@ MYSQL_DATABASE=hifate_bazi
 REDIS_HOST=localhost
 REDIS_PORT=16379
 
-# Coze AI 配置（智能运势分析）
-COZE_ACCESS_TOKEN=your_token
-COZE_BOT_ID=your_bot_id
+# 百炼平台配置（智能运势分析、流式分析等）
+# 在 service_configs 数据库表中配置 BAILIAN_API_KEY 和各场景 APP_ID
+# 详见 docs/coze_bot_prompts_optimized.md
 ```
 
 ### 启动服务
@@ -305,7 +305,7 @@ AI 驱动的智能运势分析，支持自然语言提问：
 
 - 🤖 **意图识别**：混合架构（关键词过滤 + 本地 BERT 模型 + LLM 兜底）
 - 📊 **规则匹配**：自动匹配相关规则类型
-- 🔮 **LLM 深度解读**：基于 Coze AI 的深度分析
+- 🔮 **LLM 深度解读**：基于百炼平台的深度分析
 - 📈 **性能监控**：端到端性能监控和优化
 - ⚡ **流式输出**：支持流式响应，提升用户体验
 
@@ -408,7 +408,7 @@ else:
 - **数据库**: MySQL 8.0
 - **缓存**: Redis 7.0
 - **AI 模型**: 
-  - Coze AI (智能运势分析)
+  - 百炼平台 (智能运势分析、流式分析)
   - BERT/RoBERTa (意图识别)
   - YOLOv8 (物品检测)
 
@@ -552,7 +552,7 @@ Copyright © 2025 HiFate. All rights reserved.
 
 - [FastAPI](https://fastapi.tiangolo.com/) - 现代、快速的 Web 框架
 - [gRPC](https://grpc.io/) - 高性能 RPC 框架
-- [Coze AI](https://www.coze.cn/) - AI 能力支持
+- [阿里云百炼](https://bailian.console.aliyun.com/) - AI 智能体平台
 - [YOLOv8](https://github.com/ultralytics/ultralytics) - 物品检测模型
 
 ---

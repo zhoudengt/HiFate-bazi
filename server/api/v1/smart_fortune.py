@@ -4,7 +4,7 @@
 """
 from fastapi import APIRouter, Query, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple, AsyncGenerator
 import sys
 import os
 import json
@@ -18,7 +18,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 from server.services.intent_client import IntentServiceClient
 from server.services.bazi_service import BaziService
 from server.services.fortune_llm_client import get_fortune_llm_client
+from server.services.llm_service_factory import LLMServiceFactory
 from server.utils.performance_monitor import PerformanceMonitor
+from server.utils.prompt_builders import format_smart_fortune_for_llm
 from core.calculators.BaziCalculator import BaziCalculator
 from server.utils.dayun_liunian_helper import (
     calculate_user_age,
@@ -765,6 +767,44 @@ async def test_intent(
         }
 
 
+async def get_smart_analyze_stream_generator(
+    payload: Dict[str, Any]
+) -> Tuple[Optional[AsyncGenerator[str, None]], Optional[Dict[str, Any]]]:
+    """
+    根据 payload 构建智能运势流式生成器（与 gRPC-Web handler 共用逻辑）。
+    
+    Returns:
+        (generator, None) 表示成功，可迭代产出 SSE 字符串；
+        (None, error_dict) 表示参数错误，error_dict 为 { "success": False, "error": "..." }。
+    """
+    question = payload.get("question")
+    year = payload.get("year")
+    month = payload.get("month")
+    day = payload.get("day")
+    hour = payload.get("hour", 12)
+    gender = payload.get("gender")
+    user_id = payload.get("user_id")
+    category = payload.get("category")
+    monitor = PerformanceMonitor()
+    is_scenario_1 = category and (not question or question == category)
+    is_scenario_2 = category and question and question != category
+
+    if is_scenario_1:
+        if not user_id or not year or not month or not day or not gender:
+            return None, {"success": False, "error": "场景1需要提供完整的生辰信息（year, month, day, gender, user_id）"}
+        gen = _scenario_1_generator(year, month, day, hour, gender, category, user_id, monitor)
+        return gen, None
+    if is_scenario_2:
+        if not user_id:
+            return None, {"success": False, "error": "场景2需要提供user_id参数"}
+        gen = _scenario_2_generator(question, category, user_id, year, month, day, hour, gender, monitor)
+        return gen, None
+    if question and year and month and day and gender:
+        gen = _original_scenario_generator(question, year, month, day, hour, gender, user_id, monitor)
+        return gen, None
+    return None, {"success": False, "error": "参数不完整，请检查输入"}
+
+
 @router.get("/smart-analyze-stream")
 async def smart_analyze_stream(request: Request):
     """
@@ -879,6 +919,32 @@ async def smart_analyze_stream(request: Request):
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no"  # 禁用nginx缓冲
         }
+    )
+
+
+@router.post("/smart-analyze-stream/stream")
+async def smart_analyze_stream_post(payload: Dict[str, Any]):
+    """
+    智能运势分析（真正 SSE 流式，POST JSON body，供前端流式消费）。
+    
+    请求体与 gRPC-Web Call 的 payload_json 一致，例如：
+    {"question":"...", "year":1990, "month":1, "day":1, "hour":12, "gender":"male", "user_id":"...", "category":"事业财富"}
+    
+    返回：text/event-stream，与 GET /smart-analyze-stream 的 SSE 格式一致。
+    前端可用 fetch() + ReadableStream 或 EventSource 消费，无需等待全量结束。
+    """
+    generator, error = await get_smart_analyze_stream_generator(payload)
+    if error is not None:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=400, content=error)
+    return StreamingResponse(
+        generator,
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -1048,9 +1114,8 @@ async def _scenario_1_generator(
     year: int, month: int, day: int, hour: int, gender: str,
     category: str, user_id: str, monitor: PerformanceMonitor
 ):
-    """场景1：点击选择项 → 生成简短答复 + 预设问题列表"""
+    """场景1：点击选择项 → 生成简短答复 + 预设问题列表（百炼平台）"""
     from server.services.bazi_session_service import BaziSessionService
-    from server.services.fortune_llm_client import get_fortune_llm_client
     from server.services.conversation_history_service import ConversationHistoryService
     import time
     
@@ -1065,76 +1130,72 @@ async def _scenario_1_generator(
             complete_bazi_data = await _fetch_bazi_data_via_orchestrator(year, month, day, hour, gender, user_id, save_to_cache=True)
             logger.info(f"✅ 场景1：完整八字数据已保存到会话缓存（包含所有信息）: user_id={user_id}")
         
-        # ==================== 生成简短答复（100字内，流式）====================
+        # ==================== 并行：简短答复（流式）+ 预设问题列表 ====================
         yield _sse_message("brief_response_start", {})
         
-        with monitor.stage("brief_response", "生成简短答复", category=category):
-            llm_client = get_fortune_llm_client()
+        # ⭐ 使用百炼平台：并行启动预设问题生成
+        preset_questions_task = asyncio.create_task(
+            _generate_preset_questions_bailian(complete_bazi_data, category)
+        )
+        
+        with monitor.stage("brief_response", "生成简短答复（百炼）", category=category):
+            # ⭐ 使用 LLMServiceFactory 获取百炼服务
+            llm_service = LLMServiceFactory.get_service(scene="smart_fortune_brief")
             
-            # 调用LLM生成简短答复
-            brief_response_generator = llm_client.generate_brief_response(
-                bazi_data=complete_bazi_data,
-                category=category
-            )
+            # 构建简短答复 Prompt
+            bazi_result_for_prompt = complete_bazi_data.get("bazi_result", {})
+            category_names = {
+                "事业财富": "事业和财富", "婚姻": "婚姻感情",
+                "健康": "健康运势", "子女": "子女运势",
+                "流年运势": "流年运势", "年运报告": "年运报告"
+            }
+            category_cn = category_names.get(category, category)
+            
+            brief_prompt = f"""请基于用户的八字信息，生成关于"{category_cn}"的简短答复（100字以内）。
+
+【用户八字信息】
+{_format_bazi_brief(bazi_result_for_prompt)}
+
+【要求】
+1. 内容要简洁明了，控制在100字以内
+2. 聚焦于{category_cn}方面
+3. 语言通俗易懂
+4. 直接给出核心结论，不需要详细分析
+
+请直接回答："""
             
             full_brief_response = ""
-            new_conversation_id = None  # ⭐ 用于保存从LLM响应中提取的 conversation_id
             
-            for chunk in brief_response_generator:
-                if chunk.get('type') == 'start':
-                    # start chunk 可能包含 conversation_id（如果从 created 事件获取）
-                    conv_id = chunk.get('conversation_id')
-                    if conv_id:
-                        new_conversation_id = conv_id
-                elif chunk.get('type') == 'chunk':
-                    content = chunk.get('content', '')
+            async for result in llm_service.stream_analysis(brief_prompt):
+                result_type = result.get('type')
+                if result_type == 'progress':
+                    content = result.get('content', '')
                     if content:
                         full_brief_response += content
                         yield _sse_message("brief_response_chunk", {"content": content})
-                elif chunk.get('type') == 'end':
-                    # ⭐ 从 end chunk 中提取 conversation_id（Coze API 在 completed 事件返回）
-                    conv_id = chunk.get('conversation_id')
-                    if conv_id:
-                        new_conversation_id = conv_id
-                    
-                    # 保存 conversation_id 用于后续多轮对话
-                    if new_conversation_id:
-                        logger.info(f"📥 场景1：从LLM响应获取到 conversation_id: {new_conversation_id[:20]}...")
-                        BaziSessionService.save_coze_conversation_id(user_id, new_conversation_id)
+                elif result_type == 'complete':
                     break
-                elif chunk.get('type') == 'error':
-                    error_msg = chunk.get('error', '未知错误')
+                elif result_type == 'error':
+                    error_msg = result.get('content', '未知错误')
                     yield _sse_message("brief_response_error", {"message": error_msg})
                     return
             
-            # 确保不超过100字
             if len(full_brief_response) > 100:
                 full_brief_response = full_brief_response[:100]
             
             yield _sse_message("brief_response_end", {"content": full_brief_response})
         
-        # ==================== 生成预设问题列表 ====================
+        # ==================== 取预设问题结果（已与简短答复并行执行） ====================
         yield _sse_message("status", {"stage": "preset_questions", "message": "正在生成预设问题..."})
         
-        with monitor.stage("preset_questions", "生成预设问题列表", category=category):
-            preset_questions_generator = llm_client.generate_preset_questions(
-                bazi_data=complete_bazi_data,
-                category=category
-            )
-            
-            preset_questions = []
-            for chunk in preset_questions_generator:
-                if chunk.get('type') == 'complete':
-                    questions_data = chunk.get('questions', [])
-                    if isinstance(questions_data, list):
-                        preset_questions = questions_data
-                    break
-                elif chunk.get('type') == 'error':
-                    error_msg = chunk.get('error', '未知错误')
-                    logger.warning(f"生成预设问题失败: {error_msg}")
-                    # 使用默认问题列表
+        with monitor.stage("preset_questions", "生成预设问题列表（百炼）", category=category):
+            try:
+                preset_questions = await preset_questions_task
+                if not preset_questions:
                     preset_questions = _get_default_preset_questions(category)
-                    break
+            except Exception as e:
+                logger.warning(f"生成预设问题失败: {e}")
+                preset_questions = _get_default_preset_questions(category)
             
             yield _sse_message("preset_questions", {"questions": preset_questions})
         
@@ -1154,13 +1215,13 @@ async def _scenario_1_generator(
                 user_id=user_id,
                 session_id=user_id,
                 category=category,
-                question=f"[选择项] {category}",  # 场景1没有问题，用分类作为标识
+                question=f"[选择项] {category}",
                 answer=full_brief_response,
                 intent="category_selection",
                 bazi_summary=bazi_summary,
                 round_number=1,
                 response_time_ms=response_time_ms,
-                conversation_id=new_conversation_id or "",
+                conversation_id="",
                 scenario_type="scenario1"
             )
         )
@@ -1180,39 +1241,152 @@ async def _scenario_1_generator(
         yield _sse_message("end", {})
 
 
-async def _generate_questions_async(
+
+
+def _format_bazi_brief(bazi_result: Dict[str, Any]) -> str:
+    """格式化八字信息为简短文本（供场景1简短答复 Prompt）"""
+    pillars = (
+        bazi_result.get('bazi_pillars') or
+        bazi_result.get('bazi', {}).get('bazi_pillars') or
+        {}
+    )
+    if not pillars:
+        return "（八字信息不可用）"
+    
+    parts = []
+    for eng, cn in [("year", "年柱"), ("month", "月柱"), ("day", "日柱"), ("hour", "时柱")]:
+        p = pillars.get(eng, {})
+        if isinstance(p, dict):
+            parts.append(f"{cn}:{p.get('stem', '')}{p.get('branch', '')}")
+        elif isinstance(p, str):
+            parts.append(f"{cn}:{p}")
+    return ' '.join(parts) if parts else "（八字信息不可用）"
+
+
+async def _generate_preset_questions_bailian(
+    bazi_data: Dict[str, Any],
+    category: str
+) -> List[str]:
+    """使用百炼平台生成预设问题列表（10-15个）"""
+    try:
+        llm_service = LLMServiceFactory.get_service(scene="smart_fortune_brief")
+        
+        bazi_result = bazi_data.get("bazi_result", {})
+        category_names = {
+            "事业财富": "事业和财富", "婚姻": "婚姻感情",
+            "健康": "健康运势", "子女": "子女运势",
+            "流年运势": "流年运势", "年运报告": "年运报告"
+        }
+        category_cn = category_names.get(category, category)
+        
+        prompt = f"""请基于用户的八字信息，生成10-15个关于"{category_cn}"的预设问题。
+
+【用户八字信息】
+{_format_bazi_brief(bazi_result)}
+
+【要求】
+1. 生成10-15个相关问题
+2. 问题要具体、实用，覆盖{category_cn}的各个方面
+3. 问题要通俗易懂，不使用专业术语
+4. 必须以JSON数组格式返回，例如：["问题1", "问题2", "问题3"]
+
+请直接返回JSON数组："""
+        
+        full_text = ""
+        async for result in llm_service.stream_analysis(prompt):
+            result_type = result.get('type')
+            if result_type == 'progress':
+                full_text += result.get('content', '')
+            elif result_type in ('complete', 'error'):
+                break
+        
+        # 解析 JSON 数组
+        if full_text:
+            try:
+                # 尝试提取 JSON 数组
+                import re
+                json_match = re.search(r'\[.*\]', full_text, re.DOTALL)
+                if json_match:
+                    questions = json.loads(json_match.group())
+                    if isinstance(questions, list) and len(questions) > 0:
+                        logger.info(f"✅ 百炼生成预设问题: {len(questions)}个")
+                        return [q for q in questions if isinstance(q, str)][:15]
+            except (json.JSONDecodeError, Exception) as e:
+                logger.warning(f"解析预设问题JSON失败: {e}")
+        
+        logger.warning("百炼生成预设问题为空，使用默认问题")
+        return _get_default_preset_questions(category)
+    except Exception as e:
+        logger.error(f"百炼生成预设问题异常: {e}", exc_info=True)
+        return _get_default_preset_questions(category)
+
+
+async def _generate_questions_async_bailian(
     partial_response: str,
     user_intent: Dict[str, Any],
     bazi_data: Dict[str, Any],
     category: str
 ) -> List[str]:
-    """异步生成相关问题（后台任务）"""
-    from server.services.fortune_llm_client import get_fortune_llm_client
-    
-    loop = asyncio.get_event_loop()
-    llm_client = get_fortune_llm_client()
-    
-    # 在线程池中执行（因为LLM调用是同步的）
-    def _generate():
-        generator = llm_client.generate_related_questions(
-            bazi_response=partial_response,
-            user_intent=user_intent,
-            bazi_data=bazi_data,
-            category=category
-        )
-        for chunk in generator:
-            if chunk.get('type') == 'complete':
-                return chunk.get('questions', [])[:2]
-            elif chunk.get('type') == 'error':
-                logger.warning(f"并行生成相关问题失败: {chunk.get('error', '未知错误')}")
-                return []
-        return []
-    
+    """异步生成相关问题（百炼版，使用 LLMServiceFactory）"""
     try:
-        return await loop.run_in_executor(None, _generate)
+        # 使用场景2同一个百炼智能体，发送问题生成 Prompt
+        llm_service = LLMServiceFactory.get_service(scene="smart_fortune_analysis")
+        
+        category_names = {
+            "事业财富": "事业和财富", "婚姻": "婚姻感情",
+            "健康": "健康运势", "子女": "子女运势",
+            "流年运势": "流年运势", "年运报告": "年运报告"
+        }
+        category_cn = category_names.get(category, category or "综合运势")
+        
+        prompt = f"""请基于以下已回答内容，快速生成2个相关的后续问题。
+
+【已回答内容】
+{partial_response[:300]}
+
+【分类】{category_cn}
+
+【要求】
+1. 只生成2个问题，每行一个，不编号，不加说明
+2. 问题必须用通俗易懂的语言，禁止使用任何命理专业术语
+3. 每个问题不超过20字
+4. 直接输出问题，不要其他内容"""
+        
+        full_text = ""
+        async for result in llm_service.stream_analysis(prompt):
+            result_type = result.get('type')
+            if result_type == 'progress':
+                full_text += result.get('content', '')
+            elif result_type in ('complete', 'error'):
+                break
+        
+        # 解析问题列表
+        if full_text:
+            questions = _parse_questions_from_text(full_text)
+            if questions:
+                logger.info(f"✅ 百炼生成相关问题: {questions}")
+                return questions[:2]
+        
+        logger.warning("百炼生成相关问题为空，使用默认问题")
+        return _get_default_related_questions(category)[:2]
     except Exception as e:
-        logger.error(f"并行生成相关问题异常: {e}", exc_info=True)
-        return []
+        logger.error(f"百炼生成相关问题异常: {e}", exc_info=True)
+        return _get_default_related_questions(category)[:2]
+
+
+def _parse_questions_from_text(text: str) -> List[str]:
+    """从纯文本中解析问题列表（每行一个问题）"""
+    questions = []
+    for line in text.strip().split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        # 去掉可能的编号前缀（1. 2. 或 1、2、等）
+        import re
+        line = re.sub(r'^[\d]+[.、)）]\s*', '', line).strip()
+        if line and 3 <= len(line) <= 30:
+            questions.append(line)
+    return questions
 
 
 async def _scenario_2_generator(
@@ -1220,17 +1394,20 @@ async def _scenario_2_generator(
     year: Optional[int], month: Optional[int], day: Optional[int],
     hour: int, gender: Optional[str], monitor: PerformanceMonitor
 ):
-    """场景2：点击预设问题/输入问题 → 生成详细流式回答 + 2个相关问题（category可选）"""
+    """场景2：点击预设问题/输入问题 → 生成详细流式回答 + 2个相关问题（category可选，百炼平台）"""
     from server.services.bazi_session_service import BaziSessionService
-    from server.services.fortune_llm_client import get_fortune_llm_client
     from server.services.conversation_history_service import ConversationHistoryService
     import time
     
     start_time = time.time()  # 记录开始时间，用于计算响应时间
     
     try:
-        # ==================== 从会话缓存获取完整八字数据 ====================
-        complete_bazi_data = BaziSessionService.get_bazi_session(user_id)
+        # ==================== 并行获取会话数据（非阻塞，2个Redis调用并行执行） ====================
+        loop = asyncio.get_event_loop()
+        complete_bazi_data, history_context = await asyncio.gather(
+            loop.run_in_executor(None, BaziSessionService.get_bazi_session, user_id),
+            loop.run_in_executor(None, ConversationHistoryService.get_history_from_redis, user_id)
+        )
         
         if not complete_bazi_data:
             # 降级处理：如果有完整生辰信息，自动计算八字数据
@@ -1254,15 +1431,6 @@ async def _scenario_2_generator(
                 yield _sse_message("end", {})
                 return
         
-        # ==================== 获取 Coze conversation_id（用于多轮对话上下文） ====================
-        conversation_id = BaziSessionService.get_coze_conversation_id(user_id)
-        if conversation_id:
-            logger.info(f"✅ 场景2：从Redis获取到 conversation_id: {conversation_id[:20]}...")
-        else:
-            logger.warning(f"⚠️ 场景2：未找到 conversation_id，将作为新对话")
-        
-        # ==================== 获取历史对话上下文（最近5轮） ====================
-        history_context = ConversationHistoryService.get_history_from_redis(user_id)
         current_round = len(history_context) + 1
         logger.info(f"✅ 场景2：获取历史上下文，当前第{current_round}轮对话，历史{len(history_context)}轮")
         
@@ -1310,74 +1478,60 @@ async def _scenario_2_generator(
             "fortune_context": fortune_context
         })
         
-        # ==================== 流式输出LLM深度解读 ====================
+        # ==================== 流式输出LLM深度解读（百炼平台） ====================
         yield _sse_message("status", {"stage": "llm", "message": "正在生成深度解读..."})
         
         main_intent = rule_type  # 直接使用rule_type，不再需要从rule_types获取
         
         with monitor.stage("llm_analysis", "LLM深度解读（流式）", intent=main_intent):
-            llm_client = get_fortune_llm_client()
+            # ⭐ 使用 LLMServiceFactory 获取百炼服务（根据数据库 LLM_PLATFORM 配置自动选择）
+            llm_service = LLMServiceFactory.get_service(scene="smart_fortune_analysis")
             
-            # 调用LLM生成详细回答（使用分层数据结构）
-            # ⭐ 传递完整数据：基础数据 + 当前问题 + 历史上下文
-            llm_result = llm_client.analyze_fortune(
-                intent=main_intent,
-                question=question,
+            # ⭐ 使用 format_smart_fortune_for_llm 构建精简中文 Prompt（含历史上下文记忆压缩）
+            formatted_prompt = format_smart_fortune_for_llm(
                 bazi_data=bazi_result,
                 fortune_context=fortune_context,
-                matched_rules=matched_rules,
-                stream=True,
+                matched_rules=matched_rules or [],
+                question=question,
+                intent=main_intent,
                 category=category,
-                minimal_mode=True,  # 使用分层模式（已重构为完整数据+历史压缩）
-                conversation_id=conversation_id,
-                history_context=history_context  # ⭐ 传递历史上下文（最近5轮的关键词+摘要）
+                history_context=history_context
             )
+            logger.info(f"📤 场景2 Prompt 构建完成: intent={main_intent}, category={category}, size={len(formatted_prompt)}字符")
             
             full_response = ""
             chunk_received = False
             questions_task = None  # 后台任务
             cached_questions = []  # 缓存的问题
-            new_conversation_id = None  # ⭐ 从LLM响应中提取的新 conversation_id
             
-            for chunk in llm_result:
+            yield _sse_message("llm_start", {})
+            
+            async for result in llm_service.stream_analysis(formatted_prompt):
                 chunk_received = True
-                chunk_type = chunk.get('type') if isinstance(chunk, dict) else None
+                result_type = result.get('type') if isinstance(result, dict) else None
                 
-                if chunk_type == 'start':
-                    # start chunk 可能包含 conversation_id（如果从 created 事件获取）
-                    conv_id = chunk.get('conversation_id')
-                    if conv_id:
-                        new_conversation_id = conv_id
-                    yield _sse_message("llm_start", {})
-                elif chunk_type == 'chunk':
-                    content = chunk.get('content', '')
+                if result_type == 'progress':
+                    content = result.get('content', '')
                     if content:
                         full_response += content
                         yield _sse_message("llm_chunk", {"content": content})
                         
-                        # 当累积内容达到100-200字时，开始并行生成问题
-                        if not questions_task and len(full_response) >= 150:
+                        # 当累积内容达到约80字时即开始并行生成问题，减少等待时间
+                        if not questions_task and len(full_response) >= 80:
                             questions_task = asyncio.create_task(
-                                _generate_questions_async(
-                                    full_response[:200],  # 只传递前200字
+                                _generate_questions_async_bailian(
+                                    full_response[:200],
                                     intent_result,
                                     complete_bazi_data,
                                     category
                                 )
                             )
-                            logger.info("✅ 开始并行生成相关问题（答案已输出150字）")
-                elif chunk_type == 'end':
-                    # ⭐ 从 end chunk 中提取 conversation_id（Coze API 在 completed 事件返回）
-                    conv_id = chunk.get('conversation_id')
-                    if conv_id:
-                        new_conversation_id = conv_id
+                            logger.info("✅ 开始并行生成相关问题（答案已输出80字）")
+                elif result_type == 'complete':
+                    # ⚡ 先发送 llm_end，让前端尽早感知LLM输出完成
+                    yield _sse_message("llm_end", {})
                     
-                    # 保存 conversation_id（更新或新建）
-                    if new_conversation_id:
-                        logger.info(f"📥 场景2：从LLM响应获取到 conversation_id: {new_conversation_id[:20]}...")
-                        BaziSessionService.save_coze_conversation_id(user_id, new_conversation_id)
-                    
-                    # ==================== 异步保存对话记录到MySQL ====================
+                    # ==================== 以下保存操作在 llm_end 之后执行（不影响前端体验） ====================
                     response_time_ms = int((time.time() - start_time) * 1000)
                     
                     # 获取八字摘要
@@ -1386,11 +1540,10 @@ async def _scenario_2_generator(
                     if bazi_pillars:
                         bazi_summary = f"{bazi_pillars.get('year', {}).get('stem', '')}{bazi_pillars.get('year', {}).get('branch', '')}、{bazi_pillars.get('month', {}).get('stem', '')}{bazi_pillars.get('month', {}).get('branch', '')}、{bazi_pillars.get('day', {}).get('stem', '')}{bazi_pillars.get('day', {}).get('branch', '')}、{bazi_pillars.get('hour', {}).get('stem', '')}{bazi_pillars.get('hour', {}).get('branch', '')}"
                     
-                    # 异步保存到MySQL（场景2）
                     asyncio.create_task(
                         ConversationHistoryService.save_conversation_async(
                             user_id=user_id,
-                            session_id=user_id,  # 使用user_id作为session_id
+                            session_id=user_id,
                             category=category,
                             question=question,
                             answer=full_response,
@@ -1398,12 +1551,12 @@ async def _scenario_2_generator(
                             bazi_summary=bazi_summary,
                             round_number=current_round,
                             response_time_ms=response_time_ms,
-                            conversation_id=new_conversation_id or conversation_id or "",
+                            conversation_id="",
                             scenario_type="scenario2"
                         )
                     )
                     
-                    # ==================== 更新历史摘要到Redis（用于下次传递给LLM） ====================
+                    # 更新历史摘要到Redis（非阻塞）
                     keywords = ConversationHistoryService.extract_keywords(question, full_response)
                     summary = ConversationHistoryService.compress_to_summary(question, full_response)
                     
@@ -1412,14 +1565,12 @@ async def _scenario_2_generator(
                         "keywords": keywords,
                         "summary": summary
                     }
-                    ConversationHistoryService.save_history_to_redis(user_id, round_data)
+                    await loop.run_in_executor(None, ConversationHistoryService.save_history_to_redis, user_id, round_data)
                     
                     logger.info(f"✅ 场景2：第{current_round}轮对话完成，关键词={keywords}，摘要={summary[:50]}...")
-                    
-                    yield _sse_message("llm_end", {"full_content": full_response})
                     break
-                elif chunk_type == 'error':
-                    error_msg = chunk.get('error', '未知错误')
+                elif result_type == 'error':
+                    error_msg = result.get('content', '未知错误')
                     yield _sse_message("llm_error", {"message": error_msg})
                     break
             
@@ -1443,59 +1594,32 @@ async def _scenario_2_generator(
                         logger.error(f"并行生成相关问题失败: {e}", exc_info=True)
                         cached_questions = []
                 else:
-                    # 问题已经生成完成
                     try:
                         cached_questions = questions_task.result()
                     except Exception as e:
                         logger.error(f"获取并行生成的问题失败: {e}", exc_info=True)
                         cached_questions = []
                 
-                # 如果并行生成失败，使用降级方案
+                # 如果并行生成失败，使用默认问题
                 if not cached_questions:
-                    logger.warning("并行生成问题失败，使用降级方案")
-                    with monitor.stage("related_questions", "生成相关问题（降级）"):
-                        related_questions_generator = llm_client.generate_related_questions(
-                            bazi_response=full_response,
-                            user_intent=intent_result,
-                            bazi_data=complete_bazi_data,
-                            category=category
-                        )
-                        
-                        for chunk in related_questions_generator:
-                            if chunk.get('type') == 'complete':
-                                questions_data = chunk.get('questions', [])
-                                if isinstance(questions_data, list):
-                                    cached_questions = questions_data[:2]
-                                break
-                            elif chunk.get('type') == 'error':
-                                error_msg = chunk.get('error', '未知错误')
-                                logger.warning(f"生成相关问题失败: {error_msg}")
-                                cached_questions = _get_default_related_questions(category)[:2]
-                                break
+                    logger.warning("并行生成问题失败，使用默认问题")
+                    cached_questions = _get_default_related_questions(category)[:2]
             else:
                 # 如果没有启动并行任务（答案太短），串行生成
                 logger.info(f"详细回答已完成（{len(full_response)}字），开始生成相关问题")
                 yield _sse_message("status", {"stage": "related_questions", "message": "正在生成相关问题..."})
                 
-                with monitor.stage("related_questions", "生成相关问题"):
-                    related_questions_generator = llm_client.generate_related_questions(
-                        bazi_response=full_response,
-                        user_intent=intent_result,
-                        bazi_data=complete_bazi_data,
-                        category=category
-                    )
-                    
-                    for chunk in related_questions_generator:
-                        if chunk.get('type') == 'complete':
-                            questions_data = chunk.get('questions', [])
-                            if isinstance(questions_data, list):
-                                cached_questions = questions_data[:2]
-                            break
-                        elif chunk.get('type') == 'error':
-                            error_msg = chunk.get('error', '未知错误')
-                            logger.warning(f"生成相关问题失败: {error_msg}")
-                            cached_questions = _get_default_related_questions(category)[:2]
-                            break
+                with monitor.stage("related_questions", "生成相关问题（百炼）"):
+                    try:
+                        cached_questions = await _generate_questions_async_bailian(
+                            full_response[:200],
+                            intent_result,
+                            complete_bazi_data,
+                            category
+                        )
+                    except Exception as e:
+                        logger.error(f"生成相关问题失败: {e}", exc_info=True)
+                        cached_questions = _get_default_related_questions(category)[:2]
             
             # 发送缓存的问题
             yield _sse_message("related_questions", {"questions": cached_questions})
@@ -1712,9 +1836,9 @@ async def _original_scenario_generator(
                 total_content_length = 0
                 full_response = ""  # 累积完整内容
                 
-                logger.info(f"[smart_fortune_stream] 🔄 开始迭代生成器...")
+                logger.info(f"[smart_fortune_stream] 🔄 开始迭代生成器（异步非阻塞）...")
                 
-                for chunk in llm_result:
+                async for chunk in llm_result:
                     chunk_received = True
                     chunk_count += 1
                     chunk_type = chunk.get('type') if isinstance(chunk, dict) else None
@@ -1734,7 +1858,7 @@ async def _original_scenario_generator(
                         logger.info(f"[smart_fortune_stream] ✅ LLM流式输出完成: 共{chunk_count}个chunk, 总长度{total_content_length}字符")
                         monitor.add_metric("llm_analysis", "chunk_count", chunk_count)
                         monitor.add_metric("llm_analysis", "total_length", total_content_length)
-                        yield _sse_message("llm_end", {"full_content": full_response})
+                        yield _sse_message("llm_end", {})
                         break
                     elif chunk_type == 'error':
                         error_msg = chunk.get('error', '未知错误')

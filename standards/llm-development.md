@@ -1321,3 +1321,63 @@ if platform == "bailian":
 3. **LLM 服务优化**：考虑使用更快的模型或本地模型减少首 token 延迟
 
 ---
+---
+
+## 智能运势分析（smart_fortune）百炼平台改造
+
+### 改造概述
+
+`smart_fortune.py` 的 LLM 调用已从 Coze（`FortuneLLMClient`）迁移到百炼平台（`LLMServiceFactory`），与其他流式接口统一。
+
+### 场景与智能体对应
+
+| 场景 | 百炼 scene | 数据库配置键 | 功能 |
+|------|-----------|-------------|------|
+| 场景1（选择项） | `smart_fortune_brief` | `BAILIAN_SMART_FORTUNE_BRIEF_APP_ID` | 简短答复（100字内）+ 预设问题（10-15个） |
+| 场景2（追问） | `smart_fortune_analysis` | `BAILIAN_SMART_FORTUNE_ANALYSIS_APP_ID` | 深度分析（流式）+ 相关问题（2个） |
+
+### 调用方式
+
+```python
+# 获取百炼服务（根据 LLM_PLATFORM 配置自动选择）
+llm_service = LLMServiceFactory.get_service(scene="smart_fortune_analysis")
+
+# 构建 Prompt（复用 prompt_builders.py 中的格式化函数）
+formatted_prompt = format_smart_fortune_for_llm(
+    bazi_data=bazi_result,
+    fortune_context=fortune_context,
+    matched_rules=matched_rules,
+    question=question,
+    intent=main_intent,
+    category=category,
+    history_context=history_context  # 记忆压缩后的历史上下文
+)
+
+# 流式调用
+async for result in llm_service.stream_analysis(formatted_prompt):
+    if result['type'] == 'progress':   # 增量内容
+        yield _sse_message("llm_chunk", {"content": result['content']})
+    elif result['type'] == 'complete': # 流结束
+        yield _sse_message("llm_end", {})
+    elif result['type'] == 'error':    # 错误
+        yield _sse_message("llm_error", {"message": result['content']})
+```
+
+### 多轮对话
+
+不依赖百炼 `session_id`，而是通过后端记忆压缩实现：
+
+1. 每轮对话后提取关键词 + 压缩摘要（<100字）
+2. 保存到 Redis（`ConversationHistoryService`），最多保留5轮
+3. 下次请求时将历史上下文拼入 Prompt 的 `【历史上下文】` 部分
+4. 由 `format_smart_fortune_for_llm` 自动处理
+
+### 提示词配置
+
+系统提示词配置在百炼智能体应用中，详见 `docs/coze_bot_prompts_optimized.md`。
+
+### SSE 事件格式（未变更）
+
+场景1：`brief_response_start` → `brief_response_chunk` × N → `brief_response_end` → `preset_questions` → `end`
+
+场景2：`basic_analysis` → `llm_start` → `llm_chunk` × N → `llm_end` → `related_questions` → `end`
