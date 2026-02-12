@@ -677,6 +677,24 @@ async def children_study_analysis_stream_generator(
             yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
             total_duration = time.time() - api_start_time
             logger.info(f"✅ 从缓存返回完成: 耗时={total_duration:.2f}s")
+            
+            # 记录缓存命中日志
+            try:
+                stream_logger = get_stream_call_logger()
+                stream_logger.log_async(
+                    function_type='children',
+                    frontend_api='/api/v1/bazi/children-study/stream',
+                    frontend_input=frontend_input,
+                    input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
+                    llm_output=cached_llm_content,
+                    api_total_ms=int(total_duration * 1000),
+                    bot_id=used_bot_id,
+                    llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
+                    status='cache_hit',
+                    cache_hit=True,
+                )
+            except Exception as log_err:
+                logger.warning(f"缓存命中日志记录失败: {log_err}")
             return
         
         logger.info(f"❌ LLM 缓存未命中: children_study")
@@ -684,6 +702,7 @@ async def children_study_analysis_stream_generator(
         # 10. 调用 LLM API（阶段5：LLM API调用，支持 Coze 和百炼平台）
         # ⚠️ 方案2：直接发送格式化后的数据，Bot 会自动使用 System Prompt 中的模板
         from server.services.llm_service_factory import LLMServiceFactory
+        from server.services.bailian_stream_service import BailianStreamService
         llm_service = LLMServiceFactory.get_service(scene="children_study", bot_id=used_bot_id)
 
         # 11. 流式处理（阶段6：流式处理）
@@ -727,7 +746,7 @@ async def children_study_analysis_stream_generator(
             frontend_input=frontend_input,
             input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
             llm_output=llm_output,
-            llm_platform='coze',
+            llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
             api_total_ms=api_total_ms,
             llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
             llm_total_ms=llm_total_ms,
@@ -754,7 +773,7 @@ async def children_study_analysis_stream_generator(
             frontend_input=frontend_input,
             input_data='',
             llm_output='',
-            llm_platform='coze',
+            llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
             api_total_ms=api_total_ms,
             llm_first_token_ms=None,
             llm_total_ms=None,
@@ -782,7 +801,7 @@ async def children_study_analysis_stream_generator(
             frontend_input=frontend_input,
             input_data='',
             llm_output='',
-            llm_platform='coze',
+            llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
             api_total_ms=api_total_ms,
             llm_first_token_ms=None,
             llm_total_ms=None,

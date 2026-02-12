@@ -1065,7 +1065,8 @@ def format_career_wealth_for_llm(input_data: Dict[str, Any]) -> str:
             shiye_text += f"({'/'.join(positions)})"
         if strength:
             shiye_text += f"，{strength}"
-        lines.append(f"【事业星】{shiye_text}")
+        if shiye_text:
+            lines.append(f"【事业星】{shiye_text}")
     
     # 6. 财富星
     caifu_xing = caifu.get('caifu_xing', {})
@@ -1079,7 +1080,8 @@ def format_career_wealth_for_llm(input_data: Dict[str, Any]) -> str:
             caifu_text += f"({'/'.join(positions)})"
         if strength:
             caifu_text += f"，{strength}"
-        lines.append(f"【财富星】{caifu_text}")
+        if caifu_text:
+            lines.append(f"【财富星】{caifu_text}")
     
     # 7. 食伤生财
     shishang = caifu.get('shishang_shengcai', {})

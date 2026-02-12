@@ -787,6 +787,7 @@ async def general_review_analysis_stream_generator(
         # 9. 调用 LLM API（阶段5：LLM API调用，支持 Coze 和百炼平台）
         logger.info(f"🔍 [步骤5-LLM调用] 开始调用 LLM API，Bot ID: {used_bot_id}")
         from server.services.llm_service_factory import LLMServiceFactory
+        from server.services.bailian_stream_service import BailianStreamService
         llm_service = LLMServiceFactory.get_service(scene="general_review", bot_id=used_bot_id)
 
         # 10. 流式处理（阶段6：流式处理）
@@ -839,7 +840,7 @@ async def general_review_analysis_stream_generator(
             llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
             llm_total_ms=llm_total_time_ms,
             bot_id=used_bot_id,
-            llm_platform='coze',
+            llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
             status='success' if has_content else 'failed'
         )
                 
@@ -866,7 +867,7 @@ async def general_review_analysis_stream_generator(
             llm_first_token_ms=None,
             llm_total_ms=None,
             bot_id=None,
-            llm_platform='coze',
+            llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
             status='failed',
             error_message=str(e)
         )
@@ -894,7 +895,7 @@ async def general_review_analysis_stream_generator(
             llm_first_token_ms=None,
             llm_total_ms=None,
             bot_id=None,
-            llm_platform='coze',
+            llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
             status='failed',
             error_message=str(e)
         )

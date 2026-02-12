@@ -737,6 +737,7 @@ async def marriage_analysis_stream_generator(
         # 8. 创建 LLM 流式服务（支持 Coze 和百炼平台）
         try:
             from server.services.llm_service_factory import LLMServiceFactory
+            from server.services.bailian_stream_service import BailianStreamService
             
             # 确保 bot_id 已设置（优先级：参数 > 数据库配置）
             if not bot_id:
@@ -863,7 +864,7 @@ async def marriage_analysis_stream_generator(
                     api_total_ms=int((api_end_time - api_start_time) * 1000),
                     llm_first_token_ms=int((llm_first_token_time - api_start_time) * 1000) if llm_first_token_time else None,
                     bot_id=actual_bot_id,
-                    llm_platform='coze',
+                    llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
                     status='success' if has_content else 'failed',
                 )
             except Exception as log_err:
@@ -892,7 +893,7 @@ async def marriage_analysis_stream_generator(
                 llm_first_token_ms=None,
                 llm_total_ms=None,
                 bot_id=actual_bot_id if 'actual_bot_id' in locals() else None,
-                llm_platform='coze',
+                llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
                 status='failed',
                 error_message=str(e),
             )
@@ -920,7 +921,7 @@ async def marriage_analysis_stream_generator(
             llm_first_token_ms=None,
             llm_total_ms=None,
             bot_id=actual_bot_id if 'actual_bot_id' in locals() else bot_id,
-            llm_platform='coze',
+            llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
             status='failed',
             error_message=str(e),
         )

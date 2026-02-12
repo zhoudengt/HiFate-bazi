@@ -750,7 +750,7 @@ async def xishen_jishen_stream_generator(
                 frontend_api='/api/v1/bazi/xishen-jishen/stream',
                 frontend_input=frontend_input,
                 api_total_ms=api_response_time_ms,
-                llm_platform='coze',
+                llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
                 status='failed',
                 error_message=str(e),
             )
