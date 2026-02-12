@@ -1,16 +1,18 @@
-# HiFate-bazi Docker Compose 基础配置
-# 适用于：本地开发 + 生产部署
+# HiFate-bazi Docker Compose 本地开发配置
+# 仅用于本地开发环境，生产部署请使用 deploy/docker/docker-compose.prod.yml
+# 使用方式：docker-compose -f docker-compose.yml up -d
 
 services:
   # MySQL 数据库
   mysql:
-    image: mysql:8.0
+    image: mysql:8.0.40
     container_name: hifate-mysql
+    # ⚠️ 生产环境不应暴露端口到宿主机，仅本地开发使用
     ports:
-      - "13306:3306"
+      - "${MYSQL_EXTERNAL_PORT:-13306}:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD env var required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
       MYSQL_CHARACTER_SET_SERVER: utf8mb4
       MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
       TZ: Asia/Shanghai
@@ -26,17 +28,18 @@ services:
     networks:
       - hifate-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_PASSWORD:-root}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   # Redis 缓存
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     container_name: hifate-redis
+    # ⚠️ 生产环境不应暴露端口到宿主机，仅本地开发使用
     ports:
-      - "16379:6379"
+      - "${REDIS_EXTERNAL_PORT:-16379}:6379"
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
@@ -64,8 +67,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
       
       # Redis 配置
       REDIS_HOST: redis
@@ -74,7 +77,7 @@ services:
       # 应用配置
       APP_ENV: ${APP_ENV:-production}
       DEBUG: ${DEBUG:-False}
-      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY env var required}
       
       # 数据编排层开关（双轨并行，走 BaziDataOrchestrator）
       USE_ORCHESTRATOR_BAZI: ${USE_ORCHESTRATOR_BAZI:-true}
@@ -113,8 +116,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SERVICE_PORT: 9003
@@ -141,8 +144,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SERVICE_PORT: 9005
@@ -169,8 +172,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SERVICE_PORT: 9004
@@ -197,8 +200,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SERVICE_PORT: 9001
@@ -225,8 +228,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SERVICE_PORT: 9002
@@ -253,8 +256,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SERVICE_PORT: 9006
@@ -281,8 +284,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SERVICE_PORT: 9007
@@ -309,8 +312,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SERVICE_PORT: 9008
@@ -340,8 +343,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SERVICE_PORT: 9009
@@ -371,8 +374,8 @@ services:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-bazi_system}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SERVICE_PORT: 9010

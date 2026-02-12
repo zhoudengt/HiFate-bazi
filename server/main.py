@@ -73,8 +73,11 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
 # 配置日志（必须在导入路由之前初始化，以便在导入失败时可以使用logger）
+# 从环境变量 LOG_LEVEL 读取日志级别，与 docker-compose 中的 LOG_LEVEL 保持一致
+_log_level_name = os.getenv('LOG_LEVEL', 'INFO').upper()
+_log_level = getattr(logging, _log_level_name, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=_log_level,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)

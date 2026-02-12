@@ -24,8 +24,10 @@ if IS_LOCAL_DEV:
     DEFAULT_MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", os.getenv("MYSQL_ROOT_PASSWORD", ""))
     logger.info(f"[DatabaseConfig] 本地开发模式：MySQL连接 {MYSQL_HOST}")
 else:
-    # 生产环境：连接Node1内网IP
-    MYSQL_HOST = os.getenv("MYSQL_HOST", "172.18.121.222")
+    # 生产环境：必须通过环境变量 MYSQL_HOST 指定（禁止硬编码 IP）
+    MYSQL_HOST = os.getenv("MYSQL_HOST", "")
+    if not MYSQL_HOST:
+        logger.error("❌ 生产环境必须配置 MYSQL_HOST 环境变量")
     DEFAULT_MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", os.getenv("MYSQL_ROOT_PASSWORD", ""))
     logger.info(f"[DatabaseConfig] 生产环境模式：MySQL连接 {MYSQL_HOST}")
 
@@ -36,19 +38,22 @@ MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "hifate_bazi")
 
 # MongoDB配置
 if IS_LOCAL_DEV:
-    # 本地开发：连接Node1公网IP
-    MONGO_HOST = os.getenv("MONGO_HOST", "8.210.52.217")
+    # 本地开发：通过环境变量配置 MongoDB 地址
+    MONGO_HOST = os.getenv("MONGO_HOST", "localhost")
     logger.info(f"[DatabaseConfig] 本地开发模式：MongoDB连接 {MONGO_HOST}")
 else:
-    # 生产环境：连接Node1内网IP
-    MONGO_HOST = os.getenv("MONGO_HOST", "172.18.121.222")
+    # 生产环境：必须通过环境变量 MONGO_HOST 指定（禁止硬编码 IP）
+    MONGO_HOST = os.getenv("MONGO_HOST", "")
+    if not MONGO_HOST:
+        logger.error("❌ 生产环境必须配置 MONGO_HOST 环境变量")
     logger.info(f"[DatabaseConfig] 生产环境模式：MongoDB连接 {MONGO_HOST}")
 
 MONGO_PORT = int(os.getenv("MONGO_PORT", "27017"))
 MONGO_USER = os.getenv("MONGO_USER", "admin")
 # ⚠️ 安全规范：密码必须通过环境变量配置，不允许硬编码
 MONGO_PASSWORD = os.getenv("MONGO_PASSWORD", "")
-MONGO_DATABASE = os.getenv("MONGO_DATABASE", "hifate_interactions")
+# 兼容 MONGO_DATABASE 和 MONGO_DB 两种变量名
+MONGO_DATABASE = os.getenv("MONGO_DATABASE", os.getenv("MONGO_DB", "hifate_interactions"))
 
 # MongoDB连接字符串
 MONGO_CONNECTION_STRING = f"mongodb://{MONGO_USER}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/{MONGO_DATABASE}?authSource=admin"

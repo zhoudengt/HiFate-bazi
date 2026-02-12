@@ -15,10 +15,10 @@ jobs:
     
     steps:
       - name: 检出代码
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       - name: 设置 Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -30,19 +30,19 @@ jobs:
       
       - name: 代码格式检查（Black）
         run: |
-          black --check server/ src/ services/ || true
+          black --check server/ services/
       
       - name: 导入排序检查（isort）
         run: |
-          isort --check server/ src/ services/ || true
+          isort --check server/ services/
       
       - name: 代码质量检查（pylint）
         run: |
-          pylint server/ --errors-only --disable=all --enable=E,F || true
+          pylint server/ --errors-only --disable=all --enable=E,F
       
       - name: 类型检查（mypy）
         run: |
-          mypy server/ --ignore-missing-imports || true
+          mypy server/ --ignore-missing-imports
         continue-on-error: true
 
   # 代码审查检查
@@ -52,12 +52,12 @@ jobs:
     
     steps:
       - name: 检出代码
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0  # 获取完整历史用于检查
       
       - name: 设置 Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -111,7 +111,7 @@ jobs:
     
     services:
       mysql:
-        image: mysql:8.0
+        image: mysql:8.0.40
         env:
           MYSQL_ROOT_PASSWORD: test_password
           MYSQL_DATABASE: test_db
@@ -124,7 +124,7 @@ jobs:
           --health-retries=3
       
       redis:
-        image: redis:7-alpine
+        image: redis:7.4-alpine
         ports:
           - 6379:6379
         options: >-
@@ -135,10 +135,10 @@ jobs:
     
     steps:
       - name: 检出代码
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       - name: 设置 Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -264,7 +264,7 @@ jobs:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
         run: |
-          pytest tests/unit/ -v --cov=server --cov=src --cov-report=xml --cov-report=term --cov-report=html
+          pytest tests/unit/ -v --cov=server --cov=services --cov-report=xml --cov-report=term --cov-report=html
       
       - name: 运行基准测试
         env:
@@ -294,11 +294,11 @@ jobs:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
         run: |
-          pytest tests/api/test_grpc_endpoints.py -v -m api --cov=server --cov=src --cov-report=term --cov-append
+          pytest tests/api/test_grpc_endpoints.py -v -m api --cov=server --cov=services --cov-report=term --cov-append
       
       - name: 生成覆盖率报告
         run: |
-          pytest --cov=server --cov=src --cov-report=html --cov-report=term-missing --cov-report=xml || true
+          pytest --cov=server --cov=services --cov-report=html --cov-report=term-missing --cov-report=xml || true
       
       - name: 上传覆盖率报告到 Artifacts
         uses: actions/upload-artifact@v4

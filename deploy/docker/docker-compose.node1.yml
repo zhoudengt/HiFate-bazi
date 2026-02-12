@@ -8,7 +8,7 @@ services:
   # MySQL 主库
   # ============================================
   mysql:
-    image: mysql:8.0
+    image: mysql:8.0.40
     container_name: hifate-mysql-master
     ports:
       - "3306:3306"
@@ -79,7 +79,7 @@ services:
       - "27017:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-Yuanqizhan@163}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?MONGO_PASSWORD env var required}
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb

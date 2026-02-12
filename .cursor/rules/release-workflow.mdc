@@ -1,6 +1,12 @@
 ---
 description: 上线流程规范（开发→测试→提交→部署→验证的完整工程化流程）
-alwaysApply: true
+alwaysApply: false
+globs:
+  - deploy/**
+  - scripts/deploy/**
+  - .github/workflows/**
+  - docker-compose*.yml
+  - Dockerfile*
 ---
 
 # 上线流程规范（所有 AI 模型必须遵循）

@@ -35,7 +35,7 @@ echo ""
 
 # 停止旧容器
 echo -e "${YELLOW}[2/4] 停止旧容器...${NC}"
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml down 2>/dev/null || true
+docker-compose -f deploy/docker/docker-compose.prod.yml -f deploy/docker/docker-compose.node1.yml down 2>/dev/null || true
 echo -e "${GREEN}✅ 旧容器已停止${NC}"
 echo ""
 
@@ -59,7 +59,7 @@ echo ""
 
 # 启动服务
 echo -e "${YELLOW}启动服务...${NC}"
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+docker-compose -f deploy/docker/docker-compose.prod.yml -f deploy/docker/docker-compose.node1.yml up -d
 echo -e "${GREEN}✅ 服务已启动${NC}"
 echo ""
 

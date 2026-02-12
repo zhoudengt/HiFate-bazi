@@ -39,7 +39,6 @@ services:
       - /opt/HiFate-bazi/core:/app/core:ro         # 核心计算模块（LunarConverter 等）
       - /opt/HiFate-bazi/shared:/app/shared:ro      # 共享模块（数据库/Redis 配置等）
       - /opt/HiFate-bazi/server:/app/server:ro      # Web 服务模块
-      - /opt/HiFate-bazi/src:/app/src:ro            # src 模块
       - /opt/HiFate-bazi/services:/app/services:ro  # 微服务模块
       - /opt/HiFate-bazi/proto:/app/proto:ro        # gRPC proto 文件
       - /opt/secure/keys:/opt/secure/keys:ro        # 支付密钥
@@ -91,7 +90,6 @@ services:
       - /opt/HiFate-bazi/shared:/app/shared:ro      # 共享模块
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
-      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/bazi_core/grpc_server.py --port 9001
     restart: always
     networks:
@@ -129,7 +127,6 @@ services:
       - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
-      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/bazi_fortune/grpc_server.py --port 9002
     restart: always
     networks:
@@ -167,7 +164,6 @@ services:
       - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
-      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/bazi_analyzer/grpc_server.py --port 9003
     restart: always
     networks:
@@ -205,7 +201,6 @@ services:
       - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
-      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/bazi_rule/grpc_server.py --port 9004
     restart: always
     networks:
@@ -243,7 +238,6 @@ services:
       - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
-      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/fortune_analysis/grpc_server.py --port 9005
     restart: always
     networks:
@@ -281,7 +275,6 @@ services:
       - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
-      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/payment_service/grpc_server.py --port 9006
     restart: always
     networks:
@@ -319,7 +312,6 @@ services:
       - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
-      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/fortune_rule/grpc_server.py --port 9007
     restart: always
     networks:
@@ -359,7 +351,6 @@ services:
       - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
-      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/intent_service/grpc_server.py --port 9008
     restart: always
     networks:
@@ -402,7 +393,6 @@ services:
       - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
-      - /opt/HiFate-bazi/src:/app/src:ro
     command: python services/prompt_optimizer/grpc_server.py
     restart: always
     networks:

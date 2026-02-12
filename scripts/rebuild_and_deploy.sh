@@ -18,7 +18,7 @@ NODE2_PUBLIC_IP="47.243.160.43"
 PROJECT_DIR="/opt/HiFate-bazi"
 
 # SSH 密码（从环境变量读取）
-SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+SSH_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 
 # SSH 执行函数
 ssh_exec() {
@@ -69,8 +69,8 @@ echo ""
 
 # 停止旧容器
 echo -e "${YELLOW}[3/6] 停止旧容器...${NC}"
-ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && docker-compose -f docker-compose.yml -f docker-compose.prod.yml down 2>/dev/null || true"
-ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && docker-compose -f docker-compose.yml -f docker-compose.prod.yml down 2>/dev/null || true"
+ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && docker-compose -f deploy/docker/docker-compose.prod.yml -f deploy/docker/docker-compose.node1.yml down 2>/dev/null || true"
+ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && docker-compose -f deploy/docker/docker-compose.prod.yml -f deploy/docker/docker-compose.node2.yml down 2>/dev/null || true"
 echo -e "${GREEN}✅ 旧容器已停止${NC}"
 echo ""
 
@@ -108,8 +108,8 @@ echo ""
 
 # 启动服务
 echo -e "${YELLOW}[6/6] 启动服务...${NC}"
-ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d"
-ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d"
+ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && docker-compose -f deploy/docker/docker-compose.prod.yml -f deploy/docker/docker-compose.node1.yml up -d"
+ssh_exec $NODE2_PUBLIC_IP "cd $PROJECT_DIR && docker-compose -f deploy/docker/docker-compose.prod.yml -f deploy/docker/docker-compose.node2.yml up -d"
 echo -e "${GREEN}✅ 服务已启动${NC}"
 echo ""
 
