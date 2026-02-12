@@ -558,6 +558,43 @@ async def xishen_jishen_stream_generator(
         
         data = xishen_jishen_result.get('data', xishen_jishen_result)
         
+        # 4.1 十神命格 fallback：orchestrator 的规则匹配可能无法命中 shishen 规则，
+        #     此时用与非流式接口相同的 analyze_formula_rules 补全
+        if not data.get('shishen_mingge'):
+            try:
+                from server.api.v1.formula_analysis import analyze_formula_rules, FormulaAnalysisRequest
+                from server.services.mingge_extractor import extract_mingge_names_from_rules
+                from server.services.config_service import ConfigService
+                
+                formula_request = FormulaAnalysisRequest(
+                    solar_date=final_solar_date,
+                    solar_time=final_solar_time,
+                    gender=request.gender,
+                    calendar_type=request.calendar_type or "solar",
+                    location=request.location,
+                    latitude=request.latitude,
+                    longitude=request.longitude,
+                    rule_types=['shishen']
+                )
+                formula_result = await analyze_formula_rules(formula_request)
+                
+                if formula_result.success:
+                    formula_data = formula_result.data
+                    matched_rules = formula_data.get('matched_rules', {})
+                    rule_details = formula_data.get('rule_details', {})
+                    shishen_rule_ids = matched_rules.get('shishen', [])
+                    shishen_rules = []
+                    for rule_id in shishen_rule_ids:
+                        rule_detail = rule_details.get(str(rule_id), rule_details.get(rule_id, {}))
+                        if rule_detail:
+                            shishen_rules.append(rule_detail)
+                    shishen_mingge_names = extract_mingge_names_from_rules(shishen_rules)
+                    if shishen_mingge_names:
+                        data['shishen_mingge'] = ConfigService.map_mingge_to_ids(shishen_mingge_names)
+                        logger.info(f"[喜神忌神流式] 十神命格 fallback 成功: {shishen_mingge_names}")
+            except Exception as e:
+                logger.warning(f"[喜神忌神流式] 十神命格 fallback 失败: {e}")
+        
         # 5. 构建响应数据（与普通接口一致，但可能包含扩展字段）
         # 只返回基础字段给前端，扩展字段用于LLM分析
         response_data_base = {
