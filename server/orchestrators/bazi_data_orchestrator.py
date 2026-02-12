@@ -78,10 +78,49 @@ async def _fetch_special_liunians(
     # 原 BUG：target_dayuns 经 get_dayun_by_mode 截断后（如 current_with_neighbors 只有3个大运），
     # 导致属于其他大运的特殊流年因找不到匹配大运而被静默丢弃。
     # target_dayuns 的过滤作用已由下游 build_enhanced_dayun_structure 的 business_type selector 承担。
+    # ⚠️ 修复：quick_mode=True 导致 liunian_sequence 只有当前大运附近的少量流年（约10个），
+    # 使得属于其他大运的特殊流年无法被发现。
+    # 解决方案：当流年不足时，从 dayun_sequence 中各大运的 liunian_sequence 合并完整数据；
+    # 如仍不足，直接调用底层计算器获取完整流年（绕过 BaziDetailService 缓存）。
+    effective_liunian_sequence = liunian_sequence
+    if not effective_liunian_sequence or len(effective_liunian_sequence) < 50:
+        # 方案1: 从 dayun_sequence 中每个大运的 liunian_sequence 合并
+        merged = []
+        for d in dayun_sequence:
+            dl = d.get('liunian_sequence', [])
+            if dl:
+                merged.extend(dl)
+        if len(merged) >= 50:
+            effective_liunian_sequence = merged
+            import logging
+            logging.getLogger(__name__).info(
+                f"✅ [特殊流年修复] 从 dayun_sequence 合并流年: {len(merged)} 条"
+            )
+        else:
+            # 方案2: 直接调底层计算器获取完整流年（不走 BaziDetailService 缓存）
+            import logging
+            _logger = logging.getLogger(__name__)
+            try:
+                import asyncio
+                loop_inner = asyncio.get_event_loop()
+                from core.calculators.bazi_calculator_docs import BaziCalculator as DocsBaziCalculator
+                import io, contextlib
+                def _calc_full_liunian():
+                    calc = DocsBaziCalculator(final_solar_date, final_solar_time, gender=gender)
+                    buf = io.StringIO()
+                    with contextlib.redirect_stdout(buf):
+                        calc.calculate_dayun_liunian(current_time=current_time, dayun_index=None)
+                    return calc.details.get('liunian_sequence', [])
+                full_liunian = await loop_inner.run_in_executor(None, _calc_full_liunian)
+                if full_liunian and len(full_liunian) > len(effective_liunian_sequence or []):
+                    effective_liunian_sequence = full_liunian
+                    _logger.info(f"✅ [特殊流年修复] 完整计算流年: {len(full_liunian)} 条")
+            except Exception as e:
+                _logger.warning(f"⚠️ [特殊流年修复] 完整流年计算失败: {e}")
     special_liunians = await SpecialLiunianService.get_special_liunians_batch(
         final_solar_date, final_solar_time, gender,
         dayun_sequence, special_count, current_time,
-        liunian_sequence=liunian_sequence
+        liunian_sequence=effective_liunian_sequence
     )
     special_liunians_by_dayun = {}
     for liunian in special_liunians:
@@ -577,6 +616,7 @@ class BaziDataOrchestrator:
                     'bazi_pillars': bazi_data.get('bazi_pillars', {}),
                     'ten_gods': bazi_data.get('ten_gods', {}),
                     'elements': bazi_data.get('elements', {}),
+                    'details': bazi_data.get('details', {}),
                     'wangshuai': wangshuai_data.get('wangshuai', '') if wangshuai_data else '',
                     'gender': gender
                 }

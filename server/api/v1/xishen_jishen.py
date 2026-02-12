@@ -66,6 +66,8 @@ def _format_xishen_jishen_for_llm(data: Dict[str, Any]) -> str:
     
     lines = []
     
+    logger.debug(f"[_format_xishen_jishen_for_llm] shishen_mingge={data.get('shishen_mingge', [])}")
+    
     # 喜神五行
     xi = data.get('xi_shen_elements', [])
     lines.append(f"【喜神】{_names(xi)}")
@@ -686,6 +688,7 @@ async def xishen_jishen_stream_generator(
                 api_total_ms=api_response_time_ms,
                 llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
                 llm_total_ms=llm_total_time_ms,
+                bot_id=actual_bot_id if 'actual_bot_id' in locals() else None,
                 llm_platform='bailian' if isinstance(llm_service, BailianStreamService) else 'coze',
                 status='success' if has_content else 'failed',
             )
