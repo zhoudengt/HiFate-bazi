@@ -10,7 +10,7 @@ echo ""
 echo "📊 Node1 (8.210.52.217) 数据库规则统计:"
 ssh root@8.210.52.217 << 'EOF'
 cd /opt/HiFate-bazi
-docker exec hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi -e "
+docker exec hifate-mysql-master mysql -uroot -p"${MYSQL_PASSWORD:?MYSQL_PASSWORD required}" hifate_bazi -e "
 SELECT 
     '总规则数' as type,
     COUNT(*) as count

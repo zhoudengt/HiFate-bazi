@@ -18,7 +18,7 @@ NODE2_PUBLIC_IP="47.243.160.43"
 NODE2_PRIVATE_IP="172.18.121.223"
 
 # SSH 密码（从环境变量读取）
-SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+SSH_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 
 # SSH 执行函数（支持密码登录）
 ssh_exec() {

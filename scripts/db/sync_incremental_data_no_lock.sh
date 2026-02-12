@@ -29,7 +29,7 @@ NODE1_PUBLIC_IP="8.210.52.217"
 NODE2_PUBLIC_IP="47.243.160.43"
 PROJECT_DIR="/opt/HiFate-bazi"
 SSH_USER="root"
-SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+SSH_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 
 # 脚本目录
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -143,7 +143,7 @@ if [ -n "$MYSQL_CONTAINER" ]; then
     echo "  检查生产环境表..."
     CONTAINER_MYSQL_PASSWORD=$(ssh_exec "docker exec ${MYSQL_CONTAINER} env | grep MYSQL_ROOT_PASSWORD | cut -d'=' -f2" 2>/dev/null || echo "")
     if [ -z "$CONTAINER_MYSQL_PASSWORD" ]; then
-        CONTAINER_MYSQL_PASSWORD=$(ssh_exec "cd $PROJECT_DIR && source .env 2>/dev/null && echo \${MYSQL_ROOT_PASSWORD:-Yuanqizhan@163}" 2>/dev/null || echo "Yuanqizhan@163")
+        CONTAINER_MYSQL_PASSWORD=$(ssh_exec "cd $PROJECT_DIR && source .env 2>/dev/null && echo \${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD env var required}" 2>/dev/null || echo "${MYSQL_PASSWORD:?MYSQL_PASSWORD required}")
     fi
     
     # 使用环境变量传递密码，避免命令行暴露
@@ -232,16 +232,16 @@ DB_CONFIG=$(ssh_exec "cd $PROJECT_DIR && source .env 2>/dev/null || true && \
     echo \"MYSQL_HOST=\${MYSQL_HOST:-localhost}\" && \
     echo \"MYSQL_PORT=\${MYSQL_PORT:-3306}\" && \
     echo \"MYSQL_USER=\${MYSQL_USER:-root}\" && \
-    echo \"MYSQL_PASSWORD=\${MYSQL_PASSWORD:-Yuanqizhan@163}\" && \
+    echo \"MYSQL_PASSWORD=\${MYSQL_PASSWORD:?MYSQL_PASSWORD env var required}\" && \
     echo \"MYSQL_DATABASE=\${MYSQL_DATABASE:-hifate_bazi}\" && \
-    echo \"MYSQL_ROOT_PASSWORD=\${MYSQL_ROOT_PASSWORD:-Yuanqizhan@163}\"")
+    echo \"MYSQL_ROOT_PASSWORD=\${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD env var required}\"")
 
 MYSQL_HOST=$(echo "$DB_CONFIG" | grep "^MYSQL_HOST=" | cut -d'=' -f2- | tr -d '\r')
 MYSQL_PORT=$(echo "$DB_CONFIG" | grep "^MYSQL_PORT=" | cut -d'=' -f2- | tr -d '\r')
 MYSQL_USER=$(echo "$DB_CONFIG" | grep "^MYSQL_USER=" | cut -d'=' -f2- | tr -d '\r')
 # 优先使用MYSQL_PASSWORD，如果没有则使用MYSQL_ROOT_PASSWORD
 MYSQL_PASSWORD=$(echo "$DB_CONFIG" | grep "^MYSQL_PASSWORD=" | cut -d'=' -f2- | tr -d '\r')
-if [ -z "$MYSQL_PASSWORD" ] || [ "$MYSQL_PASSWORD" = "Yuanqizhan@163" ]; then
+if [ -z "$MYSQL_PASSWORD" ] || [ "$MYSQL_PASSWORD" = "${MYSQL_PASSWORD}" ]; then
     MYSQL_PASSWORD=$(echo "$DB_CONFIG" | grep "^MYSQL_ROOT_PASSWORD=" | cut -d'=' -f2- | tr -d '\r')
 fi
 MYSQL_DATABASE=$(echo "$DB_CONFIG" | grep "^MYSQL_DATABASE=" | cut -d'=' -f2- | tr -d '\r')
@@ -264,7 +264,7 @@ if [ -n "$MYSQL_CONTAINER" ]; then
     
     # 如果容器内没有环境变量，尝试从.env文件读取
     if [ -z "$CONTAINER_MYSQL_PASSWORD" ]; then
-        CONTAINER_MYSQL_PASSWORD=$(ssh_exec "cd $PROJECT_DIR && source .env 2>/dev/null && echo \${MYSQL_ROOT_PASSWORD:-Yuanqizhan@163}" 2>/dev/null || echo "Yuanqizhan@163")
+        CONTAINER_MYSQL_PASSWORD=$(ssh_exec "cd $PROJECT_DIR && source .env 2>/dev/null && echo \${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD env var required}" 2>/dev/null || echo "${MYSQL_PASSWORD:?MYSQL_PASSWORD required}")
     fi
     if [ -z "$CONTAINER_MYSQL_DATABASE" ]; then
         CONTAINER_MYSQL_DATABASE="$MYSQL_DATABASE"
@@ -287,7 +287,7 @@ else
     # 方式2：尝试使用mysql命令
     echo "  尝试使用mysql命令..."
     SYNC_OUTPUT=$(ssh_exec "cd $PROJECT_DIR && \
-        mysql -h\${MYSQL_HOST:-localhost} -P\${MYSQL_PORT:-3306} -u\${MYSQL_USER:-root} -p\${MYSQL_PASSWORD:-Yuanqizhan@163} \
+        mysql -h\${MYSQL_HOST:-localhost} -P\${MYSQL_PORT:-3306} -u\${MYSQL_USER:-root} -p\${MYSQL_PASSWORD:?MYSQL_PASSWORD env var required} \
         --default-character-set=utf8mb4 \
         \${MYSQL_DATABASE:-hifate_bazi} < $REMOTE_SQL_FILE 2>&1" || echo "failed")
     
@@ -305,7 +305,7 @@ import sys
 host = os.getenv('MYSQL_HOST', 'localhost')
 port = int(os.getenv('MYSQL_PORT', '3306'))
 user = os.getenv('MYSQL_USER', 'root')
-password = os.getenv('MYSQL_PASSWORD', 'Yuanqizhan@163')
+password = os.getenv('MYSQL_PASSWORD', '${MYSQL_PASSWORD}')
 database = os.getenv('MYSQL_DATABASE', 'hifate_bazi')
 sql_file = '$REMOTE_SQL_FILE'
 

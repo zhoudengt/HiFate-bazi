@@ -8,6 +8,7 @@
 import json
 import hashlib
 import random
+import threading
 import time
 from typing import Any, Optional, Dict
 from functools import lru_cache
@@ -29,47 +30,51 @@ class L1MemoryCache:
         self._cache_expiry = {}  # key -> expiry timestamp (for per-key TTL)
         self.max_size = max_size
         self.ttl = ttl
+        self._lock = threading.Lock()
         # 缓存统计
         self._hits = 0
         self._misses = 0
     
     def get(self, key: str) -> Optional[Any]:
         """从缓存获取结果"""
-        if key not in self._cache:
-            self._misses += 1
-            return None
-        expiry = self._cache_expiry.get(key, self._cache_times[key] + self.ttl)
-        if time.time() > expiry:
-            del self._cache[key]
-            del self._cache_times[key]
-            if key in self._cache_expiry:
-                del self._cache_expiry[key]
-            self._misses += 1
-            return None
-        self._hits += 1
-        return self._cache[key]
+        with self._lock:
+            if key not in self._cache:
+                self._misses += 1
+                return None
+            expiry = self._cache_expiry.get(key, self._cache_times[key] + self.ttl)
+            if time.time() > expiry:
+                del self._cache[key]
+                del self._cache_times[key]
+                if key in self._cache_expiry:
+                    del self._cache_expiry[key]
+                self._misses += 1
+                return None
+            self._hits += 1
+            return self._cache[key]
 
     def set(self, key: str, value: Any, ttl: Optional[int] = None):
         """设置缓存；ttl 为可选，不传则使用实例默认 TTL。TTL 会加 0–10% 随机偏移以防雪崩。"""
-        effective = ttl if ttl is not None else self.ttl
-        if effective:
-            effective = effective + random.randint(0, max(1, int(effective * 0.1)))
-        if len(self._cache) >= self.max_size:
-            oldest = min(self._cache_times.keys(), key=lambda k: self._cache_times[k])
-            del self._cache[oldest]
-            del self._cache_times[oldest]
-            if oldest in self._cache_expiry:
-                del self._cache_expiry[oldest]
-        self._cache[key] = value
-        self._cache_times[key] = time.time()
-        if effective:
-            self._cache_expiry[key] = time.time() + effective
+        with self._lock:
+            effective = ttl if ttl is not None else self.ttl
+            if effective:
+                effective = effective + random.randint(0, max(1, int(effective * 0.1)))
+            if len(self._cache) >= self.max_size:
+                oldest = min(self._cache_times.keys(), key=lambda k: self._cache_times[k])
+                del self._cache[oldest]
+                del self._cache_times[oldest]
+                if oldest in self._cache_expiry:
+                    del self._cache_expiry[oldest]
+            self._cache[key] = value
+            self._cache_times[key] = time.time()
+            if effective:
+                self._cache_expiry[key] = time.time() + effective
     
     def clear(self):
         """清空缓存"""
-        self._cache.clear()
-        self._cache_times.clear()
-        self._cache_expiry.clear()
+        with self._lock:
+            self._cache.clear()
+            self._cache_times.clear()
+            self._cache_expiry.clear()
     
     def stats(self) -> dict:
         """获取缓存统计信息"""

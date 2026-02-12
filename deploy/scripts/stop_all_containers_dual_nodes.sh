@@ -23,7 +23,7 @@ PROJECT_DIR="/opt/HiFate-bazi"
 DOCKER_COMPOSE_DIR="$PROJECT_DIR/deploy/docker"
 
 # SSH 密码（从环境变量或默认值读取）
-SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+SSH_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 
 # SSH 执行函数（支持密码登录）
 ssh_exec() {

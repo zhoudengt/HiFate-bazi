@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+
 八字 API 集成测试
 """
 
+import pytest; pytest.importorskip("grpc", reason="grpc not installed")
 import pytest
 import httpx
 import sys

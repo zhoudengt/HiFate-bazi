@@ -46,7 +46,7 @@ read -p "按 Enter 继续，或 Ctrl+C 取消..."
 ssh root@${PROD_HOST} << 'EOF'
 cd /opt/HiFate-bazi
 echo "🔄 执行 SQL..."
-docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql
+docker exec -i hifate-mysql-master mysql -uroot -p"${MYSQL_PASSWORD:?MYSQL_PASSWORD required}" hifate_bazi < /tmp/rules_import.sql
 if [ $? -eq 0 ]; then
     echo "✅ SQL 执行成功"
     echo "🧹 清除缓存..."

@@ -893,50 +893,15 @@ async def _handle_annual_report_stream(payload: Dict[str, Any]):
 
 @_register("/smart-fortune/smart-analyze-stream")
 async def _handle_smart_analyze_stream(payload: Dict[str, Any]):
-    """处理智能运势流式分析请求（gRPC-Web 转发）
+    """处理智能运势流式分析请求（gRPC-Web 转发，全量收集后返回单次 JSON）。
     
-    注意：原接口是 GET 请求，通过 query params 传参
-    这里转换为 POST body 传参
+    若需真正 SSE 流式，请改用 POST /api/v1/smart-fortune/smart-analyze-stream/stream。
     """
-    from server.api.v1.smart_fortune import (
-        _scenario_1_generator,
-        _scenario_2_generator,
-        _original_scenario_generator,
-        PerformanceMonitor,
-        _sse_message,
-    )
-    
-    # 从 payload 提取参数
-    question = payload.get("question")
-    year = payload.get("year")
-    month = payload.get("month")
-    day = payload.get("day")
-    hour = payload.get("hour", 12)
-    gender = payload.get("gender")
-    user_id = payload.get("user_id")
-    category = payload.get("category")
-    
-    # 初始化性能监控器
-    monitor = PerformanceMonitor()
-    
-    # 场景判断
-    is_scenario_1 = category and (not question or question == category)
-    is_scenario_2 = category and question and question != category
-    
-    # 根据场景选择生成器
-    if is_scenario_1:
-        if not user_id or not year or not month or not day or not gender:
-            return {"success": False, "error": "场景1需要提供完整的生辰信息（year, month, day, gender, user_id）"}
-        generator = _scenario_1_generator(year, month, day, hour, gender, category, user_id, monitor)
-    elif is_scenario_2:
-        if not user_id:
-            return {"success": False, "error": "场景2需要提供user_id参数"}
-        generator = _scenario_2_generator(question, category, user_id, year, month, day, hour, gender, monitor)
-    elif question and year and month and day and gender:
-        generator = _original_scenario_generator(question, year, month, day, hour, gender, user_id, monitor)
-    else:
-        return {"success": False, "error": "参数不完整，请检查输入"}
-    
+    from server.api.v1.smart_fortune import get_smart_analyze_stream_generator
+
+    generator, error = await get_smart_analyze_stream_generator(payload)
+    if error is not None:
+        return error
     return await _collect_sse_stream(generator)
 
 
@@ -1361,11 +1326,17 @@ async def _collect_sse_stream(generator) -> Dict[str, Any]:
                                 data_content['llm_completed'] = True
                                 logger.debug(f"[_collect_sse_stream] 流式传输完成标记")
                             else:
-                                # 简短答复结束，保存完整内容
+                                # 场景1 简短答复结束：避免与 stream_content 重复
+                                # 若已通过 brief_response_chunk 收集到内容，只设标记，不重复写入 data.brief_response
                                 content = msg.get('content', '')
-                                if content:
+                                if content and not stream_contents:
+                                    # 仅当未收到任何 chunk 时，用 end 事件内容作为兜底
                                     data_content['brief_response'] = content
-                                    logger.debug(f"[_collect_sse_stream] 保存简短答复: {len(content)} 字符")
+                                    stream_contents.append(content)
+                                    logger.debug(f"[_collect_sse_stream] 简短答复兜底: {len(content)} 字符")
+                                else:
+                                    data_content['brief_response_completed'] = True
+                                    logger.debug(f"[_collect_sse_stream] 简短答复完成标记（内容已在 stream_content）")
                         
                         elif event_type_to_use == 'llm_end':
                             # LLM结束（场景2），如果有完整响应可以保存
@@ -1433,6 +1404,12 @@ async def _collect_sse_stream(generator) -> Dict[str, Any]:
         
         # 合并流式内容
         stream_content = ''.join(stream_contents) if stream_contents else None
+        
+        # 场景1 去重：移除仅作标记的 brief_response_completed
+        data_content.pop('brief_response_completed', None)
+        # 兼容：若为场景1（有 stream_content 且无 brief_response），回填 data.brief_response 与 stream_content 一致，避免依赖该字段的前端拿不到文案
+        if stream_content and data_content.get('preset_questions') is not None and 'brief_response' not in data_content:
+            data_content['brief_response'] = stream_content
         
         # 如果没有收集到任何数据，记录警告
         if not data_content and not stream_content:

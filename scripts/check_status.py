@@ -96,7 +96,7 @@ def main():
         print(f"   差异: {diff} 条")
         print(f"\n💡 需要执行修复:")
         print(f"   scp scripts/temp_rules_export.sql root@8.210.52.217:/tmp/rules_import.sql")
-        print(f"   ssh root@8.210.52.217 'cd /opt/HiFate-bazi && docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql && curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/check'")
+        print(f"   ssh root@8.210.52.217 'cd /opt/HiFate-bazi && docker exec -i hifate-mysql-master mysql -uroot -p${MYSQL_PASSWORD} hifate_bazi < /tmp/rules_import.sql && curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/check'")
 
 
 if __name__ == '__main__':

@@ -56,3 +56,28 @@ ENV/
 # 归档目录（历史文档，不需要 AI 读取）
 docs/archive/
 scripts/archive/
+
+# 大型脚本目录（400+ 文件，多数为一次性脚本）
+scripts/db/
+scripts/deploy/
+
+# 标准文档（需要时手动 @引用）
+standards/
+
+# 部署文档（需要时手动 @引用）
+deploy/docs/
+
+# 本地前端（后端仓库不需要索引）
+local_frontend/
+
+# 压力测试
+stress_test/
+
+# 备份文件
+*.backup
+.cursorrules.backup
+
+# 项目根目录临时分析文档
+接口列表*.md
+流式接口*.md
+非流式接口*.md

@@ -22,7 +22,7 @@ LOCAL_DB="${MYSQL_DATABASE:-hifate_bazi}"
 NODE1_IP="8.210.52.217"
 NODE2_IP="47.243.160.43"
 SSH_USER="root"
-SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+SSH_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 PROJECT_DIR="/opt/HiFate-bazi"
 PROD_DB="${MYSQL_DATABASE:-hifate_bazi}"
 
@@ -76,7 +76,7 @@ get_prod_mysql_config() {
         echo \"MYSQL_HOST=\${MYSQL_HOST:-localhost}\" && \
         echo \"MYSQL_PORT=\${MYSQL_PORT:-3306}\" && \
         echo \"MYSQL_USER=\${MYSQL_USER:-root}\" && \
-        echo \"MYSQL_PASSWORD=\${MYSQL_PASSWORD:-Yuanqizhan@163}\" && \
+        echo \"MYSQL_PASSWORD=\${MYSQL_PASSWORD:?MYSQL_PASSWORD env var required}\" && \
         echo \"MYSQL_DATABASE=\${MYSQL_DATABASE:-hifate_bazi}\"")
     
     echo "$config" | grep "MYSQL_HOST=" | cut -d'=' -f2

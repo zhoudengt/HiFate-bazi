@@ -81,6 +81,7 @@ class ApiEndpoints:
     CHILDREN_STUDY_STREAM = "/children-study/stream"
     GENERAL_REVIEW_STREAM = "/general-review/stream"
     DAILY_FORTUNE_CALENDAR_STREAM = "/daily-fortune-calendar/stream"
+    ANNUAL_REPORT_STREAM = "/annual-report/stream"
     
     # 智能问答（注意：前缀是 /smart-fortune）
     SMART_ANALYZE_STREAM = "/smart-fortune/smart-analyze-stream"

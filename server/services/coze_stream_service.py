@@ -18,8 +18,28 @@ import httpx
 import uuid
 import time
 import logging
+import threading
 from typing import Dict, Any, Optional, AsyncGenerator, Tuple
 import asyncio
+
+# 配置缓存：减少每次请求的 DB 查询开销，60s TTL 兼顾热更新
+_CONFIG_CACHE_TTL = 60
+_config_cache: Dict[str, Tuple[Optional[str], float]] = {}
+_config_cache_lock = threading.Lock()
+
+
+def _get_cached_config(key: str) -> Optional[str]:
+    """获取配置，带 60s 内存缓存"""
+    now = time.time()
+    with _config_cache_lock:
+        if key in _config_cache:
+            val, expiry = _config_cache[key]
+            if now < expiry:
+                return val
+    val = get_config_from_db_only(key)
+    with _config_cache_lock:
+        _config_cache[key] = (val, now + _CONFIG_CACHE_TTL)
+    return val
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -158,6 +178,9 @@ class CozeStreamService(BaseLLMStreamService):
         
         self.api_base = api_base.rstrip('/')
         
+        # HTTP 连接池：复用 TCP 连接，减少握手开销
+        self._session = requests.Session()
+        
         if not self.access_token:
             raise ValueError("数据库配置缺失: COZE_ACCESS_TOKEN，请在 service_configs 表中配置")
         
@@ -255,10 +278,10 @@ class CozeStreamService(BaseLLMStreamService):
                     # 大模型生成内容需要较长时间，读取超时设置为 180 秒
                     response = await loop.run_in_executor(
                         None,
-                        lambda: requests.post(
-                            url,
-                            headers=headers_to_use,
-                            json=payload,
+                        lambda u=url, h=headers_to_use, p=payload: self._session.post(
+                            u,
+                            headers=h,
+                            json=p,
                             stream=True,
                             timeout=(30, 180)  # 连接30秒，读取180秒
                         )
@@ -296,14 +319,14 @@ class CozeStreamService(BaseLLMStreamService):
                     
                     if response.status_code == 200:
                         # 处理流式响应（使用与 stream_custom_analysis 相同的逻辑）
-                        buffer = ""
+                        buffer_chunks = []  # 使用 list 累积，避免 O(n^2) 字符串拼接
                         sent_length = 0
                         has_content = False
                         current_event = None
                         stream_ended = False
                         line_count = 0
                         is_thinking = False  # 标志位：是否处于思考过程中
-                        thinking_buffer = ""  # 累积思考过程内容，用于检测
+                        thinking_buffer_chunks = []  # 累积思考过程内容，用于检测
                         
                         logger.info(f"📡 开始处理 Coze API 流式响应 (行动建议, Bot ID: {used_bot_id})")
                         
@@ -333,6 +356,7 @@ class CozeStreamService(BaseLLMStreamService):
                                 
                                 if data_str == '[DONE]':
                                     # 流结束
+                                    buffer = ''.join(buffer_chunks)
                                     if has_content and buffer.strip():
                                         if self._is_error_response(buffer.strip()):
                                             logger.error(f"Coze Bot 返回错误响应 (行动建议, Bot ID: {used_bot_id}): {buffer.strip()[:200]}")
@@ -412,10 +436,11 @@ class CozeStreamService(BaseLLMStreamService):
                                                 continue
                                             
                                             # 累积内容用于检测思考过程
-                                            thinking_buffer += content
+                                            thinking_buffer_chunks.append(content)
                                             
                                             # 标志位检测逻辑：检测思考过程开头和正式答案开头
                                             if not has_content:  # 还没有发送过内容
+                                                thinking_buffer = ''.join(thinking_buffer_chunks)
                                                 if self._is_thinking_start(thinking_buffer):
                                                     is_thinking = True
                                                     logger.debug(f"🧠 检测到思考过程开头，开始过滤: {thinking_buffer[:50]}...")
@@ -439,7 +464,7 @@ class CozeStreamService(BaseLLMStreamService):
                                                 continue
                                             
                                             has_content = True
-                                            buffer += content
+                                            buffer_chunks.append(content)
                                             sent_length += len(content)
                                             yield {
                                                 'type': 'progress',
@@ -485,7 +510,7 @@ class CozeStreamService(BaseLLMStreamService):
                                                     continue
                                                 
                                                 has_content = True
-                                                buffer = content
+                                                buffer_chunks = [content]
                                                 sent_length = 0
                                                 
                                                 # 分段发送内容
@@ -502,6 +527,7 @@ class CozeStreamService(BaseLLMStreamService):
                                     
                                     # 处理 conversation.chat.completed 事件（对话完成）
                                     elif event_type == 'conversation.chat.completed':
+                                        buffer = ''.join(buffer_chunks)
                                         logger.info(f"✅ 对话完成（行动建议）: buffer长度={len(buffer)}, 已发送长度={sent_length}, has_content={has_content}")
                                         if has_content and buffer.strip():
                                             # 如果有未发送的内容，发送剩余部分
@@ -561,6 +587,7 @@ class CozeStreamService(BaseLLMStreamService):
                         
                         # 流结束处理
                         if not stream_ended:
+                            buffer = ''.join(buffer_chunks)
                             if has_content and buffer.strip():
                                 if self._is_error_response(buffer.strip()):
                                     logger.error(f"Coze Bot 返回错误响应 (行动建议, Bot ID: {used_bot_id}): {buffer.strip()[:200]}")
@@ -645,14 +672,9 @@ class CozeStreamService(BaseLLMStreamService):
         trace_id = trace_id or str(uuid.uuid4())[:8]
         request_start_time = time.time()
         
-        # ⚠️ 关键修复：每次调用时重新从数据库读取配置（支持热更新）
-        # 优先级：参数传入 > 数据库配置 > 实例变量（只从数据库读取，不降级到环境变量）
-        current_access_token = get_config_from_db_only("COZE_ACCESS_TOKEN") or self.access_token
-        backup_access_token = None
-        try:
-            backup_access_token = get_config_from_db_only("COZE_ACCESS_TOKEN_BACKUP")
-        except Exception:
-            pass
+        # 配置优先级：参数传入 > 数据库配置（60s 缓存）> 实例变量
+        current_access_token = _get_cached_config("COZE_ACCESS_TOKEN") or self.access_token
+        backup_access_token = _get_cached_config("COZE_ACCESS_TOKEN_BACKUP")
         
         if not current_access_token:
             logger.error(f"[{trace_id}] ❌ 配置缺失: COZE_ACCESS_TOKEN")
@@ -662,8 +684,8 @@ class CozeStreamService(BaseLLMStreamService):
             }
             return
         
-        # 优先级：参数传入 > 数据库配置 > 实例变量（只从数据库读取，不降级到环境变量）
-        used_bot_id = bot_id or get_config_from_db_only("COZE_BOT_ID") or self.bot_id
+        # 优先级：参数传入 > 数据库配置（60s 缓存）> 实例变量
+        used_bot_id = bot_id or _get_cached_config("COZE_BOT_ID") or self.bot_id
         
         if not used_bot_id:
             logger.error(f"[{trace_id}] ❌ 配置缺失: COZE_BOT_ID")
@@ -740,10 +762,10 @@ class CozeStreamService(BaseLLMStreamService):
                         # 大模型生成内容需要较长时间，读取超时设置为 180 秒
                         response = await loop.run_in_executor(
                             None,
-                            lambda: requests.post(
-                                url,
-                                headers=headers_to_use,
-                                json=payload,
+                            lambda u=url, h=headers_to_use, p=payload: self._session.post(
+                                u,
+                                headers=h,
+                                json=p,
                                 stream=True,
                                 timeout=(30, 180)  # 连接30秒，读取180秒
                             )
@@ -866,14 +888,14 @@ class CozeStreamService(BaseLLMStreamService):
                             continue  # 继续重试
                         elif response.status_code == 200:
                             # 处理流式响应
-                            buffer = ""
+                            buffer_chunks = []  # 使用 list 累积，避免 O(n^2) 字符串拼接
                             sent_length = 0  # 跟踪已发送的内容长度
                             has_content = False
                             current_event = None  # 保存当前事件类型
                             stream_ended = False
                             line_count = 0  # 记录行数
                             is_thinking = False  # 标志位：是否处于思考过程中
-                            thinking_buffer = ""  # 累积思考过程内容，用于检测
+                            thinking_buffer_chunks = []  # 累积思考过程内容，用于检测
                             error_message_detected = ""  # 标志位：检测到的错误消息（如果 Bot 返回错误消息）
                             
                             logger.info(f"[{trace_id}] 📡 开始处理流式响应 (Bot ID: {used_bot_id})")
@@ -907,6 +929,7 @@ class CozeStreamService(BaseLLMStreamService):
                                 
                                 if data_str == '[DONE]':
                                     # 流结束
+                                    buffer = ''.join(buffer_chunks)
                                     if has_content and buffer.strip():
                                         # 检查 buffer 中是否包含错误消息
                                         if self._is_error_response(buffer.strip()):
@@ -995,10 +1018,11 @@ class CozeStreamService(BaseLLMStreamService):
                                                 continue
                                             
                                             # 累积内容用于检测思考过程
-                                            thinking_buffer += content
+                                            thinking_buffer_chunks.append(content)
                                             
                                             # 标志位检测逻辑：检测思考过程开头和正式答案开头
                                             if not has_content:  # 还没有发送过内容
+                                                thinking_buffer = ''.join(thinking_buffer_chunks)
                                                 if self._is_thinking_start(thinking_buffer):
                                                     is_thinking = True
                                                     logger.debug(f"🧠 检测到思考过程开头，开始过滤: {thinking_buffer[:50]}...")
@@ -1022,9 +1046,9 @@ class CozeStreamService(BaseLLMStreamService):
                                                 continue
                                             
                                             has_content = True
-                                            buffer += content
+                                            buffer_chunks.append(content)
                                             sent_length += len(content)  # 记录已发送长度（优化方案2.2）
-                                            logger.debug(f"📤 Delta 内容: {len(content)}字符, 累计已发送: {sent_length}字符, Buffer总长度: {len(buffer)}字符")  # 优化方案2.3
+                                            logger.debug(f"📤 Delta 内容: {len(content)}字符, 累计已发送: {sent_length}字符, Buffer总长度: {sum(len(c) for c in buffer_chunks)}字符")  # 优化方案2.3
                                             yield {
                                                 'type': 'progress',
                                                 'content': content
@@ -1108,7 +1132,7 @@ class CozeStreamService(BaseLLMStreamService):
                                                     continue
                                                 
                                                 has_content = True
-                                                buffer = content  # 使用完整内容替换 buffer
+                                                buffer_chunks = [content]  # 使用完整内容替换 buffer
                                                 sent_length = 0  # 重置已发送长度
                                                 
                                                 # 分段发送内容（避免一次性发送过长内容）
@@ -1127,11 +1151,12 @@ class CozeStreamService(BaseLLMStreamService):
                                                 logger.warning(f"⚠️ 完整data内容: {json.dumps(data, ensure_ascii=False)[:500]}")
                                         else:
                                             # 如果已经收到 delta 事件，跳过 completed 事件避免重复
-                                            logger.info(f"📝 收到完整消息（conversation.message.completed，已收到delta事件，跳过避免重复）: msg_type={msg_type}, buffer长度={len(buffer)}, 已发送长度={sent_length}")
+                                            logger.info(f"📝 收到完整消息（conversation.message.completed，已收到delta事件，跳过避免重复）: msg_type={msg_type}, buffer长度={sum(len(c) for c in buffer_chunks)}, 已发送长度={sent_length}")
                                         continue
                                     
                                     # 处理 conversation.chat.completed 事件（对话完成）
                                     elif event_type == 'conversation.chat.completed':
+                                        buffer = ''.join(buffer_chunks)
                                         logger.info(f"✅ 对话完成（conversation.chat.completed）: buffer长度={len(buffer)}, 已发送长度={sent_length}")  # 优化方案2.3
                                         if has_content and len(buffer) > sent_length:
                                             # 优化方案2.2：只发送新增部分（去重）
@@ -1226,7 +1251,7 @@ class CozeStreamService(BaseLLMStreamService):
                                                 continue
                                             
                                             has_content = True
-                                            buffer += content
+                                            buffer_chunks.append(content)
                                             yield {
                                                 'type': 'progress',
                                                 'content': content
@@ -1245,6 +1270,7 @@ class CozeStreamService(BaseLLMStreamService):
                         # 流结束处理（在 for line 循环之后）
                         total_duration = time.time() - request_start_time
                         if not stream_ended:
+                            buffer = ''.join(buffer_chunks)
                             if has_content and buffer.strip():
                                 # 检查 buffer 中是否包含错误消息
                                 if self._is_error_response(buffer.strip()):

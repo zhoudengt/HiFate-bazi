@@ -3,7 +3,7 @@
 
 set -e
 
-SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+SSH_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 NODE1_IP="8.210.52.217"
 NODE2_IP="47.243.160.43"
 COMPOSE_FILE="/opt/hifate-frontend/docker-compose.yml"

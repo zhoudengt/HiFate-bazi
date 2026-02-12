@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SSH_HOST="${PROD_SSH_HOST:-8.210.52.217}"
 SSH_USER="${PROD_SSH_USER:-root}"
-MYSQL_PASSWORD="${MYSQL_PASSWORD:-Yuanqizhan@163}"
+MYSQL_PASSWORD="${MYSQL_PASSWORD:?MYSQL_PASSWORD env var required}"
 MYSQL_CONTAINER="hifate-mysql-master"
 DB_NAME="hifate_bazi"
 

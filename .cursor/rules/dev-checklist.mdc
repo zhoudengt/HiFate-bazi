@@ -1,0 +1,30 @@
+---
+description: 开发检查清单（提交前可用 @dev-checklist.mdc 引用）
+alwaysApply: false
+---
+
+# 开发检查清单
+
+> 提交前用 `@dev-checklist.mdc` 引用本规则进行检查。
+
+## 通用开发检查清单
+
+- [ ] 代码是否在热更新监控范围内（`core/`, `server/`, `services/`）
+- [ ] **开发完成后是否触发热更新（必须！）**
+- [ ] **是否验证对应功能在热更新后正常工作（必须！）**
+- [ ] **如果涉及 API 端点，是否验证端点正确注册到 gRPC 网关（必须！）**
+
+## API 开发检查清单
+
+- [ ] 是否使用 Pydantic `BaseModel` 定义模型
+- [ ] 是否在 `grpc_gateway.py` 中注册端点
+- [ ] 是否编写了对应的测试案例（测试覆盖率 ≥ 50%）
+
+## 规则开发检查清单
+
+- [ ] 所有规则匹配使用 `RuleService`
+- [ ] 没有文件读取调用（`load_from_file`、`read_excel`、`read_json` 等）
+
+## 完整检查清单
+
+详见 `standards/05_功能开发检查清单.md`

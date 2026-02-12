@@ -43,7 +43,7 @@ def generate_stream_cache_key(prefix: str, *args, **kwargs) -> str:
         filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
         if filtered_kwargs:
             kwargs_str = json.dumps(filtered_kwargs, sort_keys=True, default=str)
-            kwargs_hash = hashlib.md5(kwargs_str.encode()).hexdigest()[:8]
+            kwargs_hash = hashlib.md5(kwargs_str.encode()).hexdigest()[:16]
             parts.append(kwargs_hash)
     
     return ":".join(parts)
@@ -125,10 +125,8 @@ def set_stream_data_cache(
         )
         
         cache = get_multi_cache()
-        original_ttl = cache.l2.ttl
-        cache.l2.ttl = ttl
-        cache.set(cache_key, data)
-        cache.l2.ttl = original_ttl
+        # 使用 per-operation TTL 参数，避免修改全局实例导致竞态
+        cache.set(cache_key, data, ttl=ttl)
         
         logger.debug(f"✅ 流式数据缓存已设置: {prefix} (TTL: {ttl}秒)")
         return True
@@ -209,10 +207,8 @@ def set_llm_cache(
         
         cache_key = f"llm_{prefix}:{input_data_hash}"
         cache = get_multi_cache()
-        original_ttl = cache.l2.ttl
-        cache.l2.ttl = ttl
-        cache.set(cache_key, content)
-        cache.l2.ttl = original_ttl
+        # 使用 per-operation TTL 参数，避免修改全局实例导致竞态
+        cache.set(cache_key, content, ttl=ttl)
         
         logger.debug(f"✅ LLM缓存已设置: {prefix} (TTL: {ttl}秒)")
         return True

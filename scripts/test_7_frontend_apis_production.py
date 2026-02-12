@@ -233,7 +233,7 @@ def verify_frontend_gateway_proto_sync() -> bool:
         proto_file_path = os.path.join(project_dir, "proto", "frontend_gateway.proto")
         
         node1_hash = subprocess.check_output(
-            f'sshpass -p "{os.getenv("SSH_PASSWORD", "Yuanqizhan@163")}" '
+            f'sshpass -p "{os.getenv("SSH_PASSWORD", os.getenv("MYSQL_PASSWORD", ""))}" '
             f'ssh -o StrictHostKeyChecking=no root@8.210.52.217 '
             f'"md5sum {proto_file_path} | cut -d\\" \\" -f1"',
             shell=True,
@@ -242,7 +242,7 @@ def verify_frontend_gateway_proto_sync() -> bool:
         
         # 检查 Node2
         node2_hash = subprocess.check_output(
-            f'sshpass -p "{os.getenv("SSH_PASSWORD", "Yuanqizhan@163")}" '
+            f'sshpass -p "{os.getenv("SSH_PASSWORD", os.getenv("MYSQL_PASSWORD", ""))}" '
             f'ssh -o StrictHostKeyChecking=no root@47.243.160.43 '
             f'"md5sum {proto_file_path} | cut -d\\" \\" -f1"',
             shell=True,

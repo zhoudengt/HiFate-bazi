@@ -117,7 +117,7 @@ def main():
     print("="*60)
     print("\n1. 检查生产环境数据库规则数量:")
     print("   ssh root@8.210.52.217")
-    print("   docker exec hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi -e \\")
+    print("   docker exec hifate-mysql-master mysql -uroot -p${MYSQL_PASSWORD} hifate_bazi -e \\")
     print("     \"SELECT COUNT(*) FROM bazi_rules WHERE rule_code LIKE 'FORMULA_%' AND enabled = 1;\"")
     
     print("\n2. 清除生产环境缓存:")
@@ -128,7 +128,7 @@ def main():
     
     print("\n4. 检查规则 enabled 状态:")
     print("   ssh root@8.210.52.217")
-    print("   docker exec hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi -e \\")
+    print("   docker exec hifate-mysql-master mysql -uroot -p${MYSQL_PASSWORD} hifate_bazi -e \\")
     print("     \"SELECT rule_type, COUNT(*) as total, SUM(enabled) as enabled_count \\")
     print("      FROM bazi_rules WHERE rule_code LIKE 'FORMULA_%' GROUP BY rule_type;\"")
     

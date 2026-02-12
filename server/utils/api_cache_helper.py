@@ -55,7 +55,7 @@ def generate_cache_key(prefix: str, *args, **kwargs) -> str:
         filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
         if filtered_kwargs:
             kwargs_str = json.dumps(filtered_kwargs, sort_keys=True, default=str)
-            kwargs_hash = hashlib.md5(kwargs_str.encode()).hexdigest()[:8]
+            kwargs_hash = hashlib.md5(kwargs_str.encode()).hexdigest()[:16]
             parts.append(kwargs_hash)
     
     return ":".join(parts)
@@ -108,15 +108,8 @@ def set_cached_result(cache_key: str, result: Any, ttl: int = L2_TTL) -> bool:
         from server.utils.cache_multi_level import get_multi_cache
         cache = get_multi_cache()
         
-        # 临时修改 L2 TTL
-        original_ttl = cache.l2.ttl
-        cache.l2.ttl = ttl
-        
-        # 设置缓存
-        cache.set(cache_key, result)
-        
-        # 恢复原 TTL
-        cache.l2.ttl = original_ttl
+        # 使用 per-operation TTL 参数，避免修改全局实例导致竞态
+        cache.set(cache_key, result, ttl=ttl)
         
         logger.debug(f"✅ 缓存已设置: {cache_key[:50]}... (TTL: {ttl}秒)")
         return True

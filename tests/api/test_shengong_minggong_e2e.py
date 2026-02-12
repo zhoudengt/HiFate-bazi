@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+
 身宫命宫 API 端到端测试
 
 测试身宫命宫计算功能的完整数据流，包括：
@@ -12,6 +13,7 @@
 - 数据一致性验证（与 /bazi/fortune/display 对比）
 """
 
+import pytest; pytest.importorskip("fastapi", reason="fastapi not installed")
 import pytest
 import httpx
 import sys

@@ -26,23 +26,21 @@ class DatabaseConfig:
     @classmethod
     def from_env(cls) -> 'DatabaseConfig':
         """从环境变量创建配置"""
-        # ⚠️ 重要：根据环境自动选择默认配置
-        # 本地开发：localhost:3306，密码: 123456
-        # 生产环境：8.210.52.217:3306 (公网) / 172.18.121.222:3306 (内网)，密码: Yuanqizhan@163
-        # 使用统一环境配置
+        # ⚠️ 安全规范：所有敏感配置必须通过环境变量配置，禁止硬编码
+        # 本地开发：MYSQL_HOST 默认 localhost
+        # 生产环境：必须通过环境变量 MYSQL_HOST 指定（不允许硬编码 IP）
         from server.config.env_config import is_local_dev
         is_local_dev = is_local_dev()
         
-        # 根据环境设置默认值
-        # ⚠️ 安全规范：密码必须通过环境变量配置，不允许硬编码
         if is_local_dev:
-            # 本地开发：使用本地MySQL
             default_host = 'localhost'
-            default_password = os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', ''))
         else:
-            # 生产环境：使用生产MySQL
-            default_host = '8.210.52.217'  # 生产Node1公网IP
-            default_password = os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', ''))
+            # 生产环境必须显式配置 MYSQL_HOST
+            default_host = os.getenv('MYSQL_HOST', '')
+            if not default_host:
+                import logging
+                logging.getLogger(__name__).error("❌ 生产环境必须配置 MYSQL_HOST 环境变量")
+        default_password = os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', ''))
         
         return cls(
             host=os.getenv('MYSQL_HOST', default_host),

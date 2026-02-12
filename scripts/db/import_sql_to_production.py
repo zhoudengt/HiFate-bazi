@@ -41,7 +41,7 @@ def import_sql_file(sql_file: str, host: str = None, port: int = None,
     if not user:
         user = os.getenv('MYSQL_USER', 'root')
     if not password:
-        password = os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', 'Yuanqizhan@163'))
+        password = os.getenv('MYSQL_PASSWORD', os.getenv('MYSQL_ROOT_PASSWORD', os.getenv("MYSQL_PASSWORD", "")))
     if not database:
         database = os.getenv('MYSQL_DATABASE', 'hifate_bazi')
     

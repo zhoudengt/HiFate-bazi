@@ -6,7 +6,7 @@ set -e
 
 HOST=$1
 COMMAND=$2
-SSH_PASSWORD="Yuanqizhan@163"
+SSH_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 
 if [ -z "$HOST" ] || [ -z "$COMMAND" ]; then
     echo "用法: $0 <host> <command>"

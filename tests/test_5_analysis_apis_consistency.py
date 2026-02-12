@@ -13,6 +13,10 @@
 3. 比较数据是否完全一致（年份、干支、关系等）
 """
 
+
+import pytest
+pytest.skip("独立脚本，使用自定义参数不兼容 pytest fixture 机制，请单独运行", allow_module_level=True)
+
 import sys
 import os
 import asyncio

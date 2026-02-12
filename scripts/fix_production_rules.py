@@ -208,7 +208,7 @@ def sync_rules_to_production(sql_file: str) -> bool:
         print("🔄 在生产环境执行 SQL...")
         ssh_cmd = """
 cd /opt/HiFate-bazi && \
-docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql && \
+docker exec -i hifate-mysql-master mysql -uroot -p${MYSQL_PASSWORD} hifate_bazi < /tmp/rules_import.sql && \
 echo "✅ 规则导入成功" || echo "❌ 规则导入失败"
 """
         
@@ -353,7 +353,7 @@ def main():
         print("⚠️  自动同步失败，请手动执行:")
         print(f"  1. 上传文件: scp {sql_file} root@8.210.52.217:/tmp/rules_import.sql")
         print("  2. SSH 到生产环境: ssh root@8.210.52.217")
-        print("  3. 执行 SQL: docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql")
+        print("  3. 执行 SQL: docker exec -i hifate-mysql-master mysql -uroot -p${MYSQL_PASSWORD} hifate_bazi < /tmp/rules_import.sql")
         return
     
     # 步骤 7: 清除缓存

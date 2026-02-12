@@ -6,7 +6,7 @@
 提供标准化的 API 响应格式，确保所有接口返回一致的结构。
 """
 
-from typing import Any, Dict, Generic, Optional, TypeVar
+from typing import Any, Dict, Generic, Literal, Optional, TypeVar
 from pydantic import BaseModel, Field
 from datetime import datetime
 
@@ -207,3 +207,20 @@ class FortuneBaseResponse(BaseAPIResponse):
 class PaymentBaseResponse(BaseAPIResponse):
     """支付相关 API 的基础响应"""
     pass
+
+
+# ==================== 流式接口统一消息格式 ====================
+
+class StreamChunk(BaseModel):
+    """
+    统一流式消息格式（SSE）
+    
+    用于 BaseAnalysisStreamHandler 及所有流式接口。
+    type: data | progress | complete | error
+    """
+    type: Literal['data', 'progress', 'complete', 'error']
+    content: Any = ''
+
+
+# BaseResponse 作为 BaseAPIResponse 的简洁别名（向后兼容）
+BaseResponse = BaseAPIResponse

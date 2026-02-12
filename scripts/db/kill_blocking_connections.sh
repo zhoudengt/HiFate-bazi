@@ -2,7 +2,7 @@
 # 杀掉阻塞 MySQL 导入的连接
 
 CONTAINER=$(docker ps --format '{{.Names}}' | grep -E "(hifate-mysql-master|hifate-mysql-slave)" | head -1)
-MYSQL_PASSWORD=$(grep MYSQL_PASSWORD /opt/HiFate-bazi/.env 2>/dev/null | cut -d'=' -f2 || echo "Yuanqizhan@163")
+MYSQL_PASSWORD=$(grep MYSQL_PASSWORD /opt/HiFate-bazi/.env 2>/dev/null | cut -d'=' -f2 || echo "${MYSQL_PASSWORD:?MYSQL_PASSWORD required}")
 
 echo "杀掉阻塞的连接..."
 

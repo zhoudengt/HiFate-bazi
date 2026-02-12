@@ -798,7 +798,7 @@ class LocalToProductionSyncer:
         _current_step = "上传SQL文件到服务器"
         
         if server_password is None:
-            server_password = os.getenv('SSH_PASSWORD', 'Yuanqizhan@163')
+            server_password = os.getenv('SSH_PASSWORD', os.getenv("MYSQL_PASSWORD", ""))
         
         # 生成服务器上的文件路径
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')

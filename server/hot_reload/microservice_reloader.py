@@ -84,6 +84,9 @@ class MicroserviceReloader:
         self._current_servicer: Optional[Any] = None
         self._servicer_lock = threading.RLock()
         
+        # 关联的 DynamicServicer 列表（热更新后自动清除其方法缓存）
+        self._dynamic_servicers: list = []
+        
         # 初始化文件状态
         self._scan_files()
     
@@ -315,8 +318,12 @@ class MicroserviceReloader:
                 self._current_version += 1
                 self._current_servicer = new_servicer
             
-            # 清除 DynamicServicer 的方法缓存（如果有）
-            # 注意：这里无法直接访问 DynamicServicer，但可以通过回调通知
+            # 清除 DynamicServicer 的方法缓存
+            for ds in self._dynamic_servicers:
+                try:
+                    ds.clear_cache()
+                except Exception as e:
+                    logger.debug(f"   ⚠ 清除 DynamicServicer 缓存失败: {e}")
             
             # 记录版本历史（包含备份信息）
             self._record_version(new_servicer_class, backup_info)
@@ -919,8 +926,9 @@ def create_hot_reload_server(
     initial_servicer = servicer_class()
     reloader.set_servicer(initial_servicer)
     
-    # 创建动态 Servicer
+    # 创建动态 Servicer 并注册到 reloader（热更新时自动清除方法缓存）
     dynamic_servicer = DynamicServicer(reloader)
+    reloader._dynamic_servicers.append(dynamic_servicer)
     
     # 创建 gRPC 服务器
     server = grpc.server(

@@ -65,7 +65,7 @@ def main():
         print(f"  1. 手动 SSH 到生产环境检查:")
         print(f"     ssh root@8.210.52.217")
         print(f"  2. 运行以下 SQL 查询:")
-        print(f"     docker exec hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi -e \\")
+        print(f"     docker exec hifate-mysql-master mysql -uroot -p${MYSQL_PASSWORD} hifate_bazi -e \\")
         print(f"       \"SELECT rule_type, COUNT(*) as total, SUM(enabled) as enabled_count \\")
         print(f"        FROM bazi_rules WHERE rule_code LIKE 'FORMULA_%' GROUP BY rule_type;\"")
         print(f"  3. 对比本地和生产环境的规则数量")

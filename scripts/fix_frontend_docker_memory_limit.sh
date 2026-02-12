@@ -8,7 +8,7 @@ set -e
 
 NODE1_PUBLIC_IP="8.210.52.217"
 NODE2_PUBLIC_IP="47.243.160.43"
-SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+SSH_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 FRONTEND_USER="frontend-user"
 FRONTEND_DIR="/opt/hifate-frontend"
 COMPOSE_FILE="$FRONTEND_DIR/docker-compose.yml"

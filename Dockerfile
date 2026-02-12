@@ -9,7 +9,7 @@
 #   2. GitHub Actions 自动构建镜像并推送到 ACR
 #   3. 服务器从 ACR 拉取镜像并部署
 
-FROM --platform=linux/amd64 python:3.11-slim
+FROM --platform=linux/amd64 python:3.11.11-slim
 
 LABEL maintainer="HiFate Team"
 LABEL description="HiFate-bazi application image"

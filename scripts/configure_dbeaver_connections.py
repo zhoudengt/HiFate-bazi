@@ -32,7 +32,7 @@ MYSQL_CONFIG = {
         "type": "dev",
         "auth-model": "native",
         "user": "root",
-        "password": "Yuanqizhan@163",
+        "password": os.getenv("MYSQL_PASSWORD", ""),
         "configurationType": "MANUAL",
         "closeIdleConnection": True,
         "read-only": False,  # 连接配置中明确设置为可编辑

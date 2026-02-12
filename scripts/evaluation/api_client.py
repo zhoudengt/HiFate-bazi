@@ -875,11 +875,40 @@ class BaziApiClient:
             }
         return result
     
+    async def call_annual_report_stream(self, solar_date: str, solar_time: str,
+                                        gender: str, year: Optional[int] = None) -> StreamResponse:
+        """
+        调用年运报告流式分析（带重试机制）
+        
+        Args:
+            solar_date: 阳历日期
+            solar_time: 出生时间
+            gender: 性别
+            year: 目标年份（可选，默认使用服务端数据库配置）
+            
+        Returns:
+            StreamResponse对象
+        """
+        data = {
+            "solar_date": solar_date,
+            "solar_time": solar_time,
+            "gender": gender
+        }
+        if year is not None:
+            data["year"] = year
+        return await self._post_stream_with_retry(ApiEndpoints.ANNUAL_REPORT_STREAM, data, max_retries=3)
+    
     async def call_annual_report_test(self, solar_date: str, solar_time: str,
-                                      gender: str) -> Dict[str, Any]:
+                                      gender: str, year: Optional[int] = None) -> Dict[str, Any]:
         """
         调用年运报告测试接口，获取 formatted_data
         
+        Args:
+            solar_date: 阳历日期
+            solar_time: 出生时间
+            gender: 性别
+            year: 目标年份（可选，默认使用服务端数据库配置）
+            
         Returns:
             包含 success, formatted_data 的字典
         """
@@ -888,6 +917,8 @@ class BaziApiClient:
             "solar_time": solar_time,
             "gender": gender
         }
+        if year is not None:
+            data["year"] = year
         return await self._post_json(ApiEndpoints.ANNUAL_REPORT_TEST, data)
     
     async def call_wuxing_proportion_test(self, solar_date: str, solar_time: str,

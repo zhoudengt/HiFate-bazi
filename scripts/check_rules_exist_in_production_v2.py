@@ -386,7 +386,7 @@ def main():
             print(f"  1. 上传 SQL 文件到生产环境:")
             print(f"     scp {sql_file} root@8.210.52.217:/tmp/rules_import.sql")
             print(f"  2. 执行 SQL 并清理缓存:")
-            print(f"     ssh root@8.210.52.217 'cd /opt/HiFate-bazi && docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql && curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/check'")
+            print(f"     ssh root@8.210.52.217 'cd /opt/HiFate-bazi && docker exec -i hifate-mysql-master mysql -uroot -p${MYSQL_PASSWORD} hifate_bazi < /tmp/rules_import.sql && curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/check'")
         
     elif check_result.get('exists') is True:
         # 规则存在，对比代码逻辑

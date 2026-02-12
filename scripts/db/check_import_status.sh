@@ -54,7 +54,7 @@ if [ -n "${DOCKER_MYSQL_CONTAINER}" ]; then
     
     echo ""
     echo -e "${BLUE}正在执行的 MySQL 连接：${NC}"
-    docker exec "${DOCKER_MYSQL_CONTAINER}" mysql -uroot -p$(grep MYSQL_PASSWORD /opt/HiFate-bazi/.env 2>/dev/null | cut -d'=' -f2 || echo "Yuanqizhan@163") \
+    docker exec "${DOCKER_MYSQL_CONTAINER}" mysql -uroot -p$(grep MYSQL_PASSWORD /opt/HiFate-bazi/.env 2>/dev/null | cut -d'=' -f2 || echo "${MYSQL_PASSWORD:?MYSQL_PASSWORD required}") \
         -e "SHOW PROCESSLIST;" 2>/dev/null | grep -v "Sleep" || echo "无活跃连接"
 else
     echo -e "${YELLOW}未找到 MySQL 容器${NC}"
@@ -76,7 +76,7 @@ echo "============================================================"
 echo "  4. 查看数据库表数量（验证导入结果）"
 echo "============================================================"
 if [ -n "${DOCKER_MYSQL_CONTAINER}" ]; then
-    MYSQL_PASSWORD=$(grep MYSQL_PASSWORD /opt/HiFate-bazi/.env 2>/dev/null | cut -d'=' -f2 || echo "Yuanqizhan@163")
+    MYSQL_PASSWORD=$(grep MYSQL_PASSWORD /opt/HiFate-bazi/.env 2>/dev/null | cut -d'=' -f2 || echo "${MYSQL_PASSWORD:?MYSQL_PASSWORD required}")
     MYSQL_DATABASE=$(grep MYSQL_DATABASE /opt/HiFate-bazi/.env 2>/dev/null | cut -d'=' -f2 || echo "hifate_bazi")
     
     TABLE_COUNT=$(docker exec "${DOCKER_MYSQL_CONTAINER}" mysql -uroot -p"${MYSQL_PASSWORD}" \

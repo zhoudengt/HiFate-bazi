@@ -1,6 +1,10 @@
 ---
 description: 前端测试账号与后端修改约束（前端不可改，仅后端建议）
-alwaysApply: true
+alwaysApply: false
+globs:
+  - server/api/**
+  - tests/**
+  - scripts/evaluation/**
 ---
 
 # 前端测试与后端修改约束

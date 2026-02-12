@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+
 可观测性 API 测试
 测试所有可观测性相关的 API 端点
 """
 
+import pytest; pytest.importorskip("fastapi", reason="fastapi not installed")
 import pytest
 import httpx
 import sys

@@ -28,7 +28,7 @@ DRY_RUN=false
 NODE1_PUBLIC_IP="8.210.52.217"
 NODE2_PUBLIC_IP="47.243.160.43"
 PROJECT_DIR="/opt/HiFate-bazi"
-SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+SSH_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 
 # 解析命令行参数
 while [[ $# -gt 0 ]]; do
@@ -151,7 +151,7 @@ DB_RESULT=$(ssh_exec "cd $PROJECT_DIR && source .env 2>/dev/null || true && \
     echo \"MYSQL_HOST=\${MYSQL_HOST:-localhost}\" && \
     echo \"MYSQL_PORT=\${MYSQL_PORT:-3306}\" && \
     echo \"MYSQL_USER=\${MYSQL_USER:-root}\" && \
-    echo \"MYSQL_PASSWORD=\${MYSQL_PASSWORD:-Yuanqizhan@163}\" && \
+    echo \"MYSQL_PASSWORD=\${MYSQL_PASSWORD:?MYSQL_PASSWORD env var required}\" && \
     echo \"MYSQL_DATABASE=\${MYSQL_DATABASE:-hifate_bazi}\"")
 
 MYSQL_HOST=$(echo "$DB_RESULT" | grep "MYSQL_HOST=" | cut -d'=' -f2)
@@ -162,7 +162,7 @@ MYSQL_DATABASE=$(echo "$DB_RESULT" | grep "MYSQL_DATABASE=" | cut -d'=' -f2)
 
 # 执行 SQL 脚本
 ROLLBACK_OUTPUT=$(ssh_exec "cd $PROJECT_DIR && \
-    mysql -h\${MYSQL_HOST:-localhost} -P\${MYSQL_PORT:-3306} -u\${MYSQL_USER:-root} -p\${MYSQL_PASSWORD:-Yuanqizhan@163} \${MYSQL_DATABASE:-hifate_bazi} < $REMOTE_SCRIPT 2>&1" || echo "failed")
+    mysql -h\${MYSQL_HOST:-localhost} -P\${MYSQL_PORT:-3306} -u\${MYSQL_USER:-root} -p\${MYSQL_PASSWORD:?MYSQL_PASSWORD env var required} \${MYSQL_DATABASE:-hifate_bazi} < $REMOTE_SCRIPT 2>&1" || echo "failed")
 
 if echo "$ROLLBACK_OUTPUT" | grep -q "failed\|error\|Error"; then
     echo -e "${RED}❌ 数据库回滚失败${NC}"

@@ -35,7 +35,7 @@ echo "============================================================"
 
 PROD_DB_STATS=$(ssh ${PROD_USER}@${PROD_HOST} << 'EOF'
 cd /opt/HiFate-bazi
-docker exec hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi -e "
+docker exec hifate-mysql-master mysql -uroot -p"${MYSQL_PASSWORD:?MYSQL_PASSWORD required}" hifate_bazi -e "
 SELECT 
     rule_type,
     COUNT(*) as total,
@@ -82,7 +82,7 @@ if [ $? -eq 0 ]; then
                 
                 ssh ${PROD_USER}@${PROD_HOST} << 'EOF'
 cd /opt/HiFate-bazi
-docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql
+docker exec -i hifate-mysql-master mysql -uroot -p"${MYSQL_PASSWORD:?MYSQL_PASSWORD required}" hifate_bazi < /tmp/rules_import.sql
 echo "✅ SQL 执行完成"
 EOF
                 

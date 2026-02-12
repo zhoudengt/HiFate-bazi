@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+
 身宫命宫 API 专项测试
 
 测试身宫命宫计算功能的完整性和正确性
 """
 
+import pytest; pytest.importorskip("fastapi", reason="fastapi not installed")
 import pytest
 import httpx
 import sys

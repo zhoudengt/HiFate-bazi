@@ -21,11 +21,11 @@ NODE="both"  # both, node1, node2
 NODE1_PUBLIC_IP="8.210.52.217"
 NODE2_PUBLIC_IP="47.243.160.43"
 PROJECT_DIR="/opt/HiFate-bazi"
-SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+SSH_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 
 # MySQL 配置
 MYSQL_USER="root"
-MYSQL_PASSWORD="Yuanqizhan@163"
+MYSQL_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 MYSQL_DATABASE="hifate_bazi"
 
 # 解析命令行参数

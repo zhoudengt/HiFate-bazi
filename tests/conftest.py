@@ -1,99 +1,126 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-pytest 全局配置
-
-提供测试所需的公共 fixtures 和配置。
+pytest 全局 conftest —— 共享 fixtures
 """
 
 import os
 import sys
+import json
+import time
+import asyncio
+import tempfile
+import threading
+from unittest.mock import MagicMock, AsyncMock, patch
+
 import pytest
-from typing import Dict, Any, Generator
 
-# 添加项目根目录到路径
+# 确保项目根目录在 sys.path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, project_root)
-
-# 设置测试环境
-os.environ.setdefault("APP_ENV", "testing")
-os.environ.setdefault("DEBUG", "True")
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 
-# ==================== 应用相关 Fixtures ====================
-
-@pytest.fixture(scope="session")
-def app():
-    """创建 FastAPI 应用实例（用于测试）"""
-    from server.main import app
-    return app
+# ──────────────────── Redis Mock ────────────────────
 
 
-@pytest.fixture(scope="session")
-def client(app):
-    """创建测试客户端"""
-    from fastapi.testclient import TestClient
-    with TestClient(app) as test_client:
-        yield test_client
 
+# ──────────────────── 排除不兼容 pytest 的独立脚本 ────────────────────
+# 这些文件使用 argparse / 自定义参数，不是标准 pytest 测试
 
-# ==================== 八字测试数据 Fixtures ====================
+collect_ignore_glob = [
+    # 独立脚本（含 sys.exit / argparse / 非 fixture 参数）
+    "test_optimization_*.py",
+    "e2e_*_test.py",
+]
 
 @pytest.fixture
-def sample_bazi_request() -> Dict[str, Any]:
-    """标准八字计算请求数据"""
+def mock_redis():
+    """Mock Redis 客户端（模拟 get/setex/delete/scan/info）"""
+    redis = MagicMock()
+    _store = {}
+
+    def _get(key):
+        item = _store.get(key)
+        if item is None:
+            return None
+        val, expire = item
+        if expire and time.time() > expire:
+            del _store[key]
+            return None
+        return json.dumps(val, ensure_ascii=False)
+
+    def _setex(key, ttl, data):
+        _store[key] = (json.loads(data), time.time() + ttl)
+        return True
+
+    def _delete(*keys):
+        count = 0
+        for k in keys:
+            if k in _store:
+                del _store[k]
+                count += 1
+        return count
+
+    def _scan(cursor, match="*", count=100):
+        import fnmatch
+        matched = [k for k in _store if fnmatch.fnmatch(k, match)]
+        return (0, matched)
+
+    def _info():
+        return {"used_memory_human": "1M", "connected_clients": 1, "db0": {}}
+
+    redis.get = MagicMock(side_effect=_get)
+    redis.setex = MagicMock(side_effect=_setex)
+    redis.delete = MagicMock(side_effect=_delete)
+    redis.scan = MagicMock(side_effect=_scan)
+    redis.info = MagicMock(side_effect=_info)
+    redis._store = _store  # 暴露给测试方便检查
+    return redis
+
+
+# ──────────────────── Cache Fixtures ────────────────────
+
+
+@pytest.fixture
+def l1_cache():
+    """新建一个小容量的 L1MemoryCache（测试专用）"""
+    from server.utils.cache_multi_level import L1MemoryCache
+    return L1MemoryCache(max_size=100, ttl=5)
+
+
+@pytest.fixture
+def multi_cache(mock_redis):
+    """创建带 mock Redis 的 MultiLevelCache"""
+    from server.utils.cache_multi_level import MultiLevelCache
+    return MultiLevelCache(
+        l1_max_size=100,
+        l1_ttl=5,
+        redis_client=mock_redis,
+        redis_ttl=60,
+    )
+
+
+# ──────────────────── Sample Bazi Data ────────────────────
+
+
+@pytest.fixture
+def sample_bazi_params():
+    """标准八字测试参数"""
     return {
-        "solar_date": "1990-01-15",
-        "solar_time": "12:30",
+        "solar_date": "1992-01-15",
+        "solar_time": "12:00",
         "gender": "male",
-        "calendar_type": "solar"
     }
 
 
 @pytest.fixture
-def sample_bazi_result() -> Dict[str, Any]:
-    """标准八字计算结果数据（用于 mock）"""
+def sample_bazi_result():
+    """模拟的八字排盘返回结果"""
     return {
-        "success": True,
-        "data": {
-            "basic_info": {
-                "solar_date": "1990-01-15",
-                "solar_time": "12:30",
-                "gender": "male"
-            },
-            "bazi_pillars": {
-                "year": {"stem": "己", "branch": "巳"},
-                "month": {"stem": "丁", "branch": "丑"},
-                "day": {"stem": "甲", "branch": "子"},
-                "hour": {"stem": "庚", "branch": "午"}
-            }
-        }
+        "year_pillar": {"stem": "辛", "branch": "未"},
+        "month_pillar": {"stem": "辛", "branch": "丑"},
+        "day_pillar": {"stem": "丁", "branch": "酉"},
+        "hour_pillar": {"stem": "丙", "branch": "午"},
+        "five_elements": {"金": 3, "木": 0, "水": 0, "火": 2, "土": 3},
     }
-
-
-# ==================== Mock Fixtures ====================
-
-@pytest.fixture
-def mock_redis(mocker):
-    """Mock Redis 客户端"""
-    mock = mocker.patch("shared.config.redis.get_redis_client")
-    mock.return_value = mocker.MagicMock()
-    return mock
-
-
-@pytest.fixture
-def mock_mysql(mocker):
-    """Mock MySQL 连接"""
-    mock = mocker.patch("shared.config.database.get_connection")
-    mock.return_value = mocker.MagicMock()
-    return mock
-
-
-# ==================== 测试标记 ====================
-
-def pytest_configure(config):
-    """配置自定义标记"""
-    config.addinivalue_line("markers", "unit: 单元测试")
-    config.addinivalue_line("markers", "integration: 集成测试")
-    config.addinivalue_line("markers", "api: API 测试")
-    config.addinivalue_line("markers", "slow: 慢速测试")

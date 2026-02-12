@@ -19,31 +19,36 @@ import time
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# 环境检测（独立实现，不依赖 server/ 模块）
+# 环境检测 — 委托给 server.config.env_config（统一来源）
+# 如果 server 包不可用则回退到独立检测
 # ============================================================
 Environment = Literal["local", "development", "staging", "production"]
 
-
-def _detect_environment() -> tuple:
-    """
-    检测当前环境
-    
-    Returns:
-        tuple: (env, is_local_dev, is_production, is_staging)
-    """
-    env_value = os.getenv("ENV", os.getenv("APP_ENV", "local")).lower()
-    
-    if env_value in ["local", "dev", "development"]:
-        return "local", True, False, False
-    elif env_value in ["staging", "stage"]:
-        return "staging", False, False, True
-    elif env_value in ["prod", "production"]:
-        return "production", False, True, False
-    else:
-        return "local", True, False, False
-
-
-_ENV, IS_LOCAL_DEV, IS_PRODUCTION, IS_STAGING = _detect_environment()
+try:
+    from server.config.env_config import (
+        get_env_config as _get_env_config,
+        is_local_dev as _is_local_dev_fn,
+        is_production as _is_production_fn,
+        get_env as _get_env_fn,
+    )
+    _env_cfg = _get_env_config()
+    _ENV = _env_cfg.env
+    IS_LOCAL_DEV = _env_cfg.is_local_dev
+    IS_PRODUCTION = _env_cfg.is_production
+    IS_STAGING = _env_cfg.is_staging
+except ImportError:
+    # 回退：独立检测（用于 shared/ 被单独使用的场景）
+    def _detect_environment() -> tuple:
+        env_value = os.getenv("ENV", os.getenv("APP_ENV", "local")).lower()
+        if env_value in ["local", "dev", "development"]:
+            return "local", True, False, False
+        elif env_value in ["staging", "stage"]:
+            return "staging", False, False, True
+        elif env_value in ["prod", "production"]:
+            return "production", False, True, False
+        else:
+            return "local", True, False, False
+    _ENV, IS_LOCAL_DEV, IS_PRODUCTION, IS_STAGING = _detect_environment()
 
 
 def get_current_env() -> Environment:

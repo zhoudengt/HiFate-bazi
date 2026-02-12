@@ -6,7 +6,7 @@ set -e
 
 NODE1_IP="8.210.52.217"
 PROJECT_DIR="/opt/HiFate-bazi"
-SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+SSH_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 
 echo "=========================================="
 echo "🚀 部署 homepage_contents 到 Node1"

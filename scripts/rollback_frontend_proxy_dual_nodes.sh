@@ -16,7 +16,7 @@ NODE1_PUBLIC_IP="8.210.52.217"
 NODE2_PUBLIC_IP="47.243.160.43"
 
 # SSH 密码（从环境变量读取）
-SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+SSH_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 
 # 项目目录
 PROJECT_DIR="/opt/HiFate-bazi"

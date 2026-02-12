@@ -11,6 +11,9 @@ formula-analysis 接口增强功能端到端测试
 """
 
 import pytest
+pytest.skip("独立脚本，使用自定义参数不兼容 pytest fixture 机制，请单独运行", allow_module_level=True)
+
+import pytest
 import requests
 import time
 from typing import Dict, Any

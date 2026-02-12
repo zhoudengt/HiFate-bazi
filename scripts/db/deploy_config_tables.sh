@@ -12,14 +12,14 @@ if [ -f "/opt/HiFate-bazi/.env" ] || [ -d "/opt/HiFate-bazi/services" ]; then
     RUNNING_ON_PRODUCTION=true
     PROD_DIR="/opt/HiFate-bazi"
     SQL_FILE="$PROD_DIR/scripts/db/sync_config_tables_temp.sql"
-    MYSQL_PASSWORD="HiFate_Prod_2024!"
+    MYSQL_PASSWORD="${MYSQL_PASSWORD:?MYSQL_PASSWORD env var required}"
 else
     # 在本地运行
     RUNNING_ON_PRODUCTION=false
     PROD_SERVER="root@123.57.216.15"
     PROD_DIR="/opt/HiFate-bazi"
     SQL_FILE="scripts/db/sync_config_tables_temp.sql"
-    MYSQL_PASSWORD="HiFate_Prod_2024!"
+    MYSQL_PASSWORD="${MYSQL_PASSWORD:?MYSQL_PASSWORD env var required}"
 fi
 
 echo "=========================================="

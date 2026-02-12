@@ -114,7 +114,7 @@ def main():
     print("   b. SSH 到生产环境:")
     print("      ssh root@8.210.52.217")
     print("   c. 执行 SQL:")
-    print("      docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql")
+    print("      docker exec -i hifate-mysql-master mysql -uroot -p${MYSQL_PASSWORD} hifate_bazi < /tmp/rules_import.sql")
     print("   d. 清除缓存:")
     print("      curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/check")
     

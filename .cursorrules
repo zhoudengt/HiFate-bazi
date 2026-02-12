@@ -1,320 +1,102 @@
 # HiFate-bazi 八字系统 - AI 开发规范（精简版）
 
-> **完整规范文档**：详见 `standards/` 目录（统一入口 `standards/README.md`）
-> **部署文档**：`deploy/docs/`
-> **说明**：仅保留架构规范（`standards/`、`deploy/docs/`）中使用的文档
+> **完整规范**：`standards/README.md` | **部署指南**：`standards/deployment.md`、`deploy/docs/`
 
 ---
 
-## 📚 项目上下文快速参考
+## 项目上下文
 
-### 规范与部署
-- **规范文档**：`standards/README.md`（统一入口）
-- **部署指南**：`standards/deployment.md`、`deploy/docs/03-首次部署.md`
-
-### 智能开发工具（快速命令）
-```bash
-# 热更新
-python3 scripts/ai/auto_hot_reload.py --trigger
-python3 scripts/ai/auto_hot_reload.py --verify
-
-# 开发助手
-python3 scripts/ai/dev_assistant.py --suggest "开发新API" --dev-type api
-python3 scripts/ai/dev_assistant.py --complete
-
-# 完整性验证
-python3 scripts/ai/completeness_validator.py --type api --name xxx
-```
+- **规范入口**：`standards/README.md`
+- **部署**：`standards/deployment.md`、`deploy/docs/03-首次部署.md`
+- **开发流程**：部署/测试时用 `@release-workflow.mdc`；提交前用 `@dev-checklist.mdc`
 
 ---
 
-## 👨‍💻 开发角色定义
+## 开发角色
 
-**您是高级资深全栈开发工程师**，具备：
-- 10年+ 后端开发经验（Python、FastAPI、gRPC、微服务架构）
-- 5年+ 前端开发经验（现代前端框架、性能优化）
-- 深度理解系统架构（微服务设计、分布式系统、高并发处理）
-
-**工作原则**：
-1. 性能优先：优先使用本地计算，LLM仅作为兜底
-2. 可观测性：所有关键路径必须记录详细日志和性能指标
-3. 防御性编程：所有外部依赖必须有降级方案
-4. 架构思维：从系统整体角度思考问题
-5. **知识积累**：遇到问题时主动更新错误记录本，形成持续改进
+高级资深全栈开发工程师。工作原则：性能优先、可观测性、防御性编程、架构思维。
 
 ---
 
-## ⚠️ 核心原则（必须遵守）
+## 核心原则（必须遵守）
 
-### 🔴 0. 代码修改流程规范
-> **所有代码修改必须：本地开发 → Git提交 → 增量部署。禁止直接在服务器上修改代码。**
+### 0. 代码修改流程
+> 本地开发 → Git提交 → 增量部署。禁止直接在服务器上修改代码。
 
-### 🔴 0.1 零停机原则
-> **所有设计必须保证服务不中断。使用热更新，禁止重启服务。**
+### 0.1 零停机原则
+> 使用热更新，禁止重启服务。
 
-### 🔴 0.1.1 数据编排架构原则（最高优先级）
-> **⚠️ 数据只计算一次，所有接口从 `BaziDataOrchestrator.fetch_data()` 统一获取数据，禁止重复计算！**
+### 0.1.1 数据编排
+> 数据只计算一次，所有接口从 `BaziDataOrchestrator.fetch_data()` 统一获取。禁止流式接口直接调底层服务、禁止绕过编排器。详见 `@orchestrator-rules.mdc` 或 `standards/08_数据编排架构规范.md`。
 
-**核心架构**（两阶段并行，信号量24，超时保护）：
-```
-流式接口/API接口 → BaziDataOrchestrator.fetch_data() → 底层服务
-                  （统一入口，只计算一次）
-  阶段1（独立任务并行，超时15s）: bazi, wangshuai, detail, health...
-  阶段2（依赖任务并行，超时10s）: rules, fortune_context, personality, rizhu
-```
+### 0.1.1.1 缓存
+> 缓存命中率 ≥ 98%，key 禁止高精度时间戳（最多到小时）。详见 `@cache-rules.mdc`。
 
-**绝对禁止**：
-- ❌ 流式接口中直接调用底层服务（如 `BaziDetailService.calculate_detail_full()`）
-- ❌ 下游服务重复调用上游服务（导致重复计算）
-- ❌ 绕过 `BaziDataOrchestrator` 获取数据
+### 0.1.2 底层保护
+> `core/`、`server/engines/`、`server/services/` 核心逻辑禁止修改。必须改时先告知用户。
 
-**必须遵守**：
-- ✅ 所有接口通过 `BaziDataOrchestrator.fetch_data()` 获取数据
-- ✅ 下游服务接收已计算好的数据作为参数
-- ✅ 详细规范见：`standards/08_数据编排架构规范.md`
-
-### 🔴 0.1.1.1 缓存有效性原则（最高优先级）
-> **⚠️ 缓存命中率必须 ≥ 98%，缓存 key 中禁止使用高精度时间戳（秒/毫秒/微秒），否则缓存形同虚设！**
-
-**核心规则**：
-- ✅ 缓存 key 中的时间组件最多精确到**小时**（`strftime('%Y-%m-%dT%H')`），绝对禁止使用 `isoformat()` 或 `time.time()`
-- ✅ 修改任何涉及缓存的代码前，必须检查缓存 key 生成逻辑，确认不会导致命中率下降
-- ✅ 新增缓存时，必须通过日志或监控验证实际命中率 ≥ 98%
-- ✅ 已有缓存参考实现：`CacheKeyGenerator.generate_orchestrator_key()`（`server/utils/cache_key_generator.py`）
-
-**绝对禁止**：
-- ❌ 缓存 key 使用 `datetime.now().isoformat()`（微秒级，每次请求都不同，缓存永远 miss）
-- ❌ 缓存 key 使用 `time.time()`（秒级浮点数，同上）
-- ❌ 设置了 TTL 但 key 不可复用（等于浪费内存/Redis 空间）
-- ❌ 跳过缓存审查直接提交代码
-
-**修改代码时的缓存审查流程**：
-1. 检查修改是否涉及缓存 key 生成（搜索 `cache_key`、`_generate_cache_key`、`CacheKeyGenerator`）
-2. 确认 key 中无高精度时间戳
-3. 确认 TTL 设置合理（数据变化频率 vs 缓存过期时间）
-4. 确认缓存读写一致（get/set 使用相同的 key 生成逻辑）
-
-### 🔴 0.1.2 底层接口与计算逻辑保护原则（最高优先级）
-> **⚠️ 底层接口与计算逻辑坚决不能修改！必须修改时需要先告知用户，用户确认特殊情况需要修改后才能修改。**
-
-**受保护的底层接口**：
-- `scripts/evaluation/api_client.py` 中的 `_post_json`、`_post_stream` 等基础方法
-- `server/services/` 中的核心服务类（`BaziService`、`RuleService` 等）
-- `core/` 中的八字计算逻辑（`calculators/bazi_calculator.py`、`analyzers/` 等）
-- `server/engines/` 中的规则引擎（`rule_engine.py`、`rule_condition.py` 等）
-
-**修改原则**：
-- ✅ **允许**：新增方法、新增类、新增文件
-- ✅ **允许**：在上层脚本中做适配和错误处理
-- ❌ **禁止**：修改现有方法的签名、逻辑、返回值
-- ❌ **禁止**：修改计算算法的核心逻辑
-- ❌ **禁止**：修改底层接口的错误处理机制
-
-**特殊情况修改流程**：
-1. 必须先告知用户需要修改的原因和影响范围
-2. 用户确认"特殊情况需要修改"后才能修改
-3. 修改后必须进行完整的影响分析和测试
-
-### 🔥 0.2 热更新强制规范（最高优先级）
-> **⚠️ 所有代码更新必须通过热更新上线，坚决不允许重启服务！**
-
-**API接口**：
-- `/api/v1/hot-reload/status` - 获取热更新状态
-- `/api/v1/hot-reload/check` - 手动触发热更新检查
-- `/api/v1/hot-reload/reload-all` - 重载所有模块（**自动通知所有 Worker**）
-- `/api/v1/hot-reload/worker-sync` - 查看多 Worker 同步状态
-- `/api/v1/hot-reload/trigger-all-workers` - 手动触发所有 Worker 热更新
-
-**严格禁止**：
-- ❌ `docker restart` / `docker-compose restart` / `systemctl restart`
-- ❌ 手动停止启动服务
-- ❌ 直接修改生产服务器代码
-
-**详细规范**：详见 `standards/hot-reload.md`
+### 0.2 热更新
+> 所有更新必须热更新。禁止 `docker restart`。详见 `standards/hot-reload.md`。
 
 ---
 
-## 💡 开发原则（摘要）
+## 开发原则（摘要）
 
-1. **规范优先**：所有新功能必须遵守开发规范
-2. **安全优先**：详见 `standards/security.md`
-3. **零停机优先**：所有设计必须支持不停机更新
-4. **gRPC 优先**：服务间交互必须使用 gRPC（详见 `standards/grpc-protocol.md`）
-5. **规则数据库化**：规则存数据库，禁止从文件读取（详见 `standards/rule-development.md`）
-6. **向后兼容**：只加不删，保持兼容
-7. **先测试后提交**：测试覆盖率 ≥ 50%（详见 `standards/testing.md`）
-8. **Token 节省**：只读取相关文件，使用 `offset`/`limit` 限制范围
-
-**完整开发原则**：详见 `.cursorrules.backup` 或 `standards/`
+1. 规范优先、安全优先、零停机优先
+2. gRPC 优先（`standards/grpc-protocol.md`）
+3. 规则数据库化（`standards/rule-development.md`）
+4. 向后兼容、先测试后提交
 
 ---
 
-## 🔌 gRPC 交互规范
+## gRPC 与 API
 
-**架构**：前端 (Browser) → gRPC-Web → Web服务 (Port 8001) → gRPC → 微服务 (9001-9010)
-
-**核心要求**：
-- ✅ 前端必须使用 gRPC-Web 网关（`/api/v1/*` 路径）
-- ✅ 服务间必须使用 gRPC 通信
-- ✅ 所有 API 端点必须在 `grpc_gateway.py` 中注册
-
-**详细规范**：详见 `standards/grpc-protocol.md`
+- 前端走 gRPC-Web（`/api/v1/*`）
+- 新增端点必须在 `grpc_gateway.py` 注册
+- 修改 `grpc_gateway.py` 或 `proto/` 时用 `@grpc-rules.mdc`
 
 ---
 
-## 📜 规则开发规范
+## 项目架构
 
-**核心原则**：
-- ✅ **所有规则必须存储在数据库中**，禁止从文件读取
-- ✅ 规则匹配必须使用 `RuleService.match_rules()`
-
-**详细规范**：详见 `standards/rule-development.md`
+- **server/**：Web 服务 (8001)，`grpc_gateway.py` 为核心
+- **services/**：微服务 bazi_core(9001)、bazi_fortune(9002)、bazi_analyzer(9003) 等
+- **local_frontend/**：本地前端；生产前端由前端团队部署
 
 ---
 
-## 📁 项目架构
+## 核心文件（修改前必须咨询）
 
-### 前端架构
-- **`local_frontend/`**：本地前端目录，用于本地开发、测试、双机部署
-- **生产前端**：由前端团队独立部署，不在此仓库
-
-### 后端架构
-- **`server/`**：Web 服务（Port 8001）
-  - `server/api/grpc_gateway.py` - gRPC-Web 网关（核心）
-  - `server/api/v1/` - REST API
-
-### 微服务架构
-- **`services/`**：微服务代码
-  - `bazi_core/` (9001) - 八字核心计算
-  - `bazi_fortune/` (9002) - 运势计算
-  - `bazi_analyzer/` (9003) - 八字分析
-  - `bazi_rule/` (9004) - 规则匹配
-  - `fortune_analysis/` (9005) - 运势分析
-  - 其他服务 (9006-9010)
-
-**完整服务端口清单**：详见 `.cursorrules.backup`
-
----
-
-## 🔒 核心文件（修改前必须咨询）
-
-| 文件 | 作用 | 风险 |
-|------|------|------|
-| `server/api/grpc_gateway.py` | gRPC-Web 网关 | 极高 |
-| `server/engines/rule_condition.py` | 规则条件匹配 | 高 |
-| `core/calculators/bazi_calculator.py` | 核心八字计算 | 极高 |
-| `local_frontend/js/api.js` | 前端 gRPC 客户端 | 高 |
-| `proto/*.proto` | gRPC 协议定义 | 高 |
-
----
-
-## 🚫 核心禁止操作
-
-### 代码修改禁止操作
-- ❌ **直接在服务器上修改代码** - 必须：本地修改 → Git → 部署
-- ❌ **跳过Git直接部署** - 必须通过Git版本控制
-
-### 服务管理禁止操作
-- ❌ `docker restart` / `docker-compose restart` / `systemctl restart` - 必须使用热更新
-- ❌ 手动停止启动服务 - 必须使用热更新
-
-### 开发规范禁止操作
-- ❌ **禁止重启服务** - 必须使用热更新
-- ❌ **禁止跳过热更新直接提交代码**
-- ❌ **硬编码本地路径** - 必须使用动态路径
-- ❌ **从文件读取规则** - 规则必须从数据库读取
-
-**完整禁止操作列表**：详见 `.cursorrules.backup` 或 `standards/`
-
----
-
-## ✅ 开发检查清单（摘要）
-
-### 通用开发检查清单
-- [ ] 代码是否在热更新监控范围内（`core/`, `server/`, `services/`）
-- [ ] **开发完成后是否触发热更新（必须！）**
-- [ ] **是否验证对应功能在热更新后正常工作（必须！）**
-- [ ] **如果涉及 API 端点，是否验证端点正确注册到 gRPC 网关（必须！）**
-
-### API 开发检查清单
-- [ ] 是否使用 Pydantic `BaseModel` 定义模型
-- [ ] 是否在 `grpc_gateway.py` 中注册端点
-- [ ] 是否编写了对应的测试案例（测试覆盖率 ≥ 50%）
-
-### 规则开发检查清单
-- [ ] 所有规则匹配使用 `RuleService`
-- [ ] 没有文件读取调用（`load_from_file`、`read_excel`、`read_json` 等）
-
-**完整检查清单**：详见 `standards/05_功能开发检查清单.md`
-
----
-
-## 📚 详细规范文档索引
-
-所有详细规范文档位于 `standards/` 目录：
-
-| 文档 | 说明 |
+| 文件 | 风险 |
 |------|------|
-| `hot-reload.md` | 热更新详细规范 |
-| `grpc-protocol.md` | gRPC 协议与序列化详细规范 |
-| `rule-development.md` | 规则开发详细规范 |
-| `deployment.md` | 部署详细规范（增量部署、灰度发布） |
-| `security.md` | 安全规范详细文档 |
-| `testing.md` | 测试开发详细规范 |
-| `llm-development.md` | 基于大模型的开发流程详细规范 |
-| `performance-monitoring.md` | 性能监控详细规范 |
-
-**完整索引**：详见 `standards/README.md`
+| `server/api/grpc_gateway.py` | 极高 |
+| `server/engines/rule_condition.py` | 高 |
+| `core/calculators/bazi_calculator.py` | 极高 |
+| `proto/*.proto` | 高 |
 
 ---
 
-## 📝 问题记录与知识积累（自动执行）
+## 禁止操作
 
-### 🔴 错误记录规则（AI 必须遵守）
-
-1. **开发前**：参考 `standards/` 相关规范
-2. **问题记录**：遇到新问题记录根因与解决方案，便于后续参考
-3. **持续改进**：问题解决后思考预防措施
-
-### 🔴 部署规范（AI 必须遵守）
-
-1. **部署前**：阅读 `standards/deployment.md`、`deploy/docs/`
-2. **遵循流程**：按部署指南执行
-
-### 🔴 gRPC 端点注册检查（重要！）
-
-新增 API 端点时，必须检查：
-- [ ] 是否需要通过 gRPC-Web 访问？
-- [ ] 如需 gRPC-Web 访问，是否在 `server/api/grpc_gateway.py` 中注册？
-- [ ] 如是流式接口，是否使用 `_collect_sse_stream()` 处理？
-
-**已知问题**：流式接口忘记注册到 gRPC 网关，导致 `grpc-status: 12` 错误。
+- ❌ 服务器上直接改代码
+- ❌ 跳过 Git 直接部署
+- ❌ `docker restart` / `systemctl restart`
+- ❌ 硬编码本地路径
+- ❌ 从文件读取规则（必须从数据库）
 
 ---
 
-## 🔄 开发完成后的标准流程
+## 条件规则引用
 
-1. ✅ 代码修改完成
-2. ✅ **检查**：确认没有引入已知问题
-3. ✅ 运行完整性验证：`python3 scripts/ai/completeness_validator.py --type <type> --name <name>`
-4. ✅ **自动触发热更新**：`python3 scripts/ai/auto_hot_reload.py --trigger`
-5. ✅ 验证热更新成功：`python3 scripts/ai/auto_hot_reload.py --verify`
-6. ✅ 验证功能正常（必须！）
-7. ✅ 提交代码
-8. ✅ **部署到生产环境**（按照部署指南执行）
+| 场景 | 引用 |
+|------|------|
+| 部署/测试 | `@release-workflow.mdc` |
+| 提交前检查 | `@dev-checklist.mdc` |
+| 修改缓存 | `@cache-rules.mdc` |
+| 修改 gRPC/API | `@grpc-rules.mdc` |
+| 修改编排器 | `@orchestrator-rules.mdc` |
+| API/测试 | `@frontend-test-and-backend-only.mdc` |
 
 ---
 
-**核心要点**：
-- 🔴 **最高优先级**：所有新功能必须遵守开发规范
-- ✅ **开发前**：阅读相关规范（`standards/`）
-- 📋 **强制检查**：所有新功能必须通过开发规范检查清单验证
-- 🚫 **禁止操作**：严格禁止在服务器上直接修改代码、重启服务等操作
-- 📝 **知识积累**：遇到问题记录解决方案
-- 🚀 **部署规范**：部署时参考部署指南，遵循标准流程
-- 📚 **详细规范**：深入学习请查看 `standards/` 目录下的详细规范文档
-
-**重要文档**：
-- **部署指南**：`standards/deployment.md`、`deploy/docs/`
-
-**完整版本**：如需查看完整规范，请参考 `.cursorrules.backup` 文件。
+**完整规范**：`standards/`、`.cursorrules.backup`

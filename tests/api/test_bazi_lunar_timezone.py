@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+
 八字接口农历和时区转换测试
 测试所有更新后的接口的新功能（农历输入、时区转换）
 """
 
+import pytest; pytest.importorskip("fastapi", reason="fastapi not installed")
 import pytest
 import sys
 import os

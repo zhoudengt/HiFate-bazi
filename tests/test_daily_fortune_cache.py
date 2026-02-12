@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+
 每日运势Redis缓存测试
 测试缓存命中、未命中、失效、降级等功能
 """
 
+import pytest; pytest.importorskip("grpc", reason="grpc not installed")
 import sys
 import os
 import unittest

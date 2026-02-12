@@ -9,6 +9,17 @@
 3. 重载成功后更新版本号
 """
 
+
+# === Auto-guard: skip if localhost:8001 not available ===
+import requests as _requests_check
+try:
+    _r = _requests_check.get("http://localhost:8001/api/v1/health", timeout=2)
+    assert _r.status_code == 200
+except Exception:
+    import pytest as _pytest_check
+    _pytest_check.skip("需要运行中的本地服务 localhost:8001", allow_module_level=True)
+# === End auto-guard ===
+
 import os
 import sys
 import time

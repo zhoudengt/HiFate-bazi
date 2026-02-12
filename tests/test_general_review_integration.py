@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+
 总评分析集成测试 - 测试特殊流年功能集成
 """
 
+import pytest; pytest.importorskip("grpc", reason="grpc not installed")
 import sys
 import os
 import pytest

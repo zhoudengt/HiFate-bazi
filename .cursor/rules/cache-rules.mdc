@@ -1,0 +1,33 @@
+---
+description: 缓存有效性规范（修改缓存相关代码时生效）
+alwaysApply: false
+globs:
+  - server/utils/cache*.py
+  - server/utils/*cache*
+  - server/utils/*_cache*.py
+---
+
+# 缓存有效性原则（最高优先级）
+
+> **⚠️ 缓存命中率必须 ≥ 98%，缓存 key 中禁止使用高精度时间戳（秒/毫秒/微秒），否则缓存形同虚设！**
+
+## 核心规则
+
+- ✅ 缓存 key 中的时间组件最多精确到**小时**（`strftime('%Y-%m-%dT%H')`），绝对禁止使用 `isoformat()` 或 `time.time()`
+- ✅ 修改任何涉及缓存的代码前，必须检查缓存 key 生成逻辑，确认不会导致命中率下降
+- ✅ 新增缓存时，必须通过日志或监控验证实际命中率 ≥ 98%
+- ✅ 已有缓存参考实现：`CacheKeyGenerator.generate_orchestrator_key()`（`server/utils/cache_key_generator.py`）
+
+## 绝对禁止
+
+- ❌ 缓存 key 使用 `datetime.now().isoformat()`（微秒级，每次请求都不同，缓存永远 miss）
+- ❌ 缓存 key 使用 `time.time()`（秒级浮点数，同上）
+- ❌ 设置了 TTL 但 key 不可复用（等于浪费内存/Redis 空间）
+- ❌ 跳过缓存审查直接提交代码
+
+## 修改代码时的缓存审查流程
+
+1. 检查修改是否涉及缓存 key 生成（搜索 `cache_key`、`_generate_cache_key`、`CacheKeyGenerator`）
+2. 确认 key 中无高精度时间戳
+3. 确认 TTL 设置合理（数据变化频率 vs 缓存过期时间）
+4. 确认缓存读写一致（get/set 使用相同的 key 生成逻辑）

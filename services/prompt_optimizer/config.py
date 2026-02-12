@@ -3,42 +3,46 @@
 Prompt Optimizer 配置
 """
 import os
+import logging
 
 # 服务配置
 SERVICE_PORT = int(os.getenv("SERVICE_PORT", 9009))
 SERVICE_HOST = os.getenv("SERVICE_HOST", "0.0.0.0")
 
+# 判断环境（本地开发 or 生产）
+env_value = os.getenv("ENV", os.getenv("APP_ENV", "local")).lower()
+is_local_dev = env_value in ["local", "development"]
+
+# ============================================================
 # MongoDB 配置（存储反馈和报告）
-# ⚠️ 重要：所有环境统一连接生产Node1 Docker MongoDB，确保数据一致性
-# 生产Node1 Docker MongoDB: 8.210.52.217:27017 (公网) / 172.18.121.222:27017 (内网)
-MONGO_HOST = os.getenv("MONGO_HOST", "8.210.52.217")  # 默认连接生产Node1公网IP
+# ⚠️ 安全规范：生产环境必须通过 MONGO_HOST 环境变量指定，禁止硬编码 IP
+# ============================================================
+if is_local_dev:
+    MONGO_HOST = os.getenv("MONGO_HOST", "localhost")
+else:
+    MONGO_HOST = os.getenv("MONGO_HOST", "")
+    if not MONGO_HOST:
+        logging.getLogger(__name__).error("❌ 生产环境必须配置 MONGO_HOST 环境变量")
 MONGO_PORT = int(os.getenv("MONGO_PORT", "27017"))
 MONGO_DB = os.getenv("MONGO_DB", "bazi_feedback")
 MONGO_USER = os.getenv("MONGO_USER", "")
 MONGO_PASSWORD = os.getenv("MONGO_PASSWORD", "")
 
+# ============================================================
 # MySQL 配置（Prompt版本管理）
-# ⚠️ 重要：根据环境自动选择默认配置
-# 本地开发：localhost:3306，密码: 123456
-# 生产环境：8.210.52.217:3306 (公网) / 172.18.121.222:3306 (内网)，密码: Yuanqizhan@163
-# 判断环境（本地开发 or 生产）
-env_value = os.getenv("ENV", os.getenv("APP_ENV", "local")).lower()
-is_local_dev = env_value in ["local", "development"]
-
-# 根据环境设置默认值
-# ⚠️ 安全规范：密码必须通过环境变量配置，不允许硬编码
+# ⚠️ 安全规范：密码和主机地址必须通过环境变量配置，禁止硬编码
+# ============================================================
 if is_local_dev:
-    # 本地开发：使用本地MySQL
     DEFAULT_MYSQL_HOST = "localhost"
-    DEFAULT_MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", os.getenv("MYSQL_ROOT_PASSWORD", ""))
 else:
-    # 生产环境：使用生产MySQL
-    DEFAULT_MYSQL_HOST = "8.210.52.217"  # 生产Node1公网IP
-    DEFAULT_MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", os.getenv("MYSQL_ROOT_PASSWORD", ""))
+    DEFAULT_MYSQL_HOST = os.getenv("MYSQL_HOST", "")
+    if not DEFAULT_MYSQL_HOST:
+        logging.getLogger(__name__).error("❌ 生产环境必须配置 MYSQL_HOST 环境变量")
+DEFAULT_MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", os.getenv("MYSQL_ROOT_PASSWORD", ""))
 
 MYSQL_CONFIG = {
     'host': os.getenv("MYSQL_HOST", DEFAULT_MYSQL_HOST),
-    'port': int(os.getenv("MYSQL_PORT", "3306")),  # 默认使用标准端口
+    'port': int(os.getenv("MYSQL_PORT", "3306")),
     'user': os.getenv("MYSQL_USER", "root"),
     'password': os.getenv("MYSQL_PASSWORD", DEFAULT_MYSQL_PASSWORD),
     'database': os.getenv("MYSQL_DATABASE", "hifate_bazi"),
@@ -71,4 +75,3 @@ AB_TEST_TRAFFIC_PERCENTAGE = 0.2  # A/B测试流量百分比
 # 日志配置
 LOG_FILE = "logs/prompt_optimizer.log"
 LOG_LEVEL = "INFO"
-

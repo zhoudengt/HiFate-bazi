@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """Unit tests for orchestrator (placeholder for Phase 1)."""
 
+import pytest; pytest.importorskip("grpc", reason="grpc not installed")
 import pytest
 
 

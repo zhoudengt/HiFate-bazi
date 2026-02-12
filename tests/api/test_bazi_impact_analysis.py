@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+
 八字接口影响分析测试
 验证时区转换对时柱和日柱的影响，确认年柱和月柱不受影响
 """
 
+import pytest; pytest.importorskip("fastapi", reason="fastapi not installed")
 import pytest
 import sys
 import os

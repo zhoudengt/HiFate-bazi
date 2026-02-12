@@ -210,7 +210,7 @@ def main():
                         print(f"  1. 上传 SQL 文件:")
                         print(f"     scp scripts/temp_rules_export.sql root@8.210.52.217:/tmp/rules_import.sql")
                         print(f"  2. 执行 SQL:")
-                        print(f"     ssh root@8.210.52.217 'cd /opt/HiFate-bazi && docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql'")
+                        print(f"     ssh root@8.210.52.217 'cd /opt/HiFate-bazi && docker exec -i hifate-mysql-master mysql -uroot -p${MYSQL_PASSWORD} hifate_bazi < /tmp/rules_import.sql'")
                         print(f"  3. 清除缓存:")
                         print(f"     curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/check")
             else:

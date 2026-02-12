@@ -45,6 +45,14 @@ class EnvConfig:
             cls._instance = cls()
         return cls._instance
     
+    # 生产环境必需的环境变量列表
+    PRODUCTION_REQUIRED_VARS = [
+        "MYSQL_HOST",
+        "MYSQL_PASSWORD",
+        "REDIS_PASSWORD",
+        "SECRET_KEY",
+    ]
+
     def _detect_environment(self):
         """检测当前环境"""
         # 优先读取 ENV，其次 APP_ENV，默认 local
@@ -68,6 +76,22 @@ class EnvConfig:
             self._env = "local"
             self._is_local_dev = True
             self._is_production = False
+        
+        # 生产环境启动时校验必需变量
+        if self._is_production:
+            self._validate_production_vars()
+    
+    def _validate_production_vars(self):
+        """生产环境启动时校验必需环境变量"""
+        import logging
+        _logger = logging.getLogger(__name__)
+        missing = [var for var in self.PRODUCTION_REQUIRED_VARS if not os.getenv(var)]
+        if missing:
+            _logger.error(
+                f"❌ 生产环境缺少必需环境变量: {', '.join(missing)}。"
+                f"请在 .env 文件或系统环境变量中配置。"
+            )
+            # 不抛异常，让服务尝试启动（在实际连接时会失败并给出具体错误）
     
     @property
     def env(self) -> Environment:

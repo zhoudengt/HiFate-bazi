@@ -43,7 +43,7 @@ class IntentServiceClient:
         Args:
             service_url: 服务地址，默认从环境变量获取
         """
-        self.service_url = service_url or os.getenv("INTENT_SERVICE_URL", "127.0.0.1:9008")
+        self.service_url = service_url or os.getenv("INTENT_SERVICE_URL", "localhost:9008")
         self.channel = None
         self.stub = None
         self._connect()

@@ -15,7 +15,9 @@ import os
 import json
 import requests
 import hashlib
-from typing import Dict, Any, Optional, List
+import asyncio
+import threading
+from typing import Dict, Any, Optional, List, AsyncGenerator
 import logging
 
 # 添加项目根目录到路径
@@ -25,6 +27,7 @@ sys.path.insert(0, project_root)
 
 from server.config.input_format_loader import get_format_loader, build_input_data
 from server.utils.prompt_builders import format_smart_fortune_for_llm
+from server.utils.api_cache_helper import generate_cache_key, get_cached_result, set_cached_result
 
 # 导入配置加载器（从数据库读取配置）
 from server.config.config_loader import get_config_from_db_only
@@ -181,6 +184,41 @@ class FortuneLLMClient:
         
         return f"{self.cache_prefix}{hash_str}"
     
+    def _smart_fortune_cache_key(
+        self,
+        prefix: str,
+        bazi_data: Dict[str, Any],
+        category: Optional[str] = None,
+        question: Optional[str] = None,
+        bazi_response_snippet: Optional[str] = None,
+    ) -> str:
+        """生成 smart-fortune 用缓存 key（仅用日期/小时/性别等，禁止高精度时间戳）。"""
+        solar_date = bazi_data.get("solar_date") or ""
+        solar_time = bazi_data.get("solar_time") or ""
+        gender = bazi_data.get("gender") or ""
+        parts = [prefix, str(solar_date), str(solar_time), str(gender)]
+        if category:
+            parts.append(str(category))
+        if question:
+            qh = hashlib.md5(question.strip().encode()).hexdigest()[:16]
+            parts.append(qh)
+        if bazi_response_snippet:
+            parts.append(hashlib.md5(bazi_response_snippet.encode()).hexdigest()[:16])
+        return ":".join(parts)
+    
+    def _smart_fortune_llm_stream_cache_key(
+        self, intent: str, question: str, bazi_data: Dict[str, Any]
+    ) -> str:
+        """流式深度解读缓存 key（仅无 conversation_id 时使用）。"""
+        basic = bazi_data.get("basic_info") or {}
+        solar_date = basic.get("solar_date") or ""
+        solar_time = basic.get("solar_time") or ""
+        gender = basic.get("gender") or ""
+        qh = hashlib.md5((question or "").strip().encode()).hexdigest()[:16]
+        return generate_cache_key(
+            "smart_fortune_llm", str(intent), solar_date, solar_time, gender, question_hash=qh
+        )
+    
     def _get_cached_analysis(self, cache_key: str) -> Optional[str]:
         """
         从Redis获取缓存的分析结果
@@ -332,33 +370,42 @@ class FortuneLLMClient:
             logger.info(f"📊 准备调用命理分析Bot，意图: {intent}，问题: {question}，流式: {stream}，缓存: {use_cache}")
             logger.debug(f"输入数据: {json.dumps(input_data, ensure_ascii=False)[:500]}...")
             
-            # 如果是流式输出，不使用缓存
+            # 流式输出：无 conversation_id 时查 LLM 缓存；有则直接流式；均通过线程池转异步
             if stream:
-                logger.info("🌊 流式输出模式，跳过缓存")
+                if not conversation_id:
+                    stream_cache_key = self._smart_fortune_llm_stream_cache_key(intent, question, bazi_data)
+                    cached_text = get_cached_result(stream_cache_key, "smart_fortune_llm")
+                    if cached_text and isinstance(cached_text, str) and cached_text.strip():
+                        logger.info("✅ 流式深度解读缓存命中，直接返回")
+                        async def cached_stream():
+                            yield {'type': 'start', 'content': '', 'error': None}
+                            yield {'type': 'chunk', 'content': cached_text, 'error': None}
+                            yield {'type': 'end', 'content': '', 'error': None}
+                        return cached_stream()
+                
+                logger.info("🌊 流式输出模式（异步非阻塞）")
                 if conversation_id:
                     logger.info(f"[fortune_llm_client] 📞 调用 _call_coze_api_stream（带conversation_id: {conversation_id[:20]}...）")
                 else:
                     logger.info(f"[fortune_llm_client] 📞 调用 _call_coze_api_stream（无conversation_id，首次对话）")
                 logger.info(f"[fortune_llm_client] 📤 输入数据大小: {len(json.dumps(input_data, ensure_ascii=False))}字符")
-                generator = self._call_coze_api_stream(input_data, conversation_id=conversation_id)
                 
-                # ⭐ 关键检查：确保返回的是生成器
-                if isinstance(generator, dict):
-                    logger.error(f"[fortune_llm_client] ❌ _call_coze_api_stream 返回了字典而不是生成器！")
-                    logger.error(f"[fortune_llm_client] 返回值: {json.dumps(generator, ensure_ascii=False)[:500]}")
-                    # 返回一个生成器，yield错误
-                    def error_generator():
-                        yield {'type': 'error', 'content': '', 'error': '流式输出配置错误：返回了字典类型'}
-                    return error_generator()
-                elif not hasattr(generator, '__iter__') or isinstance(generator, str):
-                    logger.error(f"[fortune_llm_client] ❌ _call_coze_api_stream 返回的不是生成器！类型: {type(generator)}")
-                    # 返回一个生成器，yield错误
-                    def error_generator():
-                        yield {'type': 'error', 'content': '', 'error': f'流式输出配置错误：返回了非生成器类型 {type(generator)}'}
-                    return error_generator()
+                async def stream_and_cache_llm():
+                    stream_cache_key = self._smart_fortune_llm_stream_cache_key(intent, question, bazi_data) if not conversation_id else None
+                    full = []
+                    async for chunk in self._stream_via_executor(
+                        self._call_coze_api_stream,
+                        input_data,
+                        conversation_id=conversation_id
+                    ):
+                        if chunk.get('type') == 'chunk' and chunk.get('content'):
+                            full.append(chunk['content'])
+                        yield chunk
+                        if chunk.get('type') == 'end' and stream_cache_key and full:
+                            set_cached_result(stream_cache_key, ''.join(full), ttl=86400)
+                            logger.debug(f"✅ 流式深度解读已缓存: {stream_cache_key[:50]}...")
                 
-                logger.info(f"[fortune_llm_client] ✅ _call_coze_api_stream 返回生成器，类型: {type(generator)}")
-                return generator
+                return stream_and_cache_llm()
             
             # 尝试从缓存获取（非流式模式）
             cache_key = None
@@ -918,9 +965,40 @@ class FortuneLLMClient:
             'error': f'Bot处理超时（>{max_retries*2}秒）'
         }
     
+    async def _stream_via_executor(
+        self,
+        sync_gen_func,
+        *args,
+        **kwargs
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        在线程池中运行同步流式生成器，通过队列异步 yield，避免阻塞事件循环。
+        """
+        loop = asyncio.get_event_loop()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=128)
+
+        def run_sync_gen():
+            try:
+                for chunk in sync_gen_func(*args, **kwargs):
+                    loop.call_soon_threadsafe(queue.put_nowait, chunk)
+            except Exception as e:
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    {'type': 'error', 'content': '', 'error': str(e)}
+                )
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        threading.Thread(target=run_sync_gen, daemon=True).start()
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                break
+            yield chunk
+
     def _call_coze_api_stream(self, input_data: Dict[str, Any], conversation_id: Optional[str] = None):
         """
-        调用Coze API（流式输出）
+        调用Coze API（流式输出，同步实现，供 _stream_via_executor 在线程中调用）
         
         Args:
             input_data: 结构化输入数据
@@ -1516,32 +1594,49 @@ class FortuneLLMClient:
         category: str
     ):
         """
-        生成简短答复（100字内，流式输出）
+        生成简短答复（100字内，流式输出），带 LLM 缓存。
         
         Args:
             bazi_data: 完整八字数据（包含bazi_result、detail_result等）
             category: 选择项（事业财富、婚姻、健康等）
             
         Returns:
-            生成器，yield格式：{'type': 'start'/'chunk'/'end'/'error', 'content': str, 'error': str}
+            异步生成器，yield格式：{'type': 'start'/'chunk'/'end'/'error', 'content': str, 'error': str}
         """
         try:
-            # 构建简短答复的Prompt
-            prompt = self._build_brief_response_prompt(bazi_data, category)
+            cache_key = self._smart_fortune_cache_key("smart_fortune_brief", bazi_data, category=category)
+            cached = get_cached_result(cache_key, "smart_fortune_brief")
+            if cached and isinstance(cached, str) and cached.strip():
+                logger.info(f"✅ 简短答复缓存命中，category: {category}")
+                async def cached_gen():
+                    yield {'type': 'start', 'content': '', 'error': None}
+                    yield {'type': 'chunk', 'content': cached, 'error': None}
+                    yield {'type': 'end', 'content': '', 'error': None}
+                return cached_gen()
             
-            # 构建输入数据
+            prompt = self._build_brief_response_prompt(bazi_data, category)
             input_data = {
                 'prompt': prompt,
                 'category': category,
                 'task_type': 'brief_response'
             }
             
-            logger.info(f"📊 生成简短答复，category: {category}")
-            return self._call_coze_api_stream(input_data)
+            async def stream_and_cache():
+                full = []
+                async for chunk in self._stream_via_executor(self._call_coze_api_stream, input_data):
+                    if chunk.get('type') == 'chunk' and chunk.get('content'):
+                        full.append(chunk['content'])
+                    yield chunk
+                    if chunk.get('type') == 'end' and full:
+                        set_cached_result(cache_key, ''.join(full), ttl=86400)
+                        logger.debug(f"✅ 简短答复已缓存: {cache_key[:50]}...")
+            
+            logger.info(f"📊 生成简短答复，category: {category}（异步非阻塞）")
+            return stream_and_cache()
             
         except Exception as e:
             logger.error(f"❌ generate_brief_response 异常: {e}", exc_info=True)
-            def error_generator():
+            async def error_generator():
                 yield {'type': 'error', 'content': '', 'error': str(e)}
             return error_generator()
     
@@ -1551,7 +1646,7 @@ class FortuneLLMClient:
         category: str
     ):
         """
-        生成预设问题列表（10-15个）
+        生成预设问题列表（10-15个），带 LLM 缓存。
         
         Args:
             bazi_data: 完整八字数据
@@ -1561,10 +1656,15 @@ class FortuneLLMClient:
             生成器，yield格式：{'type': 'complete'/'error', 'questions': list, 'error': str}
         """
         try:
-            # 构建预设问题的Prompt
-            prompt = self._build_preset_questions_prompt(bazi_data, category)
+            cache_key = self._smart_fortune_cache_key("smart_fortune_preset", bazi_data, category=category)
+            cached = get_cached_result(cache_key, "smart_fortune_preset")
+            if cached and isinstance(cached, list) and len(cached) > 0:
+                logger.info(f"✅ 预设问题缓存命中，category: {category}, 数量: {len(cached)}")
+                def hit_generator():
+                    yield {'type': 'complete', 'questions': cached, 'error': None}
+                return hit_generator()
             
-            # 调用非流式API
+            prompt = self._build_preset_questions_prompt(bazi_data, category)
             input_data = {
                 'prompt': prompt,
                 'category': category,
@@ -1576,8 +1676,9 @@ class FortuneLLMClient:
             
             if response.get('success'):
                 analysis = response.get('analysis', '')
-                # 解析JSON格式的问题列表
                 questions = self._parse_questions_from_response(analysis)
+                if questions:
+                    set_cached_result(cache_key, questions, ttl=86400)
                 
                 def complete_generator():
                     yield {'type': 'complete', 'questions': questions, 'error': None}
@@ -1602,7 +1703,7 @@ class FortuneLLMClient:
         category: str
     ):
         """
-        生成3个相关问题（基于流式回答内容和用户意图）
+        生成3个相关问题（基于流式回答内容和用户意图），带 LLM 缓存。
         
         Args:
             bazi_response: 流式回答的完整内容
@@ -1614,16 +1715,25 @@ class FortuneLLMClient:
             生成器，yield格式：{'type': 'complete'/'error', 'questions': list, 'error': str}
         """
         try:
-            # 构建相关问题的Prompt
+            snippet = (bazi_response or "")[:200]
+            cache_key = self._smart_fortune_cache_key(
+                "smart_fortune_related", bazi_data, category=category, bazi_response_snippet=snippet
+            )
+            cached = get_cached_result(cache_key, "smart_fortune_related")
+            if cached and isinstance(cached, list) and len(cached) > 0:
+                logger.info(f"✅ 相关问题缓存命中，category: {category}, 数量: {len(cached)}")
+                def hit_generator():
+                    yield {'type': 'complete', 'questions': cached[:2], 'error': None}
+                return hit_generator()
+            
             prompt = self._build_related_questions_prompt(
                 bazi_response, user_intent, bazi_data, category
             )
             
-            # 调用非流式API（优化：减少数据量以提升速度）
             input_data = {
                 'prompt': prompt,
                 'category': category,
-                'response': bazi_response[:300],  # 优化：从500字减少到300字，提升响应速度
+                'response': bazi_response[:300],
                 'task_type': 'related_questions'
             }
             
@@ -1632,8 +1742,9 @@ class FortuneLLMClient:
             
             if response.get('success'):
                 analysis = response.get('analysis', '')
-                # 解析JSON格式的问题列表（只取前2个）
                 questions = self._parse_questions_from_response(analysis)[:2]
+                if questions:
+                    set_cached_result(cache_key, questions, ttl=86400)
                 
                 def complete_generator():
                     yield {'type': 'complete', 'questions': questions, 'error': None}

@@ -57,7 +57,7 @@ else:
 router = APIRouter()
 
 # 获取服务地址
-FORTUNE_ANALYSIS_SERVICE_URL = os.getenv("FORTUNE_ANALYSIS_SERVICE_URL", "127.0.0.1:9005")
+FORTUNE_ANALYSIS_SERVICE_URL = os.getenv("FORTUNE_ANALYSIS_SERVICE_URL", "localhost:9005")
 
 # 简单认证：API Key（必须从环境变量读取）
 # 安全规范：生产环境不允许使用默认值

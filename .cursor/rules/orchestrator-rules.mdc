@@ -1,0 +1,36 @@
+---
+description: 数据编排架构规范（修改编排器时生效）
+alwaysApply: false
+globs:
+  - server/orchestrators/**
+  - server/api/**/*stream*.py
+  - server/api/**/*fortune*.py
+---
+
+# 数据编排架构原则（最高优先级）
+
+> **⚠️ 数据只计算一次，所有接口从 `BaziDataOrchestrator.fetch_data()` 统一获取数据，禁止重复计算！**
+
+## 核心架构
+
+```
+流式接口/API接口 → BaziDataOrchestrator.fetch_data() → 底层服务
+ （统一入口，只计算一次）
+ 阶段1（独立任务并行，超时15s）: bazi, wangshuai, detail, health...
+ 阶段2（依赖任务并行，超时10s）: rules, fortune_context, personality, rizhu
+```
+
+## 绝对禁止
+
+- ❌ 流式接口中直接调用底层服务（如 `BaziDetailService.calculate_detail_full()`）
+- ❌ 下游服务重复调用上游服务（导致重复计算）
+- ❌ 绕过 `BaziDataOrchestrator` 获取数据
+
+## 必须遵守
+
+- ✅ 所有接口通过 `BaziDataOrchestrator.fetch_data()` 获取数据
+- ✅ 下游服务接收已计算好的数据作为参数
+
+## 详细规范
+
+详见 `standards/08_数据编排架构规范.md`

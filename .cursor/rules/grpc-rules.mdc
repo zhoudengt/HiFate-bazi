@@ -1,0 +1,33 @@
+---
+description: gRPC 与 API 端点注册规范（修改 grpc_gateway 或 proto 时生效）
+alwaysApply: false
+globs:
+  - server/api/grpc_gateway.py
+  - proto/**
+---
+
+# gRPC 交互规范
+
+## 架构
+
+前端 (Browser) → gRPC-Web → Web服务 (Port 8001) → gRPC → 微服务 (9001-9010)
+
+## 核心要求
+
+- ✅ 前端必须使用 gRPC-Web 网关（`/api/v1/*` 路径）
+- ✅ 服务间必须使用 gRPC 通信
+- ✅ 所有 API 端点必须在 `grpc_gateway.py` 中注册
+
+## gRPC 端点注册检查（重要！）
+
+新增 API 端点时，必须检查：
+
+- [ ] 是否需要通过 gRPC-Web 访问？
+- [ ] 如需 gRPC-Web 访问，是否在 `server/api/grpc_gateway.py` 中注册？
+- [ ] 如是流式接口，是否使用 `_collect_sse_stream()` 处理？
+
+**已知问题**：流式接口忘记注册到 gRPC 网关，导致 `grpc-status: 12` 错误。
+
+## 详细规范
+
+详见 `standards/grpc-protocol.md`

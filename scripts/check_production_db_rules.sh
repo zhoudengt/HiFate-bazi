@@ -7,7 +7,7 @@ echo "==========================================================================
 
 ssh root@8.210.52.217 << 'EOF'
 cd /opt/HiFate-bazi
-docker exec hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi -e "
+docker exec hifate-mysql-master mysql -uroot -p"${MYSQL_PASSWORD:?MYSQL_PASSWORD required}" hifate_bazi -e "
 SELECT 
     COUNT(*) as total_rules,
     SUM(CASE WHEN enabled = 1 THEN 1 ELSE 0 END) as enabled_rules,
@@ -19,7 +19,7 @@ FROM bazi_rules;
 
 echo ""
 echo "按类型统计 FORMULA_ 规则（enabled=1）:"
-docker exec hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi -e "
+docker exec hifate-mysql-master mysql -uroot -p"${MYSQL_PASSWORD:?MYSQL_PASSWORD required}" hifate_bazi -e "
 SELECT 
     rule_type,
     COUNT(*) as count

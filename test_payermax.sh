@@ -4,7 +4,7 @@ echo "🔍 PayerMax 支付测试开始..."
 echo ""
 
 PROD_IP="8.210.52.217"
-SSH_PASS="Yuanqizhan@163"
+SSH_PASS="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 
 # 1. 检查配置
 echo "1️⃣ 检查 PayerMax 配置..."

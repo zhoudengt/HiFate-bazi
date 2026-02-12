@@ -50,11 +50,11 @@ echo "============================================================"
 echo "步骤 2: 在生产环境执行 SQL"
 echo "============================================================"
 echo "执行命令:"
-echo "  ssh ${PROD_USER}@${PROD_HOST} \"docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < ${PROD_PATH}\""
+echo "  ssh ${PROD_USER}@${PROD_HOST} \"docker exec -i hifate-mysql-master mysql -uroot -p"${MYSQL_PASSWORD:?MYSQL_PASSWORD required}" hifate_bazi < ${PROD_PATH}\""
 echo ""
 read -p "按 Enter 继续执行 SQL，或 Ctrl+C 取消..."
 
-ssh "${PROD_USER}@${PROD_HOST}" "docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < ${PROD_PATH}"
+ssh "${PROD_USER}@${PROD_HOST}" "docker exec -i hifate-mysql-master mysql -uroot -p"${MYSQL_PASSWORD:?MYSQL_PASSWORD required}" hifate_bazi < ${PROD_PATH}"
 
 if [ $? -eq 0 ]; then
     echo "✅ SQL 执行成功"

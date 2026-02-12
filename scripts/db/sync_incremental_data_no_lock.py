@@ -546,7 +546,7 @@ def get_database_config(env: str = 'local', node: Optional[str] = None) -> Dict:
             'host': os.getenv('PROD_MYSQL_HOST', node_ip),
             'port': int(os.getenv('PROD_MYSQL_PORT', '3306')),
             'user': os.getenv('PROD_MYSQL_USER', 'root'),
-            'password': os.getenv('PROD_MYSQL_PASSWORD', 'Yuanqizhan@163'),
+            'password': os.getenv('PROD_MYSQL_PASSWORD', os.getenv("MYSQL_PASSWORD", "")),
             'database': os.getenv('PROD_MYSQL_DATABASE', 'hifate_bazi'),
             'charset': 'utf8mb4'
         }
@@ -580,7 +580,7 @@ def main():
                 'host': args.prod_host,
                 'port': args.prod_port or 3306,
                 'user': args.prod_user or 'root',
-                'password': args.prod_password or 'Yuanqizhan@163',
+                'password': args.prod_password or os.getenv("MYSQL_PASSWORD", ""),
                 'database': args.prod_database or 'hifate_bazi',
                 'charset': 'utf8mb4'
             }

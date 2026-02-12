@@ -7,6 +7,8 @@
 
 import pytest
 import sys
+import pytest; pytest.importorskip("pydantic", reason="pydantic not installed")
+
 import os
 from unittest.mock import Mock, MagicMock, patch
 

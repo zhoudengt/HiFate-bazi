@@ -3,6 +3,10 @@
 """
 运势API服务 - 模拟版本（用于测试，不依赖真实API）
 当没有配置真实API密钥时，可以使用此服务进行测试
+
+.. deprecated::
+    本模块为 Mock 实现，混在生产代码中。建议后续迁移至 tests/mocks/
+    当前被 fortune_api_service 作为降级使用，迁移时需同步更新导入路径。
 """
 
 import os

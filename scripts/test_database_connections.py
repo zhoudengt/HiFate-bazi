@@ -25,7 +25,7 @@ def test_mysql_connection():
             host='8.210.52.217',
             port=3306,
             user='root',
-            password='Yuanqizhan@163',
+            password=os.getenv("MYSQL_PASSWORD", ""),
             database='hifate_bazi',
             connect_timeout=10
         )

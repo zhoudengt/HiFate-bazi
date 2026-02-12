@@ -61,7 +61,7 @@ echo ""
 echo "【4/10】检查数据库服务..."
 echo "----------------------------------------"
 if docker ps | grep -q hifate-mysql; then
-    if docker exec hifate-mysql-master mysqladmin ping -uroot -pYuanqizhan@163 2>/dev/null | grep -q "mysqld is alive"; then
+    if docker exec hifate-mysql-master mysqladmin ping -uroot -p"${MYSQL_PASSWORD:?MYSQL_PASSWORD required}" 2>/dev/null | grep -q "mysqld is alive"; then
         echo "  ✅ MySQL 主库正常"
     else
         echo "  ❌ MySQL 主库无响应"

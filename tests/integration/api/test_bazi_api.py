@@ -1,6 +1,8 @@
 """
+
 八字 API 集成测试
 """
+import pytest; pytest.importorskip("grpc", reason="grpc not installed")
 import pytest
 import httpx
 from typing import Dict, Any

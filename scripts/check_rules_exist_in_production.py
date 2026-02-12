@@ -168,7 +168,7 @@ def check_production_db_directly(rule_codes: List[str]) -> Dict:
     print("执行以下命令检查:")
     print(f"  ssh root@8.210.52.217")
     print(f"  cd /opt/HiFate-bazi")
-    print(f"  docker exec hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi -e")
+    print(f"  docker exec hifate-mysql-master mysql -uroot -p${MYSQL_PASSWORD} hifate_bazi -e")
     codes_str = "','".join(rule_codes[:10])
     print(f"    \"SELECT rule_code FROM bazi_rules WHERE rule_code IN ('{codes_str}');\"")
     
@@ -188,7 +188,7 @@ def sync_missing_rules(missing_codes: List[str]):
     print(f"\n需要同步 {len(missing_codes)} 条规则")
     print(f"\n💡 执行同步:")
     print(f"  scp scripts/temp_rules_export.sql root@8.210.52.217:/tmp/rules_import.sql")
-    print(f"  ssh root@8.210.52.217 'cd /opt/HiFate-bazi && docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql'")
+    print(f"  ssh root@8.210.52.217 'cd /opt/HiFate-bazi && docker exec -i hifate-mysql-master mysql -uroot -p${MYSQL_PASSWORD} hifate_bazi < /tmp/rules_import.sql'")
 
 
 def compare_code_logic():
@@ -293,7 +293,7 @@ def main():
         
         print(f"\n💡 执行修复:")
         print(f"  scp scripts/temp_rules_export.sql root@8.210.52.217:/tmp/rules_import.sql")
-        print(f"  ssh root@8.210.52.217 'cd /opt/HiFate-bazi && docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql && curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/check'")
+        print(f"  ssh root@8.210.52.217 'cd /opt/HiFate-bazi && docker exec -i hifate-mysql-master mysql -uroot -p${MYSQL_PASSWORD} hifate_bazi < /tmp/rules_import.sql && curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/check'")
         
     elif check_result.get('exists') is True:
         # 规则存在，对比代码逻辑

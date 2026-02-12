@@ -14,8 +14,8 @@ NC='\033[0m' # No Color
 # 生产环境配置
 NODE1_PRIVATE_IP="172.18.121.222"
 NODE2_PRIVATE_IP="172.18.121.223"
-MYSQL_PASSWORD="Yuanqizhan@163"
-MYSQL_REPL_PASSWORD="Yuanqizhan@163"
+MYSQL_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
+MYSQL_REPL_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 
 # Git 仓库配置
 GIT_REPO="https://github.com/zhoudengt/HiFate-bazi"
@@ -28,7 +28,7 @@ ACR_USERNAME="${ACR_USERNAME:-${ACR_ACCESS_KEY_ID}}"
 ACR_PASSWORD="${ACR_PASSWORD:-${ACR_ACCESS_KEY_SECRET}}"
 
 # SECRET_KEY（已生成）
-SECRET_KEY="kx9078L34ZoROnneJu8fMmJ70JImvVan88JYvxiewbE"
+SECRET_KEY="${SECRET_KEY:?SECRET_KEY env var required}"
 
 # 检测当前节点
 CURRENT_IP=$(hostname -I | awk '{print $1}')

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+
 QA 多轮对话系统集成测试
 测试完整对话流程、问题生成、流式处理、多轮对话意图理解
 """
 
+import pytest; pytest.importorskip("grpc", reason="grpc not installed")
 import sys
 import os
 import asyncio

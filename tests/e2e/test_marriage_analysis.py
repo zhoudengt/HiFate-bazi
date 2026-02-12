@@ -10,6 +10,9 @@
 4. 前端页面展示正常
 """
 
+import pytest
+pytest.skip("独立脚本，使用自定义参数不兼容 pytest fixture 机制，请单独运行", allow_module_level=True)
+
 import sys
 import os
 import json

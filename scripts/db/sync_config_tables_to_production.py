@@ -23,7 +23,7 @@ def get_production_config() -> Dict[str, Any]:
         'host': os.getenv('PROD_MYSQL_HOST', '123.57.216.15'),
         'port': int(os.getenv('PROD_MYSQL_PORT', '3306')),
         'user': os.getenv('PROD_MYSQL_USER', 'root'),
-        'password': os.getenv('PROD_MYSQL_PASSWORD', 'HiFate_Prod_2024!'),
+        'password': os.getenv('PROD_MYSQL_PASSWORD', '${MYSQL_PASSWORD}'),
         'database': os.getenv('PROD_MYSQL_DATABASE', 'hifate_bazi'),
         'charset': 'utf8mb4'
     }

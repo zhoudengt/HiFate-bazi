@@ -42,7 +42,7 @@ echo "执行: ssh root@${PROD_HOST} '...'"
 ssh root@${PROD_HOST} << 'EOF'
 cd /opt/HiFate-bazi
 echo "🔄 执行 SQL..."
-docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql
+docker exec -i hifate-mysql-master mysql -uroot -p"${MYSQL_PASSWORD:?MYSQL_PASSWORD required}" hifate_bazi < /tmp/rules_import.sql
 if [ $? -eq 0 ]; then
     echo "✅ SQL 执行成功"
     echo "🧹 清除缓存..."
@@ -60,7 +60,7 @@ if [ $? -ne 0 ]; then
     echo "💡 请手动执行:"
     echo "  ssh root@${PROD_HOST}"
     echo "  cd /opt/HiFate-bazi"
-    echo "  docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql"
+    echo "  docker exec -i hifate-mysql-master mysql -uroot -p"${MYSQL_PASSWORD:?MYSQL_PASSWORD required}" hifate_bazi < /tmp/rules_import.sql"
     echo "  curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/check"
     exit 1
 fi

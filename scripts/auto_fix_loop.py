@@ -111,7 +111,7 @@ def main():
                 print(f"  bash scripts/check_and_fix_production_db.sh")
                 print(f"\n或手动执行:")
                 print(f"  scp scripts/temp_rules_export.sql root@8.210.52.217:/tmp/rules_import.sql")
-                print(f"  ssh root@8.210.52.217 'docker exec -i hifate-mysql-master mysql -uroot -pYuanqizhan@163 hifate_bazi < /tmp/rules_import.sql'")
+                print(f"  ssh root@8.210.52.217 'docker exec -i hifate-mysql-master mysql -uroot -p${MYSQL_PASSWORD} hifate_bazi < /tmp/rules_import.sql'")
                 print(f"  curl -X POST http://8.210.52.217:8001/api/v1/hot-reload/check")
         
         # 等待

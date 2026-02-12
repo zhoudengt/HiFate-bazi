@@ -14,7 +14,7 @@ NC='\033[0m'
 # 生产环境配置
 NODE1_PUBLIC_IP="8.210.52.217"
 NODE2_PUBLIC_IP="47.243.160.43"
-SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+SSH_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 
 # SSH 执行函数
 ssh_exec() {

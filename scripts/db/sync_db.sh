@@ -15,7 +15,7 @@ REMOTE_SERVER="root@123.57.216.15"
 REMOTE_MYSQL_HOST="mysql"  # Docker 容器名
 REMOTE_MYSQL_PORT="3306"
 REMOTE_MYSQL_USER="root"
-REMOTE_MYSQL_PASS="HiFate_Prod_2024!"
+REMOTE_MYSQL_PASS="${MYSQL_PASSWORD:?MYSQL_PASSWORD env var required}"
 REMOTE_DB="hifate_bazi"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

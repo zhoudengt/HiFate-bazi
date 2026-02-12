@@ -21,6 +21,7 @@
 import os
 import sys
 import json
+import tempfile
 import time
 import threading
 import logging
@@ -162,7 +163,7 @@ class WorkerSyncManager:
             logger.warning(f"[Worker-{self._worker_id}] 读取信号文件失败: {e}")
     
     def _write_ack(self, version: int, success: bool):
-        """写入 ACK 确认文件"""
+        """写入 ACK 确认文件（原子写入，避免读到半写内容）"""
         try:
             os.makedirs(self.ACK_DIR, exist_ok=True)
             ack_file = os.path.join(self.ACK_DIR, f"worker_{self._worker_id}.json")
@@ -173,8 +174,18 @@ class WorkerSyncManager:
                 "timestamp": time.time(),
                 "ack_time": time.strftime('%Y-%m-%d %H:%M:%S')
             }
-            with open(ack_file, 'w') as f:
-                json.dump(ack_data, f, indent=2)
+            # 原子写入：先写临时文件再 rename
+            fd, tmp_path = tempfile.mkstemp(dir=self.ACK_DIR, suffix='.tmp')
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    json.dump(ack_data, f, indent=2)
+                os.replace(tmp_path, ack_file)
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
         except Exception as e:
             logger.warning(f"[Worker-{self._worker_id}] 写入 ACK 失败: {e}")
     
@@ -205,14 +216,6 @@ class WorkerSyncManager:
                 except:
                     pass
             
-            # 🔴 清理旧 ACK 文件
-            if os.path.exists(cls.ACK_DIR):
-                for f in os.listdir(cls.ACK_DIR):
-                    try:
-                        os.remove(os.path.join(cls.ACK_DIR, f))
-                    except:
-                        pass
-            
             # 写入新信号
             new_version = current_version + 1
             signal_data = {
@@ -224,11 +227,31 @@ class WorkerSyncManager:
             }
             
             # 确保目录存在
-            os.makedirs(os.path.dirname(cls.SIGNAL_FILE) or '/tmp', exist_ok=True)
+            signal_dir = os.path.dirname(cls.SIGNAL_FILE) or '/tmp'
+            os.makedirs(signal_dir, exist_ok=True)
             
-            # 写入信号文件
-            with open(cls.SIGNAL_FILE, 'w') as f:
-                json.dump(signal_data, f, indent=2)
+            # 原子写入信号文件：先写临时文件，再 rename（避免多进程读到半写内容）
+            fd, tmp_path = tempfile.mkstemp(dir=signal_dir, suffix='.tmp')
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    json.dump(signal_data, f, indent=2)
+                os.replace(tmp_path, cls.SIGNAL_FILE)  # 原子操作
+            except Exception:
+                # 清理临时文件
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
+            
+            # 🔴 在信号文件写入成功后再清理旧 ACK 文件
+            # （避免清理和写入之间的竞态：worker 可能在清理之后、新信号之前写了旧 ACK）
+            if os.path.exists(cls.ACK_DIR):
+                for f in os.listdir(cls.ACK_DIR):
+                    try:
+                        os.remove(os.path.join(cls.ACK_DIR, f))
+                    except OSError:
+                        pass
             
             logger.info(f"📢 热更新信号已广播 (version: {new_version})")
             

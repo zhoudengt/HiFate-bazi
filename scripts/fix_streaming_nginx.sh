@@ -8,7 +8,7 @@ echo "=========================================="
 
 NODE1="8.210.52.217"
 NODE2="47.243.160.43"
-SSH_PASSWORD="${SSH_PASSWORD:-Yuanqizhan@163}"
+SSH_PASSWORD="${SSH_PASSWORD:?SSH_PASSWORD env var required}"
 
 # 检查是否有 sshpass
 if ! command -v sshpass &> /dev/null; then

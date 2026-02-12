@@ -50,7 +50,7 @@ echo ""
 
 # 检查是否有应用连接
 echo "[2/4] 检查数据库连接..."
-CONNECTION_COUNT=$(exec_cmd "docker exec hifate-mysql-master mysql -uroot -pYuanqizhan@163 -e 'SHOW PROCESSLIST;' 2>/dev/null | wc -l" 2>/dev/null || echo "0")
+CONNECTION_COUNT=$(exec_cmd "docker exec hifate-mysql-master mysql -uroot -p"${MYSQL_PASSWORD:?MYSQL_PASSWORD required}" -e 'SHOW PROCESSLIST;' 2>/dev/null | wc -l" 2>/dev/null || echo "0")
 
 if [ "$CONNECTION_COUNT" -gt 5 ]; then
     echo -e "${YELLOW}⚠️  警告：当前有 $((CONNECTION_COUNT - 2)) 个数据库连接${NC}"
@@ -81,7 +81,7 @@ echo "[4/4] 等待 MySQL 启动..."
 MAX_WAIT=60
 WAIT_TIME=0
 while [ $WAIT_TIME -lt $MAX_WAIT ]; do
-    if exec_cmd "docker exec hifate-mysql-master mysqladmin ping -h localhost -uroot -pYuanqizhan@163 --silent" 2>/dev/null; then
+    if exec_cmd "docker exec hifate-mysql-master mysqladmin ping -h localhost -uroot -p"${MYSQL_PASSWORD:?MYSQL_PASSWORD required}" --silent" 2>/dev/null; then
         echo -e "${GREEN}✅ MySQL 已成功启动${NC}"
         break
     fi
@@ -100,8 +100,8 @@ fi
 # 验证 MySQL 状态
 echo ""
 echo "验证 MySQL 状态..."
-MYSQL_VERSION=$(exec_cmd "docker exec hifate-mysql-master mysql -uroot -pYuanqizhan@163 -e 'SELECT VERSION();' 2>/dev/null | tail -n 1" 2>/dev/null || echo "未知")
-MYSQL_UPTIME=$(exec_cmd "docker exec hifate-mysql-master mysql -uroot -pYuanqizhan@163 -e 'SHOW STATUS LIKE \"Uptime\";' 2>/dev/null | tail -n 1" 2>/dev/null || echo "未知")
+MYSQL_VERSION=$(exec_cmd "docker exec hifate-mysql-master mysql -uroot -p"${MYSQL_PASSWORD:?MYSQL_PASSWORD required}" -e 'SELECT VERSION();' 2>/dev/null | tail -n 1" 2>/dev/null || echo "未知")
+MYSQL_UPTIME=$(exec_cmd "docker exec hifate-mysql-master mysql -uroot -p"${MYSQL_PASSWORD:?MYSQL_PASSWORD required}" -e 'SHOW STATUS LIKE \"Uptime\";' 2>/dev/null | tail -n 1" 2>/dev/null || echo "未知")
 
 echo -e "${GREEN}✅ MySQL 版本: $MYSQL_VERSION${NC}"
 echo -e "${GREEN}✅ MySQL 运行时间: $MYSQL_UPTIME${NC}"
