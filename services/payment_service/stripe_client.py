@@ -56,10 +56,9 @@ except ImportError as e:
     PaymentTransactionDAO = None
 
 from .base_client import BasePaymentClient
-from .client_factory import register_payment_client
 
-
-@register_payment_client("stripe")
+# [DEPRECATED] 此文件已被 stripe_client_v2.py 替代，不再注册到支付工厂。
+# 保留文件仅供参考，请勿恢复 @register_payment_client 装饰器。
 class StripeClient(BasePaymentClient):
     """Stripe支付客户端"""
     

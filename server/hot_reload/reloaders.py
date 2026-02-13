@@ -321,7 +321,14 @@ class SourceCodeReloader:
         logger.info("="*60)
         
         try:
+            # 禁止重载自身：reload 会重新执行模块顶层代码，导致 _reload_in_progress
+            # 变量被重置为新对象，finally 块清除的是旧引用，503 标志永远清不掉。
+            _SKIP_MODULES = {'server.hot_reload.reloaders'}
+            
             for module_name, module_info in monitored_modules.items():
+                if module_name in _SKIP_MODULES:
+                    continue
+                
                 file_path = module_info['file']
                 description = module_info['description']
                 

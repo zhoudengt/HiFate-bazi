@@ -109,28 +109,10 @@ class PaymentClientFactory:
 # 全局工厂实例
 payment_client_factory = PaymentClientFactory()
 
-# 注册为热更新单例（确保模块重新加载时重新注册客户端）
-try:
-    from server.hot_reload.reloaders import SingletonReloader
-    SingletonReloader.register_singleton(
-        'services.payment_service.client_factory',
-        'PaymentClientFactory',
-        ['_clients']  # 重置客户端注册表
-    )
-    # 同时注册重新导入 services.payment_service 模块
-    import importlib
-    import sys
-    def _reload_payment_service():
-        """重新加载支付服务模块以触发客户端注册"""
-        if 'services.payment_service' in sys.modules:
-            importlib.reload(sys.modules['services.payment_service'])
-    SingletonReloader.register_singleton(
-        'services.payment_service',
-        'payment_service',
-        []  # 模块级别，通过重新导入触发
-    )
-except ImportError:
-    pass  # 开发环境可能没有热更新模块
+# 注意：不要将 _clients 注册到 SingletonReloader 重置列表！
+# 原因：热更新顺序 source(4) → singleton(5)，source 阶段装饰器已重新注册客户端，
+# singleton 阶段再清空 _clients 会导致所有支付客户端丢失（Stripe 400 错误）。
+# 缓存清理由 CacheReloader(步骤7) 的 clear_cache() 负责，职责分离。
 
 
 def register_payment_client(provider_name: str):
