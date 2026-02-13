@@ -132,6 +132,7 @@ from server.api.v1.general_review_analysis import (
 )
 from server.api.v1.annual_report_analysis import (
     AnnualReportRequest,
+    annual_report_debug,
     annual_report_stream_generator,
 )
 
@@ -889,6 +890,20 @@ async def _handle_annual_report_stream(payload: Dict[str, Any]):
         request_model.bot_id
     )
     return await _collect_sse_stream(generator)
+
+
+@_register("/annual-report/debug")
+async def _handle_annual_report_debug(payload: Dict[str, Any]):
+    """处理年运报告调试接口请求（返回 formatted_data，与 stream 数据一致，供评测使用）"""
+    request_model = AnnualReportRequest(**payload)
+    return await annual_report_debug(request_model)
+
+
+@_register("/annual-report/test")
+async def _handle_annual_report_test(payload: Dict[str, Any]):
+    """处理年运报告测试接口请求（与 debug 相同实现）"""
+    request_model = AnnualReportRequest(**payload)
+    return await annual_report_debug(request_model)
 
 
 @_register("/smart-fortune/smart-analyze-stream")

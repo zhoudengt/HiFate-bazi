@@ -122,18 +122,22 @@ async def annual_report_test(request: AnnualReportRequest):
             preprocessed=True
         )
         
-        # 4. 从统一接口结果中提取数据
-        bazi_data = unified_data.get('bazi', {})
+        # 4. 从统一接口结果中提取数据（与 stream 接口完全一致，确保评测数据与生产一致）
+        bazi_module_data = unified_data.get('bazi', {})
+        if isinstance(bazi_module_data, dict) and 'bazi' in bazi_module_data:
+            bazi_data = bazi_module_data.get('bazi', {})
+        else:
+            bazi_data = bazi_module_data
         wangshuai_result = unified_data.get('wangshuai', {})
-        detail_result = unified_data.get('detail', {})
-        
-        # 提取和验证数据
-        if isinstance(bazi_data, dict) and 'bazi' in bazi_data:
-            bazi_data = bazi_data['bazi']
+        detail_data = unified_data.get('detail', {})
         bazi_data = validate_bazi_data(bazi_data)
-        
-        # 获取大运序列（从detail_result）
-        dayun_sequence = detail_result.get('dayun_sequence', [])
+        # 大运序列提取：与 stream 相同逻辑，支持顶层/嵌套两种结构
+        if detail_data:
+            details = detail_data.get('details', detail_data)
+            dayun_sequence = details.get('dayun_sequence', [])
+        else:
+            dayun_sequence = unified_data.get('dayun', [])
+        detail_result = detail_data if detail_data else {'details': {'dayun_sequence': dayun_sequence}}
         
         # 提取特殊流年（岁运并临、天克地冲、天合地合）
         special_liunians_data = unified_data.get('special_liunians', {})
@@ -208,6 +212,15 @@ async def annual_report_test(request: AnnualReportRequest):
             "error": str(e),
             "traceback": traceback.format_exc()
         }
+
+
+@router.post("/annual-report/debug", summary="调试接口：返回格式化数据（与 stream 数据一致，供评测使用）")
+async def annual_report_debug(request: AnnualReportRequest):
+    """
+    调试接口：与 /annual-report/test 相同实现，返回与生产 stream 一致的数据。
+    评测脚本应使用此接口，确保百炼等平台获得的 formatted_data 与 Coze 生产环境一致。
+    """
+    return await annual_report_test(request)
 
 
 @router.post("/annual-report/stream", summary="流式生成年运报告")
