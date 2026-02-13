@@ -20,6 +20,35 @@ DEBUG_LOG_PATH = os.path.join(BASE_DIR, 'logs', 'debug.log')
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_import_desk_fengshui_analyzer():
+    """
+    安全导入 DeskFengshuiAnalyzer，使用唯一模块名避免 sys.modules 冲突。
+    
+    问题背景：项目中存在多个同名 analyzer.py（desk_fengshui / fortune_analysis / prompt_optimizer），
+    使用 from analyzer import 或 importlib.import_module('analyzer') 会导致加载错误的模块。
+    """
+    import importlib.util
+    _MODULE_NAME = '_desk_fengshui_analyzer'
+    
+    # 确保 desk_fengshui 目录在 sys.path 中（analyzer.py 内部 import 需要）
+    desk_fengshui_path = os.path.abspath(os.path.join(BASE_DIR, 'services', 'desk_fengshui'))
+    if desk_fengshui_path not in sys.path:
+        sys.path.insert(0, desk_fengshui_path)
+    
+    # 使用已缓存的模块或从文件加载
+    if _MODULE_NAME in sys.modules:
+        mod = sys.modules[_MODULE_NAME]
+    else:
+        analyzer_path = os.path.join(desk_fengshui_path, 'analyzer.py')
+        spec = importlib.util.spec_from_file_location(_MODULE_NAME, analyzer_path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[_MODULE_NAME] = mod
+        spec.loader.exec_module(mod)
+    
+    return mod.DeskFengshuiAnalyzer
+
+
 router = APIRouter(prefix="/api/v2/desk-fengshui", tags=["办公桌风水"])
 
 # 导入流式接口路由
@@ -93,20 +122,8 @@ async def analyze_desk_fengshui(
         # 3. 调用分析服务（异步，带超时）
         try:
             import asyncio
-            # 确保从正确的路径导入
-            import sys
-            desk_fengshui_path = os.path.join(BASE_DIR, 'services', 'desk_fengshui')
-            # 确保desk_fengshui路径在最前面，这样相对导入才能工作
-            if desk_fengshui_path in sys.path:
-                sys.path.remove(desk_fengshui_path)
-            sys.path.insert(0, desk_fengshui_path)
-            # 切换到desk_fengshui目录以确保相对导入工作
-            old_cwd = os.getcwd()
-            try:
-                os.chdir(desk_fengshui_path)
-                from analyzer import DeskFengshuiAnalyzer
-            finally:
-                os.chdir(old_cwd)
+            # 安全导入分析器（避免多个 analyzer.py 模块名冲突）
+            DeskFengshuiAnalyzer = _safe_import_desk_fengshui_analyzer()
             analyzer = DeskFengshuiAnalyzer()
             
             # 使用异步方法以提升并发性能，添加总超时（90秒）

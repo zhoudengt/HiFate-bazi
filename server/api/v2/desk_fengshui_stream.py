@@ -33,6 +33,34 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["办公桌风水-流式"])
 
 
+def _safe_import_desk_fengshui_analyzer():
+    """
+    安全导入 DeskFengshuiAnalyzer，使用唯一模块名避免 sys.modules 冲突。
+    
+    问题背景：项目中存在多个同名 analyzer.py（desk_fengshui / fortune_analysis / prompt_optimizer），
+    使用 importlib.import_module('analyzer') 或 reload(sys.modules['analyzer']) 会导致加载错误的模块。
+    """
+    import importlib.util
+    _MODULE_NAME = '_desk_fengshui_analyzer'
+    
+    # 确保 desk_fengshui 目录在 sys.path 中（analyzer.py 内部 import 需要）
+    desk_fengshui_path = os.path.abspath(os.path.join(project_root, 'services', 'desk_fengshui'))
+    if desk_fengshui_path not in sys.path:
+        sys.path.insert(0, desk_fengshui_path)
+    
+    # 使用已缓存的模块或从文件加载
+    if _MODULE_NAME in sys.modules:
+        mod = sys.modules[_MODULE_NAME]
+    else:
+        analyzer_path = os.path.join(desk_fengshui_path, 'analyzer.py')
+        spec = importlib.util.spec_from_file_location(_MODULE_NAME, analyzer_path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[_MODULE_NAME] = mod
+        spec.loader.exec_module(mod)
+    
+    return mod.DeskFengshuiAnalyzer
+
+
 class DeskFengshuiStreamRequest(BaseModel):
     """办公桌风水流式请求模型（用于gRPC-Web）"""
     image_base64: str = Field(..., description="base64编码的图片数据")
@@ -58,22 +86,8 @@ async def desk_fengshui_test(
         # 读取图片数据
         image_bytes = await image.read()
         
-        # 调用分析服务（使用 importlib 安全导入，避免 del sys.modules 竞态）
-        import importlib
-        desk_fengshui_path = os.path.abspath(os.path.join(project_root, 'services', 'desk_fengshui'))
-        if desk_fengshui_path not in sys.path:
-            sys.path.insert(0, desk_fengshui_path)
-        # 使用绝对模块名导入，避免与其他 analyzer 冲突
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(desk_fengshui_path)
-            if 'analyzer' in sys.modules:
-                mod = importlib.reload(sys.modules['analyzer'])
-            else:
-                mod = importlib.import_module('analyzer')
-            DeskFengshuiAnalyzer = mod.DeskFengshuiAnalyzer
-        finally:
-            os.chdir(old_cwd)
+        # 安全导入分析器（避免多个 analyzer.py 模块名冲突）
+        DeskFengshuiAnalyzer = _safe_import_desk_fengshui_analyzer()
         analyzer = DeskFengshuiAnalyzer()
         
         result = await asyncio.wait_for(
@@ -181,21 +195,8 @@ async def desk_fengshui_stream_generator(
         
         # 5. 调用基础分析服务（异步，带超时）
         try:
-            # 使用 importlib 安全导入，避免 del sys.modules 竞态
-            import importlib
-            desk_fengshui_path = os.path.abspath(os.path.join(project_root, 'services', 'desk_fengshui'))
-            if desk_fengshui_path not in sys.path:
-                sys.path.insert(0, desk_fengshui_path)
-            old_cwd = os.getcwd()
-            try:
-                os.chdir(desk_fengshui_path)
-                if 'analyzer' in sys.modules:
-                    mod = importlib.reload(sys.modules['analyzer'])
-                else:
-                    mod = importlib.import_module('analyzer')
-                DeskFengshuiAnalyzer = mod.DeskFengshuiAnalyzer
-            finally:
-                os.chdir(old_cwd)
+            # 安全导入分析器（避免多个 analyzer.py 模块名冲突）
+            DeskFengshuiAnalyzer = _safe_import_desk_fengshui_analyzer()
             analyzer = DeskFengshuiAnalyzer()
             
             result = await asyncio.wait_for(
