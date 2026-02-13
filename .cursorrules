@@ -21,7 +21,9 @@
 ## 核心原则（必须遵守）
 
 ### 0. 代码修改流程
-> 本地开发 → Git提交 → 增量部署。禁止直接在服务器上修改代码。
+> 本地开发 → Git提交 → **门控发布**（Node2 前哨验证 → Node1 生产部署）。禁止直接在服务器上修改代码。
+> 发布命令：`bash deploy/scripts/gated_deploy.sh`（自动识别 Phase 1/2 模式），详见 `@gated-deploy.mdc`。
+> Phase 2 初始化：`bash deploy/scripts/init_staging.sh`（一次性，零停机）。
 
 ### 0.1 零停机原则
 > 使用热更新，禁止重启服务。
@@ -103,6 +105,7 @@
 | 场景 | 引用 |
 |------|------|
 | 部署/测试 | `@release-workflow.mdc` |
+| 门控发布 | `@gated-deploy.mdc` |
 | 提交前检查 | `@dev-checklist.mdc` |
 | 修改缓存 | `@cache-rules.mdc` |
 | 修改 gRPC/API | `@grpc-rules.mdc` |

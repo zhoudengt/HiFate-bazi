@@ -1,0 +1,226 @@
+---
+description: 门控发布规范（Node2 前哨验证 → Node1 生产部署的物理隔离发布流程）
+alwaysApply: false
+globs:
+  - deploy/**
+  - scripts/deploy/**
+  - .github/workflows/**
+---
+
+# 门控发布规范
+
+## 核心原则
+
+**任何代码变更必须先在 Node2（前哨节点）部署并通过全量测试，才允许部署到 Node1（生产节点）。**
+
+```
+Node2 是发布的"物理隔离闸门"：
+- Node2 没有用户流量，部署失败不影响任何用户
+- Node1 承载全部生产流量，只有 Node2 测试通过后才会触碰
+```
+
+---
+
+## 发布命令
+
+### 标准门控发布（推荐，日常使用）
+
+```bash
+bash deploy/scripts/gated_deploy.sh
+```
+
+流程：本地检查 → Node2 git pull → Node2 热更新 → Node2 全量回归测试 → **门控判断** → Node1 git pull → Node1 热更新 → Node1 验证 → 记录历史
+
+### DRY-RUN（只验证不部署 Node1）
+
+```bash
+bash deploy/scripts/gated_deploy.sh --dry-run
+```
+
+适用场景：大改动前先在 Node2 验证，确认安全后再正式发布
+
+### 紧急修复（跳过 Node2）
+
+```bash
+bash deploy/scripts/gated_deploy.sh --skip-node2
+```
+
+仅用于紧急 hotfix，需要人工确认。跳过了物理隔离保护，风险较高。
+
+### 只跑测试（不部署代码）
+
+```bash
+bash deploy/scripts/gated_deploy.sh --test-only
+```
+
+适用场景：想确认 Node2 上当前代码的测试状态
+
+### 回滚
+
+```bash
+bash deploy/scripts/gated_deploy.sh --rollback
+```
+
+回滚 Node1 到上一次成功部署的 commit。回滚点记录在 `deploy/logs/last_success_commit.txt`。
+
+---
+
+## 环境变量
+
+门控发布脚本从 `deploy/scripts/deploy.conf` 加载配置，以下环境变量必须设置：
+
+| 变量 | 说明 | 示例 |
+|------|------|------|
+| `NODE1_PUBLIC_IP` | Node1 公网 IP | 8.210.52.217 |
+| `NODE1_PRIVATE_IP` | Node1 内网 IP | 172.18.121.222 |
+| `NODE2_PUBLIC_IP` | Node2 公网 IP | 47.243.160.43 |
+| `NODE2_PRIVATE_IP` | Node2 内网 IP | 172.18.121.223 |
+| `SSH_PASSWORD` | SSH 密码 | (从环境变量获取) |
+| `MYSQL_PASSWORD` | MySQL 密码 | (从环境变量获取) |
+
+---
+
+## 门控测试内容
+
+Node2 上运行的回归测试覆盖 23 个接口（使用 `scripts/evaluation/api_regression_test.py --env node2`）：
+
+| 类别 | 数量 | 内容 |
+|------|------|------|
+| basic | 5 | 基本信息、排盘、身宫命宫、六十甲子 |
+| stream | 13 | 每日运势、五行、喜忌、婚姻、事业、子女、健康、总评、年运、智能分析、面相、风水 |
+| payment | 5 | 支付渠道状态、Stripe/PayerMax 创建订单、验证支付 |
+
+---
+
+## 部署日志
+
+所有部署记录保存在 `deploy/logs/`：
+
+| 文件 | 内容 |
+|------|------|
+| `deploy_history.jsonl` | 追加式部署历史（每行一条 JSON） |
+| `deploy_<ID>.json` | 单次部署的完整报告 |
+| `last_success_commit.txt` | 上一次成功部署的 commit hash（用于回滚） |
+
+---
+
+## AI 模型部署指南
+
+### 用户说"部署"/"发布"时
+
+1. 确保代码已提交并推送到 master
+2. 执行门控发布：
+
+```bash
+bash deploy/scripts/gated_deploy.sh
+```
+
+3. 等待完成，检查输出中的 `GATE PASS` / `GATE FAIL`
+4. 如果 `GATE FAIL`：查看失败原因，修复代码，重新提交后再次发布
+
+### 用户说"测试发布"/"试一下"时
+
+使用 dry-run 模式：
+
+```bash
+bash deploy/scripts/gated_deploy.sh --dry-run
+```
+
+### 用户说"紧急修复"/"直接部署"时
+
+提醒用户有风险，如果用户确认，使用紧急模式：
+
+```bash
+bash deploy/scripts/gated_deploy.sh --skip-node2
+```
+
+### 用户说"回滚"时
+
+```bash
+bash deploy/scripts/gated_deploy.sh --rollback
+```
+
+### 不使用脚本的手动部署（备用）
+
+如果门控脚本不可用，AI 模型可以手动执行（但失去了 Node2 前哨保护）：
+
+```bash
+# 1. Node2 先验证
+ssh hifate-node1 "sshpass -p '\$SSH_PASSWORD' ssh root@172.18.121.223 'cd /opt/HiFate-bazi && git pull origin master'"
+curl -s --max-time 60 -X POST http://47.243.160.43:8001/api/v1/hot-reload/reload-all
+sleep 5
+python3 scripts/evaluation/api_regression_test.py --env node2 --category basic --category stream --category payment --parallel
+
+# 2. Node2 测试通过后，再部署 Node1
+ssh hifate-node1 "cd /opt/HiFate-bazi && git pull origin master"
+curl -s --max-time 60 -X POST http://8.210.52.217:8001/api/v1/hot-reload/reload-all
+sleep 5
+curl -s --max-time 60 -X POST http://8.210.52.217:8001/api/v1/hot-reload/reload-all
+sleep 3
+```
+
+---
+
+## Phase 2: 代码目录隔离（零停机增强）
+
+Phase 2 通过 staging 目录实现 `git pull` 与容器挂载的物理隔离，**不需要重建容器、零停机**。
+
+### 初始化（一次性，零停机）
+
+```bash
+bash deploy/scripts/init_staging.sh          # 在 Node1 创建 staging 目录
+bash deploy/scripts/init_staging.sh --check  # 检查状态
+```
+
+### 目录结构
+
+```
+/opt/HiFate-bazi/          ← 容器挂载源（live，不改！）
+/opt/HiFate-bazi-staging/  ← Git 仓库（git pull 在这里，容器看不到）
+/opt/HiFate-bazi-rollback/ ← 上一版本备份（硬链接，秒级回滚）
+```
+
+### 工作原理
+
+初始化后，`gated_deploy.sh` 自动检测 staging 目录：
+- **有 staging 目录** → Phase 2 模式：git pull 到 staging → 验证 → rsync 到 live → 热更新
+- **无 staging 目录** → Phase 1 模式：直接 git pull（向后兼容）
+
+Phase 2 的 Node1 部署流程：
+1. `git pull` → `/opt/HiFate-bazi-staging/`（容器看不到，安全）
+2. staging 目录内语法验证（代码还没进 live）
+3. 备份 live → rollback（硬链接拷贝，瞬间完成）
+4. rsync staging → live（增量同步，通常 <3s）
+5. 热更新
+6. 验证 → 失败则 rsync rollback → live + 热更新（秒级回滚）
+
+---
+
+## 文件结构
+
+```
+deploy/scripts/
+├── gated_deploy.sh              # 门控发布主脚本（自动识别 Phase 1/2）
+├── init_staging.sh              # 一次性初始化 staging 目录
+├── lib/
+│   ├── common.sh                # 公共函数库
+│   └── gate_check.sh            # 门控检查函数库
+├── deploy.conf                  # 部署配置（从环境变量加载）
+├── incremental_deploy_production.sh  # 旧增量部署脚本（CI/CD 用）
+├── grayscale_deploy_production.sh    # 灰度发布脚本
+└── rollback.sh                  # 回滚脚本
+
+deploy/logs/                     # 部署日志（.gitignore 忽略内容）
+├── deploy_history.jsonl
+├── deploy_<ID>.json
+└── last_success_commit.txt
+```
+
+---
+
+## 绝对禁止
+
+- 禁止跳过 Node2 验证直接部署 Node1（除非用 `--skip-node2` 紧急模式且用户确认）
+- 禁止在 Node2 测试失败时仍然部署 Node1
+- 禁止手动 SSH 到服务器修改代码
+- 禁止 `docker restart`

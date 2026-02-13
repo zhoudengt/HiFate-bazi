@@ -124,9 +124,35 @@ git push origin master
 
 ---
 
-## 第五步：增量部署（直接执行，不依赖环境变量）
+## 第五步：增量部署
 
-**所有 AI 模型统一使用以下 3 条命令部署，无需任何环境变量，无需任何脚本：**
+### 推荐方式：门控发布（Node2 前哨验证 → Node1 部署）
+
+**门控发布脚本会自动先在 Node2（前哨节点）部署并跑全量测试，测试通过后才部署到 Node1（生产节点）：**
+
+```bash
+# 标准门控发布（推荐）
+bash deploy/scripts/gated_deploy.sh
+
+# 只部署 Node2 跑测试，不动 Node1（验证变更安全性）
+bash deploy/scripts/gated_deploy.sh --dry-run
+
+# 紧急修复：跳过 Node2 直接部署 Node1（慎用）
+bash deploy/scripts/gated_deploy.sh --skip-node2
+
+# 只跑 Node2 回归测试（不部署代码）
+bash deploy/scripts/gated_deploy.sh --test-only
+
+# 回滚 Node1 到上一次成功的版本
+bash deploy/scripts/gated_deploy.sh --rollback
+```
+
+门控发布流程：Node2 git pull → Node2 热更新 → Node2 全量测试 → **门控判断** → Node1 git pull → Node1 热更新 → Node1 验证。
+任何一步失败都会停止，Node1 不受影响。部署历史记录在 `deploy/logs/`。
+
+### 手动方式（AI 模型快速部署）
+
+如果不使用门控脚本，AI 模型统一使用以下 3 条命令部署：
 
 ```bash
 # 步骤 1：服务器拉取代码
@@ -145,7 +171,7 @@ sleep 3
 
 **为什么要两次热更新？** 单次 reload-all 可能存在 Worker 间模块引用未完全刷新的情况（尤其是跨模块函数签名变更），第二次 reload 确保所有 Worker 引用最新代码。这是生产验证过的安全做法。
 
-> **注意**：`deploy/scripts/incremental_deploy_production.sh` 脚本需要 `NODE1_PUBLIC_IP` 等环境变量，仅适用于 CI/CD 流水线。**AI 模型部署时不要使用该脚本**，直接执行上述 3 条命令即可。
+> **注意**：`deploy/scripts/incremental_deploy_production.sh` 脚本需要环境变量，仅适用于 CI/CD 流水线。
 
 ### 热更新端点选择（重要！）
 
