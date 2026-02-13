@@ -9,11 +9,15 @@ import sys
 import os
 import json
 import asyncio
-from fastapi import APIRouter, HTTPException
+import hashlib
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+
+# ✅ LLM 并发限制：最多 3 个 Coze 行动建议调用同时进行，防止线程池耗尽
+_llm_action_semaphore = asyncio.Semaphore(3)
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
@@ -411,7 +415,8 @@ async def action_suggestions_stream(request: ActionSuggestionsRequest):
 
 async def daily_fortune_stream_generator(
     request: DailyFortuneCalendarRequest,
-    bot_id: Optional[str] = None
+    bot_id: Optional[str] = None,
+    http_request: Optional[Request] = None
 ):
     """
     每日运势流式生成器
@@ -421,10 +426,20 @@ async def daily_fortune_stream_generator(
     Args:
         request: 每日运势请求
         bot_id: Coze Bot ID（可选）
+        http_request: FastAPI Request 对象（用于检测客户端断连）
     """
     import traceback
     import logging
     logger = logging.getLogger(__name__)
+    
+    async def _is_disconnected() -> bool:
+        """检查客户端是否已断开连接"""
+        if http_request:
+            try:
+                return await http_request.is_disconnected()
+            except Exception:
+                return False
+        return False
     
     try:
         # 1. 判断是否有完整的用户生辰信息
@@ -452,6 +467,11 @@ async def daily_fortune_stream_generator(
                     user_gender=None
                 )
             )
+        
+        # ✅ 客户端断连检测：数据获取后检查
+        if await _is_disconnected():
+            logger.info("[DailyFortune Stream] 客户端已断开，跳过响应")
+            return
         
         if not result.get('success'):
             error_msg = {
@@ -531,6 +551,26 @@ async def daily_fortune_stream_generator(
             yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
             return
         
+        # ✅ 7.5 行动建议缓存：相同日期+宜忌内容 → 直接返回缓存结果
+        yi_ji_key = f"{request.date}:{','.join(sorted(yi_list))}:{','.join(sorted(ji_list))}"
+        action_cache_key = f"daily_fortune:action:{hashlib.md5(yi_ji_key.encode()).hexdigest()[:16]}"
+        try:
+            from server.utils.cache_multi_level import get_multi_cache
+            _action_cache = get_multi_cache()
+            cached_action = _action_cache.get(action_cache_key)
+            if cached_action and isinstance(cached_action, str) and len(cached_action) > 5:
+                logger.info(f"[DailyFortune Stream] 行动建议缓存命中: {action_cache_key}")
+                yield f"data: {json.dumps({'type': 'progress', 'content': cached_action}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'complete', 'content': ''}, ensure_ascii=False)}\n\n"
+                return
+        except Exception as e:
+            logger.warning(f"行动建议缓存读取失败: {e}")
+        
+        # ✅ 客户端断连检测：LLM 调用前再次检查
+        if await _is_disconnected():
+            logger.info("[DailyFortune Stream] 客户端已断开，跳过 LLM 调用")
+            return
+        
         # 8. 确定使用的 bot_id
         actual_bot_id = bot_id
         if not actual_bot_id:
@@ -564,29 +604,65 @@ async def daily_fortune_stream_generator(
             yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
             return
         
-        # 10. 流式生成行动建议
-        async for stream_result in llm_service.stream_action_suggestions(yi_list, ji_list, bot_id=actual_bot_id):
-            if stream_result.get('type') == 'progress':
-                msg = {
-                    'type': 'progress',
-                    'content': stream_result.get('content', '')
-                }
-                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0)
-            elif stream_result.get('type') == 'complete':
-                msg = {
-                    'type': 'complete',
-                    'content': stream_result.get('content', '')
-                }
-                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+        # ✅ 10. 流式生成行动建议（带并发限制 + 断连检测 + 结果缓存）
+        acquired = False
+        try:
+            # 尝试立即获取 LLM 并发信号量，拿不到就跳过（不等待）
+            if _llm_action_semaphore.locked():
+                logger.info("[DailyFortune Stream] LLM 并发已满，跳过行动建议")
+                yield f"data: {json.dumps({'type': 'complete', 'content': ''}, ensure_ascii=False)}\n\n"
                 return
-            elif stream_result.get('type') == 'error':
-                msg = {
-                    'type': 'error',
-                    'content': stream_result.get('content', '生成失败')
-                }
-                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+            try:
+                await asyncio.wait_for(_llm_action_semaphore.acquire(), timeout=0.1)
+                acquired = True
+            except asyncio.TimeoutError:
+                logger.info("[DailyFortune Stream] LLM 并发信号量获取超时，跳过行动建议")
+                yield f"data: {json.dumps({'type': 'complete', 'content': ''}, ensure_ascii=False)}\n\n"
                 return
+            
+            full_content_parts = []  # 收集完整内容用于缓存
+            async for stream_result in llm_service.stream_action_suggestions(yi_list, ji_list, bot_id=actual_bot_id):
+                # ✅ 每次迭代检查客户端是否断连
+                if await _is_disconnected():
+                    logger.info("[DailyFortune Stream] 客户端已断开，停止 LLM 流")
+                    return
+                
+                if stream_result.get('type') == 'progress':
+                    content = stream_result.get('content', '')
+                    full_content_parts.append(content)
+                    msg = {
+                        'type': 'progress',
+                        'content': content
+                    }
+                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                    await asyncio.sleep(0)
+                elif stream_result.get('type') == 'complete':
+                    # ✅ 写入行动建议缓存
+                    full_text = ''.join(full_content_parts)
+                    if full_text and len(full_text) > 5:
+                        try:
+                            _action_cache = get_multi_cache()
+                            _action_cache.set(action_cache_key, full_text, ttl=21600)  # 6小时
+                            logger.info(f"[DailyFortune Stream] 行动建议已缓存: {action_cache_key} ({len(full_text)}字)")
+                        except Exception as cache_err:
+                            logger.warning(f"行动建议缓存写入失败: {cache_err}")
+                    
+                    msg = {
+                        'type': 'complete',
+                        'content': stream_result.get('content', '')
+                    }
+                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                    return
+                elif stream_result.get('type') == 'error':
+                    msg = {
+                        'type': 'error',
+                        'content': stream_result.get('content', '生成失败')
+                    }
+                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                    return
+        finally:
+            if acquired:
+                _llm_action_semaphore.release()
                 
     except Exception as e:
         error_msg = {
@@ -724,7 +800,7 @@ async def daily_fortune_calendar_test(request: DailyFortuneCalendarRequest):
 
 
 @router.post("/daily-fortune-calendar/stream", summary="流式查询每日运势日历")
-async def query_daily_fortune_calendar_stream(request: DailyFortuneCalendarRequest):
+async def query_daily_fortune_calendar_stream(request: DailyFortuneCalendarRequest, http_request: Request):
     """
     流式查询每日运势日历信息
     
@@ -752,7 +828,7 @@ async def query_daily_fortune_calendar_stream(request: DailyFortuneCalendarReque
     """
     try:
         return StreamingResponse(
-            daily_fortune_stream_generator(request),
+            daily_fortune_stream_generator(request, http_request=http_request),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",

@@ -344,14 +344,26 @@ class DailyFortuneCalendarService:
         )
         
         # 2. 先查缓存（L1内存 + L2 Redis）
+        has_user_info = user_solar_date and user_solar_time and user_gender
         try:
             from server.utils.cache_multi_level import get_multi_cache
             cache = get_multi_cache()
             cached_result = cache.get(cache_key)
             if cached_result:
-                # ✅ 修复：如果缓存的 weekday 为空，清除缓存并重新计算（修复旧缓存问题）
+                # ✅ 校验缓存数据完整性
+                cache_invalid = False
+                # 检查基础字段
                 if not cached_result.get('weekday') or not cached_result.get('weekday_en'):
                     logger.warning(f"⚠️  检测到缓存的 weekday 为空，清除缓存并重新计算: {cache_key}")
+                    cache_invalid = True
+                # ✅ 检查并行子任务字段：有用户信息时这些字段不应为 null
+                if has_user_info and not cache_invalid:
+                    required_user_fields = ['shishen_hint', 'zodiac_relations', 'jiazi_fortune', 'jianchu']
+                    missing = [f for f in required_user_fields if cached_result.get(f) is None]
+                    if missing:
+                        logger.warning(f"⚠️  检测到缓存数据不完整（缺失: {missing}），清除缓存并重新计算: {cache_key}")
+                        cache_invalid = True
+                if cache_invalid:
                     try:
                         cache.delete(cache_key)
                     except Exception as e:
@@ -371,19 +383,26 @@ class DailyFortuneCalendarService:
             birth_stem=birth_stem, wangshuai_data=wangshuai_data
         )
         
-        # 4. 写入缓存（仅成功时）
+        # 4. 写入缓存（仅成功且数据完整时）
         if result.get('success'):
-            try:
-                from server.utils.cache_multi_level import get_multi_cache
-                cache = get_multi_cache()
-                # 使用自定义TTL（24小时）
-                cache.l2.ttl = DailyFortuneCalendarService.CACHE_TTL
-                cache.set(cache_key, result)
-                # 恢复默认TTL
-                cache.l2.ttl = 3600
-            except Exception as e:
-                # 缓存写入失败不影响业务
-                logger.warning(f"⚠️  缓存写入失败（不影响业务）: {e}")
+            # ✅ 校验：有用户信息时，关键字段不能为 null 才写缓存
+            should_cache = True
+            if has_user_info:
+                required_user_fields = ['shishen_hint', 'zodiac_relations', 'jiazi_fortune', 'jianchu']
+                missing = [f for f in required_user_fields if result.get(f) is None]
+                if missing:
+                    logger.warning(f"⚠️  数据不完整（缺失: {missing}），跳过缓存写入，避免污染缓存: {cache_key}")
+                    should_cache = False
+            
+            if should_cache:
+                try:
+                    from server.utils.cache_multi_level import get_multi_cache
+                    cache = get_multi_cache()
+                    # ✅ 线程安全：通过参数传入 TTL，不修改全局 cache.l2.ttl
+                    cache.set(cache_key, result, ttl=DailyFortuneCalendarService.CACHE_TTL)
+                except Exception as e:
+                    # 缓存写入失败不影响业务
+                    logger.warning(f"⚠️  缓存写入失败（不影响业务）: {e}")
         
         return result
     
