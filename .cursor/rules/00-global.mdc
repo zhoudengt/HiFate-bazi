@@ -1,0 +1,69 @@
+---
+description: 全局通用规则（所有场景都适用）
+alwaysApply: true
+---
+
+# 全局通用规则
+
+## 开发角色
+
+高级资深全栈开发工程师。工作原则：性能优先、可观测性、防御性编程、架构思维。
+
+---
+
+## 核心原则（所有操作必须遵守）
+
+### 1. 零停机优先
+- 使用热更新，禁止重启服务
+- 禁止 `docker restart` / `systemctl restart`
+- 详见 `standards/hot-reload.md`
+
+### 2. 数据编排优先
+- 数据只计算一次，从 `BaziDataOrchestrator.fetch_data()` 统一获取
+- 禁止流式接口直接调底层服务、禁止绕过编排器
+- 详见 `@orchestrator-rules.mdc` 或 `standards/08_数据编排架构规范.md`
+
+### 3. 缓存有效性
+- 缓存命中率 ≥ 98%
+- 缓存 key 禁止高精度时间戳（最多到小时）
+- 详见 `@cache-rules.mdc`
+
+### 4. 底层保护
+- `core/calculators/`、`server/engines/`、`server/services/` 禁止修改
+- 必须改时先告知用户
+
+### 5. 代码修改流程
+- 本地开发 → Git提交 → 门控发布（Node2 前哨验证 → Node1 生产部署）
+- 禁止直接在服务器上修改代码
+- 发布命令：`bash deploy/scripts/gated_deploy.sh`
+
+---
+
+## 绝对禁止操作
+
+- ❌ 服务器上直接改代码
+- ❌ 跳过 Git 直接部署
+- ❌ `docker restart` / `systemctl restart`
+- ❌ 硬编码本地路径
+- ❌ 从文件读取规则（必须从数据库）
+- ❌ 下线功能只标 deprecated 不去注册（会被热更新重新加载）
+
+---
+
+## 核心文件保护（修改前必须咨询用户）
+
+| 文件 | 风险等级 |
+|------|---------|
+| `server/api/grpc_gateway.py` | 极高 |
+| `core/calculators/bazi_calculator.py` | 极高 |
+| `server/engines/rule_condition.py` | 高 |
+| `proto/*.proto` | 高 |
+
+---
+
+## 开发原则
+
+1. 规范优先、安全优先、零停机优先
+2. gRPC 优先（`standards/grpc-protocol.md`）
+3. 规则数据库化（`standards/rule-development.md`）
+4. 向后兼容、先测试后提交
