@@ -231,13 +231,13 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       # 微服务地址（内网）
-      BAZI_CORE_SERVICE_URL: bazi-core:9001
-      BAZI_FORTUNE_SERVICE_URL: bazi-fortune:9002
-      BAZI_ANALYZER_SERVICE_URL: bazi-analyzer:9003
-      BAZI_RULE_SERVICE_URL: rule-service:9004
-      FORTUNE_ANALYSIS_SERVICE_URL: fortune-analyzer:9005
+      BAZI_CORE_SERVICE_URL: bazi-compute:9001
+      BAZI_FORTUNE_SERVICE_URL: bazi-compute:9001
+      BAZI_ANALYZER_SERVICE_URL: bazi-compute:9001
+      FORTUNE_ANALYSIS_SERVICE_URL: bazi-compute:9001
+      BAZI_RULE_SERVICE_URL: rule-engine:9004
+      FORTUNE_RULE_SERVICE_URL: rule-engine:9004
       PAYMENT_SERVICE_URL: payment-service:9006
-      FORTUNE_RULE_SERVICE_URL: fortune-rule:9007
       INTENT_SERVICE_URL: intent-service:9008
       PROMPT_OPTIMIZER_SERVICE_URL: prompt-optimizer:9009
       DESK_FENGSHUI_SERVICE_URL: desk-fengshui:9010
@@ -273,8 +273,8 @@ services:
       retries: 3
       start_period: 60s
 
-  # 八字核心服务
-  bazi-core:
+  # 计算微服务（bazi-core + bazi-fortune + bazi-analyzer + fortune-analysis）
+  bazi-compute:
     environment:
       APP_ENV: production
       DEBUG: "False"
@@ -294,89 +294,19 @@ services:
       resources:
         limits:
           cpus: '1.0'
-          memory: 1G
+          memory: 800M
         reservations:
           cpus: '0.5'
-          memory: 512M
+          memory: 400M
     restart: always
-    volumes:
-      - ./logs/bazi-core:/app/logs
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
 
-  # 大运流年服务
-  bazi-fortune:
-    environment:
-      APP_ENV: production
-      DEBUG: "False"
-      LOG_LEVEL: WARNING
-      NODE_ROLE: ${NODE_ROLE:-master}
-      MYSQL_HOST: ${MYSQL_HOST:-mysql}
-      MYSQL_PORT: 3306
-      MYSQL_USER: ${MYSQL_USER:-bazi_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
-      REDIS_HOST: ${REDIS_HOST:-redis}
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      SERVICE_PORT: 9002
-      TZ: Asia/Shanghai
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    restart: always
-    volumes:
-      - ./logs/bazi-fortune:/app/logs
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  # 八字分析服务
-  bazi-analyzer:
-    environment:
-      APP_ENV: production
-      DEBUG: "False"
-      LOG_LEVEL: WARNING
-      NODE_ROLE: ${NODE_ROLE:-master}
-      MYSQL_HOST: ${MYSQL_HOST:-mysql}
-      MYSQL_PORT: 3306
-      MYSQL_USER: ${MYSQL_USER:-bazi_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
-      REDIS_HOST: ${REDIS_HOST:-redis}
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      SERVICE_PORT: 9003
-      TZ: Asia/Shanghai
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    restart: always
-    volumes:
-      - ./logs/bazi-analyzer:/app/logs
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  # 规则服务
-  rule-service:
+  # 规则引擎微服务（bazi-rule + fortune-rule）
+  rule-engine:
     environment:
       APP_ENV: production
       DEBUG: "False"
@@ -395,48 +325,12 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 1G
-        reservations:
           cpus: '0.5'
-          memory: 512M
-    restart: always
-    volumes:
-      - ./logs/bazi-rule:/app/logs
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  # 运势分析服务
-  fortune-analyzer:
-    environment:
-      APP_ENV: production
-      DEBUG: "False"
-      LOG_LEVEL: WARNING
-      NODE_ROLE: ${NODE_ROLE:-master}
-      MYSQL_HOST: ${MYSQL_HOST:-mysql}
-      MYSQL_PORT: 3306
-      MYSQL_USER: ${MYSQL_USER:-bazi_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
-      REDIS_HOST: ${REDIS_HOST:-redis}
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      SERVICE_PORT: 9005
-      TZ: Asia/Shanghai
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
+          memory: 400M
         reservations:
-          cpus: '0.5'
-          memory: 512M
+          cpus: '0.3'
+          memory: 200M
     restart: always
-    volumes:
-      - ./logs/fortune-analyzer:/app/logs
     depends_on:
       mysql:
         condition: service_healthy
@@ -471,40 +365,6 @@ services:
     restart: always
     volumes:
       - ./logs/payment-service:/app/logs
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  # 运势规则服务
-  fortune-rule:
-    environment:
-      APP_ENV: production
-      DEBUG: "False"
-      LOG_LEVEL: WARNING
-      NODE_ROLE: ${NODE_ROLE:-master}
-      MYSQL_HOST: ${MYSQL_HOST:-mysql}
-      MYSQL_PORT: 3306
-      MYSQL_USER: ${MYSQL_USER:-bazi_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
-      REDIS_HOST: ${REDIS_HOST:-redis}
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      SERVICE_PORT: 9007
-      TZ: Asia/Shanghai
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    restart: always
-    volumes:
-      - ./logs/fortune-rule:/app/logs
     depends_on:
       mysql:
         condition: service_healthy

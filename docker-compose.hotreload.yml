@@ -15,35 +15,14 @@ services:
       - ./services:/app/services:ro
       - ./core:/app/core:ro
 
-  bazi-analyzer:
+  bazi-compute:
     volumes:
       - ./server:/app/server:ro
       - ./src:/app/src:ro
       - ./services:/app/services:ro
       - ./core:/app/core:ro
 
-  fortune-analyzer:
-    volumes:
-      - ./server:/app/server:ro
-      - ./src:/app/src:ro
-      - ./services:/app/services:ro
-      - ./core:/app/core:ro
-
-  rule-service:
-    volumes:
-      - ./server:/app/server:ro
-      - ./src:/app/src:ro
-      - ./services:/app/services:ro
-      - ./core:/app/core:ro
-
-  bazi-core:
-    volumes:
-      - ./server:/app/server:ro
-      - ./src:/app/src:ro
-      - ./services:/app/services:ro
-      - ./core:/app/core:ro
-
-  bazi-fortune:
+  rule-engine:
     volumes:
       - ./server:/app/server:ro
       - ./src:/app/src:ro
@@ -51,13 +30,6 @@ services:
       - ./core:/app/core:ro
 
   payment-service:
-    volumes:
-      - ./server:/app/server:ro
-      - ./src:/app/src:ro
-      - ./services:/app/services:ro
-      - ./core:/app/core:ro
-
-  fortune-rule:
     volumes:
       - ./server:/app/server:ro
       - ./src:/app/src:ro

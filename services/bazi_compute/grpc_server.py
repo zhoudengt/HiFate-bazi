@@ -65,7 +65,7 @@ def serve(port: int = 9001):
             server_options=server_options,
             max_workers=20,
             check_interval=30,
-            listen_addr=f"localhost:{port}"
+            listen_addr=f"[::]:{port}"
         )
 
         # 额外注册 fortune、analyzer、fortune-analysis servicer
@@ -108,7 +108,7 @@ def serve(port: int = 9001):
         bazi_analyzer_pb2_grpc.add_BaziAnalyzerServiceServicer_to_server(BaziAnalyzerServicer(), server)
         fortune_analysis_pb2_grpc.add_FortuneAnalysisServiceServicer_to_server(FortuneAnalysisServicer(), server)
 
-        listen_addr = f"localhost:{port}"
+        listen_addr = f"[::]:{port}"
         server.add_insecure_port(listen_addr)
 
         server.start()

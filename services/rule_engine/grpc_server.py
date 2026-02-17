@@ -58,7 +58,7 @@ def serve(port: int = 9004):
             server_options=server_options,
             max_workers=20,
             check_interval=30,
-            listen_addr=f"localhost:{port}"
+            listen_addr=f"[::]:{port}"
         )
 
         # 额外注册 fortune-rule servicer
@@ -92,7 +92,7 @@ def serve(port: int = 9004):
         bazi_rule_pb2_grpc.add_BaziRuleServiceServicer_to_server(BaziRuleServicer(), server)
         fortune_rule_pb2_grpc.add_FortuneRuleServiceServicer_to_server(FortuneRuleServicer(), server)
 
-        listen_addr = f"localhost:{port}"
+        listen_addr = f"[::]:{port}"
         server.add_insecure_port(listen_addr)
 
         server.start()

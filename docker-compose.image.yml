@@ -10,54 +10,33 @@ services:
   web:
     image: ${DOCKER_IMAGE:-ghcr.io/owner/repo/hifate-bazi:latest}
     build: null  # 禁用构建，只使用镜像
-    
-  # 八字分析服务 - 使用镜像
-  bazi-analyzer:
+
+  # 计算微服务（bazi-core + bazi-fortune + bazi-analyzer + fortune-analysis）
+  bazi-compute:
     image: ${DOCKER_IMAGE:-ghcr.io/owner/repo/hifate-bazi:latest}
     build: null
-    
-  # 运势分析服务 - 使用镜像
-  fortune-analyzer:
+
+  # 规则引擎微服务（bazi-rule + fortune-rule）
+  rule-engine:
     image: ${DOCKER_IMAGE:-ghcr.io/owner/repo/hifate-bazi:latest}
     build: null
-    
-  # 规则服务 - 使用镜像
-  rule-service:
-    image: ${DOCKER_IMAGE:-ghcr.io/owner/repo/hifate-bazi:latest}
-    build: null
-    
-  # 八字核心服务 - 使用镜像
-  bazi-core:
-    image: ${DOCKER_IMAGE:-ghcr.io/owner/repo/hifate-bazi:latest}
-    build: null
-    
-  # 大运流年服务 - 使用镜像
-  bazi-fortune:
-    image: ${DOCKER_IMAGE:-ghcr.io/owner/repo/hifate-bazi:latest}
-    build: null
-    
+
   # 支付服务 - 使用镜像
   payment-service:
     image: ${DOCKER_IMAGE:-ghcr.io/owner/repo/hifate-bazi:latest}
     build: null
-    
-  # 运势规则服务 - 使用镜像
-  fortune-rule:
-    image: ${DOCKER_IMAGE:-ghcr.io/owner/repo/hifate-bazi:latest}
-    build: null
-    
+
   # 意图识别服务 - 使用镜像
   intent-service:
     image: ${DOCKER_IMAGE:-ghcr.io/owner/repo/hifate-bazi:latest}
     build: null
-    
+
   # 提示优化服务 - 使用镜像
   prompt-optimizer:
     image: ${DOCKER_IMAGE:-ghcr.io/owner/repo/hifate-bazi:latest}
     build: null
-    
+
   # 办公桌风水服务 - 使用镜像
   desk-fengshui:
     image: ${DOCKER_IMAGE:-ghcr.io/owner/repo/hifate-bazi:latest}
     build: null
-

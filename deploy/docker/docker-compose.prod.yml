@@ -33,6 +33,17 @@ services:
       INTENT_BOT_ID: ${INTENT_BOT_ID:-}
       FORTUNE_ANALYSIS_BOT_ID: ${FORTUNE_ANALYSIS_BOT_ID:-}
       DAILY_FORTUNE_ACTION_BOT_ID: ${DAILY_FORTUNE_ACTION_BOT_ID:-}
+      # 微服务地址
+      BAZI_CORE_SERVICE_URL: bazi-compute:9001
+      BAZI_FORTUNE_SERVICE_URL: bazi-compute:9001
+      BAZI_ANALYZER_SERVICE_URL: bazi-compute:9001
+      FORTUNE_ANALYSIS_SERVICE_URL: bazi-compute:9001
+      BAZI_RULE_SERVICE_URL: rule-engine:9004
+      FORTUNE_RULE_SERVICE_URL: rule-engine:9004
+      PAYMENT_SERVICE_URL: payment-service:9006
+      INTENT_SERVICE_URL: intent-service:9008
+      PROMPT_OPTIMIZER_SERVICE_URL: prompt-optimizer:9009
+      DESK_FENGSHUI_SERVICE_URL: desk-fengshui:9010
       TZ: Asia/Shanghai
     volumes:
       - web_logs:/app/logs
@@ -68,9 +79,9 @@ services:
   # ============================================
   # 微服务
   # ============================================
-  bazi-core:
+  bazi-compute:
     image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
-    container_name: hifate-bazi-core
+    container_name: hifate-bazi-compute
     ports:
       - "9001:9001"
     environment:
@@ -86,102 +97,28 @@ services:
       SERVICE_PORT: 9001
       TZ: Asia/Shanghai
     volumes:
-      - /opt/HiFate-bazi/core:/app/core:ro         # 核心计算模块
-      - /opt/HiFate-bazi/shared:/app/shared:ro      # 共享模块
-      - /opt/HiFate-bazi/proto:/app/proto:ro
-      - /opt/HiFate-bazi/services:/app/services:ro
-    command: python services/bazi_core/grpc_server.py --port 9001
-    restart: always
-    networks:
-      - hifate-network
-    deploy:
-      resources:
-        limits:
-          cpus: '0.3'
-          memory: 200M
-        reservations:
-          memory: 120M
-    depends_on:
-      mysql:
-        condition: service_healthy
-
-  bazi-fortune:
-    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
-    container_name: hifate-bazi-fortune
-    ports:
-      - "9002:9002"
-    environment:
-      APP_ENV: production
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      SERVICE_PORT: 9002
-      TZ: Asia/Shanghai
-    volumes:
       - /opt/HiFate-bazi/core:/app/core:ro
       - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
-    command: python services/bazi_fortune/grpc_server.py --port 9002
+    command: python services/bazi_compute/grpc_server.py --port 9001
     restart: always
     networks:
       - hifate-network
     deploy:
       resources:
         limits:
-          cpus: '0.3'
-          memory: 200M
+          cpus: '1.0'
+          memory: 800M
         reservations:
-          memory: 120M
+          memory: 400M
     depends_on:
       mysql:
         condition: service_healthy
 
-  bazi-analyzer:
+  rule-engine:
     image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
-    container_name: hifate-bazi-analyzer
-    ports:
-      - "9003:9003"
-    environment:
-      APP_ENV: production
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      SERVICE_PORT: 9003
-      TZ: Asia/Shanghai
-    volumes:
-      - /opt/HiFate-bazi/core:/app/core:ro
-      - /opt/HiFate-bazi/shared:/app/shared:ro
-      - /opt/HiFate-bazi/proto:/app/proto:ro
-      - /opt/HiFate-bazi/services:/app/services:ro
-    command: python services/bazi_analyzer/grpc_server.py --port 9003
-    restart: always
-    networks:
-      - hifate-network
-    deploy:
-      resources:
-        limits:
-          cpus: '0.3'
-          memory: 200M
-        reservations:
-          memory: 120M
-    depends_on:
-      mysql:
-        condition: service_healthy
-
-  rule-service:
-    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
-    container_name: hifate-rule-service
+    container_name: hifate-rule-engine
     ports:
       - "9004:9004"
     environment:
@@ -201,54 +138,17 @@ services:
       - /opt/HiFate-bazi/shared:/app/shared:ro
       - /opt/HiFate-bazi/proto:/app/proto:ro
       - /opt/HiFate-bazi/services:/app/services:ro
-    command: python services/bazi_rule/grpc_server.py --port 9004
+    command: python services/rule_engine/grpc_server.py --port 9004
     restart: always
     networks:
       - hifate-network
     deploy:
       resources:
         limits:
-          cpus: '0.3'
-          memory: 200M
+          cpus: '0.5'
+          memory: 400M
         reservations:
-          memory: 120M
-    depends_on:
-      mysql:
-        condition: service_healthy
-
-  fortune-analyzer:
-    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
-    container_name: hifate-fortune-analyzer
-    ports:
-      - "9005:9005"
-    environment:
-      APP_ENV: production
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      SERVICE_PORT: 9005
-      TZ: Asia/Shanghai
-    volumes:
-      - /opt/HiFate-bazi/core:/app/core:ro
-      - /opt/HiFate-bazi/shared:/app/shared:ro
-      - /opt/HiFate-bazi/proto:/app/proto:ro
-      - /opt/HiFate-bazi/services:/app/services:ro
-    command: python services/fortune_analysis/grpc_server.py --port 9005
-    restart: always
-    networks:
-      - hifate-network
-    deploy:
-      resources:
-        limits:
-          cpus: '0.3'
           memory: 200M
-        reservations:
-          memory: 120M
     depends_on:
       mysql:
         condition: service_healthy
@@ -284,42 +184,6 @@ services:
         limits:
           cpus: '0.3'
           memory: 200M
-        reservations:
-          memory: 120M
-    depends_on:
-      mysql:
-        condition: service_healthy
-
-  fortune-rule:
-    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-hifate}/hifate-bazi:${IMAGE_TAG:-latest}
-    container_name: hifate-fortune-rule
-    ports:
-      - "9007:9007"
-    environment:
-      APP_ENV: production
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_USER: ${MYSQL_USER:-root}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-hifate_bazi}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      SERVICE_PORT: 9007
-      TZ: Asia/Shanghai
-    volumes:
-      - /opt/HiFate-bazi/core:/app/core:ro
-      - /opt/HiFate-bazi/shared:/app/shared:ro
-      - /opt/HiFate-bazi/proto:/app/proto:ro
-      - /opt/HiFate-bazi/services:/app/services:ro
-    command: python services/fortune_rule/grpc_server.py --port 9007
-    restart: always
-    networks:
-      - hifate-network
-    deploy:
-      resources:
-        limits:
-          memory: 180M
         reservations:
           memory: 120M
     depends_on:

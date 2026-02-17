@@ -63,14 +63,14 @@ SERVICE_CONFIGS = {
     },
     "bazi-fortune": {
         "name": "bazi-fortune",
-        "port": 9002,
-        "description": "运势计算服务",
+        "port": 9001,
+        "description": "运势计算服务（已合并到 bazi-compute）",
         "env_key": "BAZI_FORTUNE_SERVICE_URL",
     },
     "bazi-analyzer": {
         "name": "bazi-analyzer",
-        "port": 9003,
-        "description": "八字分析服务",
+        "port": 9001,
+        "description": "八字分析服务（已合并到 bazi-compute）",
         "env_key": "BAZI_ANALYZER_SERVICE_URL",
     },
     "bazi-rule": {
