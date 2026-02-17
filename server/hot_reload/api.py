@@ -162,7 +162,7 @@ async def reload_endpoints():
         new_count = len(SUPPORTED_ENDPOINTS)
         
         # 如果重新加载后端点数量为0或缺少关键端点，手动注册关键端点
-        key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi', '/daily-fortune-calendar/query']
+        key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong', '/bazi/rizhu-liujiazi']
         missing_endpoints = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
         
         if new_count == 0 or missing_endpoints:
@@ -576,7 +576,7 @@ async def verify_after_reload():
     try:
         from server.api.grpc_gateway import SUPPORTED_ENDPOINTS
         endpoint_count = len(SUPPORTED_ENDPOINTS)
-        key_endpoints = ['/bazi/interface', '/daily-fortune-calendar/query']
+        key_endpoints = ['/bazi/interface', '/bazi/shengong-minggong']
         missing_eps = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
         
         if endpoint_count == 0:
