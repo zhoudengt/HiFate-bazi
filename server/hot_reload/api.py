@@ -168,18 +168,7 @@ async def reload_endpoints():
         if new_count == 0 or missing_endpoints:
             logger.warning(f"端点重新加载后数量为0或缺少关键端点（总数: {new_count}, 缺失: {missing_endpoints}），尝试手动注册端点...")
             try:
-                # 手动注册每日运势端点
-                if "/daily-fortune-calendar/query" in missing_endpoints:
-                    from server.api.v1.daily_fortune_calendar import (
-                        DailyFortuneCalendarRequest,
-                        query_daily_fortune_calendar,
-                    )
-                    async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
-                        """处理每日运势日历查询请求"""
-                        request_model = DailyFortuneCalendarRequest(**payload)
-                        return await query_daily_fortune_calendar(request_model)
-                    SUPPORTED_ENDPOINTS["/daily-fortune-calendar/query"] = _handle_daily_fortune_calendar_query
-                    logger.info("✅ 手动注册端点: /daily-fortune-calendar/query")
+                # [REMOVED] /daily-fortune-calendar/query 已下线
                 
                 new_count = len(SUPPORTED_ENDPOINTS)
             except Exception as e:

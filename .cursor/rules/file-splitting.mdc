@@ -1,0 +1,49 @@
+---
+description: 文件拆分/重构时的操作规范
+globs:
+alwaysApply: true
+---
+
+# 文件拆分规范
+
+## 核心原则
+
+**拆分文件时使用 shell 命令搬代码，不逐字重写。** 减少 token 消耗和出错概率。
+
+## 操作方式
+
+### 推荐（低成本、高准确性）
+
+```bash
+# 1. 用 sed/head/tail 提取指定行范围到新文件
+sed -n '100,200p' old_file.py > new_module.py
+
+# 2. 用 sed 添加文件头（imports/docstring）
+sed -i '1i\#!/usr/bin/env python3\n# -*- coding: utf-8 -*-' new_module.py
+
+# 3. 用 sed 批量替换（如 @app.get → @router.get）
+sed -i 's/@app\.get/@router.get/g' new_module.py
+
+# 4. 用 StrReplace 做精准小修改（如修改函数签名、添加参数）
+```
+
+### 禁止
+
+- ❌ 用 Write 工具逐字写出已存在的代码
+- ❌ 手动拷贝大段代码到新文件
+- ❌ 在 agent 响应中输出大段待写入的代码
+
+## 拆分流程
+
+1. **分析**：确定拆分方案（哪些函数/类搬到哪个模块）
+2. **提取**：用 shell 命令提取代码段到新文件
+3. **修饰**：添加 imports、docstring、调整缩进
+4. **瘦身**：在原文件中删除已搬出的代码，添加 import
+5. **验证**：运行导入测试 + 单元测试
+
+## 注意事项
+
+- Mixin 模式适合拆分大型类（保持公共 API 不变）
+- 拆分后的模块应通过 `__init__.py` 重新导出
+- 拆分前先做备份：`cp file.py file.py.bak`
+- 验证通过后删除备份

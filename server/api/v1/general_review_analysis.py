@@ -29,7 +29,7 @@ from server.services.health_analysis_service import HealthAnalysisService
 from server.services.rizhu_liujiazi_service import RizhuLiujiaziService
 from core.analyzers.fortune_relation_analyzer import FortuneRelationAnalyzer
 from server.utils.data_validator import validate_bazi_data
-from server.api.v1.xishen_jishen import get_xishen_jishen, XishenJishenRequest
+from server.api.v1.xishen_jishen import XishenJishenRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
 
 # 导入配置加载器（从数据库读取配置）
@@ -58,6 +58,10 @@ from server.utils.prompt_builders import (
     _simplify_dayun
 )
 from server.services.stream_call_logger import get_stream_call_logger
+from server.utils.analysis_helpers import (
+    extract_career_star, extract_wealth_star,
+    get_directions_from_elements, get_industries_from_elements,
+)
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -1487,65 +1491,6 @@ def analyze_wuxing_liutong(element_counts: dict, bazi_pillars: dict) -> dict:
         return {}
 
 
-def extract_career_star(ten_gods_stats: dict) -> dict:
-    """
-    提取事业星信息
-    事业星：正官、七杀、正印、偏印
-    """
-    result = {
-        'primary': '',
-        'secondary': '',
-        'positions': [],
-        'strength': '',
-        'description': ''
-    }
-    
-    zhengguan = ten_gods_stats.get('正官', 0)
-    qisha = ten_gods_stats.get('七杀', 0) + ten_gods_stats.get('偏官', 0)
-    zhengyin = ten_gods_stats.get('正印', 0)
-    pianyin = ten_gods_stats.get('偏印', 0)
-    
-    # 确定主要事业星
-    if zhengguan > 0 or qisha > 0:
-        if zhengguan >= qisha:
-            result['primary'] = '正官'
-            if qisha > 0:
-                result['secondary'] = '七杀'
-        else:
-            result['primary'] = '七杀'
-            if zhengguan > 0:
-                result['secondary'] = '正官'
-    elif zhengyin > 0 or pianyin > 0:
-        if zhengyin >= pianyin:
-            result['primary'] = '正印'
-        else:
-            result['primary'] = '偏印'
-    
-    return result
-
-
-def extract_wealth_star(ten_gods_stats: dict) -> dict:
-    """
-    提取财富星信息
-    财富星：正财、偏财
-    """
-    result = {
-        'primary': '',
-        'positions': [],
-        'strength': '',
-        'description': ''
-    }
-    
-    zhengcai = ten_gods_stats.get('正财', 0)
-    piancai = ten_gods_stats.get('偏财', 0)
-    
-    if zhengcai > 0 or piancai > 0:
-        if zhengcai >= piancai:
-            result['primary'] = '正财'
-        else:
-            result['primary'] = '偏财'
-    
-    return result
 
 
 def analyze_dayun_effect(dayun_sequence: List[dict], shiye_xing: dict, caifu_xing: dict, ten_gods_stats: dict) -> dict:
@@ -1695,55 +1640,6 @@ def analyze_ten_gods_effect(ten_gods_stats: dict, ten_gods_full: dict) -> dict:
     except Exception as e:
         logger.warning(f"分析十神对性格的影响失败: {e}")
         return {}
-
-
-def get_directions_from_elements(xi_elements: List[str], ji_elements: List[str]) -> dict:
-    """根据喜忌五行获取方位建议"""
-    ELEMENT_DIRECTION = {
-        '木': '东方',
-        '火': '南方',
-        '土': '中央',
-        '金': '西方',
-        '水': '北方'
-    }
-    
-    result = {
-        'best_directions': [],
-        'avoid_directions': [],
-        'analysis': ''
-    }
-    
-    for element in xi_elements:
-        direction = ELEMENT_DIRECTION.get(element)
-        if direction and direction not in result['best_directions']:
-            result['best_directions'].append(direction)
-    
-    for element in ji_elements:
-        direction = ELEMENT_DIRECTION.get(element)
-        if direction and direction not in result['avoid_directions']:
-            result['avoid_directions'].append(direction)
-    
-    return result
-
-
-def get_industries_from_elements(xi_elements: List[str], ji_elements: List[str]) -> dict:
-    """
-    根据喜忌五行获取行业建议（从数据库读取）
-    
-    Args:
-        xi_elements: 喜神五行列表，如 ['金', '土']
-        ji_elements: 忌神五行列表，如 ['木', '火']
-    
-    Returns:
-        dict: {
-            'best_industries': [...],      # 适合的行业列表
-            'secondary_industries': [],    # 次要行业（预留）
-            'avoid_industries': [...],     # 需要避免的行业列表
-            'analysis': ''                 # 分析说明（预留）
-        }
-    """
-    # 使用 IndustryService 从数据库查询行业数据
-    return IndustryService.get_industries_by_elements(xi_elements, ji_elements)
 
 
 def validate_general_review_input_data(data: dict) -> Tuple[bool, str]:

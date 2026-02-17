@@ -36,7 +36,7 @@ class BaziFortuneClient(BaseGrpcClient):
         super().__init__(
             service_name="bazi-fortune-service",
             env_key="BAZI_FORTUNE_SERVICE_URL",
-            default_port=9002,
+            default_port=9001,  # 已合并到 bazi-compute 单一服务
             base_url=base_url,
             timeout=timeout
         )

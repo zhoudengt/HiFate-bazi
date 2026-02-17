@@ -145,7 +145,9 @@ class XishenJishenResponse(BaseModel):
     error: Optional[str] = None
 
 
-@router.post("/bazi/xishen-jishen", response_model=XishenJishenResponse, summary="获取喜神忌神和十神命格", deprecated=True)
+# --- 内部函数（供编排器调用，不注册为 HTTP 端点） ---
+# [REMOVED] @router.post("/bazi/xishen-jishen", deprecated=True) 已下线
+
 async def get_xishen_jishen(request: XishenJishenRequest):
     """
     获取喜神五行、忌神五行和十神命格

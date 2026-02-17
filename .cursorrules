@@ -22,7 +22,7 @@
 
 - **规范入口**：`standards/README.md`
 - **部署**：`standards/deployment.md`、`deploy/docs/03-首次部署.md`
-- **开发流程**：部署/测试时用 `@release-workflow.mdc`；提交前用 `@dev-checklist.mdc`
+- **开发流程**：部署用 `@deploy.mdc`；提交前用 `@dev-checklist.mdc`
 
 ---
 
@@ -36,7 +36,7 @@
 
 ### 0. 代码修改流程
 > 本地开发 → Git提交 → **门控发布**（Node2 前哨验证 → Node1 生产部署）。禁止直接在服务器上修改代码。
-> 发布命令：`bash deploy/scripts/gated_deploy.sh`（自动识别 Phase 1/2 模式），详见 `@gated-deploy.mdc`。
+> 发布命令：`bash deploy/scripts/gated_deploy.sh`，详见 `@deploy.mdc`。
 > Phase 2 初始化：`bash deploy/scripts/init_staging.sh`（一次性，零停机）。
 
 ### 0.1 零停机原则
@@ -62,6 +62,7 @@
 2. gRPC 优先（`standards/grpc-protocol.md`）
 3. 规则数据库化（`standards/rule-development.md`）
 4. 向后兼容、先测试后提交
+5. **文件拆分用 shell 命令**（`cp`/`sed`/`head`/`tail` 搬代码，不逐字重写。减少 token 消耗和出错概率）
 
 ---
 
@@ -120,10 +121,15 @@
 
 | 用户说 | 执行 |
 |--------|------|
-| **芝麻开门** | `bash deploy/scripts/gated_deploy.sh`（门控发布） |
+| **芝麻开门** | `bash deploy/scripts/gated_deploy.sh` |
 | 芝麻开门 dry-run | `bash deploy/scripts/gated_deploy.sh --dry-run` |
 | 芝麻开门 紧急 | `bash deploy/scripts/gated_deploy.sh --skip-node2` |
 | 芝麻开门 回滚 | `bash deploy/scripts/gated_deploy.sh --rollback` |
+| **测试** | `python3 scripts/evaluation/api_regression_test.py --env production --category basic --category stream --category payment --parallel` |
+| 本地测试 | 同上，`--env local` |
+| 热更新 | `python3 scripts/ai/auto_hot_reload.py --trigger` |
+| 验证热更新 | `python3 scripts/ai/auto_hot_reload.py --verify` |
+| 提交前检查 | 加载 `@dev-checklist.mdc` |
 
 ---
 
@@ -131,8 +137,7 @@
 
 | 场景 | 引用 |
 |------|------|
-| 部署/测试 | `@release-workflow.mdc` |
-| 门控发布 | `@gated-deploy.mdc` |
+| 部署/门控发布 | `@deploy.mdc` |
 | 提交前检查 | `@dev-checklist.mdc` |
 | 修改缓存 | `@cache-rules.mdc` |
 | 修改 gRPC/API | `@grpc-rules.mdc` |

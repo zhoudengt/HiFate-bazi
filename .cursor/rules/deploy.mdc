@@ -1,0 +1,58 @@
+---
+description: 部署与上线流程（门控发布、热更新、验证）
+alwaysApply: false
+globs:
+  - deploy/**
+  - .github/workflows/**
+---
+
+# 部署与上线规范
+
+> 完整文档：`standards/deployment.md`、`docs/deploy/门控发布详细说明.md`
+
+## 核心流程
+
+```
+本地开发 → 热更新验证 → 功能测试 → Git 提交 → 门控发布 → 生产验证
+```
+
+**门控原则**：任何变更必须先在 Node2 部署并通过测试，才允许部署 Node1。
+
+---
+
+## 发布命令
+
+| 命令 | 说明 |
+|------|------|
+| `bash deploy/scripts/gated_deploy.sh` | 标准门控发布 |
+| `--dry-run` | 只在 Node2 验证 |
+| `--skip-node2` | 紧急修复（慎用） |
+| `--rollback` | 回滚 |
+
+---
+
+## 上线步骤速查
+
+1. **热更新验证**：`python3 scripts/ai/auto_hot_reload.py --trigger` + `--verify`
+2. **回归测试**：`python3 scripts/evaluation/api_regression_test.py --env production --category basic --category stream --category payment --parallel`
+3. **Git 提交** → `bash deploy/scripts/gated_deploy.sh`
+4. **生产验证**：health 接口 + 回归测试
+
+---
+
+## 热更新端点
+
+| 端点 | 用途 |
+|------|------|
+| `/hot-reload/reload-all` | 生产部署 |
+| `/hot-reload/verify` | 部署后验证 |
+| `/hot-reload/check` | 仅开发用 |
+
+---
+
+## 绝对禁止
+
+- ❌ 跳过 Node2 直接部署 Node1
+- ❌ 服务器上直接改代码
+- ❌ `docker restart`
+- ❌ 生产用 `/hot-reload/check`

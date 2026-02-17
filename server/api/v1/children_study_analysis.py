@@ -50,6 +50,9 @@ from server.utils.prompt_builders import (
     format_children_study_input_data_for_coze as format_input_data_for_coze,
     format_children_study_for_llm
 )
+from server.utils.analysis_helpers import (
+    _calculate_ganzhi_elements, analyze_dayun_bazi_relation, identify_key_dayuns,
+)
 
 # ✅ 性能优化：导入流式缓存工具
 from server.utils.stream_cache_helper import (
@@ -811,145 +814,6 @@ async def children_study_analysis_stream_generator(
         )
 
 
-def _calculate_ganzhi_elements(stem: str, branch: str) -> Dict[str, int]:
-    """
-    计算干支的五行分布
-    
-    Args:
-        stem: 天干
-        branch: 地支
-        
-    Returns:
-        dict: 五行统计，如 {'木': 1, '火': 1, '土': 0, '金': 0, '水': 0}
-    """
-    elements = {'木': 0, '火': 0, '土': 0, '金': 0, '水': 0}
-    
-    # 天干五行
-    if stem and stem in STEM_ELEMENTS:
-        element = STEM_ELEMENTS[stem]
-        elements[element] = elements.get(element, 0) + 1
-    
-    # 地支五行
-    if branch and branch in BRANCH_ELEMENTS:
-        element = BRANCH_ELEMENTS[branch]
-        elements[element] = elements.get(element, 0) + 1
-    
-    return elements
-
-
-def analyze_dayun_bazi_relation(
-    dayun: Dict[str, Any],
-    bazi_elements: Dict[str, int]
-) -> Optional[str]:
-    """
-    分析大运与原局的生克关系
-    
-    Args:
-        dayun: 大运信息（包含 stem, branch）
-        bazi_elements: 原局五行统计
-        
-    Returns:
-        关系类型字符串，如"水土混战"、"水火交战"等，如果没有特殊关系返回None
-    """
-    # 1. 计算大运的五行
-    dayun_stem = dayun.get('gan', dayun.get('stem', ''))
-    dayun_branch = dayun.get('zhi', dayun.get('branch', ''))
-    dayun_elements = _calculate_ganzhi_elements(dayun_stem, dayun_branch)
-    
-    # 2. 判断是否存在"混战"或"交战"关系
-    # 水土混战：大运土多 + 原局水多，或大运水多 + 原局土多
-    if (dayun_elements.get('土', 0) >= 2 and bazi_elements.get('水', 0) >= 2) or \
-       (dayun_elements.get('水', 0) >= 2 and bazi_elements.get('土', 0) >= 2):
-        return '水土混战'
-    
-    # 水火交战：大运火多 + 原局水多，或大运水多 + 原局火多
-    if (dayun_elements.get('火', 0) >= 2 and bazi_elements.get('水', 0) >= 2) or \
-       (dayun_elements.get('水', 0) >= 2 and bazi_elements.get('火', 0) >= 2):
-        return '水火交战'
-    
-    # 金木相战：大运金多 + 原局木多，或大运木多 + 原局金多
-    if (dayun_elements.get('金', 0) >= 2 and bazi_elements.get('木', 0) >= 2) or \
-       (dayun_elements.get('木', 0) >= 2 and bazi_elements.get('金', 0) >= 2):
-        return '金木相战'
-    
-    # 木土相战：大运木多 + 原局土多，或大运土多 + 原局木多
-    if (dayun_elements.get('木', 0) >= 2 and bazi_elements.get('土', 0) >= 2) or \
-       (dayun_elements.get('土', 0) >= 2 and bazi_elements.get('木', 0) >= 2):
-        return '木土相战'
-    
-    # 火金相战：大运火多 + 原局金多，或大运金多 + 原局火多
-    if (dayun_elements.get('火', 0) >= 2 and bazi_elements.get('金', 0) >= 2) or \
-       (dayun_elements.get('金', 0) >= 2 and bazi_elements.get('火', 0) >= 2):
-        return '火金相战'
-    
-    return None
-
-
-def identify_key_dayuns(
-    dayun_sequence: List[Dict[str, Any]],
-    bazi_elements: Dict[str, int],
-    current_age: int
-) -> Dict[str, Any]:
-    """
-    识别现行运和关键节点大运
-    
-    Args:
-        dayun_sequence: 大运序列
-        bazi_elements: 原局五行统计
-        current_age: 当前年龄
-        
-    Returns:
-        {
-            'current_dayun': {...},  # 现行运
-            'key_dayuns': [...]       # 关键节点大运列表
-        }
-    """
-    current_dayun = None
-    key_dayuns = []
-    
-    # 1. 识别现行运（排除"小运"）
-    for dayun in dayun_sequence:
-        # 跳过"小运"
-        if dayun.get('stem', '') == '小运' or dayun.get('gan', '') == '小运':
-            continue
-        
-        age_display = dayun.get('age_display', dayun.get('age_range', ''))
-        if age_display:
-            try:
-                parts = age_display.replace('岁', '').split('-')
-                if len(parts) == 2:
-                    start_age = int(parts[0])
-                    end_age = int(parts[1])
-                    if start_age <= current_age <= end_age:
-                        current_dayun = dayun
-                        break
-            except:
-                pass
-    
-    # 如果没找到，使用第一个非"小运"的大运
-    if not current_dayun and dayun_sequence:
-        for dayun in dayun_sequence:
-            if dayun.get('stem', '') != '小运' and dayun.get('gan', '') != '小运':
-                current_dayun = dayun
-                break
-    
-    # 2. 识别关键节点大运（与原局有特殊生克关系，排除"小运"）
-    for dayun in dayun_sequence:
-        # 跳过"小运"
-        if dayun.get('stem', '') == '小运' or dayun.get('gan', '') == '小运':
-            continue
-        
-        relation_type = analyze_dayun_bazi_relation(dayun, bazi_elements)
-        if relation_type:
-            key_dayuns.append({
-                **dayun,
-                'relation_type': relation_type
-            })
-    
-    return {
-        'current_dayun': current_dayun,
-        'key_dayuns': key_dayuns
-    }
 
 
 def build_children_study_input_data(

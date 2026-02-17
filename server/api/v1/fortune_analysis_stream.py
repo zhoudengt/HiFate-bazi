@@ -57,7 +57,7 @@ else:
 router = APIRouter()
 
 # 获取服务地址
-FORTUNE_ANALYSIS_SERVICE_URL = os.getenv("FORTUNE_ANALYSIS_SERVICE_URL", "localhost:9005")
+FORTUNE_ANALYSIS_SERVICE_URL = os.getenv("FORTUNE_ANALYSIS_SERVICE_URL", "localhost:9001")
 
 # 简单认证：API Key（必须从环境变量读取）
 # 安全规范：生产环境不允许使用默认值
@@ -122,7 +122,7 @@ def get_grpc_client():
         address = address[8:]
     
     if ":" not in address:
-        address = f"{address}:9005"
+        address = f"{address}:9001"
     
     return address
 

@@ -23,9 +23,14 @@ _spec = importlib.util.spec_from_file_location("grpc_gateway_file", _module_path
 _grpc_gateway_file = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_grpc_gateway_file)
 
-# 导出 router 和其他关键函数
+# 导出 router（热更新用）
 router = _grpc_gateway_file.router
-_ensure_endpoints_registered = _grpc_gateway_file._ensure_endpoints_registered
+
+# 端点注册表（与 grpc_gateway.py 和 handlers 使用的 endpoints 一致）
+from .endpoints import SUPPORTED_ENDPOINTS, _register
+
+# 热更新恢复函数
+from .recovery import _reload_endpoints, _ensure_endpoints_registered
 
 # 协议编解码
 from .protocol import (
@@ -44,9 +49,8 @@ from .protocol import (
     grpc_cors_headers,
 )
 
-# 端点注册
+# 端点注册（registry 为备用接口）
 from .registry import (
-    SUPPORTED_ENDPOINTS,
     register,
     clear_endpoints,
     get_endpoint,
@@ -61,6 +65,9 @@ __all__ = [
     # 向后兼容：从 grpc_gateway.py 导出
     'router',
     '_ensure_endpoints_registered',
+    '_reload_endpoints',
+    'SUPPORTED_ENDPOINTS',
+    '_register',
     # 协议编解码
     'encode_frontend_response',
     'write_varint',

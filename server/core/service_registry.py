@@ -81,8 +81,8 @@ SERVICE_CONFIGS = {
     },
     "fortune-analysis": {
         "name": "fortune-analysis",
-        "port": 9005,
-        "description": "运势分析服务",
+        "port": 9001,
+        "description": "运势分析服务（已合并到 bazi-compute）",
         "env_key": "FORTUNE_ANALYSIS_SERVICE_URL",
     },
     "payment": {
@@ -93,8 +93,8 @@ SERVICE_CONFIGS = {
     },
     "fortune-rule": {
         "name": "fortune-rule",
-        "port": 9007,
-        "description": "运势规则服务",
+        "port": 9004,  # 已合并到 rule-engine
+        "description": "运势规则服务（已合并到 rule-engine）",
         "env_key": "FORTUNE_RULE_SERVICE_URL",
     },
     "intent": {

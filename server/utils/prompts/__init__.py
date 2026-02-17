@@ -1,0 +1,9 @@
+"""Prompt 构建模块 - 按分析类型拆分"""
+
+from .common import *
+from .marriage import format_marriage_input_data_for_coze, format_marriage_for_llm
+from .career_wealth import format_career_wealth_input_data_for_coze, format_career_wealth_for_llm
+from .children_study import format_children_study_input_data_for_coze, format_children_study_for_llm
+from .health import build_health_prompt, format_health_input_data_for_coze, format_health_for_llm
+from .general_review import format_general_review_input_data_for_coze, format_general_review_for_llm
+from .other import format_smart_fortune_for_llm, format_annual_report_for_llm, format_face_analysis_input_data_for_coze, format_desk_fengshui_input_data_for_coze

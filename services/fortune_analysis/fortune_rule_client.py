@@ -39,7 +39,7 @@ class FortuneRuleClient:
             self.base_url = base_url
         else:
             # 从环境变量获取
-            self.base_url = os.getenv("FORTUNE_RULE_SERVICE_URL", "127.0.0.1:9007")
+            self.base_url = os.getenv("FORTUNE_RULE_SERVICE_URL", "127.0.0.1:9004")  # 已合并到 rule-engine
     
     def match_hand_rules(
         self,
