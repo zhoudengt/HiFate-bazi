@@ -5,6 +5,7 @@
 提供时区识别、时区转换、夏令时处理和真太阳时计算功能
 """
 
+import math
 import pytz
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
@@ -41,9 +42,17 @@ def get_timezone(location: Optional[str] = None,
     return "Asia/Shanghai"
 
 
+def _is_in_china(latitude: float, longitude: float) -> bool:
+    """粗略判断经纬度是否在中国境内（含港澳台）"""
+    return 18.0 <= latitude <= 54.0 and 73.0 <= longitude <= 136.0
+
+
 def calculate_timezone_from_coords(latitude: float, longitude: float) -> Optional[str]:
     """
     根据经纬度计算时区
+    
+    特殊处理：中国全境使用 UTC+8 (Asia/Shanghai)，不按经度切分。
+    其他地区按经度近似推算。
     
     Args:
         latitude: 纬度
@@ -52,14 +61,13 @@ def calculate_timezone_from_coords(latitude: float, longitude: float) -> Optiona
     Returns:
         时区字符串，如果无法计算则返回 None
     """
-    # 根据经度计算时区（每15度差1小时）
-    # UTC偏移量 = 经度 / 15
+    if _is_in_china(latitude, longitude):
+        return "Asia/Shanghai"
+
     utc_offset = round(longitude / 15)
-    
-    # 常见的时区映射（基于UTC偏移量）
-    # 注意：这只是近似值，实际时区可能因夏令时和历史原因有所不同
+
     timezone_map = {
-        -12: "Pacific/Auckland",  # 近似
+        -12: "Pacific/Auckland",
         -11: "Pacific/Honolulu",
         -10: "America/Anchorage",
         -9: "America/Los_Angeles",
@@ -85,12 +93,10 @@ def calculate_timezone_from_coords(latitude: float, longitude: float) -> Optiona
         11: "Pacific/Guadalcanal",
         12: "Pacific/Auckland",
     }
-    
-    # 查找最接近的UTC偏移量
+
     if utc_offset in timezone_map:
         return timezone_map[utc_offset]
-    
-    # 如果不在映射表中，尝试查找最接近的值
+
     closest_offset = min(timezone_map.keys(), key=lambda x: abs(x - utc_offset))
     return timezone_map[closest_offset]
 
@@ -161,27 +167,46 @@ def convert_to_utc(local_time_str: str,
         return datetime(year, month, day, hour, minute, 0), f"{timezone_str} (fallback)"
 
 
+def _equation_of_time(dt: datetime) -> float:
+    """
+    计算均时差（Equation of Time），单位：分钟。
+    
+    均时差 = 真太阳时 − 地方平太阳时
+    正值表示真太阳时快于平太阳时，负值表示慢于。
+    
+    使用 Spencer (1971) 近似公式，精度约 ±30 秒，满足八字排盘需求。
+    
+    Args:
+        dt: 日期时间对象
+    
+    Returns:
+        均时差（分钟），正值表示真太阳快于平太阳
+    """
+    day_of_year = dt.timetuple().tm_yday
+    B = 2 * math.pi * (day_of_year - 81) / 365.0
+    eot = (9.87 * math.sin(2 * B)
+           - 7.53 * math.cos(B)
+           - 1.50 * math.sin(B))
+    return eot
+
+
 def calculate_true_solar_time(utc_time: datetime, longitude: float) -> datetime:
     """
-    计算真太阳时
+    计算真太阳时（地方真太阳时）
     
-    真太阳时 = UTC时间 + 时差
-    时差 = (经度 - 120) * 4 分钟（120度是北京经度，每15度差1小时=60分钟，所以每度差4分钟）
+    真太阳时 = 地方平太阳时 + 均时差
+    地方平太阳时 = UTC + 经度×4 分钟
     
     Args:
         utc_time: UTC时间对象
-        longitude: 经度
+        longitude: 经度（东经为正，西经为负）
     
     Returns:
-        真太阳时时间对象
+        该经度处的地方真太阳时
     """
-    # 计算时差（分钟）
-    # 每15度经度差1小时，所以每度差4分钟
-    time_diff_minutes = (longitude - 120) * 4
-    
-    # 计算真太阳时
-    true_solar_time = utc_time + timedelta(minutes=time_diff_minutes)
-    
+    local_mean_solar_minutes = longitude * 4
+    eot = _equation_of_time(utc_time)
+    true_solar_time = utc_time + timedelta(minutes=local_mean_solar_minutes + eot)
     return true_solar_time
 
 
