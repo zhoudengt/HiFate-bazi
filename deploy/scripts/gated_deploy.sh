@@ -104,6 +104,13 @@ done
 
 # ==================== 加载配置 ====================
 
+# 自动加载 .env（敏感变量持久化在本地，已 gitignore）
+if [ -f "${PROJECT_ROOT}/.env" ]; then
+    set -a
+    source "${PROJECT_ROOT}/.env"
+    set +a
+fi
+
 CONFIG_FILE="${SCRIPT_DIR}/deploy.conf"
 if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
@@ -404,6 +411,9 @@ if [ "$SKIP_NODE2" = "false" ] && [ "$TEST_ONLY" = "false" ]; then
     echo -e "${BLUE}[Step 3/7] 部署到 Node2（前哨节点）${NC}"
     echo "----------------------------------------"
     
+    # 3.0 记录 compose 文件 hash（pull 前，用于检测基础设施变更）
+    NODE2_COMPOSE_HASH_BEFORE=$(gate_compose_hash node2_ssh "$PROJECT_DIR" "node2")
+    
     # 3.1 Git pull on Node2
     echo "在 Node2 上拉取代码..."
     node2_ssh "cd $PROJECT_DIR && \
@@ -449,7 +459,11 @@ print('OK')
     }
     echo -e "${GREEN}Node2 语法验证通过${NC}"
     
-    # 3.4 Node2 热更新
+    # 3.4 Compose 同步（若 compose 文件变更则重建容器，防止基础设施漂移）
+    echo ""
+    gate_compose_sync node2_ssh "$PROJECT_DIR" "node2" "$NODE2_COMPOSE_HASH_BEFORE" "Node2"
+    
+    # 3.5 Node2 热更新
     echo ""
     gate_hot_reload "$NODE2_PUBLIC_IP" "Node2" 2
     
@@ -543,6 +557,12 @@ fi
 echo -e "${BLUE}[Step 5/7] 部署到 Node1（生产节点）${NC}"
 echo "----------------------------------------"
 
+# Node1 SSH 包装（用于 gate_compose_sync）
+run_on_node1() { ssh_exec $NODE1_PUBLIC_IP "$@"; }
+
+# 记录 Node1 compose hash（pull 前，用于检测基础设施变更）
+NODE1_COMPOSE_HASH_BEFORE=$(gate_compose_hash run_on_node1 "$PROJECT_DIR" "node1")
+
 # 保存回滚点
 echo "$NODE1_BEFORE_COMMIT" > "${DEPLOY_LOG_DIR}/last_success_commit.txt"
 echo "回滚点已保存: ${NODE1_BEFORE_COMMIT:0:8}"
@@ -616,6 +636,10 @@ print('OK')
     
     NODE1_AFTER_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
     echo "live 版本: ${NODE1_AFTER_COMMIT:0:8}"
+    
+    # 5.5b Compose 同步（若 compose 文件变更则重建容器）
+    echo ""
+    gate_compose_sync run_on_node1 "$PROJECT_DIR" "node1" "$NODE1_COMPOSE_HASH_BEFORE" "Node1"
 
 else
     # ====== Phase 1 模式：直接 git pull（向后兼容） ======
@@ -637,6 +661,10 @@ else
     
     NODE1_AFTER_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
     echo "Node1 版本: ${NODE1_AFTER_COMMIT:0:8}"
+    
+    # 5.1b Compose 同步（若 compose 文件变更则重建容器）
+    echo ""
+    gate_compose_sync run_on_node1 "$PROJECT_DIR" "node1" "$NODE1_COMPOSE_HASH_BEFORE" "Node1"
 fi
 
 # 5.6 Node1 热更新（两种模式共用）
