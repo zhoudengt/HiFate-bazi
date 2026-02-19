@@ -179,6 +179,19 @@ class CacheReloader:
                             break
                     if deleted_count > 0:
                         logger.info(f"   ✓ 清理了 {deleted_count} 个 special_liunians 缓存键")
+                    # 清理大运流年相关缓存
+                    for pattern in ('bazi_data:*', 'bazi:base:*', 'bazi:dayun:*', 'bazi:full:*', 'bazi:ready:*', 'fortune_display:*'):
+                        cursor = 0
+                        dayun_liunian_deleted = 0
+                        while True:
+                            cursor, keys = redis_client.scan(cursor, match=pattern, count=100)
+                            if keys:
+                                redis_client.delete(*keys)
+                                dayun_liunian_deleted += len(keys)
+                            if cursor == 0:
+                                break
+                        if dayun_liunian_deleted > 0:
+                            logger.info(f"   ✓ 清理了 {dayun_liunian_deleted} 个 {pattern} 缓存键")
             except Exception as e:
                 logger.warning(f"   ⚠ Redis 特定缓存清理失败: {e}")
                 # 不设置 success = False，因为这是可选的
