@@ -773,8 +773,8 @@ class BaziCalculator:
         # ✅ 修复：增加最大年龄限制，确保能计算到2110年（对应126岁虚岁）
         # 将限制从120岁增加到150岁，以覆盖更远的年份
         max_age_limit = 150
-        # ✅ 虚岁计算：小运结束年龄 = 1 + 起运年数（使用qiyun_years，不考虑月份和天数）
-        first_end_age_virtual = 1 + qiyun_years  # 小运结束年龄（虚岁）
+        # ✅ 虚岁计算：小运结束年龄 = 第一个交运年的虚岁（与问真一致）
+        first_end_age_virtual = first_jiaoyun_year - birth_year + 1
 
         # 第一段：小运阶段（从 1 岁开始，虚岁）
         age_start = 1  # 虚岁从1开始
