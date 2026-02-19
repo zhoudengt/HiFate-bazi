@@ -93,11 +93,11 @@ def _calculate_default_liunian(year: int, birth_year: int, day_stem: str = None)
                     hidden_stars.append(hs_star)
 
         if day_stem:
-            star_fortune = sf_calc.get_fortune(day_stem, branch) or ''
+            star_fortune = sf_calc.get_stem_fortune(day_stem, branch) or ''
 
-        self_sitting = sf_calc.get_fortune(stem, branch) or ''
+        self_sitting = sf_calc.get_stem_fortune(stem, branch) or ''
 
-        kongwang = sf_calc.get_kongwang(f"{stem}{branch}") if hasattr(sf_calc, 'get_kongwang') else ''
+        kongwang = sf_calc.get_kongwang(f"{stem}{branch}")
 
         nayin = NAYIN_MAP.get((stem, branch), '')
 
