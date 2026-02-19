@@ -638,6 +638,16 @@ def _assemble_fortune_display_response(
             formatted['is_current'] = True
         formatted_dayun_list.append(formatted)
     
+    # 5.1 快速回填：为 liunian_sequence 为空的大运项从 liunian_simple 查表生成基础流年
+    bazi_pillars_for_calc = bazi_data.get('bazi_pillars', {})
+    day_stem_for_calc = bazi_pillars_for_calc.get('day', {}).get('stem', '')
+    for fmt_dayun in formatted_dayun_list:
+        if not fmt_dayun.get('liunian_sequence') and fmt_dayun.get('liunian_simple'):
+            fmt_dayun['liunian_sequence'] = [
+                _calculate_default_liunian(item['year'], birth_year, day_stem_for_calc)
+                for item in fmt_dayun['liunian_simple'] if item.get('year')
+            ]
+    
     # 6. 处理流年数据
     current_year = current_time.year
     

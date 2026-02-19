@@ -117,7 +117,43 @@ async def _handle_fortune(payload: Dict[str, Any]):
         set_cached_result(cache_key, result, L2_TTL)
     if result.get('success') and (conversion_info.get('converted') or conversion_info.get('timezone_info')):
         result['conversion_info'] = conversion_info
+    # 异步预热：后台用 quick_mode=False 计算完整数据并刷新缓存
+    if result.get('success'):
+        asyncio.ensure_future(_warmup_fortune_full(
+            final_solar_date, final_solar_time, request_model.gender,
+            current_time, cache_key
+        ))
     return result
+
+
+async def _warmup_fortune_full(solar_date, solar_time, gender, current_time, fortune_cache_key):
+    """后台预热：用 quick_mode=False 重新计算完整大运流年并刷新缓存"""
+    try:
+        from server.services.bazi_detail_service import BaziDetailService
+        from server.utils.cache_multi_level import get_multi_cache
+
+        await asyncio.sleep(0.5)
+
+        cache = get_multi_cache()
+        current_time_iso = current_time.strftime('%Y-%m-%d')
+        detail_cache_key = f"bazi_detail:{solar_date}:{solar_time}:{gender}:{current_time_iso}:all:all:full"
+
+        cache.delete(detail_cache_key)
+
+        loop = asyncio.get_event_loop()
+        full_detail = await loop.run_in_executor(
+            None,
+            BaziDetailService.calculate_detail_full,
+            solar_date, solar_time, gender, current_time,
+            None, None, False, False
+        )
+        if not full_detail:
+            return
+
+        cache.delete(fortune_cache_key)
+        logger.info(f"✅ [异步预热] detail 完整数据已就绪，fortune 缓存已清除待重建: {fortune_cache_key[:50]}...")
+    except Exception as e:
+        logger.warning(f"⚠️ [异步预热] fortune 预热失败（不影响业务）: {e}")
 
 
 @_register("/bazi/wangshuai")
