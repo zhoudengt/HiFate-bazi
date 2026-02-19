@@ -73,41 +73,34 @@ def _calculate_default_liunian(year: int, birth_year: int, day_stem: str = None)
     deities = []
     
     try:
-        # 导入计算器
-        from core.calculators.calculators.star_fortune_calculator import StarFortuneCalculator
-        from core.calculators.calculators.deities_calculator import DeitiesCalculator
-        from core.calculators.constants import HIDDEN_STEMS, NAYIN_MAP, TEN_GODS_MAP
-        
-        star_calc = StarFortuneCalculator()
-        deities_calc = DeitiesCalculator()
-        
-        # 计算十神（主星）
+        from core.data.constants import HIDDEN_STEMS, NAYIN_MAP
+        from core.config.ten_gods_config import TenGodsCalculator
+        from core.config.star_fortune_config import StarFortuneCalculator
+
+        tg_calc = TenGodsCalculator()
+        sf_calc = StarFortuneCalculator()
+
         if day_stem and stem:
-            main_star = TEN_GODS_MAP.get(day_stem, {}).get(stem, '')
-        
-        # 获取藏干
+            main_star = tg_calc.get_stem_ten_god(day_stem, stem) or ''
+
         hidden_stems = HIDDEN_STEMS.get(branch, [])
-        
-        # 计算藏干十神
+
         if day_stem and hidden_stems:
             for hs in hidden_stems:
-                hs_star = TEN_GODS_MAP.get(day_stem, {}).get(hs, '')
+                hs_char = hs[0] if isinstance(hs, str) and len(hs) > 0 else hs
+                hs_star = tg_calc.get_stem_ten_god(day_stem, hs_char) or ''
                 if hs_star:
                     hidden_stars.append(hs_star)
-        
-        # 计算星运（日主对地支的十二长生）
+
         if day_stem:
-            star_fortune = star_calc.get_stem_fortune(day_stem, branch)
-        
-        # 计算自坐（天干对地支的十二长生）
-        self_sitting = star_calc.get_stem_fortune(stem, branch)
-        
-        # 计算空亡
-        kongwang = star_calc.get_kongwang(f"{stem}{branch}")
-        
-        # 查询纳音
+            star_fortune = sf_calc.get_fortune(day_stem, branch) or ''
+
+        self_sitting = sf_calc.get_fortune(stem, branch) or ''
+
+        kongwang = sf_calc.get_kongwang(f"{stem}{branch}") if hasattr(sf_calc, 'get_kongwang') else ''
+
         nayin = NAYIN_MAP.get((stem, branch), '')
-        
+
     except Exception as e:
         logger.warning(f"计算默认流年详细信息失败: {e}")
     
