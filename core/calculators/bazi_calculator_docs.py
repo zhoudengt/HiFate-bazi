@@ -963,8 +963,8 @@ class BaziCalculator:
             is_branch_chong = BRANCH_CHONG.get(liunian_branch) == pillar_branch  # 地支相冲
             is_branch_he = BRANCH_LIUHE.get(liunian_branch) == pillar_branch  # 地支相合
             
-            # 2.3 天克地冲：天干相克（双向）且地支相冲
-            if (is_stem_ke or is_stem_ke_reverse) and is_branch_chong:
+            # 2.3 天克地冲：流年天干克四柱天干 且 地支相冲
+            if is_stem_ke and is_branch_chong:
                 relations.append({
                     "type": f"{pillar_name}-天克地冲",
                     "description": f"流年{liunian_stem}{liunian_branch}与{pillar_name}{pillar_stem}{pillar_branch}天克地冲"
