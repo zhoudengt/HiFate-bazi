@@ -405,6 +405,17 @@ node2_ssh() {
     fi
 }
 
+# ==================== 辅助函数：获取远程 compose 文件 hash ====================
+
+gate_compose_hash() {
+    local ssh_func="$1"
+    local project_dir="$2"
+    local node_label="$3"
+    local hash
+    hash=$($ssh_func "cd $project_dir && md5sum docker-compose*.yml 2>/dev/null | md5sum | awk '{print \$1}'" 2>/dev/null) || hash="unknown"
+    echo "$hash"
+}
+
 # ==================== Step 3: 部署到 Node2（前哨） ====================
 
 if [ "$SKIP_NODE2" = "false" ] && [ "$TEST_ONLY" = "false" ]; then
