@@ -182,7 +182,36 @@ def format_annual_report_for_llm(input_data: Dict[str, Any]) -> str:
         lines.append(f"本报告仅针对{target_year}年。以下所有数据（太岁、九宫飞星、流月、犯太岁属相等）已由系统精确计算完成。")
         lines.append(f"你必须严格使用下方数据输出报告，禁止替换为其他年份信息。若你的知识与下方数据冲突，以下方数据为准。")
         lines.append("")
-    
+
+    # 命主画像数据（用户分层 + 命盘状态标记，指导报告主线和叙事策略）
+    user_profile = input_data.get('user_profile', {})
+    if user_profile:
+        lines.append("【命主画像数据】")
+        gender_str = "男" if user_profile.get("gender") == "male" else "女"
+        age = user_profile.get("age", "")
+        if age:
+            lines.append(f"性别：{gender_str}，年龄：{age}岁（{user_profile.get('age_group', '')}）")
+        else:
+            lines.append(f"性别：{gender_str}")
+        focus = user_profile.get("focus_priority", [])
+        if focus:
+            main_topics = "、".join(focus[:2]) if len(focus) >= 2 else focus[0]
+            lines.append(f"报告主线（请重点展开）：{main_topics}；财运（常规输出）")
+        bazi_states = user_profile.get("bazi_states", {})
+        if bazi_states:
+            state_parts = [f"{k}:{v}" for k, v in bazi_states.items() if v and k != "health_focus"]
+            if state_parts:
+                lines.append(f"命盘状态标记：{'，'.join(state_parts)}")
+            health_focus = bazi_states.get("health_focus", [])
+            if health_focus:
+                lines.append(f"健康重点关注脏腑：{'、'.join(health_focus)}")
+        user_tags = user_profile.get("user_tags", {})
+        if user_tags:
+            tag_parts = [f"{k}:{v}" for k, v in user_tags.items() if v]
+            if tag_parts:
+                lines.append(f"用户自报状态：{'，'.join(tag_parts)}")
+        lines.append("")
+
     # 1. 命主基本信息
     bazi_pillars = mingpan.get('bazi_pillars', {})
     pillars_text = format_bazi_pillars_text(bazi_pillars)

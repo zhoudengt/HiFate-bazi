@@ -22,6 +22,11 @@ from server.utils.dayun_liunian_helper import calculate_user_age
 from core.data.stems_branches import BRANCH_ZODIAC
 from core.calculators.LunarConverter import LunarConverter
 
+try:
+    from server.services.user_profile_service import UserProfileService
+except ImportError:
+    UserProfileService = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,7 +43,10 @@ class AnnualReportService:
         gender: str = None,
         solar_date: str = None,
         solar_time: str = None,
-        target_year: int = None
+        target_year: int = None,
+        focus_tags: List[str] = None,
+        relationship_status: str = None,
+        career_status: str = None,
     ) -> Dict[str, Any]:
         """
         构建年运报告的输入数据
@@ -85,13 +93,38 @@ class AnnualReportService:
                 target_year=target_year
             )
             
-            # 6. 构建完整的input_data
+            # 6. 构建用户画像（新增，失败时降级为空字典，不影响其他模块）
+            user_profile = {}
+            try:
+                if UserProfileService is not None and solar_date:
+                    wangshuai_data = {}
+                    if isinstance(wangshuai_result, dict):
+                        if wangshuai_result.get('success') and 'data' in wangshuai_result:
+                            wangshuai_data = wangshuai_result.get('data', {})
+                        elif 'xi_shen' in wangshuai_result or 'wangshuai' in wangshuai_result:
+                            wangshuai_data = wangshuai_result
+                    user_profile = UserProfileService.build_user_profile(
+                        solar_date=solar_date,
+                        gender=gender or "male",
+                        bazi_data=bazi_data,
+                        wangshuai_data=wangshuai_data,
+                        target_year=target_year,
+                        focus_tags=focus_tags,
+                        relationship_status=relationship_status,
+                        career_status=career_status,
+                    )
+            except Exception as e:
+                logger.warning(f"构建用户画像失败，降级为空: {e}", exc_info=True)
+                user_profile = {}
+
+            # 7. 构建完整的input_data
             input_data = {
                 'mingpan_analysis': mingpan_analysis,
                 'monthly_analysis': monthly_analysis,
                 'taisui_info': taisui_info,
                 'fengshui_info': fengshui_info,
-                'dayun_liunian': dayun_liunian_data  # ⚠️ 新增：流年大运数据（含 relations）
+                'dayun_liunian': dayun_liunian_data,  # ⚠️ 新增：流年大运数据（含 relations）
+                'user_profile': user_profile,          # 用户画像（分层/状态标记）
             }
             
             return input_data

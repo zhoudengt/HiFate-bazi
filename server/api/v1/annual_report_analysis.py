@@ -9,7 +9,7 @@
 import logging
 import os
 import sys
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from fastapi.responses import StreamingResponse
@@ -51,6 +51,10 @@ class AnnualReportRequest(BaseModel):
     bot_id: Optional[str] = Field(None, description="Coze Bot ID（可选，默认使用数据库配置）")
     year: Optional[int] = Field(None, description="目标年份（可选，默认使用数据库配置 ANNUAL_REPORT_YEAR）")
     app_id: Optional[str] = Field(None, description="百炼智能体 App ID（可选，覆盖数据库配置）")
+    # 用户分层字段（可选，不传时行为与改动前完全一致）
+    focus_tags: Optional[List[str]] = Field(None, description="用户自选关注标签，如['事业','桃花']，优先级最高")
+    relationship_status: Optional[str] = Field(None, description="感情状态：single/dating/married")
+    career_status: Optional[str] = Field(None, description="职业状态：employed/unemployed/freelance/student")
 
 
 @router.post("/annual-report/test", summary="测试接口：返回格式化后的数据（用于 Coze Bot）")
@@ -159,7 +163,10 @@ async def annual_report_test(request: AnnualReportRequest):
             gender=request.gender,
             solar_date=final_solar_date,
             solar_time=final_solar_time,
-            target_year=target_year
+            target_year=target_year,
+            focus_tags=request.focus_tags,
+            relationship_status=request.relationship_status,
+            career_status=request.career_status,
         )
         
         # 6. 验证数据完整性
@@ -246,7 +253,10 @@ async def annual_report_stream(request: AnnualReportRequest):
             request.gender,
             request.bot_id,
             request.year,
-            request.app_id
+            request.app_id,
+            request.focus_tags,
+            request.relationship_status,
+            request.career_status,
         ),
         media_type="text/event-stream"
     )
@@ -258,7 +268,10 @@ async def annual_report_stream_generator(
     gender: str,
     bot_id: Optional[str] = None,
     year: Optional[int] = None,
-    app_id: Optional[str] = None
+    app_id: Optional[str] = None,
+    focus_tags: Optional[List[str]] = None,
+    relationship_status: Optional[str] = None,
+    career_status: Optional[str] = None,
 ):
     """流式生成年运报告的生成器（一级接口）"""
     try:
@@ -386,7 +399,10 @@ async def annual_report_stream_generator(
             gender=gender,
             solar_date=final_solar_date,
             solar_time=final_solar_time,
-            target_year=target_year
+            target_year=target_year,
+            focus_tags=focus_tags,
+            relationship_status=relationship_status,
+            career_status=career_status,
         )
         
         # 7. 验证数据完整性
