@@ -405,7 +405,7 @@ node2_ssh() {
     fi
 }
 
-# ==================== 辅助函数：获取远程 compose 文件 hash ====================
+# ==================== 辅助函数：compose 文件 hash 与同步 ====================
 
 gate_compose_hash() {
     local ssh_func="$1"
@@ -414,6 +414,28 @@ gate_compose_hash() {
     local hash
     hash=$($ssh_func "cd $project_dir && md5sum docker-compose*.yml 2>/dev/null | md5sum | awk '{print \$1}'" 2>/dev/null) || hash="unknown"
     echo "$hash"
+}
+
+gate_compose_sync() {
+    local ssh_func="$1"
+    local project_dir="$2"
+    local node_label="$3"
+    local hash_before="$4"
+    local display_name="$5"
+
+    local hash_after
+    hash_after=$($ssh_func "cd $project_dir && md5sum docker-compose*.yml 2>/dev/null | md5sum | awk '{print \$1}'" 2>/dev/null) || hash_after="unknown"
+
+    if [ "$hash_before" != "$hash_after" ] && [ "$hash_before" != "unknown" ] && [ "$hash_after" != "unknown" ]; then
+        echo -e "${YELLOW}检测到 $display_name compose 文件变更，执行容器重建...${NC}"
+        $ssh_func "cd $project_dir && docker compose up -d --build" || {
+            echo -e "${RED}$display_name 容器重建失败${NC}"
+            return 1
+        }
+        echo -e "${GREEN}$display_name 容器重建完成${NC}"
+    else
+        echo "$display_name compose 文件无变更，跳过容器重建"
+    fi
 }
 
 # ==================== Step 3: 部署到 Node2（前哨） ====================
