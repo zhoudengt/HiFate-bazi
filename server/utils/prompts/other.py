@@ -197,6 +197,12 @@ def format_annual_report_for_llm(input_data: Dict[str, Any]) -> str:
         if focus:
             main_topics = "、".join(focus[:2]) if len(focus) >= 2 else focus[0]
             lines.append(f"报告主线（请重点展开）：{main_topics}；财运（常规输出）")
+        # 学业/成长模块：明确告知LLM是否输出学业内容
+        age_val = user_profile.get("age", 0)
+        if age_val and int(age_val) > 25:
+            lines.append('人生大事-第五子模块：输出「自我成长」（命主已就业/成年，禁止出现"考试分数""学业成绩""升学"等学生场景描述）')
+        elif age_val:
+            lines.append('人生大事-第五子模块：输出「学业成长」（命主处于学龄阶段）')
         bazi_states = user_profile.get("bazi_states", {})
         if bazi_states:
             state_parts = [f"{k}:{v}" for k, v in bazi_states.items() if v and k != "health_focus"]

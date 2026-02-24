@@ -22,10 +22,7 @@ from server.utils.dayun_liunian_helper import calculate_user_age
 from core.data.stems_branches import BRANCH_ZODIAC
 from core.calculators.LunarConverter import LunarConverter
 
-try:
-    from server.services.user_profile_service import UserProfileService
-except ImportError:
-    UserProfileService = None
+# UserProfileService 使用延迟导入（在函数体内），避免模块级 ImportError 被 Python 缓存
 
 logger = logging.getLogger(__name__)
 
@@ -93,26 +90,35 @@ class AnnualReportService:
                 target_year=target_year
             )
             
-            # 6. 构建用户画像（新增，失败时降级为空字典，不影响其他模块）
+            # 6. 构建用户画像（延迟导入，确保热更新后新文件能被正确加载）
             user_profile = {}
             try:
-                if UserProfileService is not None and solar_date:
-                    wangshuai_data = {}
-                    if isinstance(wangshuai_result, dict):
-                        if wangshuai_result.get('success') and 'data' in wangshuai_result:
-                            wangshuai_data = wangshuai_result.get('data', {})
-                        elif 'xi_shen' in wangshuai_result or 'wangshuai' in wangshuai_result:
-                            wangshuai_data = wangshuai_result
-                    user_profile = UserProfileService.build_user_profile(
-                        solar_date=solar_date,
-                        gender=gender or "male",
-                        bazi_data=bazi_data,
-                        wangshuai_data=wangshuai_data,
-                        target_year=target_year,
-                        focus_tags=focus_tags,
-                        relationship_status=relationship_status,
-                        career_status=career_status,
-                    )
+                if solar_date:
+                    # 延迟导入：每次调用时尝试导入，避免模块级 ImportError 缓存问题
+                    try:
+                        from server.services.user_profile_service import UserProfileService as _UPS
+                    except ImportError:
+                        _UPS = None
+                    if _UPS is not None:
+                        wangshuai_data = {}
+                        if isinstance(wangshuai_result, dict):
+                            if wangshuai_result.get('success') and 'data' in wangshuai_result:
+                                wangshuai_data = wangshuai_result.get('data', {})
+                            elif 'xi_shen' in wangshuai_result or 'wangshuai' in wangshuai_result:
+                                wangshuai_data = wangshuai_result
+                        user_profile = _UPS.build_user_profile(
+                            solar_date=solar_date,
+                            gender=gender or "male",
+                            bazi_data=bazi_data,
+                            wangshuai_data=wangshuai_data,
+                            target_year=target_year,
+                            focus_tags=focus_tags,
+                            relationship_status=relationship_status,
+                            career_status=career_status,
+                        )
+                        logger.info(f"用户画像构建成功: age={user_profile.get('age')}, group={user_profile.get('age_group')}, focus={user_profile.get('focus_priority', [])[:2]}")
+                    else:
+                        logger.warning("UserProfileService 不可用（文件未找到），跳过画像构建")
             except Exception as e:
                 logger.warning(f"构建用户画像失败，降级为空: {e}", exc_info=True)
                 user_profile = {}
