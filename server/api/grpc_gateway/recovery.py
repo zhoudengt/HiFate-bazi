@@ -89,6 +89,7 @@ def _ensure_endpoints_registered() -> None:
         "/bazi/shengong-minggong",
         "/bazi/rizhu-liujiazi",
         "/api/v2/desk-fengshui/analyze",
+        "/daily-fortune-calendar/query",
     ]
 
     if len(SUPPORTED_ENDPOINTS) == 0:
@@ -218,7 +219,21 @@ def _manual_register_core_endpoints() -> None:
 def _register_missing_endpoints(missing_endpoints: list) -> None:
     """按需注册 _ensure_endpoints_registered 中发现的缺失端点。"""
 
-    # [REMOVED] /daily-fortune-calendar/query 已下线
+    if "/daily-fortune-calendar/query" in missing_endpoints:
+        try:
+            from server.api.v1.daily_fortune_calendar import DailyFortuneCalendarRequest, query_daily_fortune_calendar
+
+            async def _h_daily_fortune_query(payload: Dict[str, Any]):
+                request_model = DailyFortuneCalendarRequest(**payload)
+                result = await query_daily_fortune_calendar(request_model)
+                if hasattr(result, "model_dump"):
+                    return result.model_dump()
+                return result
+
+            SUPPORTED_ENDPOINTS["/daily-fortune-calendar/query"] = _h_daily_fortune_query
+            logger.info("✅ 手动注册端点: /daily-fortune-calendar/query")
+        except Exception as e:
+            logger.error(f"❌ 手动注册 /daily-fortune-calendar/query 失败: {e}", exc_info=True)
 
     if "/bazi/interface" in missing_endpoints:
         try:
@@ -399,10 +414,22 @@ def _make_daily_fortune_calendar_test() -> Callable:
     return handler
 
 
+def _make_daily_fortune_calendar_query() -> Callable:
+    from server.api.v1.daily_fortune_calendar import DailyFortuneCalendarRequest, query_daily_fortune_calendar
+
+    async def handler(payload: Dict[str, Any]):
+        result = await query_daily_fortune_calendar(DailyFortuneCalendarRequest(**payload))
+        if hasattr(result, "model_dump"):
+            return result.model_dump()
+        return result
+    return handler
+
+
 _DYNAMIC_REGISTRY: Dict[str, Callable[[], Callable]] = {
     "/bazi/rizhu-liujiazi": _make_rizhu_liujiazi,
     "/api/v2/desk-fengshui/analyze": _make_desk_fengshui,
     "/bazi/wuxing-proportion/test": _make_wuxing_proportion_test,
     "/bazi/xishen-jishen/test": _make_xishen_jishen_test,
     "/daily-fortune-calendar/test": _make_daily_fortune_calendar_test,
+    "/daily-fortune-calendar/query": _make_daily_fortune_calendar_query,
 }

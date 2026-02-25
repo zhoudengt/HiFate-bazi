@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+import logging
 
 # ✅ LLM 并发限制：最多 3 个 Coze 行动建议调用同时进行，防止线程池耗尽
 _llm_action_semaphore = asyncio.Semaphore(3)
@@ -40,6 +41,7 @@ except ImportError:
         raise ImportError("无法导入配置加载器，请确保 server.config.config_loader 模块可用")
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class DailyFortuneCalendarRequest(BaseModel):
@@ -141,6 +143,76 @@ class DailyFortuneCalendarResponse(BaseModel):
     guiren_fangwei: Optional[str] = None  # 贵人方位（逗号分隔）
     wenshen_directions: Optional[str] = None  # 瘟神方位（逗号分隔）
     error: Optional[str] = None
+
+
+@router.post("/daily-fortune-calendar/query", response_model=DailyFortuneCalendarResponse, summary="查询每日运势日历")
+@api_error_handler
+async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
+    """查询每日运势日历（与流式接口同数据源，一次返回完整数据）。"""
+    user_final_solar_date = request.solar_date
+    user_final_solar_time = request.solar_time
+    if request.solar_date and request.solar_time and request.gender:
+        try:
+            user_final_solar_date, user_final_solar_time, _ = BaziInputProcessor.process_input(
+                request.solar_date, request.solar_time, request.calendar_type or "solar",
+                request.location, request.latitude, request.longitude,
+            )
+        except Exception as e:
+            logger.warning(f"用户生辰转换失败，使用原始值: {e}")
+    query_date = request.date or get_current_date_str()
+    cache_key = generate_cache_key("dailycalendar", query_date, f"{user_final_solar_date or ''}_{user_final_solar_time or ''}_{request.gender or ''}")
+    cached = get_cached_result(cache_key, "daily-fortune-calendar")
+    if cached and cached.get("weekday") and cached.get("weekday_en"):
+        return DailyFortuneCalendarResponse(**cached)
+    result = DailyFortuneCalendarService.get_daily_fortune_calendar(
+        date_str=request.date,
+        user_solar_date=user_final_solar_date,
+        user_solar_time=user_final_solar_time,
+        user_gender=request.gender,
+    )
+    if not result.get("success"):
+        return DailyFortuneCalendarResponse(success=False, error=result.get("error", "获取每日运势失败"))
+    jianchu_info = result.get("jianchu")
+    jianchu_model = None
+    if isinstance(jianchu_info, str) and jianchu_info:
+        jianchu_dict = DailyFortuneCalendarService.get_jianchu_info(jianchu_info)
+        if jianchu_dict:
+            jianchu_info = jianchu_dict
+    if jianchu_info and isinstance(jianchu_info, dict):
+        jianchu_model = JianchuInfo(
+            name=jianchu_info.get("name"), energy=jianchu_info.get("energy"), summary=jianchu_info.get("summary")
+        )
+    master_info = result.get("master_info")
+    master_info_model = None
+    if master_info and isinstance(master_info, dict):
+        master_info_model = MasterInfo(rizhu=master_info.get("rizhu"), today_shishen=master_info.get("today_shishen"))
+    response_dict = {
+        "success": True,
+        "solar_date": result.get("solar_date"),
+        "lunar_date": result.get("lunar_date"),
+        "weekday": result.get("weekday"),
+        "weekday_en": result.get("weekday_en"),
+        "year_pillar": result.get("year_pillar"),
+        "month_pillar": result.get("month_pillar"),
+        "day_pillar": result.get("day_pillar"),
+        "yi": result.get("yi", []),
+        "ji": result.get("ji", []),
+        "luck_level": result.get("luck_level"),
+        "deities": result.get("deities", {}),
+        "chong_he_sha": result.get("chong_he_sha", {}),
+        "jianchu": jianchu_model,
+        "taishen": result.get("taishen"),
+        "taishen_explanation": result.get("taishen_explanation"),
+        "jiazi_fortune": result.get("jiazi_fortune"),
+        "shishen_hint": result.get("shishen_hint"),
+        "zodiac_relations": result.get("zodiac_relations"),
+        "master_info": master_info_model,
+        "wuxing_wear": result.get("wuxing_wear") or None,
+        "guiren_fangwei": result.get("guiren_fangwei"),
+        "wenshen_directions": result.get("wenshen_directions"),
+    }
+    set_cached_result(cache_key, response_dict, L2_TTL)
+    return DailyFortuneCalendarResponse(**response_dict)
 
 
 class ActionSuggestionsRequest(BaseModel):

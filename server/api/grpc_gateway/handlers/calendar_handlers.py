@@ -10,6 +10,7 @@ from server.api.v1.calendar_api import CalendarRequest, query_calendar
 from server.api.v1.daily_fortune_calendar import (
     DailyFortuneCalendarRequest,
     daily_fortune_calendar_test,
+    query_daily_fortune_calendar,
 )
 
 
@@ -18,6 +19,16 @@ async def _handle_calendar_query(payload: Dict[str, Any]):
     """处理万年历查询请求"""
     request_model = CalendarRequest(**payload)
     return await query_calendar(request_model)
+
+
+@_register("/daily-fortune-calendar/query")
+async def _handle_daily_fortune_calendar_query(payload: Dict[str, Any]):
+    """处理每日运势查询请求"""
+    request_model = DailyFortuneCalendarRequest(**payload)
+    result = await query_daily_fortune_calendar(request_model)
+    if hasattr(result, "model_dump"):
+        return result.model_dump()
+    return result
 
 
 @_register("/daily-fortune-calendar/test")
