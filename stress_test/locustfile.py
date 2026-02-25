@@ -114,6 +114,185 @@ class WebsiteUser(HttpUser):
             else:
                 response.failure(f"HTTP错误: {response.status_code}")
     
+    # ===== 基础接口 =====
+    @task(4)
+    def test_pan_display(self):
+        """基本排盘"""
+        from utils.data_generator import DataGenerator
+        req = DataGenerator.generate_bazi_request()
+        self._post_json_check("/api/v1/bazi/pan/display", req, "基本排盘")
+
+    @task(4)
+    def test_fortune_display(self):
+        """专业排盘-大运流年流月"""
+        from utils.data_generator import DataGenerator
+        req = DataGenerator.generate_bazi_request()
+        self._post_json_check("/api/v1/bazi/fortune/display", req, "专业排盘")
+
+    @task(4)
+    def test_shengong_minggong(self):
+        """身宫命宫胎元"""
+        from utils.data_generator import DataGenerator
+        req = DataGenerator.generate_bazi_request()
+        self._post_json_check("/api/v1/bazi/shengong-minggong", req, "身宫命宫")
+
+    @task(4)
+    def test_rizhu_liujiazi(self):
+        """日元六十甲子"""
+        from utils.data_generator import DataGenerator
+        req = DataGenerator.generate_bazi_request()
+        self._post_json_check("/api/v1/bazi/rizhu-liujiazi", req, "日元六十甲子")
+
+    # ===== 流式接口（需消费响应体）=====
+    @task(3)
+    def test_wuxing_proportion_stream(self):
+        """五行占比流式"""
+        from utils.data_generator import DataGenerator
+        req = DataGenerator.generate_bazi_request()
+        self._post_stream_check("/api/v1/bazi/wuxing-proportion/stream", req, "五行占比流式")
+
+    @task(3)
+    def test_xishen_jishen_stream(self):
+        """喜神忌神流式"""
+        from utils.data_generator import DataGenerator
+        req = DataGenerator.generate_bazi_request()
+        self._post_stream_check("/api/v1/bazi/xishen-jishen/stream", req, "喜神忌神流式")
+
+    @task(2)
+    def test_marriage_stream(self):
+        """感情婚姻流式"""
+        from utils.data_generator import DataGenerator
+        req = DataGenerator.generate_bazi_request()
+        self._post_stream_check("/api/v1/bazi/marriage-analysis/stream", req, "婚姻流式")
+
+    @task(2)
+    def test_career_wealth_stream(self):
+        """事业财富流式"""
+        from utils.data_generator import DataGenerator
+        req = DataGenerator.generate_bazi_request()
+        self._post_stream_check("/api/v1/career-wealth/stream", req, "事业流式")
+
+    @task(2)
+    def test_children_study_stream(self):
+        """子女学习流式"""
+        from utils.data_generator import DataGenerator
+        req = DataGenerator.generate_bazi_request()
+        self._post_stream_check("/api/v1/children-study/stream", req, "子女流式")
+
+    @task(2)
+    def test_health_stream(self):
+        """身体健康流式"""
+        from utils.data_generator import DataGenerator
+        req = DataGenerator.generate_bazi_request()
+        self._post_stream_check("/api/v1/health/stream", req, "健康流式")
+
+    @task(2)
+    def test_general_review_stream(self):
+        """总评分析流式"""
+        from utils.data_generator import DataGenerator
+        req = DataGenerator.generate_bazi_request()
+        self._post_stream_check("/api/v1/general-review/stream", req, "总评流式")
+
+    @task(2)
+    def test_annual_report_stream(self):
+        """年运报告流式"""
+        from utils.data_generator import DataGenerator
+        req = DataGenerator.generate_bazi_request()
+        self._post_stream_check("/api/v1/annual-report/stream", req, "年运流式")
+
+    @task(2)
+    def test_daily_fortune_stream(self):
+        """每日运势日历流式"""
+        from utils.data_generator import DataGenerator
+        req = DataGenerator.generate_daily_fortune_stream_request()
+        self._post_stream_check("/api/v1/daily-fortune-calendar/stream", req, "每日运势流式")
+
+    # ===== 面相/办公桌风水（multipart）=====
+    @task(1)
+    def test_face_analyze_stream(self):
+        """面相分析流式"""
+        self._post_multipart_stream("/api/v2/face/analyze/stream", {"analysis_types": "gongwei,liuqin"}, "面相流式")
+
+    @task(1)
+    def test_desk_fengshui_stream(self):
+        """办公桌风水流式"""
+        self._post_multipart_stream("/api/v2/desk-fengshui/analyze/stream", {}, "办公桌风水流式")
+
+    # ===== 支付接口 =====
+    @task(2)
+    def test_payment_providers(self):
+        """支付渠道状态"""
+        with self.client.get("/api/v1/payment/providers", catch_response=True, name="支付渠道") as r:
+            self._check_http_200(r)
+
+    @task(1)
+    def test_payment_create(self):
+        """Stripe创建订单"""
+        from utils.data_generator import DataGenerator
+        req = DataGenerator.generate_payment_create_request()
+        with self.client.post("/api/v1/payment/unified/create", json=req, catch_response=True, name="支付创建") as r:
+            self._check_http_200(r)
+
+    # ===== 辅助方法 =====
+    def _post_json_check(self, path, payload, name):
+        with self.client.post(path, json=payload, catch_response=True, name=name) as r:
+            if r.status_code == 200:
+                try:
+                    d = r.json()
+                    if d.get("success", False):
+                        r.success()
+                    else:
+                        r.failure(d.get("message", "业务失败"))
+                except Exception as e:
+                    r.failure(str(e))
+            elif r.status_code == 429:
+                r.failure("限流")
+            else:
+                r.failure(f"HTTP{r.status_code}")
+
+    def _post_stream_check(self, path, payload, name):
+        with self.client.post(path, json=payload, stream=True, catch_response=True, name=name, timeout=100) as r:
+            if r.status_code != 200:
+                r.failure(f"HTTP{r.status_code}")
+            else:
+                n = 0
+                for _ in r.iter_lines(decode_unicode=True):
+                    n += 1
+                    if n > 100:
+                        break
+                r.success()
+
+    def _post_multipart_stream(self, path, form_data, name):
+        import base64
+        from utils.data_generator import DataGenerator
+        raw = base64.b64decode(DataGenerator.get_minimal_png_base64())
+        files = {"image": ("test.png", raw, "image/png")}
+        with self.client.post(path, files=files, data=form_data, stream=True, catch_response=True, name=name, timeout=90) as r:
+            if r.status_code != 200:
+                r.failure(f"HTTP{r.status_code}")
+            else:
+                n = 0
+                for _ in r.iter_lines(decode_unicode=True):
+                    n += 1
+                    if n > 50:
+                        break
+                r.success()
+
+    def _check_http_200(self, r):
+        if r.status_code == 200:
+            try:
+                d = r.json()
+                if d.get("success", True):
+                    r.success()
+                else:
+                    r.failure(d.get("message", "业务失败"))
+            except Exception:
+                r.success()
+        elif r.status_code == 429:
+            r.failure("限流")
+        else:
+            r.failure(f"HTTP{r.status_code}")
+
     # 健康检查任务（权重10%）
     @task(10)
     def test_health_check(self):

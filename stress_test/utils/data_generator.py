@@ -168,6 +168,37 @@ class DataGenerator:
                 request_data["longitude"] = longitude
         
         return request_data
+
+    @classmethod
+    def generate_daily_fortune_stream_request(cls) -> Dict[str, Any]:
+        """生成每日运势流式接口请求（需含 date、solar_date、solar_time、gender）"""
+        days_offset = random.randint(-30, 30)
+        query_date = datetime.now() + timedelta(days=days_offset)
+        return {
+            "date": query_date.strftime("%Y-%m-%d"),
+            "solar_date": cls.generate_birth_date(),
+            "solar_time": cls.generate_birth_time(),
+            "gender": cls.generate_gender(),
+            "calendar_type": cls.generate_calendar_type(),
+        }
+
+    @classmethod
+    def generate_payment_create_request(cls) -> Dict[str, Any]:
+        """生成支付创建订单请求（Stripe 测试用）"""
+        return {
+            "provider": "stripe",
+            "amount": "4.10",
+            "currency": "USD",
+            "product_name": "压测产品",
+            "customer_email": "stress_test@example.com",
+            "success_url": "http://localhost:5173/payment/success?session_id={CHECKOUT_SESSION_ID}",
+            "cancel_url": "http://localhost:5173/payment/cancel",
+        }
+
+    @staticmethod
+    def get_minimal_png_base64() -> str:
+        """最小 1x1 PNG Base64（面相/风水等文件上传用）"""
+        return "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
     
     @staticmethod
     def generate_test_scenarios() -> List[Dict[str, Any]]:
