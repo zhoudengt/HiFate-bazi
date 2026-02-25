@@ -9,6 +9,7 @@ import sys
 import os
 import hashlib
 import logging
+import threading
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime, date
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -28,6 +29,10 @@ class DailyFortuneCalendarService:
     
     # Redis缓存TTL（24小时，因为每日运势每天变化）
     CACHE_TTL = 86400
+
+    # single-flight：防止同一 key 被并发击穿，只有一个线程去计算，其余等结果
+    _inflight_locks: Dict[str, threading.Lock] = {}
+    _inflight_meta_lock: threading.Lock = threading.Lock()
     
     @staticmethod
     def _generate_cache_key(
@@ -376,35 +381,54 @@ class DailyFortuneCalendarService:
             # Redis不可用，降级到数据库查询
             logger.warning(f"⚠️  Redis缓存不可用，降级到数据库查询: {e}")
         
-        # 3. 缓存未命中或缓存数据不完整，查询数据库
-        #    ✅ 传入预计算数据（数据总线模式），避免重复计算
-        result = DailyFortuneCalendarService._query_from_database(
-            date_str, user_solar_date, user_solar_time, user_gender,
-            birth_stem=birth_stem, wangshuai_data=wangshuai_data
-        )
-        
-        # 4. 写入缓存（仅成功且数据完整时）
-        if result.get('success'):
-            # ✅ 校验：有用户信息时，关键字段不能为 null 才写缓存
-            should_cache = True
-            if has_user_info:
-                required_user_fields = ['shishen_hint', 'zodiac_relations', 'jiazi_fortune', 'jianchu']
-                missing = [f for f in required_user_fields if result.get(f) is None]
-                if missing:
-                    logger.warning(f"⚠️  数据不完整（缺失: {missing}），跳过缓存写入，避免污染缓存: {cache_key}")
-                    should_cache = False
-            
-            if should_cache:
-                try:
-                    from server.utils.cache_multi_level import get_multi_cache
-                    cache = get_multi_cache()
-                    # ✅ 线程安全：通过参数传入 TTL，不修改全局 cache.l2.ttl
-                    cache.set(cache_key, result, ttl=DailyFortuneCalendarService.CACHE_TTL)
-                except Exception as e:
-                    # 缓存写入失败不影响业务
-                    logger.warning(f"⚠️  缓存写入失败（不影响业务）: {e}")
-        
-        return result
+        # 3. 缓存未命中：single-flight 防击穿
+        #    同一 cache_key 只有一个线程真正计算，其余线程等它写完缓存后直接读缓存
+        with DailyFortuneCalendarService._inflight_meta_lock:
+            if cache_key not in DailyFortuneCalendarService._inflight_locks:
+                DailyFortuneCalendarService._inflight_locks[cache_key] = threading.Lock()
+            key_lock = DailyFortuneCalendarService._inflight_locks[cache_key]
+
+        with key_lock:
+            # 二次检查缓存：可能前一个线程已经算完并写入了
+            try:
+                from server.utils.cache_multi_level import get_multi_cache
+                cache = get_multi_cache()
+                cached_result = cache.get(cache_key)
+                if cached_result and cached_result.get('weekday') and cached_result.get('weekday_en'):
+                    if not has_user_info:
+                        return cached_result
+                    required_user_fields = ['shishen_hint', 'zodiac_relations', 'jiazi_fortune', 'jianchu']
+                    if all(cached_result.get(f) is not None for f in required_user_fields):
+                        return cached_result
+            except Exception:
+                pass
+
+            # 真正计算（同一 key 只有一个线程会执行到这里）
+            result = DailyFortuneCalendarService._query_from_database(
+                date_str, user_solar_date, user_solar_time, user_gender,
+                birth_stem=birth_stem, wangshuai_data=wangshuai_data
+            )
+
+            # 4. 写入缓存（仅成功且数据完整时）
+            if result.get('success'):
+                # ✅ 校验：有用户信息时，关键字段不能为 null 才写缓存
+                should_cache = True
+                if has_user_info:
+                    required_user_fields = ['shishen_hint', 'zodiac_relations', 'jiazi_fortune', 'jianchu']
+                    missing = [f for f in required_user_fields if result.get(f) is None]
+                    if missing:
+                        logger.warning(f"⚠️  数据不完整（缺失: {missing}），跳过缓存写入，避免污染缓存: {cache_key}")
+                        should_cache = False
+
+                if should_cache:
+                    try:
+                        from server.utils.cache_multi_level import get_multi_cache
+                        cache = get_multi_cache()
+                        cache.set(cache_key, result, ttl=DailyFortuneCalendarService.CACHE_TTL)
+                    except Exception as e:
+                        logger.warning(f"⚠️  缓存写入失败（不影响业务）: {e}")
+
+            return result
     
     @staticmethod
     def calculate_liunian_liuyue_liuri(target_date: date) -> Tuple[str, str, str]:

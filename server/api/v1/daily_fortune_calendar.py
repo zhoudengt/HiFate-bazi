@@ -25,6 +25,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.daily_fortune_calendar_service import DailyFortuneCalendarService
+from server.utils.async_executor import get_executor
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.api_cache_helper import (
@@ -382,10 +383,12 @@ async def daily_fortune_stream_generator(
         has_user_info = request.solar_date and request.solar_time and request.gender
         
         # 2. 获取每日运势数据（直接调 service，固定数据秒出；service 内部 L1+L2 缓存 + 本地 lunar_python + DB）
+        # ✅ 使用项目统一线程池 get_executor()，避免 run_in_executor(None) 默认池过小导致高并发下排队 ~60s
         loop = asyncio.get_event_loop()
+        executor = get_executor()
         if has_user_info:
             result = await loop.run_in_executor(
-                None,
+                executor,
                 lambda: DailyFortuneCalendarService.get_daily_fortune_calendar(
                     date_str=request.date,
                     user_solar_date=request.solar_date,
@@ -395,7 +398,7 @@ async def daily_fortune_stream_generator(
             )
         else:
             result = await loop.run_in_executor(
-                None,
+                executor,
                 lambda: DailyFortuneCalendarService.get_daily_fortune_calendar(
                     date_str=request.date,
                     user_solar_date=None,
