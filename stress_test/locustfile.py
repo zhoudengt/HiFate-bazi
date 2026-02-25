@@ -25,19 +25,41 @@ class WebsiteUser(HttpUser):
     # 请求间隔：1-3秒（避免触发限流）
     wait_time = between(1, 3)
     
+    _user_counter = 0
+    _counter_lock = __import__("threading").Lock()
+
     def on_start(self):
-        """用户启动时执行"""
-        # 可以在这里添加登录等初始化操作（如果需要）
-        pass
+        """用户启动时执行：分配唯一用户索引与档案，保证 300 用户不重复、请求扰动后不命中缓存。"""
+        with self._counter_lock:
+            self._user_index = WebsiteUser._user_counter
+            WebsiteUser._user_counter += 1
+        from utils.data_generator import DataGenerator
+        self._profile = DataGenerator.get_unique_profile(self._user_index)
+
+    def _get_bazi_payload(self):
+        """本次请求的八字参数（在用户档案上扰动，避免命中缓存）。"""
+        from utils.data_generator import DataGenerator
+        return DataGenerator.perturb_profile(self._profile)
+
+    def _get_daily_fortune_payload(self):
+        """每日运势请求（扰动档案 + 随机日期，不命中缓存）。"""
+        from utils.data_generator import DataGenerator
+        from datetime import datetime, timedelta
+        import random
+        p = DataGenerator.perturb_profile(self._profile)
+        days = random.randint(-30, 30)
+        p["date"] = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+        return p
+
+    def _get_daily_fortune_stream_payload(self):
+        """每日运势流式请求（扰动档案+随机日期，不命中缓存）。"""
+        return self._get_daily_fortune_payload()
     
     # 八字计算任务（权重40%）
     @task(40)
     def test_bazi_calculate(self):
         """测试八字计算接口"""
-        from utils.data_generator import DataGenerator
-        generator = DataGenerator()
-        request_data = generator.generate_bazi_request()
-        
+        request_data = self._get_bazi_payload()
         with self.client.post(
             "/api/v1/bazi/calculate",
             json=request_data,
@@ -62,10 +84,7 @@ class WebsiteUser(HttpUser):
     @task(30)
     def test_bazi_interface(self):
         """测试八字界面数据接口"""
-        from utils.data_generator import DataGenerator
-        generator = DataGenerator()
-        request_data = generator.generate_bazi_interface_request()
-        
+        request_data = self._get_bazi_payload()
         with self.client.post(
             "/api/v1/bazi/interface",
             json=request_data,
@@ -90,10 +109,7 @@ class WebsiteUser(HttpUser):
     @task(20)
     def test_daily_fortune(self):
         """测试每日运势查询接口"""
-        from utils.data_generator import DataGenerator
-        generator = DataGenerator()
-        request_data = generator.generate_daily_fortune_request()
-        
+        request_data = self._get_daily_fortune_payload()
         with self.client.post(
             "/api/v1/daily-fortune-calendar/query",
             json=request_data,
@@ -119,28 +135,28 @@ class WebsiteUser(HttpUser):
     def test_pan_display(self):
         """基本排盘"""
         from utils.data_generator import DataGenerator
-        req = DataGenerator.generate_bazi_request()
+        req = self._get_bazi_payload()
         self._post_json_check("/api/v1/bazi/pan/display", req, "基本排盘")
 
     @task(4)
     def test_fortune_display(self):
         """专业排盘-大运流年流月"""
         from utils.data_generator import DataGenerator
-        req = DataGenerator.generate_bazi_request()
+        req = self._get_bazi_payload()
         self._post_json_check("/api/v1/bazi/fortune/display", req, "专业排盘")
 
     @task(4)
     def test_shengong_minggong(self):
         """身宫命宫胎元"""
         from utils.data_generator import DataGenerator
-        req = DataGenerator.generate_bazi_request()
+        req = self._get_bazi_payload()
         self._post_json_check("/api/v1/bazi/shengong-minggong", req, "身宫命宫")
 
     @task(4)
     def test_rizhu_liujiazi(self):
         """日元六十甲子"""
         from utils.data_generator import DataGenerator
-        req = DataGenerator.generate_bazi_request()
+        req = self._get_bazi_payload()
         self._post_json_check("/api/v1/bazi/rizhu-liujiazi", req, "日元六十甲子")
 
     # ===== 流式接口（需消费响应体）=====
@@ -148,63 +164,63 @@ class WebsiteUser(HttpUser):
     def test_wuxing_proportion_stream(self):
         """五行占比流式"""
         from utils.data_generator import DataGenerator
-        req = DataGenerator.generate_bazi_request()
+        req = self._get_bazi_payload()
         self._post_stream_check("/api/v1/bazi/wuxing-proportion/stream", req, "五行占比流式")
 
     @task(3)
     def test_xishen_jishen_stream(self):
         """喜神忌神流式"""
         from utils.data_generator import DataGenerator
-        req = DataGenerator.generate_bazi_request()
+        req = self._get_bazi_payload()
         self._post_stream_check("/api/v1/bazi/xishen-jishen/stream", req, "喜神忌神流式")
 
     @task(2)
     def test_marriage_stream(self):
         """感情婚姻流式"""
         from utils.data_generator import DataGenerator
-        req = DataGenerator.generate_bazi_request()
+        req = self._get_bazi_payload()
         self._post_stream_check("/api/v1/bazi/marriage-analysis/stream", req, "婚姻流式")
 
     @task(2)
     def test_career_wealth_stream(self):
         """事业财富流式"""
         from utils.data_generator import DataGenerator
-        req = DataGenerator.generate_bazi_request()
+        req = self._get_bazi_payload()
         self._post_stream_check("/api/v1/career-wealth/stream", req, "事业流式")
 
     @task(2)
     def test_children_study_stream(self):
         """子女学习流式"""
         from utils.data_generator import DataGenerator
-        req = DataGenerator.generate_bazi_request()
+        req = self._get_bazi_payload()
         self._post_stream_check("/api/v1/children-study/stream", req, "子女流式")
 
     @task(2)
     def test_health_stream(self):
         """身体健康流式"""
         from utils.data_generator import DataGenerator
-        req = DataGenerator.generate_bazi_request()
+        req = self._get_bazi_payload()
         self._post_stream_check("/api/v1/health/stream", req, "健康流式")
 
     @task(2)
     def test_general_review_stream(self):
         """总评分析流式"""
         from utils.data_generator import DataGenerator
-        req = DataGenerator.generate_bazi_request()
+        req = self._get_bazi_payload()
         self._post_stream_check("/api/v1/general-review/stream", req, "总评流式")
 
     @task(2)
     def test_annual_report_stream(self):
         """年运报告流式"""
         from utils.data_generator import DataGenerator
-        req = DataGenerator.generate_bazi_request()
+        req = self._get_bazi_payload()
         self._post_stream_check("/api/v1/annual-report/stream", req, "年运流式")
 
     @task(2)
     def test_daily_fortune_stream(self):
         """每日运势日历流式"""
         from utils.data_generator import DataGenerator
-        req = DataGenerator.generate_daily_fortune_stream_request()
+        req = self._get_daily_fortune_stream_payload()
         self._post_stream_check("/api/v1/daily-fortune-calendar/stream", req, "每日运势流式")
 
     # ===== 面相/办公桌风水（multipart）=====

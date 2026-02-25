@@ -159,6 +159,15 @@ TEST_CASES: List[TestCase] = [
         expected_keys=["success"],
         description="八字命理-日元-六十甲子"
     ),
+    TestCase(
+        name="每日运势查询",
+        category=TestCategory.BASIC,
+        method="POST",
+        endpoint="/api/v1/daily-fortune-calendar/query",
+        payload=TEST_DATA["daily_fortune"],
+        expected_keys=["success"],
+        description="每日运势日历非流式查询（前哨/生产必测）"
+    ),
     
     # ==================== 流式接口 ====================
     TestCase(

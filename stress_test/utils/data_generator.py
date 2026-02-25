@@ -169,6 +169,50 @@ class DataGenerator:
         
         return request_data
 
+    # ---------- 300 用户压测：不重复用户、不命中缓存 ----------
+    _UNIQUE_POOL: List[Dict[str, Any]] = []
+    _POOL_SIZE = 300
+
+    @classmethod
+    def _build_unique_pool(cls) -> None:
+        """预生成 300 个互不相同的 (solar_date, solar_time, gender) 档案，用于 300 用户压测。"""
+        if cls._UNIQUE_POOL:
+            return
+        seen = set()
+        pool = []
+        for _ in range(cls._POOL_SIZE * 2):  # 多试几次以防重复
+            if len(pool) >= cls._POOL_SIZE:
+                break
+            req = cls.generate_bazi_request()
+            key = (req["solar_date"], req["solar_time"], req["gender"])
+            if key not in seen:
+                seen.add(key)
+                pool.append(req)
+        cls._UNIQUE_POOL = pool[: cls._POOL_SIZE]
+
+    @classmethod
+    def get_unique_profile(cls, user_index: int) -> Dict[str, Any]:
+        """获取第 user_index 个唯一档案（0..299），保证 300 用户不重复。"""
+        cls._build_unique_pool()
+        idx = user_index % len(cls._UNIQUE_POOL)
+        return cls._UNIQUE_POOL[idx].copy()
+
+    @classmethod
+    def perturb_profile(cls, profile: Dict[str, Any]) -> Dict[str, Any]:
+        """在档案上做小幅扰动，使本次请求的缓存 key 与之前不同，避免命中缓存。"""
+        from datetime import datetime, timedelta
+        out = profile.copy()
+        base_date = datetime.strptime(out["solar_date"], "%Y-%m-%d")
+        day_offset = random.randint(-5, 5)
+        new_date = base_date + timedelta(days=day_offset)
+        out["solar_date"] = new_date.strftime("%Y-%m-%d")
+        h, m = map(int, out["solar_time"].split(":"))
+        m = (m + random.randint(-25, 25)) % 60
+        h = (h + (m // 60) if m < 0 else h) % 24
+        m = m % 60
+        out["solar_time"] = f"{h:02d}:{m:02d}"
+        return out
+
     @classmethod
     def generate_daily_fortune_stream_request(cls) -> Dict[str, Any]:
         """生成每日运势流式接口请求（需含 date、solar_date、solar_time、gender）"""

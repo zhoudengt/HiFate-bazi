@@ -149,6 +149,7 @@ class DailyFortuneCalendarResponse(BaseModel):
 @api_error_handler
 async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
     """查询每日运势日历（与流式接口同数据源，一次返回完整数据）。"""
+    log = logger  # 使用模块级 logger，避免函数内局部赋值导致 UnboundLocalError
     user_final_solar_date = request.solar_date
     user_final_solar_time = request.solar_time
     if request.solar_date and request.solar_time and request.gender:
@@ -158,7 +159,7 @@ async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
                 request.location, request.latitude, request.longitude,
             )
         except Exception as e:
-            logger.warning(f"用户生辰转换失败，使用原始值: {e}")
+            log.warning(f"用户生辰转换失败，使用原始值: {e}")
     query_date = request.date or get_current_date_str()
     cache_key = generate_cache_key("dailycalendar", query_date, f"{user_final_solar_date or ''}_{user_final_solar_time or ''}_{request.gender or ''}")
     cached = get_cached_result(cache_key, "daily-fortune-calendar")
@@ -644,8 +645,6 @@ async def daily_fortune_calendar_test(request: DailyFortuneCalendarRequest):
                     request.longitude
                 )
             except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.warning(f"用户生辰转换失败，使用原始值: {e}")
         
         # 2. 获取每日运势数据
