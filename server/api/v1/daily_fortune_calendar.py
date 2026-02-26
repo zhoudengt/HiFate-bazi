@@ -150,7 +150,7 @@ class DailyFortuneCalendarResponse(BaseModel):
 @api_error_handler
 async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
     """查询每日运势日历（与流式接口同数据源，一次返回完整数据）。"""
-    log = logger  # 使用模块级 logger，避免函数内局部赋值导致 UnboundLocalError
+    log = logging.getLogger(__name__)
     user_final_solar_date = request.solar_date
     user_final_solar_time = request.solar_time
     if request.solar_date and request.solar_time and request.gender:
