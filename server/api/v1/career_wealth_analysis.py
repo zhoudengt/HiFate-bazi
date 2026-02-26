@@ -234,7 +234,7 @@ def build_career_wealth_input_data(
         current_age = calculate_user_age(birth_date)
         try:
             birth_year = int(birth_date.split('-')[0])
-        except:
+        except Exception:
             pass
     
     # 获取当前大运（与排盘系统一致）

@@ -203,7 +203,7 @@ class CozeIntegration:
                                     error_detail = response.json()
                                     error_msg = error_detail.get("msg", response.text[:200])
                                     last_error = f"认证失败: {error_msg}"
-                                except:
+                                except Exception:
                                     last_error = f"认证失败: {response.text[:200]}"
                                 continue
                             elif response.status_code == 404:

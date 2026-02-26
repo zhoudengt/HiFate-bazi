@@ -70,7 +70,7 @@ class BaziInputProcessor:
                         # 检查是否为闰月（可以通过尝试创建农历对象来判断）
                         try:
                             lunar_result = LunarConverter.lunar_to_solar(lunar_year, lunar_month, lunar_day, False, solar_time)
-                        except:
+                        except Exception:
                             # 如果失败，尝试闰月
                             lunar_result = LunarConverter.lunar_to_solar(lunar_year, lunar_month, lunar_day, True, solar_time)
                     else:

@@ -469,7 +469,7 @@ async def diagnose_homepage_contents():
         if item.get('tags') and isinstance(item['tags'], str):
             try:
                 item['tags'] = json.loads(item['tags'])
-            except:
+            except Exception:
                 item['tags'] = []
     result["timing"]["3_json_parse_ms"] = round((time.time() - parse_start) * 1000, 2)
     

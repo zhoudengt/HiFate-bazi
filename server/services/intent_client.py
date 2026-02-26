@@ -191,7 +191,7 @@ class IntentServiceClient:
             request = intent_pb2.HealthCheckRequest()
             response = self.stub.HealthCheck(request, timeout=5)
             return response.status == "healthy"
-        except:
+        except Exception:
             return False
     
     def close(self):

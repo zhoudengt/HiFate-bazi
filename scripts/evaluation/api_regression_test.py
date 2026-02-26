@@ -443,7 +443,7 @@ class APITester:
             
             try:
                 data = response.json()
-            except:
+            except Exception:
                 return False, f"响应不是有效的 JSON: {response.text[:200]}", elapsed
             
             # 检查必要字段
@@ -529,7 +529,7 @@ class APITester:
                             has_progress = True
                             
                         current_event = None  # 重置
-                    except:
+                    except Exception:
                         pass
                 
                 # 限制读取数量，避免等待太久

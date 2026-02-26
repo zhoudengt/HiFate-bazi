@@ -744,7 +744,7 @@ async def general_review_analysis_stream_generator(
                 """计算模块数据大小（JSON序列化后的字节数）"""
                 try:
                     return len(json.dumps(module_data, ensure_ascii=False))
-                except:
+                except Exception:
                     return 0
             
             modules_size = {}
@@ -1095,7 +1095,7 @@ def build_general_review_input_data(
         current_age = calculate_user_age(birth_date)
         try:
             birth_year = int(birth_date.split('-')[0])
-        except:
+        except Exception:
             pass
     
     # 获取当前大运（与排盘系统一致）

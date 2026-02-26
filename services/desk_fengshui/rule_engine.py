@@ -332,7 +332,7 @@ class DeskFengshuiEngine:
             config['charset'] = 'utf8mb4'
             config['use_unicode'] = True
             return config
-        except:
+        except Exception:
             return {
                 'host': os.getenv('MYSQL_HOST', '127.0.0.1'),
                 'port': int(os.getenv('MYSQL_PORT', 3306)),
@@ -670,7 +670,7 @@ class DeskFengshuiEngine:
                             # UTF-8 解码失败，尝试 latin1
                             try:
                                 return byte_data.decode('latin1')
-                            except:
+                            except Exception:
                                 return byte_data.decode('utf-8', errors='ignore')
                     else:
                         # 如果不是字节，直接使用 _safe_decode
@@ -691,13 +691,13 @@ class DeskFengshuiEngine:
                 if rule.get('ideal_position') and isinstance(rule['ideal_position'], str):
                     try:
                         rule['ideal_position'] = json.loads(rule['ideal_position'])
-                    except:
+                    except Exception:
                         pass
                 
                 if rule.get('conditions') and isinstance(rule['conditions'], str):
                     try:
                         rule['conditions'] = json.loads(rule['conditions'])
-                    except:
+                    except Exception:
                         pass
             
             cursor.close()
@@ -1360,7 +1360,7 @@ class DeskFengshuiEngine:
                 if isinstance(ideal_pos, str):
                     try:
                         ideal_pos = json.loads(ideal_pos)
-                    except:
+                    except Exception:
                         ideal_pos = {}
                 if not isinstance(ideal_pos, dict):
                     continue
@@ -1426,7 +1426,7 @@ class DeskFengshuiEngine:
                     if isinstance(ideal_pos, str):
                         try:
                             ideal_pos = json.loads(ideal_pos)
-                        except:
+                        except Exception:
                             ideal_pos = {}
                     avoid_direction = ideal_pos.get('direction', '') if isinstance(ideal_pos, dict) else ''
                     
@@ -1490,7 +1490,7 @@ class DeskFengshuiEngine:
                 if isinstance(ideal_pos, str):
                     try:
                         ideal_pos = json.loads(ideal_pos)
-                    except:
+                    except Exception:
                         ideal_pos = {}
                 ideal_directions = ideal_pos.get('directions', []) if isinstance(ideal_pos, dict) else []
                 if isinstance(ideal_directions, str):
@@ -1529,7 +1529,7 @@ class DeskFengshuiEngine:
                 if isinstance(ideal_pos, str):
                     try:
                         ideal_pos = json.loads(ideal_pos)
-                    except:
+                    except Exception:
                         ideal_pos = {}
                 ideal_directions = ideal_pos.get('directions', []) if isinstance(ideal_pos, dict) else []
                 if isinstance(ideal_directions, str):
@@ -1910,7 +1910,7 @@ class DeskFengshuiEngine:
                     fixed = text.decode('gbk')
                     if any('\u4e00' <= c <= '\u9fff' or c in '，。！？；：' for c in fixed[:50]):
                         return fixed
-                except:
+                except Exception:
                     pass
                 return str(text, errors='ignore')
         

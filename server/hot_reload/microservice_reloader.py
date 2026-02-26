@@ -512,7 +512,7 @@ class MicroserviceReloader:
                 return True
             
             return False
-        except:
+        except Exception:
             return False
     
     def _reset_singleton(self, singleton_obj: Any, attr_name: str) -> int:
@@ -569,7 +569,7 @@ class MicroserviceReloader:
                 for old_log in log_files[50:]:
                     try:
                         os.remove(old_log)
-                    except:
+                    except Exception:
                         pass
         except Exception as e:
             logger.warning(f"⚠ [{self.service_name}] 清理错误日志失败: {e}")

@@ -150,7 +150,7 @@ class PaymentAPILogger:
             try:
                 data = json.loads(response)
                 return PaymentAPILogger._sanitize_params(data)
-            except:
+            except Exception:
                 return {"raw_response": response[:200]}  # 限制长度
         else:
             return {"response_type": type(response).__name__}

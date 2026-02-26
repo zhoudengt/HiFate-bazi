@@ -477,7 +477,7 @@ class DailyFortuneCalendarService:
                 day_ganzhi = bazi[2]
                 return day_ganzhi[0] if len(day_ganzhi) > 0 else None
             return None
-        except:
+        except Exception:
             return None
     
     @staticmethod
@@ -492,7 +492,7 @@ class DailyFortuneCalendarService:
                 day_ganzhi = bazi[2]
                 return day_ganzhi[1] if len(day_ganzhi) > 1 else None
             return None
-        except:
+        except Exception:
             return None
     
     @staticmethod
@@ -509,7 +509,7 @@ class DailyFortuneCalendarService:
             bazi_data = bazi_result.get('bazi', bazi_result)
             day_pillar = bazi_data.get('bazi_pillars', {}).get('day', {})
             return day_pillar.get('stem')
-        except:
+        except Exception:
             return None
     
     @staticmethod
@@ -551,7 +551,7 @@ class DailyFortuneCalendarService:
             if conn:
                 try:
                     return_mysql_connection(conn)
-                except:
+                except Exception:
                     pass
     
     @staticmethod
@@ -615,7 +615,7 @@ class DailyFortuneCalendarService:
             if conn:
                 try:
                     return_mysql_connection(conn)
-                except:
+                except Exception:
                     pass
     
     @staticmethod
@@ -664,7 +664,7 @@ class DailyFortuneCalendarService:
             if conn:
                 try:
                     return_mysql_connection(conn)
-                except:
+                except Exception:
                     pass
     
     @staticmethod
@@ -738,7 +738,7 @@ class DailyFortuneCalendarService:
             if conn:
                 try:
                     return_mysql_connection(conn)
-                except:
+                except Exception:
                     pass
     
     @staticmethod
@@ -788,7 +788,7 @@ class DailyFortuneCalendarService:
                         shishen = DailyFortuneCalendarService._get_shishen_from_stems(day_stem, _bs)
                         if shishen:
                             today_shishen = shishen
-                except:
+                except Exception:
                     pass  # 十神查询失败不影响日主显示
             else:
                 # 如果没有提供用户生辰信息，返回提示信息
@@ -856,7 +856,7 @@ class DailyFortuneCalendarService:
             if conn:
                 try:
                     return_mysql_connection(conn)
-                except:
+                except Exception:
                     pass
     
     @staticmethod
@@ -1004,7 +1004,7 @@ class DailyFortuneCalendarService:
             if conn:
                 try:
                     return_mysql_connection(conn)
-                except:
+                except Exception:
                     pass
         
         # 去重并返回
@@ -1124,7 +1124,7 @@ class DailyFortuneCalendarService:
                 if conn:
                     try:
                         return_mysql_connection(conn)
-                    except:
+                    except Exception:
                         pass
         
         # 去重并返回
@@ -1180,7 +1180,7 @@ class DailyFortuneCalendarService:
                 if conn:
                     try:
                         return_mysql_connection(conn)
-                    except:
+                    except Exception:
                         pass
         
         # 去重并返回

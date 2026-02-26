@@ -97,7 +97,7 @@ class MediaPipeSingleton:
             if self._hands_instance:
                 try:
                     self._hands_instance.close()
-                except:
+                except Exception:
                     pass
                 self._hands_instance = None
     
@@ -107,7 +107,7 @@ class MediaPipeSingleton:
             if self._face_mesh_instance:
                 try:
                     self._face_mesh_instance.close()
-                except:
+                except Exception:
                     pass
                 self._face_mesh_instance = None
 

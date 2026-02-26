@@ -271,7 +271,7 @@ class FaceAnalyzerStream:
                         "data": fallback_report,
                         "statusText": "分析完成（部分数据）"
                     }
-                except:
+                except Exception:
                     # 如果连fallback都失败，发送error消息
                     yield {
                         "type": "error",

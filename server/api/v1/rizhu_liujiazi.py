@@ -161,7 +161,7 @@ async def get_rizhu_liujiazi(request: RizhuLiujiaziRequest):
                     RizhuLiujiaziService.get_total_count
                 )
                 logger.warning(f"当前数据库中总记录数: {total_count}")
-            except:
+            except Exception:
                 pass
             
             return RizhuLiujiaziResponse(

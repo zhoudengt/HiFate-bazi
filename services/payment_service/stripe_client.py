@@ -402,7 +402,7 @@ class StripeClient(BasePaymentClient):
                             # 提取汇率信息（如果可用）
                             # Stripe 的汇率信息可能在 payment_intent 的 metadata 或其他字段中
                             # 这里需要根据 Stripe API 文档获取
-                        except:
+                        except Exception:
                             pass
                     
                     # 更新交易记录

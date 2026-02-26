@@ -19,14 +19,8 @@ except ImportError as e:
 from server.api.v1.bazi_ai import router as bazi_ai_router
 from server.api.grpc_gateway import router as grpc_gateway_router
 
-# 新增：支付路由（魔方西元）
-try:
-    from server.api.v1.payment import router as payment_router
-    PAYMENT_ROUTER_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"支付路由导入失败（可选功能）: {e}")
-    payment_router = None
-    PAYMENT_ROUTER_AVAILABLE = False
+# [DEPRECATED] v1 支付路由已下线，统一走 unified_payment。
+# 保留注释供追溯，下个版本可删除。
 
 from mianxiang_hand_fengshui.api.routers import (
     face_router as mx_face_router,
@@ -629,14 +623,7 @@ def _register_all_routers_to_manager(router_manager):
         enabled_getter=lambda: get_fortune_analysis_stream_router() is not None
     )
     
-    # 支付路由（条件可用）
-    router_manager.register_router(
-        "payment",
-        lambda: payment_router,
-        prefix="/api/v1",
-        tags=["支付"],
-        enabled_getter=lambda: PAYMENT_ROUTER_AVAILABLE and payment_router is not None
-    )
+    # [DEPRECATED] v1 支付路由已下线，统一走 unified_payment。
     
     # 十神命格调试路由（动态导入）
     def get_shishen_debug_router():

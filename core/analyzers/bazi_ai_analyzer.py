@@ -188,7 +188,7 @@ class BaziAIAnalyzer:
                             test_response = requests.post(test_url, headers=headers_to_use, json=test_payload, timeout=60)
                             if test_response.status_code in [200, 400]:  # 400 也可能表示端点存在但格式不对
                                 break
-                        except:
+                        except Exception:
                             continue
                     else:
                         # 如果两种认证方式都失败，使用默认的
@@ -213,7 +213,7 @@ class BaziAIAnalyzer:
                                 result = test_result
                                 logger.info(f"✓ 找到可用端点: {url}")
                                 break
-                        except:
+                        except Exception:
                             # 响应不是JSON，可能是文本，也认为是成功
                             url = test_url
                             result = {"content": test_response.text}
@@ -225,7 +225,7 @@ class BaziAIAnalyzer:
                             error_detail = test_response.json()
                             error_msg = json.dumps(error_detail, ensure_ascii=False)
                             logger.info(f"✗ 端点不存在 (404): {error_msg[:200]}")
-                        except:
+                        except Exception:
                             logger.info(f"✗ 端点不存在 (404): {path}")
                         last_error = f"端点 {path} 不存在 (404)"
                         continue
@@ -236,7 +236,7 @@ class BaziAIAnalyzer:
                             error_detail = test_response.json()
                             error_msg = json.dumps(error_detail, ensure_ascii=False)
                             logger.info(f"⚠ 端点存在但参数错误 ({test_response.status_code}): {error_msg[:200]}")
-                        except:
+                        except Exception:
                             logger.info(f"⚠ 端点存在但参数错误 ({test_response.status_code}): {path}")
                         # 端点存在，但需要调整参数格式
                         url = test_url
@@ -328,7 +328,7 @@ class BaziAIAnalyzer:
                                 response = requests.post(url, headers=headers_to_use, json=clean_payload, timeout=60)
                                 if response.status_code in [200, 400]:  # 400 也可能表示端点存在但格式不对
                                     break
-                            except:
+                            except Exception:
                                 continue
                         if response is None:
                             response = requests.post(url, headers=self.headers, json=clean_payload, timeout=60)
@@ -350,7 +350,7 @@ class BaziAIAnalyzer:
                                     result = response_data
                                     found_format = True
                                     break
-                            except:
+                            except Exception:
                                 # 响应不是JSON，可能是文本，也认为是成功
                                 logger.info(f"✓ 格式 {i+1} 成功（文本响应）")
                                 result = {"content": response.text}
@@ -363,7 +363,7 @@ class BaziAIAnalyzer:
                                 error_msg = json.dumps(error_detail, ensure_ascii=False)
                                 logger.info(f"✗ 格式 {i+1} 返回错误 {response.status_code}: {error_msg[:200]}")
                                 last_error = f"格式{i+1}返回错误 {response.status_code}: {error_msg[:200]}"
-                            except:
+                            except Exception:
                                 error_msg = response.text[:200]
                                 logger.info(f"✗ 格式 {i+1} 返回错误 {response.status_code}: {error_msg}")
                                 last_error = f"格式{i+1}返回错误 {response.status_code}: {error_msg}"
@@ -741,7 +741,7 @@ class BaziAIAnalyzer:
                             "original_content": character_analysis,
                             "changes": []
                         }
-                    except:
+                    except Exception:
                         return {
                             "success": False,
                             "error": f"Coze API 返回了错误信息: {polished_str[:200]}",

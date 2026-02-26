@@ -189,7 +189,7 @@ class ImagePreprocessor:
                 # 返回最大的面部
                 x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
                 return (x, y, w, h)
-        except:
+        except Exception:
             pass
         
         # 如果检测失败，返回整个图像的中心区域

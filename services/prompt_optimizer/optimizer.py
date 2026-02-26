@@ -150,7 +150,7 @@ class PromptOptimizer:
         """解析JSON响应"""
         try:
             return json.loads(content)
-        except:
+        except Exception:
             import re
             json_match = re.search(r'```json\s*\n(.*?)\n```', content, re.DOTALL)
             if json_match:

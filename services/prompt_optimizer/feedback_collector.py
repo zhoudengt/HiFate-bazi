@@ -84,7 +84,7 @@ class FeedbackCollector:
             try:
                 self._save_to_file(feedback_data)
                 return True
-            except:
+            except Exception:
                 return False
     
     def _save_to_file(self, feedback_data: Dict[str, Any]):

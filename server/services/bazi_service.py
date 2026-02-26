@@ -204,11 +204,11 @@ class BaziService:
             try:
                 import ast
                 element_counts = ast.literal_eval(element_counts_raw)
-            except:
+            except Exception:
                 try:
                     import json
                     element_counts = json.loads(element_counts_raw)
-                except:
+                except Exception:
                     logger.error(f"element_counts 解析失败: {element_counts_raw[:100]}")
                     element_counts = {}
         elif isinstance(element_counts_raw, dict):
@@ -222,11 +222,11 @@ class BaziService:
             try:
                 import ast
                 relationships = ast.literal_eval(relationships_raw)
-            except:
+            except Exception:
                 try:
                     import json
                     relationships = json.loads(relationships_raw)
-                except:
+                except Exception:
                     logger.error(f"relationships 解析失败: {relationships_raw[:100]}")
                     relationships = {}
         elif isinstance(relationships_raw, dict):

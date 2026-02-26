@@ -110,7 +110,7 @@ class FortuneRuleServicer(fortune_rule_pb2_grpc.FortuneRuleServiceServicer):
                     try:
                         metadata = json.loads(bazi_data["metadata_json"])
                         bazi_data.update(metadata)
-                    except:
+                    except Exception:
                         pass
             
             # 如果提供了八字信息但还没有八字数据，需要获取
@@ -201,7 +201,7 @@ class FortuneRuleServicer(fortune_rule_pb2_grpc.FortuneRuleServiceServicer):
                 if isinstance(ten_gods_stats, str):
                     try:
                         ten_gods_stats = json.loads(ten_gods_stats)
-                    except:
+                    except Exception:
                         ten_gods_stats = {}
                 
                 # 如果 ten_gods_stats 是字典，尝试提取简单的键值对
@@ -224,7 +224,7 @@ class FortuneRuleServicer(fortune_rule_pb2_grpc.FortuneRuleServiceServicer):
                 if isinstance(bazi_pillars, str):
                     try:
                         bazi_pillars = json.loads(bazi_pillars)
-                    except:
+                    except Exception:
                         bazi_pillars = {}
                 
                 if isinstance(bazi_pillars, dict):
@@ -308,7 +308,7 @@ class FortuneRuleServicer(fortune_rule_pb2_grpc.FortuneRuleServiceServicer):
                     try:
                         metadata = json.loads(bazi_data["metadata_json"])
                         bazi_data.update(metadata)
-                    except:
+                    except Exception:
                         pass
             
             # 如果提供了八字信息但还没有八字数据，需要获取
@@ -399,7 +399,7 @@ class FortuneRuleServicer(fortune_rule_pb2_grpc.FortuneRuleServiceServicer):
                 if isinstance(ten_gods_stats, str):
                     try:
                         ten_gods_stats = json.loads(ten_gods_stats)
-                    except:
+                    except Exception:
                         ten_gods_stats = {}
                 
                 # 如果 ten_gods_stats 是字典，尝试提取简单的键值对
@@ -422,7 +422,7 @@ class FortuneRuleServicer(fortune_rule_pb2_grpc.FortuneRuleServiceServicer):
                 if isinstance(bazi_pillars, str):
                     try:
                         bazi_pillars = json.loads(bazi_pillars)
-                    except:
+                    except Exception:
                         bazi_pillars = {}
                 
                 if isinstance(bazi_pillars, dict):
@@ -474,13 +474,13 @@ class FortuneRuleServicer(fortune_rule_pb2_grpc.FortuneRuleServiceServicer):
                     if isinstance(bazi_data.get("element_counts"), str):
                         try:
                             bazi_data["element_counts"] = json.loads(bazi_data["element_counts"])
-                        except:
+                        except Exception:
                             bazi_data["element_counts"] = {}
                     
                     if isinstance(bazi_data.get("ten_gods_stats"), str):
                         try:
                             bazi_data["ten_gods_stats"] = json.loads(bazi_data["ten_gods_stats"])
-                        except:
+                        except Exception:
                             bazi_data["ten_gods_stats"] = {}
                     
                     # 确保 element_counts 的值是整数

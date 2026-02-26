@@ -371,7 +371,7 @@ class QAConversationService:
                     if isinstance(intent_result, str):
                         try:
                             intent_result = json.loads(intent_result)
-                        except:
+                        except Exception:
                             intent_result = {}
                     intents = intent_result.get('intents', []) if isinstance(intent_result, dict) else []
                     previous_intents.append(intents)

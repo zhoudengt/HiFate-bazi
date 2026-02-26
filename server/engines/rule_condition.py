@@ -446,7 +446,7 @@ class EnhancedRuleCondition:
                     try:
                         import json
                         relationships = json.loads(relationships)
-                    except:
+                    except Exception:
                         relationships = {}
                 
                 branch_relations = relationships.get('branch_relations', {})
@@ -454,7 +454,7 @@ class EnhancedRuleCondition:
                     try:
                         import json
                         branch_relations = json.loads(branch_relations)
-                    except:
+                    except Exception:
                         branch_relations = {}
                 
                 # 检查是否有冲关系
@@ -485,7 +485,7 @@ class EnhancedRuleCondition:
                     try:
                         import json
                         relationships = json.loads(relationships)
-                    except:
+                    except Exception:
                         relationships = {}
                 
                 branch_relations = relationships.get('branch_relations', {})
@@ -493,7 +493,7 @@ class EnhancedRuleCondition:
                     try:
                         import json
                         branch_relations = json.loads(branch_relations)
-                    except:
+                    except Exception:
                         branch_relations = {}
                 
                 # 检查是否有刑冲关系
@@ -1290,7 +1290,7 @@ class EnhancedRuleCondition:
                         try:
                             import json
                             element_counts = json.loads(element_counts)
-                        except:
+                        except Exception:
                             element_counts = {}
                     
                     element_count = element_counts.get(element, 0)

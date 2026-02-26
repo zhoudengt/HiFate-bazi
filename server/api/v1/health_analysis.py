@@ -670,7 +670,7 @@ def build_health_input_data(
             birth = datetime.strptime(birth_date, '%Y-%m-%d')
             today = datetime.now()
             current_age = today.year - birth.year - (1 if (today.month, today.day) < (birth.month, birth.day) else 0)
-        except:
+        except Exception:
             pass
     
     # ⚠️ 统一架构：使用 KeyYearsProvider 获取关键年份数据

@@ -213,7 +213,7 @@ class WorkerSyncManager:
                     with open(cls.SIGNAL_FILE, 'r') as f:
                         data = json.load(f)
                         current_version = data.get('version', 0)
-                except:
+                except Exception:
                     pass
             
             # 写入新信号
@@ -305,7 +305,7 @@ class WorkerSyncManager:
                         worker_id = data.get('worker_id', fname)
                         if data.get('version') == version and worker_id not in acks:
                             acks[worker_id] = data
-                    except:
+                    except Exception:
                         pass
             
             # 如果已经收到至少 1 个 ACK 且等了至少 3 秒，可以提前结束
@@ -324,7 +324,7 @@ class WorkerSyncManager:
                             worker_id = data.get('worker_id', fname)
                             if data.get('version') == version and worker_id not in acks:
                                 acks[worker_id] = data
-                        except:
+                        except Exception:
                             pass
                 break
             

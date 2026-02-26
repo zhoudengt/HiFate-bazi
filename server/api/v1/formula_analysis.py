@@ -464,7 +464,7 @@ def _convert_rule_service_to_formula_format(migrated_rules: list, rule_types: Op
                         if isinstance(conditions, str):
                             try:
                                 conditions = json.loads(conditions)
-                            except:
+                            except Exception:
                                 conditions = {}
                         
                         if isinstance(conditions, dict) and conditions:
@@ -479,7 +479,7 @@ def _convert_rule_service_to_formula_format(migrated_rules: list, rule_types: Op
                         if isinstance(conditions, str):
                             try:
                                 conditions = json.loads(conditions)
-                            except:
+                            except Exception:
                                 conditions = {}
                         
                         if isinstance(conditions, dict) and conditions.get('gender'):
@@ -496,7 +496,7 @@ def _convert_rule_service_to_formula_format(migrated_rules: list, rule_types: Op
             if isinstance(conditions, str):
                 try:
                     conditions = json.loads(conditions)
-                except:
+                except Exception:
                     conditions = {}
             
             if isinstance(conditions, dict) and conditions:

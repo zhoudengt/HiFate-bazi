@@ -1,17 +1,14 @@
 # -*- coding: utf-8 -*-
 """
 支付相关 gRPC-Web 端点处理器
+
+v1 旧接口 /payment/create-session、/payment/verify 已下线，
+前端统一走 /payment/unified/* 系列接口（stripe_client_v2）。
 """
 
 from typing import Any, Dict
 
 from server.api.grpc_gateway.endpoints import _register
-from server.api.v1.payment import (
-    CreatePaymentSessionRequest,
-    VerifyPaymentRequest,
-    create_payment_session,
-    verify_payment,
-)
 from server.api.v1.unified_payment import (
     CreatePaymentRequest as UnifiedCreatePaymentRequest,
     VerifyPaymentRequest as UnifiedVerifyPaymentRequest,
@@ -19,18 +16,6 @@ from server.api.v1.unified_payment import (
     verify_unified_payment,
     get_payment_providers,
 )
-
-
-@_register("/payment/create-session")
-async def _handle_payment_create(payload: Dict[str, Any]):
-    request_model = CreatePaymentSessionRequest(**payload)
-    return create_payment_session(request_model)
-
-
-@_register("/payment/verify")
-async def _handle_payment_verify(payload: Dict[str, Any]):
-    request_model = VerifyPaymentRequest(**payload)
-    return verify_payment(request_model)
 
 
 @_register("/payment/unified/create")

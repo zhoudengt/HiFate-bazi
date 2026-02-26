@@ -46,7 +46,7 @@ class RizhuLiujiaziService:
             try:
                 if conn.in_transaction:
                     conn.rollback()
-            except:
+            except Exception:
                 pass
             
             with conn.cursor() as cursor:

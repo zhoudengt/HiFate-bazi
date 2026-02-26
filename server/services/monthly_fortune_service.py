@@ -237,7 +237,7 @@ class MonthlyFortuneService:
                 try:
                     import ast
                     totals = ast.literal_eval(totals)
-                except:
+                except Exception:
                     totals = {}
             else:
                 totals = {}

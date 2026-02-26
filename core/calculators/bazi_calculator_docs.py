@@ -547,7 +547,7 @@ class BaziCalculator:
 
         try:
             liunian_deities = deities_calc.calculate_year_deities(liunian_stem, liunian_branch, self.bazi_pillars)
-        except:
+        except Exception:
             liunian_deities = []
 
         self.details['liunian'] = {
@@ -603,7 +603,7 @@ class BaziCalculator:
 
         try:
             dayun_deities = deities_calc.calculate_day_deities(first_dayun_stem, first_dayun_branch, self.bazi_pillars)
-        except:
+        except Exception:
             dayun_deities = []
 
         self.details['dayun'] = {
@@ -1054,7 +1054,7 @@ class BaziCalculator:
                             try:
                                 with open('/tmp/bazi_debug.log', 'a', encoding='utf-8') as f:
                                     f.write(f"[关系计算] 调试日志写入失败: {e}\n")
-                            except:
+                            except Exception:
                                 pass
                     if dayun_sequence:
                         for d in dayun_sequence:
@@ -1074,7 +1074,7 @@ class BaziCalculator:
                                 try:
                                     with open('/tmp/bazi_debug.log', 'a', encoding='utf-8') as f:
                                         f.write(f"[关系计算] 流年{year}年({year_stem}{year_branch}) 找到大运: {year_dayun_stem}{year_dayun_branch} (年份范围: {d_year_start}-{d_year_end})\n")
-                                except:
+                                except Exception:
                                     pass
                                 break
                     else:
@@ -1083,7 +1083,7 @@ class BaziCalculator:
                             try:
                                 with open('/tmp/bazi_debug.log', 'a', encoding='utf-8') as f:
                                     f.write(f"[关系计算] 流年2024年 dayun_sequence为空，无法查找大运\n")
-                            except:
+                            except Exception:
                                 pass
                 
                 # 如果找到了对应的大运，使用它；否则使用传入的大运（向后兼容）
@@ -1791,7 +1791,7 @@ class BaziCalculator:
             with open('/tmp/bazi_debug.log', 'a', encoding='utf-8') as f:
                 f.write(f"[_generate_current_liunian_window] 函数被调用\n")
                 f.write(f"[_generate_current_liunian_window] self.details.keys(): {list(self.details.keys())}\n")
-        except:
+        except Exception:
             pass
         
         dayun_sequence = self.details.get('dayun_sequence', [])
@@ -1808,7 +1808,7 @@ class BaziCalculator:
             try:
                 with open('/tmp/bazi_debug.log', 'a', encoding='utf-8') as f:
                     f.write(f"[_generate_current_liunian_window] 调试日志写入失败: {e}\n")
-            except:
+            except Exception:
                 pass
         
         if not dayun_sequence:
@@ -1863,7 +1863,7 @@ class BaziCalculator:
                 f.write(f"  selected_year: {selected_year}\n")
                 f.write(f"  self.details.keys(): {list(self.details.keys())}\n")
                 f.write(f"  dayun_sequence长度: {len(self.details.get('dayun_sequence', []))}\n")
-        except:
+        except Exception:
             pass
         
         # 生成流年列表，传入大运和四柱信息用于计算关系（可选参数，不影响原有逻辑）

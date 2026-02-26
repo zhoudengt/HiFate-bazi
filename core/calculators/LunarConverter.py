@@ -99,7 +99,7 @@ class LunarConverter:
             else:
                 # 如果都没有，默认返回 False
                 return False
-        except:
+        except Exception:
             return False
 
     @staticmethod

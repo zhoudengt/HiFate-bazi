@@ -489,7 +489,7 @@ class FortuneRuleEngine:
                         "source": "hand",
                         "feature": f"掌纹数量:{count}"
                     })
-            except:
+            except Exception:
                 pass
         
         # 手掌纹理特征（个性化内容）

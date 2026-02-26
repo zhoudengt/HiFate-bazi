@@ -167,7 +167,7 @@ class FortuneRuleClient:
                             "ten_gods_stats": dict(response.bazi_data.ten_gods_stats),
                             "bazi_pillars": json.loads(response.bazi_data.bazi_pillars) if response.bazi_data.bazi_pillars else {}
                         }
-                    except:
+                    except Exception:
                         result_bazi_data = {
                             "element_counts": dict(response.bazi_data.element_counts),
                             "ten_gods_stats": dict(response.bazi_data.ten_gods_stats),
@@ -297,7 +297,7 @@ class FortuneRuleClient:
                             "ten_gods_stats": dict(response.bazi_data.ten_gods_stats),
                             "bazi_pillars": json.loads(response.bazi_data.bazi_pillars) if response.bazi_data.bazi_pillars else {}
                         }
-                    except:
+                    except Exception:
                         result_bazi_data = {
                             "element_counts": dict(response.bazi_data.element_counts),
                             "ten_gods_stats": dict(response.bazi_data.ten_gods_stats),

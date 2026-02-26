@@ -313,7 +313,7 @@ class CozeStreamService(BaseLLMStreamService):
                                 'content': f'Coze API 错误（错误码: {error_code}）: {error_msg}'
                             }
                             return
-                        except:
+                        except Exception:
                             # JSON 解析失败，继续处理为 SSE 流
                             pass
                     

@@ -411,6 +411,10 @@ async def get_fortune_display(request_wrapper: FortuneDisplayRequestWithMode = D
     - **dayun_year_end**: 大运结束年份（可选）
     - **target_year**: 目标年份（可选），用于计算该年份的流月
     
+    **⚠️ 前端必读（切换大运）**：用户点击某一大运（如 2055-2065）时，必须带该大运重新请求本接口，
+    传 dayun_year_start=2055、dayun_year_end=2065（或 dayun_index=该行 index），
+    并用本次响应的 liunian.list、liuyue 渲染流年/流月；否则会一直显示「当前大运」的流年（如 2025-2034）。
+    
     返回前端友好的数据，包括：
     - 大运数据（当前大运、大运列表、起运交运信息）
     - 流年数据（当前流年、流年列表）

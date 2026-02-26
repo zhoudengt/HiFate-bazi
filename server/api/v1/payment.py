@@ -2,6 +2,10 @@
 # -*- coding: utf-8 -*-
 """
 支付API接口（魔方西元）
+
+# [DEPRECATED] 已被 unified_payment.py (v2) 替代。
+# 路由注册和 gRPC 端点注册已移除，此文件不再有运行时引用。
+# 下个版本可直接删除。
 """
 
 import sys

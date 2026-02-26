@@ -138,7 +138,7 @@ def identify_key_dayuns(
                     if start_age <= current_age <= end_age:
                         current_dayun = dayun
                         break
-            except:
+            except Exception:
                 pass
     
     # 如果没找到，使用第一个非"小运"的大运
@@ -275,7 +275,7 @@ def calculate_age(birth_date: str) -> int:
         if today.month < birth.month or (today.month == birth.month and today.day < birth.day):
             age -= 1
         return max(0, age)
-    except:
+    except Exception:
         return 0
 
 # --- 方位推导 ---

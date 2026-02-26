@@ -79,7 +79,7 @@ def get_current_dayun(
                         age_end = age_start + 9  # 大运通常10年
                         if age_start <= current_age <= age_end:
                             return dayun
-                except:
+                except Exception:
                     pass
     
     # 如果没找到，返回第一个大运
@@ -259,7 +259,7 @@ def add_dayun_metadata(dayun: Dict[str, Any], priority: int) -> Dict[str, Any]:
                     dayun_copy['life_stage'] = add_life_stage_label(age_mid)
                 else:
                     dayun_copy['life_stage'] = ''
-            except:
+            except Exception:
                 dayun_copy['life_stage'] = ''
         else:
             dayun_copy['life_stage'] = ''
