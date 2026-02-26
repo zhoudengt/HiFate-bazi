@@ -14,24 +14,22 @@ on:
 
 jobs:
   deploy:
-    name: 门控发布 Node2 → Node1
+    name: 部署 Node1（生产）
     runs-on: ubuntu-latest
-    # 同一时刻只允许一个发布任务运行（防止并发冲突）
     concurrency:
       group: production-deploy
       cancel-in-progress: false
 
     steps:
+      # ──────────────────────────────────────────────
+      # Step 1: Python 语法快速验证
+      # ──────────────────────────────────────────────
       - name: 检出代码
         uses: actions/checkout@v4
 
-      # ────────────────────────────────────────────────
-      # Step 1: 语法检查（在 CI 环境快速验证，不依赖服务器）
-      # ────────────────────────────────────────────────
       - name: Python 语法验证
         run: |
-          echo "=== Python 语法检查 ==="
-          python3 - <<'EOF'
+          python3 - <<'PYEOF'
           import ast, sys, os, glob
           errors = []
           for pattern in ['server/**/*.py', 'services/**/*.py', 'core/**/*.py']:
@@ -45,182 +43,135 @@ jobs:
           if errors:
               print('\n'.join(errors[:10]))
               sys.exit(1)
-          print(f'OK：检查通过')
-          EOF
+          print('语法检查通过')
+          PYEOF
 
-      # ────────────────────────────────────────────────
-      # Step 2: 部署到 Node2（前哨验证）
-      #   - Node2 内网 IP，通过 Node1 跳转访问
-      #   - skip_node2=true 时跳过（紧急发布）
-      # ────────────────────────────────────────────────
+      # ──────────────────────────────────────────────
+      # Step 2: Node2 前哨（通过 Node1 跳转 SSH）
+      # skip_node2=true 时跳过
+      # ──────────────────────────────────────────────
       - name: "[Node2] git pull + 热更新"
         if: ${{ github.event.inputs.skip_node2 != 'true' }}
-        env:
-          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
-          NODE1_PUBLIC_IP: ${{ secrets.NODE1_PUBLIC_IP }}
-          NODE2_PRIVATE_IP: ${{ secrets.NODE2_PRIVATE_IP }}
-          PROJECT_DIR: /opt/HiFate-bazi
-        run: |
-          sudo apt-get install -y sshpass -q
-
-          echo "=== [Node2] 拉取代码 ==="
-          sshpass -p "$SSH_PASSWORD" ssh \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=15 \
-            root@$NODE1_PUBLIC_IP \
-            "sshpass -p '$SSH_PASSWORD' ssh \
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.NODE1_PUBLIC_IP }}
+          username: root
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: 22
+          timeout: 60s
+          command_timeout: 120s
+          script: |
+            sshpass -p '${{ secrets.SSH_PASSWORD }}' ssh \
               -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=15 \
-              root@$NODE2_PRIVATE_IP \
-              'cd $PROJECT_DIR && git fetch origin && git checkout master && git pull origin master'"
+              -o ConnectTimeout=20 \
+              root@${{ secrets.NODE2_PRIVATE_IP }} \
+              "cd /opt/HiFate-bazi && git fetch origin && git checkout master && git pull origin master"
 
-          echo "=== [Node2] 热更新 ==="
-          sshpass -p "$SSH_PASSWORD" ssh \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=15 \
-            root@$NODE1_PUBLIC_IP \
-            "sshpass -p '$SSH_PASSWORD' ssh \
+            sshpass -p '${{ secrets.SSH_PASSWORD }}' ssh \
               -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=15 \
-              root@$NODE2_PRIVATE_IP \
-              'curl -sf --max-time 60 -X POST http://localhost:8001/api/v1/hot-reload/reload-all -H \"Content-Type: application/json\" -d \"{}\"'"
+              -o ConnectTimeout=20 \
+              root@${{ secrets.NODE2_PRIVATE_IP }} \
+              "curl -sf --max-time 60 -X POST http://localhost:8001/api/v1/hot-reload/reload-all \
+                -H 'Content-Type: application/json' -d '{}'"
 
       - name: "[Node2] 健康检查（门控）"
         if: ${{ github.event.inputs.skip_node2 != 'true' }}
-        env:
-          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
-          NODE1_PUBLIC_IP: ${{ secrets.NODE1_PUBLIC_IP }}
-          NODE2_PRIVATE_IP: ${{ secrets.NODE2_PRIVATE_IP }}
-        run: |
-          sudo apt-get install -y sshpass -q 2>/dev/null || true
-          echo "=== [Node2] 等待服务就绪（15s）==="
-          sleep 15
-
-          echo "=== [Node2] 健康检查 ==="
-          for i in 1 2 3 4 5; do
-            RESULT=$(sshpass -p "$SSH_PASSWORD" ssh \
-              -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=10 \
-              root@$NODE1_PUBLIC_IP \
-              "sshpass -p '$SSH_PASSWORD' ssh \
-                -o StrictHostKeyChecking=no \
-                -o ConnectTimeout=10 \
-                root@$NODE2_PRIVATE_IP \
-                'curl -sf --max-time 10 http://localhost:8001/health || echo FAIL'" 2>/dev/null || echo "FAIL")
-            if echo "$RESULT" | grep -q '"status"'; then
-              echo "Node2 健康检查通过（第 $i 次）"
-              break
-            fi
-            echo "第 $i 次检查未通过，5s 后重试..."
-            sleep 5
-            if [ $i -eq 5 ]; then
-              echo "Node2 健康检查失败，停止部署"
-              exit 1
-            fi
-          done
-
-          echo "=== [Node2] 关键接口验证 ==="
-          BAZI_RESULT=$(sshpass -p "$SSH_PASSWORD" ssh \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=10 \
-            root@$NODE1_PUBLIC_IP \
-            "sshpass -p '$SSH_PASSWORD' ssh \
-              -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=10 \
-              root@$NODE2_PRIVATE_IP \
-              'curl -sf --max-time 15 -X POST http://localhost:8001/api/v1/bazi/interface \
-                -H \"Content-Type: application/json\" \
-                -d \"{\\\"solar_date\\\":\\\"1990-01-15\\\",\\\"solar_time\\\":\\\"12:00\\\",\\\"gender\\\":\\\"male\\\"}\" || echo FAIL'" 2>/dev/null || echo "FAIL")
-
-          if echo "$BAZI_RESULT" | grep -q '"success":true'; then
-            echo "Node2 接口验证通过，允许部署 Node1"
-          else
-            echo "Node2 接口验证失败，停止部署（Node1 未被修改）"
-            echo "Response: $BAZI_RESULT"
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.NODE1_PUBLIC_IP }}
+          username: root
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: 22
+          timeout: 60s
+          command_timeout: 120s
+          script: |
+            sleep 15
+            for i in 1 2 3 4 5; do
+              RESULT=$(sshpass -p '${{ secrets.SSH_PASSWORD }}' ssh \
+                -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                root@${{ secrets.NODE2_PRIVATE_IP }} \
+                "curl -sf --max-time 10 http://localhost:8001/health || echo FAIL" 2>/dev/null || echo FAIL)
+              if echo "$RESULT" | grep -q '"status"'; then
+                echo "Node2 健康检查通过"
+                # 接口验证
+                API=$(sshpass -p '${{ secrets.SSH_PASSWORD }}' ssh \
+                  -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                  root@${{ secrets.NODE2_PRIVATE_IP }} \
+                  "curl -sf --max-time 15 -X POST http://localhost:8001/api/v1/bazi/interface \
+                    -H 'Content-Type: application/json' \
+                    -d '{\"solar_date\":\"1990-01-15\",\"solar_time\":\"12:00\",\"gender\":\"male\"}' \
+                    || echo FAIL" 2>/dev/null || echo FAIL)
+                if echo "$API" | grep -q '"success":true'; then
+                  echo "Node2 接口验证通过，允许部署 Node1"
+                  exit 0
+                else
+                  echo "Node2 接口验证失败，停止部署"
+                  exit 1
+                fi
+              fi
+              echo "第 $i 次检查未通过，等待 5s..."
+              sleep 5
+            done
+            echo "Node2 健康检查超时，停止部署"
             exit 1
-          fi
 
-      # ────────────────────────────────────────────────
-      # Step 3: 部署到 Node1（生产）
-      # ────────────────────────────────────────────────
+      # ──────────────────────────────────────────────
+      # Step 3: Node1 生产部署
+      # ──────────────────────────────────────────────
       - name: "[Node1] git pull + 热更新"
-        env:
-          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
-          NODE1_PUBLIC_IP: ${{ secrets.NODE1_PUBLIC_IP }}
-          PROJECT_DIR: /opt/HiFate-bazi
-        run: |
-          sudo apt-get install -y sshpass -q 2>/dev/null || true
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.NODE1_PUBLIC_IP }}
+          username: root
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: 22
+          timeout: 60s
+          command_timeout: 180s
+          script: |
+            set -e
+            cd /opt/HiFate-bazi
+            echo "=== git pull ==="
+            git fetch origin
+            git checkout master
+            git pull origin master
+            echo "当前版本: $(git rev-parse --short HEAD)"
 
-          echo "=== [Node1] 拉取代码 ==="
-          sshpass -p "$SSH_PASSWORD" ssh \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=15 \
-            root@$NODE1_PUBLIC_IP \
-            "cd $PROJECT_DIR && git fetch origin && git checkout master && git pull origin master"
+            echo "=== 热更新第1次 ==="
+            curl -sf --max-time 60 -X POST http://localhost:8001/api/v1/hot-reload/reload-all \
+              -H 'Content-Type: application/json' -d '{}'
+            sleep 5
 
-          NODE1_COMMIT=$(sshpass -p "$SSH_PASSWORD" ssh \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=10 \
-            root@$NODE1_PUBLIC_IP \
-            "cd $PROJECT_DIR && git rev-parse --short HEAD" 2>/dev/null)
-          echo "Node1 当前版本: $NODE1_COMMIT"
-          echo "node1_commit=$NODE1_COMMIT" >> $GITHUB_OUTPUT
+            echo "=== 热更新第2次 ==="
+            curl -sf --max-time 60 -X POST http://localhost:8001/api/v1/hot-reload/reload-all \
+              -H 'Content-Type: application/json' -d '{}' || true
 
-          echo "=== [Node1] 热更新（第1次）==="
-          sshpass -p "$SSH_PASSWORD" ssh \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=15 \
-            root@$NODE1_PUBLIC_IP \
-            "curl -sf --max-time 60 -X POST http://localhost:8001/api/v1/hot-reload/reload-all \
-              -H 'Content-Type: application/json' -d '{}'"
-
-          sleep 5
-
-          echo "=== [Node1] 热更新（第2次，确保所有 Worker 刷新）==="
-          sshpass -p "$SSH_PASSWORD" ssh \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=15 \
-            root@$NODE1_PUBLIC_IP \
-            "curl -sf --max-time 60 -X POST http://localhost:8001/api/v1/hot-reload/reload-all \
-              -H 'Content-Type: application/json' -d '{}'" || true
-
+      # ──────────────────────────────────────────────
+      # Step 4: 生产验证
+      # ──────────────────────────────────────────────
       - name: "[Node1] 生产验证"
-        env:
-          NODE1_PUBLIC_IP: ${{ secrets.NODE1_PUBLIC_IP }}
         run: |
-          echo "=== 等待 Node1 服务就绪（10s）==="
           sleep 10
-
-          echo "=== Node1 健康检查 ==="
+          NODE1_IP="${{ secrets.NODE1_PUBLIC_IP }}"
+          echo "=== 健康检查 ==="
           for i in 1 2 3 4 5; do
-            HEALTH=$(curl -sf --max-time 10 "http://$NODE1_PUBLIC_IP:8001/health" 2>/dev/null || echo "FAIL")
+            HEALTH=$(curl -sf --max-time 10 "http://$NODE1_IP:8001/health" 2>/dev/null || echo FAIL)
             if echo "$HEALTH" | grep -q '"status"'; then
-              echo "健康检查通过（第 $i 次）"
+              echo "健康检查通过"
               break
             fi
-            echo "第 $i 次检查未通过，5s 后重试..."
+            [ $i -eq 5 ] && echo "健康检查失败" && exit 1
             sleep 5
-            if [ $i -eq 5 ]; then
-              echo "Node1 健康检查失败！"
-              exit 1
-            fi
           done
 
-          echo "=== Node1 关键接口验证 ==="
-          BAZI_RESULT=$(curl -sf --max-time 15 \
-            -X POST "http://$NODE1_PUBLIC_IP:8001/api/v1/bazi/interface" \
-            -H "Content-Type: application/json" \
-            -d '{"solar_date":"1990-01-15","solar_time":"12:00","gender":"male"}' 2>/dev/null || echo "FAIL")
-
-          if echo "$BAZI_RESULT" | grep -q '"success":true'; then
-            echo "生产接口验证通过"
+          echo "=== 接口验证 ==="
+          API=$(curl -sf --max-time 15 \
+            -X POST "http://$NODE1_IP:8001/api/v1/bazi/interface" \
+            -H 'Content-Type: application/json' \
+            -d '{"solar_date":"1990-01-15","solar_time":"12:00","gender":"male"}' 2>/dev/null || echo FAIL)
+          if echo "$API" | grep -q '"success":true'; then
+            echo "接口验证通过 ✓"
           else
-            echo "生产接口验证异常（服务健康但接口返回异常）"
-            echo "Response: $BAZI_RESULT"
-            # 接口异常只告警，不阻断（可能是测试数据问题）
+            echo "接口返回异常（服务健康，可能是数据问题）: $API"
           fi
 
-          echo ""
-          echo "=== 部署完成 ==="
-          echo "Commit: ${{ github.sha }}"
-          echo "Node1: http://$NODE1_PUBLIC_IP:8001/health"
+          echo "=== 部署完成 commit: ${{ github.sha }} ==="
