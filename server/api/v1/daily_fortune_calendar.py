@@ -367,8 +367,9 @@ async def daily_fortune_stream_generator(
     """
     import traceback
     import logging
+    # 函数入口即绑定，避免异常时 UnboundLocalError（本函数内后续会使用 logger）
     logger = logging.getLogger(__name__)
-    
+
     async def _is_disconnected() -> bool:
         """检查客户端是否已断开连接"""
         if http_request:

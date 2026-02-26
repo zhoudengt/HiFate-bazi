@@ -7,6 +7,7 @@
 
 import sys
 import os
+import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, date
 
@@ -18,6 +19,8 @@ from server.services.bazi_service import BaziService
 from server.services.bazi_detail_service import BaziDetailService
 from server.services.rule_service import RuleService
 from server.utils.data_validator import validate_bazi_data
+
+logger = logging.getLogger(__name__)
 
 
 class DailyFortuneService:
@@ -303,8 +306,7 @@ class DailyFortuneService:
                 }
         except Exception as e:
             # 计算失败时返回默认值
-            import logging
-            logging.warning(f"流日信息计算失败: {e}")
+            logger.warning(f"流日信息计算失败: {e}")
         
         return liuri_info
     
@@ -316,17 +318,12 @@ class DailyFortuneService:
         target_date: date
     ) -> Dict[str, Any]:
         """使用规则匹配生成运势分析（基于八字动态生成）"""
-        # 第一行就打印参数类型
-        import logging
-        logger = logging.getLogger(__name__)
         # DEBUG日志已移除，如需调试请使用logger.debug()
         
         # 【防御性代码】确保 bazi_data 是字典类型
         # 注意：在调用此函数前应该已经检查并修复了 bazi_data 的类型
         # 但为了安全，这里再次检查
         if not isinstance(bazi_data, dict):
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"_generate_with_rules: bazi_data 类型错误: {type(bazi_data)}, 值: {str(bazi_data)[:100]}")
             # 返回默认值而不是抛出异常
             return {
@@ -421,8 +418,6 @@ class DailyFortuneService:
         """基于八字分析今日运势"""
         # 【防御性代码】确保 bazi_data 是字典类型
         if not isinstance(bazi_data, dict):
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"_analyze_by_bazi: bazi_data 类型错误: {type(bazi_data)}, 值: {str(bazi_data)[:100]}")
             bazi_data = {}
         
@@ -458,13 +453,9 @@ class DailyFortuneService:
                     import json
                     ten_gods_stats_raw = json.loads(ten_gods_stats_raw)
                 except (json.JSONDecodeError, TypeError):
-                    import logging
-                    logger = logging.getLogger(__name__)
                     logger.error(f"ten_gods_stats 解析失败: {ten_gods_stats_raw[:100]}")
                     ten_gods_stats_raw = {}
         if not isinstance(ten_gods_stats_raw, dict):
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"ten_gods_stats_raw 类型错误: {type(ten_gods_stats_raw)}")
             ten_gods_stats_raw = {}
         
@@ -508,8 +499,6 @@ class DailyFortuneService:
         
         # 生成各项运势
         # 【防御性检查】确保 ten_gods_stats 是字典
-        import logging
-        logger = logging.getLogger(__name__)
         if not isinstance(ten_gods_stats, dict):
             logger.error(f"_analyze_by_bazi: ten_gods_stats 类型错误: {type(ten_gods_stats)}, 值: {str(ten_gods_stats)[:100]}")
             ten_gods_stats = {}
@@ -544,8 +533,6 @@ class DailyFortuneService:
         """生成事业运势"""
         # 【防御性代码】确保 ten_gods 是字典类型
         if not isinstance(ten_gods, dict):
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"_generate_career_fortune: ten_gods 类型错误: {type(ten_gods)}, 值: {str(ten_gods)[:100]}")
             ten_gods = {}
         
