@@ -866,19 +866,19 @@ class BaziDisplayService:
                         logger.debug(f"按虚岁判断当前大运(降级): {dayun.get('stem', '')}{dayun.get('branch', '')}")
                         break
         
-        # 确定要显示的大运（如果指定了dayun_index，使用指定的；否则使用当前大运）
+        # 确定要显示的大运（dayun_index 或 resolved_dayun_index 或当前大运）
         target_dayun = None
         if dayun_index is not None:
-            # ✅ 修复：根据step查找大运（step是唯一标识，不受列表顺序影响）
             for dayun in dayun_sequence:
                 if dayun.get('step') == dayun_index:
                     target_dayun = dayun
                     break
-        else:
-            target_dayun = current_dayun
-        
-        # 如果没有找到目标大运，使用当前大运
-        if not target_dayun:
+        if target_dayun is None and resolved_dayun_index is not None:
+            for dayun in dayun_sequence:
+                if dayun.get('step') == resolved_dayun_index:
+                    target_dayun = dayun
+                    break
+        if target_dayun is None:
             target_dayun = current_dayun or (dayun_sequence[0] if dayun_sequence else None)
         
         # 格式化大运列表
@@ -889,42 +889,41 @@ class BaziDisplayService:
                 formatted['is_current'] = True
             formatted_dayun_list.append(formatted)
         
-        # 处理流年数据 - ✅ 只返回当前大运下的流年（约10年）
+        # 处理流年数据：优先使用目标大运的流年序列（支持切换大运浏览）
         current_year = datetime.now().year if not current_time else current_time.year
+        display_dayun = target_dayun if target_dayun else current_dayun
+        is_browsing_other_dayun = (
+            target_dayun and current_dayun
+            and target_dayun.get('step') != current_dayun.get('step')
+        )
         
-        # ✅ 优先使用当前大运（或目标大运）下的流年序列
-        # 每个大运都有自己的 liunian_sequence（在 bazi_calculator_docs.py 中计算）
-        if current_dayun and not current_dayun.get('is_xiaoyun', False):
-            # 使用当前大运的流年序列
-            liunian_sequence = current_dayun.get('liunian_sequence', [])
-            logger.debug(f"使用当前大运 {current_dayun.get('stem', '')}{current_dayun.get('branch', '')} 的流年序列，共 {len(liunian_sequence)} 年")
+        if display_dayun and not display_dayun.get('is_xiaoyun', False):
+            liunian_sequence = display_dayun.get('liunian_sequence', [])
+            logger.debug(f"使用目标大运 {display_dayun.get('stem', '')}{display_dayun.get('branch', '')} 的流年序列，共 {len(liunian_sequence)} 年")
         else:
-            # 降级：使用全局流年序列
             liunian_sequence = details.get('liunian_sequence', [])
             logger.debug(f"使用全局流年序列（降级），共 {len(liunian_sequence)} 年")
         
-        # 确定当前流年
+        if is_browsing_other_dayun:
+            ref_year = target_year or (liunian_sequence[0].get('year') if liunian_sequence else current_year)
+        else:
+            ref_year = current_year
+        
         current_liunian = None
         for liunian in liunian_sequence:
-            if liunian.get('year') == current_year:
+            if liunian.get('year') == ref_year:
                 current_liunian = liunian
                 break
-        
-        # ✅ 修复：如果流年序列中没有当前年份，计算默认流年数据（包含完整详细信息）
-        # 这确保细盘流年列始终有数据显示
         if current_liunian is None:
-            # 获取日主用于计算十神等详细信息
             bazi_pillars = detail_result.get('bazi_pillars', {})
             day_stem = bazi_pillars.get('day', {}).get('stem', '')
-            current_liunian = _calculate_default_liunian(current_year, birth_year, day_stem)
-            logger.debug(f"使用默认流年数据: {current_year}年 {current_liunian.get('stem', '')}{current_liunian.get('branch', '')} (含详细信息)")
+            current_liunian = _calculate_default_liunian(ref_year, birth_year, day_stem)
+            logger.debug(f"使用默认流年数据: {ref_year}年 {current_liunian.get('stem', '')}{current_liunian.get('branch', '')} (含详细信息)")
         
-        # 格式化流年列表（只包含当前大运范围内的流年，约10年）
         formatted_liunian_list = []
         for liunian in liunian_sequence:
             formatted = BaziDisplayService._format_liunian_item(liunian)
-            # ✅ 标识当前年份
-            if liunian.get('year') == current_year:
+            if liunian.get('year') == ref_year:
                 formatted['is_current'] = True
             formatted_liunian_list.append(formatted)
         

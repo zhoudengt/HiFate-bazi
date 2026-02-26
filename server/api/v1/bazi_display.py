@@ -648,33 +648,42 @@ def _assemble_fortune_display_response(
                 for item in fmt_dayun['liunian_simple'] if item.get('year')
             ]
     
-    # 6. 处理流年数据
+    # 6. 处理流年数据（优先使用目标大运的流年序列，支持切换大运浏览）
     current_year = current_time.year
+    display_dayun = target_dayun if target_dayun else current_dayun
+    is_browsing_other_dayun = (
+        target_dayun and current_dayun
+        and target_dayun.get('step') != current_dayun.get('step')
+    )
     
-    # 优先使用当前大运下的流年序列
-    if current_dayun and not current_dayun.get('is_xiaoyun', False):
-        liunian_sequence = current_dayun.get('liunian_sequence', liunian_sequence)
+    if display_dayun and not display_dayun.get('is_xiaoyun', False):
+        liunian_sequence = display_dayun.get('liunian_sequence', liunian_sequence)
     elif not liunian_sequence:
         liunian_sequence = details.get('liunian_sequence', [])
     
-    # 确定当前流年
+    # 焦点年：当前大运用今年，浏览其他大运用 target_year 或该大运首年
+    if is_browsing_other_dayun:
+        ref_year = target_year or (liunian_sequence[0].get('year') if liunian_sequence else current_year)
+    else:
+        ref_year = current_year
+    
+    # 确定当前/焦点流年
     current_liunian = None
     for liunian in liunian_sequence:
-        if liunian.get('year') == current_year:
+        if liunian.get('year') == ref_year:
             current_liunian = liunian
             break
     
-    # 如果流年序列中没有当前年份，计算默认流年数据
     if current_liunian is None:
         bazi_pillars = bazi_data.get('bazi_pillars', {})
         day_stem = bazi_pillars.get('day', {}).get('stem', '')
-        current_liunian = _calculate_default_liunian(current_year, birth_year, day_stem)
+        current_liunian = _calculate_default_liunian(ref_year, birth_year, day_stem)
     
-    # 格式化流年列表
+    # 格式化流年列表（is_current 以 ref_year 为准）
     formatted_liunian_list = []
     for liunian in liunian_sequence:
         formatted = BaziDisplayService._format_liunian_item(liunian)
-        if liunian.get('year') == current_year:
+        if liunian.get('year') == ref_year:
             formatted['is_current'] = True
         formatted_liunian_list.append(formatted)
     
@@ -1027,26 +1036,36 @@ def _assemble_shengong_minggong_response(
         }
     }
     
-    # 流年
+    # 流年（优先使用目标大运的流年序列，支持切换大运浏览）
     current_year = current_time.year
-    if current_dayun and not current_dayun.get('is_xiaoyun', False):
-        liunian_sequence = current_dayun.get('liunian_sequence', liunian_sequence)
+    display_dayun = target_dayun if target_dayun else current_dayun
+    is_browsing_other_dayun = (
+        target_dayun and current_dayun
+        and target_dayun.get('step') != current_dayun.get('step')
+    )
+    if display_dayun and not display_dayun.get('is_xiaoyun', False):
+        liunian_sequence = display_dayun.get('liunian_sequence', liunian_sequence)
     elif not liunian_sequence:
         liunian_sequence = details.get('liunian_sequence', [])
     
+    if is_browsing_other_dayun:
+        ref_year = target_year or (liunian_sequence[0].get('year') if liunian_sequence else current_year)
+    else:
+        ref_year = current_year
+    
     current_liunian = None
     for liunian in liunian_sequence:
-        if liunian.get('year') == current_year:
+        if liunian.get('year') == ref_year:
             current_liunian = liunian
             break
     if current_liunian is None:
         day_stem_for_liunian = bazi_pillars.get('day', {}).get('stem', '')
-        current_liunian = _calculate_default_liunian(current_year, birth_year, day_stem_for_liunian)
+        current_liunian = _calculate_default_liunian(ref_year, birth_year, day_stem_for_liunian)
     
     formatted_liunian_list = []
     for liunian in liunian_sequence:
         formatted = BaziDisplayService._format_liunian_item(liunian)
-        if liunian.get('year') == current_year:
+        if liunian.get('year') == ref_year:
             formatted['is_current'] = True
         formatted_liunian_list.append(formatted)
     
