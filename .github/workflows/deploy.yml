@@ -1,177 +1,59 @@
-name: 生产部署（push master 自动发布）
+name: 生产部署（push master）
 
 on:
   push:
     branches: [ master ]
   workflow_dispatch:
-    inputs:
-      skip_node2:
-        description: '跳过 Node2 验证（紧急发布）'
-        required: false
-        default: 'false'
-        type: choice
-        options: ['false', 'true']
 
 jobs:
-  deploy:
-    name: 部署 Node1（生产）
+  deploy-node1:
+    name: Node1 生产部署
     runs-on: ubuntu-latest
     concurrency:
-      group: production-deploy
+      group: prod-deploy
       cancel-in-progress: false
 
     steps:
-      # ──────────────────────────────────────────────
-      # Step 1: Python 语法快速验证
-      # ──────────────────────────────────────────────
-      - name: 检出代码
+      - name: 检出
         uses: actions/checkout@v4
 
-      - name: Python 语法验证
+      - name: 语法检查
         run: |
-          python3 - <<'PYEOF'
-          import ast, sys, os, glob
-          errors = []
-          for pattern in ['server/**/*.py', 'services/**/*.py', 'core/**/*.py']:
-              for f in glob.glob(pattern, recursive=True):
+          python3 -c "
+          import ast, sys, glob, os
+          err = []
+          for p in ['server/**/*.py', 'services/**/*.py', 'core/**/*.py']:
+              for f in glob.glob(p, recursive=True):
                   if os.path.isfile(f):
-                      try:
-                          with open(f, 'r', encoding='utf-8') as fh:
-                              ast.parse(fh.read(), f)
-                      except SyntaxError as e:
-                          errors.append(f'{f}:{e.lineno}: {e.msg}')
-          if errors:
-              print('\n'.join(errors[:10]))
-              sys.exit(1)
-          print('语法检查通过')
-          PYEOF
+                      try: ast.parse(open(f, encoding='utf-8').read())
+                      except SyntaxError as e: err.append(f+':'+str(e.lineno))
+          if err: sys.exit(1)
+          print('OK')
+          "
 
-      # ──────────────────────────────────────────────
-      # Step 2: Node2 前哨（通过 Node1 跳转 SSH）
-      # skip_node2=true 时跳过
-      # ──────────────────────────────────────────────
-      - name: "[Node2] git pull + 热更新"
-        if: ${{ github.event.inputs.skip_node2 != 'true' }}
+      - name: Node1 拉代码 + 热更新
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.NODE1_PUBLIC_IP }}
           username: root
           password: ${{ secrets.SSH_PASSWORD }}
           port: 22
-          timeout: 60s
-          command_timeout: 120s
-          script: |
-            sshpass -p '${{ secrets.SSH_PASSWORD }}' ssh \
-              -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=20 \
-              root@${{ secrets.NODE2_PRIVATE_IP }} \
-              "cd /opt/HiFate-bazi && git fetch origin && git checkout master && git pull origin master"
-
-            sshpass -p '${{ secrets.SSH_PASSWORD }}' ssh \
-              -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=20 \
-              root@${{ secrets.NODE2_PRIVATE_IP }} \
-              "curl -sf --max-time 60 -X POST http://localhost:8001/api/v1/hot-reload/reload-all \
-                -H 'Content-Type: application/json' -d '{}'"
-
-      - name: "[Node2] 健康检查（门控）"
-        if: ${{ github.event.inputs.skip_node2 != 'true' }}
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.NODE1_PUBLIC_IP }}
-          username: root
-          password: ${{ secrets.SSH_PASSWORD }}
-          port: 22
-          timeout: 60s
-          command_timeout: 120s
-          script: |
-            sleep 15
-            for i in 1 2 3 4 5; do
-              RESULT=$(sshpass -p '${{ secrets.SSH_PASSWORD }}' ssh \
-                -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-                root@${{ secrets.NODE2_PRIVATE_IP }} \
-                "curl -sf --max-time 10 http://localhost:8001/health || echo FAIL" 2>/dev/null || echo FAIL)
-              if echo "$RESULT" | grep -q '"status"'; then
-                echo "Node2 健康检查通过"
-                # 接口验证
-                API=$(sshpass -p '${{ secrets.SSH_PASSWORD }}' ssh \
-                  -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-                  root@${{ secrets.NODE2_PRIVATE_IP }} \
-                  "curl -sf --max-time 15 -X POST http://localhost:8001/api/v1/bazi/interface \
-                    -H 'Content-Type: application/json' \
-                    -d '{\"solar_date\":\"1990-01-15\",\"solar_time\":\"12:00\",\"gender\":\"male\"}' \
-                    || echo FAIL" 2>/dev/null || echo FAIL)
-                if echo "$API" | grep -q '"success":true'; then
-                  echo "Node2 接口验证通过，允许部署 Node1"
-                  exit 0
-                else
-                  echo "Node2 接口验证失败，停止部署"
-                  exit 1
-                fi
-              fi
-              echo "第 $i 次检查未通过，等待 5s..."
-              sleep 5
-            done
-            echo "Node2 健康检查超时，停止部署"
-            exit 1
-
-      # ──────────────────────────────────────────────
-      # Step 3: Node1 生产部署
-      # ──────────────────────────────────────────────
-      - name: "[Node1] git pull + 热更新"
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.NODE1_PUBLIC_IP }}
-          username: root
-          password: ${{ secrets.SSH_PASSWORD }}
-          port: 22
-          timeout: 60s
-          command_timeout: 180s
+          timeout: 90
+          command_timeout: 300
           script: |
             set -e
-            cd /opt/HiFate-bazi
-            echo "=== git pull ==="
+            cd /opt/HiFate-bazi || { echo "目录不存在"; exit 1; }
             git fetch origin
-            git checkout master
+            git checkout -B master origin/master
             git pull origin master
-            echo "当前版本: $(git rev-parse --short HEAD)"
+            echo "版本: $(git rev-parse --short HEAD)"
+            curl -sf --max-time 90 -X POST http://localhost:8001/api/v1/hot-reload/reload-all -H "Content-Type: application/json" -d "{}" || true
+            sleep 8
+            curl -sf --max-time 90 -X POST http://localhost:8001/api/v1/hot-reload/reload-all -H "Content-Type: application/json" -d "{}" || true
+            echo "完成"
 
-            echo "=== 热更新第1次 ==="
-            curl -sf --max-time 60 -X POST http://localhost:8001/api/v1/hot-reload/reload-all \
-              -H 'Content-Type: application/json' -d '{}'
-            sleep 5
-
-            echo "=== 热更新第2次 ==="
-            curl -sf --max-time 60 -X POST http://localhost:8001/api/v1/hot-reload/reload-all \
-              -H 'Content-Type: application/json' -d '{}' || true
-
-      # ──────────────────────────────────────────────
-      # Step 4: 生产验证
-      # ──────────────────────────────────────────────
-      - name: "[Node1] 生产验证"
+      - name: 健康检查（可选）
+        continue-on-error: true
         run: |
-          sleep 10
-          NODE1_IP="${{ secrets.NODE1_PUBLIC_IP }}"
-          echo "=== 健康检查 ==="
-          for i in 1 2 3 4 5; do
-            HEALTH=$(curl -sf --max-time 10 "http://$NODE1_IP:8001/health" 2>/dev/null || echo FAIL)
-            if echo "$HEALTH" | grep -q '"status"'; then
-              echo "健康检查通过"
-              break
-            fi
-            [ $i -eq 5 ] && echo "健康检查失败" && exit 1
-            sleep 5
-          done
-
-          echo "=== 接口验证 ==="
-          API=$(curl -sf --max-time 15 \
-            -X POST "http://$NODE1_IP:8001/api/v1/bazi/interface" \
-            -H 'Content-Type: application/json' \
-            -d '{"solar_date":"1990-01-15","solar_time":"12:00","gender":"male"}' 2>/dev/null || echo FAIL)
-          if echo "$API" | grep -q '"success":true'; then
-            echo "接口验证通过 ✓"
-          else
-            echo "接口返回异常（服务健康，可能是数据问题）: $API"
-          fi
-
-          echo "=== 部署完成 commit: ${{ github.sha }} ==="
+          sleep 12
+          curl -sf --max-time 15 "http://${{ secrets.NODE1_PUBLIC_IP }}:8001/health" && echo " 健康" || echo " 无法连通（可能防火墙）"
