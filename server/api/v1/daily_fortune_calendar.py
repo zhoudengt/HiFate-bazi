@@ -150,7 +150,7 @@ class DailyFortuneCalendarResponse(BaseModel):
 @api_error_handler
 async def query_daily_fortune_calendar(request: DailyFortuneCalendarRequest):
     """查询每日运势日历（与流式接口同数据源，一次返回完整数据）。"""
-    log = logging.getLogger(__name__)
+    log = logger  # 使用模块级 logger，避免函数内局部赋值导致 UnboundLocalError
     user_final_solar_date = request.solar_date
     user_final_solar_time = request.solar_time
     if request.solar_date and request.solar_time and request.gender:
@@ -367,9 +367,8 @@ async def daily_fortune_stream_generator(
     """
     import traceback
     import logging
-    # 函数入口即绑定，避免异常时 UnboundLocalError（本函数内后续会使用 logger）
     logger = logging.getLogger(__name__)
-
+    
     async def _is_disconnected() -> bool:
         """检查客户端是否已断开连接"""
         if http_request:
