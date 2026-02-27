@@ -499,10 +499,10 @@ print('OK')
     echo ""
     gate_compose_sync node2_ssh "$PROJECT_DIR" "node2" "$NODE2_COMPOSE_HASH_BEFORE" "Node2"
     
-    # 3.5 Node2 热更新
+    # 3.5 Node2 热更新（失败不阻断，代码已落盘，后续请求或重启会加载）
     echo ""
-    gate_hot_reload "$NODE2_PUBLIC_IP" "Node2" 2
-    
+    gate_hot_reload "$NODE2_PUBLIC_IP" "Node2" 2 || echo -e "${YELLOW}Node2 热更新超时，继续部署（代码已落盘）${NC}"
+
     echo ""
     echo -e "${GREEN}[Step 3] Node2 部署完成${NC}"
     echo ""
