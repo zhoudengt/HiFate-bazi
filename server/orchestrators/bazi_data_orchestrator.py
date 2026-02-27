@@ -915,7 +915,14 @@ class BaziDataOrchestrator:
             result['detail'] = detail_data
         
         # ✅ 优化：写入缓存（如果启用），key 含 current_time 与 dayun 范围
-        if use_cache:
+        # ✅ 防护：如果请求了 detail 但 dayun/liunian 为空，不缓存（可能是瞬时故障导致的空结果）
+        need_detail = (modules.get('detail') or modules.get('dayun') or modules.get('liunian'))
+        has_dayun_data = bool(result.get('dayun')) or bool(result.get('liunian'))
+        skip_cache = need_detail and not has_dayun_data
+        if skip_cache:
+            logger.warning(f"[BaziDataOrchestrator] 请求了 detail 模块但 dayun/liunian 为空，跳过缓存写入")
+        
+        if use_cache and not skip_cache:
             try:
                 from server.utils.cache_key_generator import CacheKeyGenerator
                 from server.utils.cache_multi_level import get_multi_cache

@@ -518,7 +518,12 @@ async def get_fortune_display(request_wrapper: FortuneDisplayRequestWithMode = D
         raise HTTPException(status_code=500, detail=f"计算失败: {str(e)}")
 
     if result.get('success'):
-        set_cached_result(cache_key, result, L2_TTL)
+        dayun_list = result.get('dayun', {}).get('list', [])
+        dayun_seq = result.get('details', {}).get('dayun_sequence', [])
+        if dayun_list or dayun_seq:
+            set_cached_result(cache_key, result, L2_TTL)
+        else:
+            logger.warning(f"fortune/display 大运数据为空，跳过缓存写入: solar_date={final_solar_date}")
         if conversion_info.get('converted') or conversion_info.get('timezone_info'):
             result['conversion_info'] = conversion_info
         return result
