@@ -76,6 +76,80 @@ def _clear_endpoints():
 
 
 # ---------------------------------------------------------------------------
+# payload_json 容错解析
+# ---------------------------------------------------------------------------
+
+def _parse_payload_json(payload_json: str) -> Dict[str, Any]:
+    """
+    容错解析 payload_json，兼容：
+    1. 尾部多余字符（Extra data）：提取第一个完整 JSON 对象
+    2. 双编码 JSON：外层为字符串时再解析一次
+    3. 确保返回 dict，供 handler 使用
+    """
+    if not payload_json or not isinstance(payload_json, str):
+        return {}
+    s = payload_json.strip()
+    if not s:
+        return {}
+
+    payload: Any = None
+    try:
+        payload = json.loads(s)
+    except JSONDecodeError as exc:
+        if "Extra data" in str(exc):
+            # 提取第一个完整 JSON 对象（兼容前端 payload 尾部多余字符）
+            start = s.find("{")
+            if start >= 0:
+                depth = 0
+                in_str = False
+                escape = False
+                q = None
+                for i in range(start, len(s)):
+                    c = s[i]
+                    if escape:
+                        escape = False
+                        continue
+                    if in_str:
+                        if c == "\\":
+                            escape = True
+                        elif c == q:
+                            in_str = False
+                        continue
+                    if c in "\"'":
+                        in_str = True
+                        q = c
+                    elif c == "{":
+                        depth += 1
+                    elif c == "}":
+                        depth -= 1
+                        if depth == 0:
+                            try:
+                                payload = json.loads(s[start : i + 1])
+                                break
+                            except JSONDecodeError:
+                                pass
+                if payload is None:
+                    raise exc
+            else:
+                raise exc
+        else:
+            raise exc
+
+    # 双编码：payload 为 str 时再解析一次（前端误传 JSON 字符串）
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except JSONDecodeError:
+            logger.warning("payload_json 双编码解析失败，期望 dict 得到 str")
+            return {}
+
+    if not isinstance(payload, dict):
+        logger.warning("payload_json 解析结果非 dict: type=%s", type(payload).__name__)
+        return {}
+    return payload
+
+
+# ---------------------------------------------------------------------------
 # 路由入口
 # ---------------------------------------------------------------------------
 
@@ -115,7 +189,7 @@ async def grpc_web_gateway(request: Request):
     payload_json = frontend_request["payload_json"]
 
     try:
-        payload = json.loads(payload_json) if payload_json else {}
+        payload = _parse_payload_json(payload_json)
     except JSONDecodeError as exc:
         error_msg = f"payload_json 解析失败: {exc}"
         logger.warning(error_msg)
