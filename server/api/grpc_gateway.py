@@ -103,7 +103,15 @@ async def grpc_web_gateway(request: Request):
         logger.error("gRPC-Web 请求解析异常: %s", exc, exc_info=True)
         return build_error_response(f"请求解析异常: {str(exc)}", http_status=500, grpc_status=13)
 
-    endpoint = frontend_request["endpoint"]
+    raw_endpoint = frontend_request.get("endpoint") or ""
+    endpoint = raw_endpoint.strip().rstrip(".") if isinstance(raw_endpoint, str) else str(raw_endpoint)
+    # 兼容前端网关多种 path 前缀（元气八字 destiny 网关、双节点等）
+    for prefix in ("/destiny/frontend/api/v1", "/api/v1"):
+        if endpoint.startswith(prefix):
+            endpoint = "/" + endpoint[len(prefix) :].lstrip("/")
+            break
+    if endpoint and not endpoint.startswith("/"):
+        endpoint = "/" + endpoint
     payload_json = frontend_request["payload_json"]
 
     try:
@@ -115,6 +123,15 @@ async def grpc_web_gateway(request: Request):
 
     # ---- 2. 查找 handler ----
     handler = SUPPORTED_ENDPOINTS.get(endpoint)
+    if not handler and endpoint:
+        # 回退：按后缀匹配（兼容 /api/v1/bazi/pan/display、bazi/pan/display 等）
+        ep_clean = endpoint.rstrip(".").strip()
+        for reg in SUPPORTED_ENDPOINTS:
+            if ep_clean == reg or ep_clean.endswith(reg) or ("/" + ep_clean.lstrip("/")) == reg:
+                handler = SUPPORTED_ENDPOINTS.get(reg)
+                if handler:
+                    endpoint = reg
+                    break
     logger.debug(
         f"🔍 查找端点处理器: {endpoint}, "
         f"是否存在: {handler is not None}, "
@@ -140,7 +157,7 @@ async def grpc_web_gateway(request: Request):
 
     if not handler:
         available = list(SUPPORTED_ENDPOINTS.keys())
-        logger.warning(f"未找到端点: {endpoint}, 已注册的端点: {available}")
+        logger.warning(f"未找到端点: 原始={repr(raw_endpoint)}, 规范化后={endpoint}, 已注册: {available[:15]}")
         error_msg = f"Unsupported endpoint: {endpoint}. Available endpoints: {', '.join(available[:10])}"
         return build_error_response(error_msg, http_status=404, grpc_status=12)
 
