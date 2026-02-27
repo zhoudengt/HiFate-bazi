@@ -164,10 +164,11 @@ router_manager.register_all_routers()
 # 健康检查路由
 app.include_router(health_router)
 
-# 静态文件
+# 静态文件（无 Nginx 时：/ 和 /frontend 均提供前端，API 在 /api）
 local_frontend_dir = os.path.join(project_root, "local_frontend")
 if os.path.isdir(local_frontend_dir):
     app.mount("/frontend", StaticFiles(directory=local_frontend_dir, html=True), name="frontend")
+    app.mount("/", StaticFiles(directory=local_frontend_dir, html=True), name="root")
     logger.info(f"✓ 静态文件目录已挂载: {local_frontend_dir}")
 
 # ==================== 入口 ====================
