@@ -447,17 +447,20 @@ if [ "$SKIP_NODE2" = "false" ] && [ "$TEST_ONLY" = "false" ]; then
     # 3.0 记录 compose 文件 hash（pull 前，用于检测基础设施变更）
     NODE2_COMPOSE_HASH_BEFORE=$(gate_compose_hash node2_ssh "$PROJECT_DIR" "node2")
     
-    # 3.1 Git pull on Node2
+    # 3.1 Git pull on Node2（pull 失败时尝试 reset --hard 解决分叉）
     echo "在 Node2 上拉取代码..."
-    node2_ssh "cd $PROJECT_DIR && \
+    if ! node2_ssh "cd $PROJECT_DIR && \
         git fetch origin && \
         git checkout $GIT_BRANCH && \
         (git stash || true) && \
-        git pull origin $GIT_BRANCH" || {
-        echo -e "${RED}Node2 代码拉取失败${NC}"
-        record_deploy_history "$DEPLOYMENT_ID" "failed" "node2_deploy" "代码拉取失败" "$LOCAL_COMMIT"
-        exit 1
-    }
+        git pull origin $GIT_BRANCH" 2>/dev/null; then
+        echo -e "${YELLOW}Node2 git pull 失败，尝试 reset --hard origin/$GIT_BRANCH 解决分叉...${NC}"
+        node2_ssh "cd $PROJECT_DIR && git fetch origin && git reset --hard origin/$GIT_BRANCH" || {
+            echo -e "${RED}Node2 代码拉取失败${NC}"
+            record_deploy_history "$DEPLOYMENT_ID" "failed" "node2_deploy" "代码拉取失败" "$LOCAL_COMMIT"
+            exit 1
+        }
+    fi
     
     # 3.2 验证 Node2 代码版本
     NODE2_COMMIT=$(node2_ssh "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
