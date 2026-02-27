@@ -1,4 +1,4 @@
-# Node1 专用配置（MySQL 主 + Redis 主）
+# Node1 单节点配置（无负载均衡）
 # 使用方式：docker-compose -f docker-compose.prod.yml -f docker-compose.node1.yml up -d
 
 version: '3.8'
@@ -100,20 +100,11 @@ services:
       retries: 5
 
   # ============================================
-  # Web - 必须 8001（前端已写死）
+  # Web - 单节点 8001（前端已写死）
   # ============================================
   web:
     ports:
       - "8001:8001"
-
-  # ============================================
-  # Nginx - 负载均衡到本机和远程节点
-  # ============================================
-  nginx:
-    environment:
-      NODE_ROLE: master
-      LOCAL_IP: ${NODE1_IP:-127.0.0.1}
-      REMOTE_IP: ${NODE2_IP:-127.0.0.1}
 
 volumes:
   mongodb_data:
