@@ -805,8 +805,9 @@ def _calculate_shengong_minggong_details(
     # 主星（使用与基本信息页面相同的计算方法，基于五行生克关系和阴阳属性）
     shengong_main_star = bazi_calc.get_main_star(day_stem, shengong_stem, 'month')
     
-    # 藏干
+    # 藏干及藏干十神
     shengong_hidden_stems = HIDDEN_STEMS.get(shengong_branch, [])
+    shengong_hidden_stars = ten_gods_calc.get_branch_ten_gods(day_stem, shengong_branch) if day_stem and shengong_hidden_stems else []
     
     # 星运
     shengong_star_fortune = star_fortune_calc.get_stem_fortune(day_stem, shengong_branch)
@@ -832,8 +833,9 @@ def _calculate_shengong_minggong_details(
     # 主星（使用与基本信息页面相同的计算方法，基于五行生克关系和阴阳属性）
     minggong_main_star = bazi_calc.get_main_star(day_stem, minggong_stem, 'month')
     
-    # 藏干
+    # 藏干及藏干十神
     minggong_hidden_stems = HIDDEN_STEMS.get(minggong_branch, [])
+    minggong_hidden_stars = ten_gods_calc.get_branch_ten_gods(day_stem, minggong_branch) if day_stem and minggong_hidden_stems else []
     
     # 星运
     minggong_star_fortune = star_fortune_calc.get_stem_fortune(day_stem, minggong_branch)
@@ -859,8 +861,9 @@ def _calculate_shengong_minggong_details(
     # 主星（使用与基本信息页面相同的计算方法，基于五行生克关系和阴阳属性）
     taiyuan_main_star = bazi_calc.get_main_star(day_stem, taiyuan_stem, 'month')
     
-    # 藏干
+    # 藏干及藏干十神
     taiyuan_hidden_stems = HIDDEN_STEMS.get(taiyuan_branch, [])
+    taiyuan_hidden_stars = ten_gods_calc.get_branch_ten_gods(day_stem, taiyuan_branch) if day_stem and taiyuan_hidden_stems else []
     
     # 星运
     taiyuan_star_fortune = star_fortune_calc.get_stem_fortune(day_stem, taiyuan_branch)
@@ -890,6 +893,7 @@ def _calculate_shengong_minggong_details(
             "branch": {"char": pillar_info.get('branch', '')},
             "main_star": pillar_data.get('main_star', ''),
             "hidden_stems": pillar_data.get('hidden_stems', []),
+            "hidden_stars": pillar_data.get('hidden_stars', []),
             "star_fortune": pillar_data.get('star_fortune', ''),
             "self_sitting": pillar_data.get('self_sitting', ''),
             "kongwang": pillar_data.get('kongwang', ''),
@@ -1002,6 +1006,7 @@ def _calculate_shengong_minggong_details(
             "branch": {"char": shengong_branch},
             "main_star": shengong_main_star,
             "hidden_stems": shengong_hidden_stems,
+            "hidden_stars": shengong_hidden_stars,
             "star_fortune": shengong_star_fortune,
             "self_sitting": shengong_self_sitting,
             "kongwang": shengong_kongwang,
@@ -1013,6 +1018,7 @@ def _calculate_shengong_minggong_details(
             "branch": {"char": minggong_branch},
             "main_star": minggong_main_star,
             "hidden_stems": minggong_hidden_stems,
+            "hidden_stars": minggong_hidden_stars,
             "star_fortune": minggong_star_fortune,
             "self_sitting": minggong_self_sitting,
             "kongwang": minggong_kongwang,
@@ -1024,6 +1030,7 @@ def _calculate_shengong_minggong_details(
             "branch": {"char": taiyuan_branch},
             "main_star": taiyuan_main_star,
             "hidden_stems": taiyuan_hidden_stems,
+            "hidden_stars": taiyuan_hidden_stars,
             "star_fortune": taiyuan_star_fortune,
             "self_sitting": taiyuan_self_sitting,
             "kongwang": taiyuan_kongwang,

@@ -936,13 +936,16 @@ def _assemble_shengong_minggong_response(
     deities_calc = DeitiesCalculator()
     
     def _calc_palace_details(ganzhi: str, label: str) -> Dict[str, Any]:
-        """计算单个宫位的详细信息"""
+        """计算单个宫位的详细信息（含藏干十神）"""
         stem, branch = ganzhi[0], ganzhi[1]
+        hidden_stems = HIDDEN_STEMS.get(branch, [])
+        hidden_stars = ten_gods_calc.get_branch_ten_gods(day_stem, branch) if day_stem and hidden_stems else []
         return {
             "stem": {"char": stem},
             "branch": {"char": branch},
             "main_star": bazi_calc.get_main_star(day_stem, stem, 'month'),
-            "hidden_stems": HIDDEN_STEMS.get(branch, []),
+            "hidden_stems": hidden_stems,
+            "hidden_stars": hidden_stars,
             "star_fortune": star_fortune_calc.get_stem_fortune(day_stem, branch),
             "self_sitting": star_fortune_calc.get_stem_fortune(stem, branch),
             "kongwang": star_fortune_calc.get_kongwang(ganzhi),
@@ -965,6 +968,7 @@ def _assemble_shengong_minggong_response(
             "branch": {"char": pillar_info.get('branch', '')},
             "main_star": pillar_data.get('main_star', ''),
             "hidden_stems": pillar_data.get('hidden_stems', []),
+            "hidden_stars": pillar_data.get('hidden_stars', []),
             "star_fortune": pillar_data.get('star_fortune', ''),
             "self_sitting": pillar_data.get('self_sitting', ''),
             "kongwang": pillar_data.get('kongwang', ''),
