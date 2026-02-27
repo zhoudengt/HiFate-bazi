@@ -24,7 +24,8 @@ fi
 echo ""
 echo "2. 重启 Web 容器（占用 80 端口）..."
 cd "$PROJECT_DIR"
-docker compose -f deploy/docker/docker-compose.prod.yml -f deploy/docker/docker-compose.node1.yml --env-file .env up -d --no-deps web
+[ -f .env ] && set -a && . .env && set +a
+docker compose -f deploy/docker/docker-compose.prod.yml -f deploy/docker/docker-compose.node1.yml up -d --no-deps web
 
 echo ""
 echo "3. 等待就绪..."
