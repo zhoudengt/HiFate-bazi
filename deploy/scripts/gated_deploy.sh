@@ -501,7 +501,7 @@ print('OK')
     
     # 3.5 Node2 热更新（失败不阻断，代码已落盘，后续请求或重启会加载）
     echo ""
-    gate_hot_reload "$NODE2_PUBLIC_IP" "Node2" 2 || echo -e "${YELLOW}Node2 热更新超时，继续部署（代码已落盘）${NC}"
+    gate_hot_reload "$NODE2_PUBLIC_IP" "Node2" 2 "${NODE2_PORT:-8001}" || echo -e "${YELLOW}Node2 热更新超时，继续部署（代码已落盘）${NC}"
 
     echo ""
     echo -e "${GREEN}[Step 3] Node2 部署完成${NC}"
@@ -525,7 +525,7 @@ if [ "$SKIP_NODE2" = "false" ]; then
     echo ""
     
     # 4.1 健康检查
-    if ! gate_health_check "$NODE2_PUBLIC_IP" "Node2" 5 5; then
+    if ! gate_health_check "$NODE2_PUBLIC_IP" "Node2" 5 5 "${NODE2_PORT:-8001}"; then
         print_gate_decision "Node2 前哨验证" "false" "Node2 健康检查失败，Node1 未被影响"
         record_deploy_history "$DEPLOYMENT_ID" "failed" "node2_health" "健康检查失败" "$LOCAL_COMMIT"
         exit 1

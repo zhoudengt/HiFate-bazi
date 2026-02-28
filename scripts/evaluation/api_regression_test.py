@@ -83,7 +83,7 @@ class TestCase:
 ENVIRONMENTS = {
     "local": "http://localhost:8001",
     "production": "http://8.210.52.217:8001",
-    "node2": "http://47.243.160.43:8001"
+    "node2": "http://47.243.160.43:8002"  # Node2 使用 8002 端口
 }
 
 # 通用测试数据
