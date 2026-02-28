@@ -44,9 +44,12 @@ globs:
 
 | 端点 | 用途 |
 |------|------|
-| `/hot-reload/reload-all` | 生产部署 |
+| `/hot-reload/reload-all` | 生产部署（通知所有 worker） |
+| `/hot-reload/reload-endpoints` | gRPC 端点恢复（单 worker） |
 | `/hot-reload/verify` | 部署后验证 |
 | `/hot-reload/check` | 仅开发用 |
+
+**重要**：部署脚本已内置 `reload-endpoints` 多次调用（8 次），覆盖所有 worker，确保 gRPC 端点在所有进程中正确注册。
 
 ---
 
@@ -56,3 +59,4 @@ globs:
 - ❌ 服务器上直接改代码
 - ❌ `docker restart`
 - ❌ 生产用 `/hot-reload/check`
+- ❌ 修改部署脚本时删除 `gate_reload_endpoints_multi` 调用

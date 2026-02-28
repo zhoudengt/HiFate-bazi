@@ -249,6 +249,7 @@ if [ "$ROLLBACK_MODE" = "true" ]; then
         ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git fetch origin && git checkout $ROLLBACK_COMMIT"
     fi
     gate_hot_reload "$NODE1_PUBLIC_IP" "Node1" 2
+    gate_reload_endpoints_multi "$NODE1_PUBLIC_IP" "Node1" 8
     gate_health_check "$NODE1_PUBLIC_IP" "Node1"
     
     record_deploy_history "$DEPLOYMENT_ID" "rollback" "node1_rollback" "回滚到 ${ROLLBACK_COMMIT:0:8}" "$ROLLBACK_COMMIT"
@@ -502,6 +503,10 @@ print('OK')
     # 3.5 Node2 热更新（失败不阻断，代码已落盘，后续请求或重启会加载）
     echo ""
     gate_hot_reload "$NODE2_PUBLIC_IP" "Node2" 2 "${NODE2_PORT:-8001}" "$NODE2_PUBLIC_IP" "$SSH_PASSWORD" || echo -e "${YELLOW}Node2 热更新超时，继续部署（代码已落盘）${NC}"
+    
+    # 3.6 Node2 gRPC 端点恢复（覆盖所有 worker）
+    echo ""
+    gate_reload_endpoints_multi "$NODE2_PUBLIC_IP" "Node2" 8 "${NODE2_PORT:-8001}"
 
     echo ""
     echo -e "${GREEN}[Step 3] Node2 部署完成${NC}"
@@ -707,6 +712,10 @@ fi
 echo ""
 gate_hot_reload "$NODE1_PUBLIC_IP" "Node1" 2
 
+# 5.7 Node1 gRPC 端点恢复（覆盖所有 worker）
+echo ""
+gate_reload_endpoints_multi "$NODE1_PUBLIC_IP" "Node1" 8
+
 echo ""
 echo -e "${GREEN}[Step 5] Node1 部署完成${NC}"
 echo ""
@@ -733,6 +742,7 @@ if ! gate_health_check "$NODE1_PUBLIC_IP" "Node1" 5 5; then
         ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git checkout $NODE1_BEFORE_COMMIT" 2>/dev/null
     fi
     gate_hot_reload "$NODE1_PUBLIC_IP" "Node1" 2
+    gate_reload_endpoints_multi "$NODE1_PUBLIC_IP" "Node1" 8
     
     record_deploy_history "$DEPLOYMENT_ID" "rollback" "node1_health_fail" "健康检查失败，已回滚" "$LOCAL_COMMIT"
     echo -e "${YELLOW}Node1 已回滚到 ${NODE1_BEFORE_COMMIT:0:8}${NC}"
@@ -747,11 +757,42 @@ BAZI_RESPONSE=$(curl -s --max-time 15 -X POST "http://$NODE1_PUBLIC_IP:8001/api/
     -d '{"solar_date":"1990-01-15","solar_time":"12:00","gender":"male"}' 2>/dev/null || echo "{}")
 
 if echo "$BAZI_RESPONSE" | grep -q '"success":true'; then
-    echo -e "${GREEN}关键接口验证通过${NC}"
+    echo -e "${GREEN}REST 接口验证通过${NC}"
     NODE1_VERIFY="PASS"
 else
-    echo -e "${YELLOW}关键接口验证异常（但服务健康）${NC}"
+    echo -e "${YELLOW}REST 接口验证异常（但服务健康）${NC}"
     NODE1_VERIFY="WARN"
+fi
+
+# 6.3 gRPC 端点验证
+echo ""
+echo "gRPC 端点验证..."
+VERIFY_RESPONSE=$(curl -s --max-time 15 -X POST "http://$NODE1_PUBLIC_IP:8001/api/v1/hot-reload/verify" 2>/dev/null || echo "{}")
+
+if echo "$VERIFY_RESPONSE" | grep -q '"grpc_endpoints".*"ok":true'; then
+    echo -e "${GREEN}gRPC 端点验证通过${NC}"
+elif echo "$VERIFY_RESPONSE" | grep -q '"grpc_endpoints"'; then
+    echo -e "${RED}gRPC 端点验证失败！${NC}"
+    echo "$VERIFY_RESPONSE" | grep -o '"grpc_endpoints":[^}]*}' || true
+    echo -e "${YELLOW}尝试自动回滚...${NC}"
+    
+    # 回滚 Node1
+    NODE1_HAS_ROLLBACK=$(ssh_exec $NODE1_PUBLIC_IP "[ -d $ROLLBACK_DIR/server ] && echo 'yes' || echo 'no'" 2>/dev/null)
+    if [ "$NODE1_HAS_ROLLBACK" = "yes" ]; then
+        for dir in $SYNC_DIRS; do
+            ssh_exec $NODE1_PUBLIC_IP "[ -d $ROLLBACK_DIR/$dir ] && rsync -a --delete $ROLLBACK_DIR/$dir/ $PROJECT_DIR/$dir/" 2>/dev/null || true
+        done
+    else
+        ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git checkout $NODE1_BEFORE_COMMIT" 2>/dev/null
+    fi
+    gate_hot_reload "$NODE1_PUBLIC_IP" "Node1" 2
+    gate_reload_endpoints_multi "$NODE1_PUBLIC_IP" "Node1" 8
+    
+    record_deploy_history "$DEPLOYMENT_ID" "rollback" "node1_grpc_fail" "gRPC 端点验证失败，已回滚" "$LOCAL_COMMIT"
+    echo -e "${YELLOW}Node1 已回滚到 ${NODE1_BEFORE_COMMIT:0:8}${NC}"
+    exit 1
+else
+    echo -e "${YELLOW}gRPC 端点验证响应异常（继续）${NC}"
 fi
 
 echo ""
