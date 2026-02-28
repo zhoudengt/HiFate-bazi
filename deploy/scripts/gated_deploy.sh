@@ -764,16 +764,10 @@ else
     NODE1_VERIFY="WARN"
 fi
 
-# 6.3 gRPC 端点验证
+# 6.3 gRPC 端点验证（23 个关键端点强制检查）
 echo ""
-echo "gRPC 端点验证..."
-VERIFY_RESPONSE=$(curl -s --max-time 15 -X POST "http://$NODE1_PUBLIC_IP:8001/api/v1/hot-reload/verify" 2>/dev/null || echo "{}")
-
-if echo "$VERIFY_RESPONSE" | grep -q '"grpc_endpoints".*"ok":true'; then
-    echo -e "${GREEN}gRPC 端点验证通过${NC}"
-elif echo "$VERIFY_RESPONSE" | grep -q '"grpc_endpoints"'; then
-    echo -e "${RED}gRPC 端点验证失败！${NC}"
-    echo "$VERIFY_RESPONSE" | grep -o '"grpc_endpoints":[^}]*}' || true
+if ! gate_verify_grpc_endpoints "$NODE1_PUBLIC_IP" "Node1"; then
+    echo -e "${RED}gRPC 端点验证失败！缺失关键端点${NC}"
     echo -e "${YELLOW}尝试自动回滚...${NC}"
     
     # 回滚 Node1
@@ -791,8 +785,6 @@ elif echo "$VERIFY_RESPONSE" | grep -q '"grpc_endpoints"'; then
     record_deploy_history "$DEPLOYMENT_ID" "rollback" "node1_grpc_fail" "gRPC 端点验证失败，已回滚" "$LOCAL_COMMIT"
     echo -e "${YELLOW}Node1 已回滚到 ${NODE1_BEFORE_COMMIT:0:8}${NC}"
     exit 1
-else
-    echo -e "${YELLOW}gRPC 端点验证响应异常（继续）${NC}"
 fi
 
 echo ""

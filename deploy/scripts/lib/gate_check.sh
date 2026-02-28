@@ -80,6 +80,72 @@ gate_hot_reload() {
 }
 
 # ----------------------------------------
+# gate_verify_grpc_endpoints <host> <label> [port]
+# 验证 23 个关键 gRPC 端点是否全部注册（部署后强制检查）
+# ----------------------------------------
+gate_verify_grpc_endpoints() {
+    local host="$1"
+    local label="$2"
+    local port="${3:-$HEALTH_PORT}"
+    
+    # 23 个关键业务端点（必须全部注册）
+    local key_endpoints=(
+        "/bazi/interface"
+        "/bazi/pan/display"
+        "/bazi/fortune/display"
+        "/bazi/shengong-minggong"
+        "/bazi/wangshuai"
+        "/bazi/formula-analysis"
+        "/bazi/rizhu-liujiazi"
+        "/bazi/data"
+        "/bazi/wuxing-proportion/test"
+        "/bazi/wuxing-proportion/stream"
+        "/bazi/xishen-jishen/test"
+        "/bazi/xishen-jishen/stream"
+        "/bazi/marriage-analysis/stream"
+        "/career-wealth/stream"
+        "/children-study/stream"
+        "/health/stream"
+        "/general-review/stream"
+        "/annual-report/stream"
+        "/daily-fortune-calendar/query"
+        "/daily-fortune-calendar/stream"
+        "/payment/unified/create"
+        "/payment/unified/verify"
+        "/homepage/contents"
+    )
+    
+    echo "验证 ${label} gRPC 端点注册（23 个关键端点）..."
+    
+    local missing_count=0
+    local missing_list=""
+    
+    # 获取已注册端点列表
+    local registered_endpoints=$(curl -s --max-time 10 "http://${host}:${port}/api/v1/hot-reload/reload-endpoints" 2>/dev/null | grep -o '"endpoints":\[[^]]*\]' || echo "")
+    
+    if [ -z "$registered_endpoints" ]; then
+        echo -e "${RED}${label} 无法获取端点列表${NC}"
+        return 1
+    fi
+    
+    # 检查每个关键端点
+    for endpoint in "${key_endpoints[@]}"; do
+        if ! echo "$registered_endpoints" | grep -q "\"$endpoint\""; then
+            ((missing_count++))
+            missing_list="${missing_list}\n  - ${endpoint}"
+        fi
+    done
+    
+    if [ $missing_count -gt 0 ]; then
+        echo -e "${RED}${label} 缺失 ${missing_count} 个关键端点:${missing_list}${NC}"
+        return 1
+    fi
+    
+    echo -e "${GREEN}${label} 全部 23 个关键端点验证通过${NC}"
+    return 0
+}
+
+# ----------------------------------------
 # gate_health_check <host> <label> [retries] [timeout] [port] [ssh_host] [ssh_pass]
 # 健康检查，重试指定次数。port 可选。
 # 当 ssh_host 提供时，通过 SSH 在远程执行 curl localhost:port（用于 Node2 公网端口未开放）
