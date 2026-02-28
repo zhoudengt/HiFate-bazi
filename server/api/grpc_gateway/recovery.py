@@ -30,7 +30,7 @@ def _reload_endpoints() -> bool:
 
     流程：
     1. 清空旧端点
-    2. importlib.reload 网关模块以触发 @_register 装饰器
+    2. importlib.reload 所有 handler 模块以触发 @_register 装饰器
     3. 若关键端点仍缺失，降级手动注册
     """
     old_count = len(SUPPORTED_ENDPOINTS)
@@ -41,11 +41,31 @@ def _reload_endpoints() -> bool:
         import importlib
         import sys
 
-        if "server.api.grpc_gateway" not in sys.modules:
-            import server.api.grpc_gateway  # noqa: F401
-
-        gateway_module = sys.modules["server.api.grpc_gateway"]
-        importlib.reload(gateway_module)
+        # 重新加载所有 handler 模块（关键！）
+        handler_modules = [
+            "server.api.grpc_gateway.handlers.payment_handlers",
+            "server.api.grpc_gateway.handlers.homepage_handlers",
+            "server.api.grpc_gateway.handlers.calendar_handlers",
+            "server.api.grpc_gateway.handlers.smart_handlers",
+            "server.api.grpc_gateway.handlers.media_handlers",
+            "server.api.grpc_gateway.handlers.admin_handlers",
+            "server.api.grpc_gateway.handlers.bazi_handlers",
+            "server.api.grpc_gateway.handlers.stream_handlers",
+        ]
+        
+        for module_name in handler_modules:
+            if module_name in sys.modules:
+                try:
+                    importlib.reload(sys.modules[module_name])
+                    logger.debug(f"✓ 重新加载: {module_name}")
+                except Exception as e:
+                    logger.warning(f"⚠️  重新加载 {module_name} 失败: {e}")
+            else:
+                try:
+                    __import__(module_name)
+                    logger.debug(f"✓ 首次加载: {module_name}")
+                except Exception as e:
+                    logger.warning(f"⚠️  加载 {module_name} 失败: {e}")
 
         endpoint_count = len(SUPPORTED_ENDPOINTS)
         logger.info(f"重新加载后端点数量: {endpoint_count}")
