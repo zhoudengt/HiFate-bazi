@@ -117,15 +117,15 @@ def format_children_study_for_llm(input_data: Dict[str, Any]) -> str:
     
     # 5. 十神
     ten_gods = zinvxing.get('ten_gods', {})
-    ten_gods_text = format_ten_gods_text(ten_gods)
+    ten_gods_text = format_ten_gods_text(ten_gods, include_hidden=True)
     if ten_gods_text:
         lines.append(f"【十神】{ten_gods_text}")
     
     # 6. 神煞
     deities = zinvxing.get('deities', {})
     deities_text = format_deities_text(deities)
-    if deities_text and deities_text != "无":
-        lines.append(f"【神煞】{deities_text}")
+    # 始终显示神煞字段（即使为空也显示"无"）
+    lines.append(f"【神煞】{deities_text or '无'}")
     
     # 7. 子女判词（完整保留）
     rule_judgments = children_rules.get('rule_judgments', [])

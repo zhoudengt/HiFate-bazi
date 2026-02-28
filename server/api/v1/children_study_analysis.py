@@ -897,7 +897,17 @@ def build_children_study_input_data(
     # ⚠️ 修复：从 detail_result 或 bazi_data 中提取十神数据
     ten_gods_data = extract_ten_gods_data(detail_result, bazi_data)
     
-    deities_data = detail_result.get('deities', {})
+    # 从 bazi_data.details 中提取神煞数据（与婚姻、事业分析一致）
+    deities_data = {}
+    try:
+        details = bazi_data.get('details', {})
+        for pillar_name in ['year', 'month', 'day', 'hour']:
+            pillar_details = details.get(pillar_name, {})
+            deities = pillar_details.get('deities', [])
+            if deities:
+                deities_data[pillar_name] = deities
+    except Exception as e:
+        logger.warning(f"提取神煞数据失败（不影响业务）: {e}")
     
     # 提取日主信息
     day_pillar = bazi_pillars.get('day', {})
