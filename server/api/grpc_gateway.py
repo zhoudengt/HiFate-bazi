@@ -50,14 +50,25 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # 加载 handler 模块以触发 @_register 注册
 # ---------------------------------------------------------------------------
-import server.api.grpc_gateway.handlers.payment_handlers   # noqa: F401
-import server.api.grpc_gateway.handlers.homepage_handlers   # noqa: F401
-import server.api.grpc_gateway.handlers.calendar_handlers   # noqa: F401
-import server.api.grpc_gateway.handlers.smart_handlers      # noqa: F401
-import server.api.grpc_gateway.handlers.media_handlers      # noqa: F401
-import server.api.grpc_gateway.handlers.admin_handlers      # noqa: F401
-import server.api.grpc_gateway.handlers.bazi_handlers       # noqa: F401
-import server.api.grpc_gateway.handlers.stream_handlers     # noqa: F401
+_handler_modules = [
+    "server.api.grpc_gateway.handlers.payment_handlers",
+    "server.api.grpc_gateway.handlers.homepage_handlers",
+    "server.api.grpc_gateway.handlers.calendar_handlers",
+    "server.api.grpc_gateway.handlers.smart_handlers",
+    "server.api.grpc_gateway.handlers.media_handlers",
+    "server.api.grpc_gateway.handlers.admin_handlers",
+    "server.api.grpc_gateway.handlers.bazi_handlers",
+    "server.api.grpc_gateway.handlers.stream_handlers",
+]
+
+for _module_name in _handler_modules:
+    try:
+        __import__(_module_name)
+        logger.debug(f"✅ 加载 handler: {_module_name}")
+    except Exception as e:
+        logger.critical(f"🚨🚨 加载 handler 失败: {_module_name}, 错误: {e}", exc_info=True)
+
+logger.info(f"✅ Handler 加载完成，当前端点数: {len(SUPPORTED_ENDPOINTS)}")
 
 # ---------------------------------------------------------------------------
 # 类型别名

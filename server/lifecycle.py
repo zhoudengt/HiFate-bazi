@@ -24,23 +24,27 @@ async def lifespan(app: FastAPI):
     
     # ⭐ 第一层防护：服务启动时强制注册所有端点（不依赖装饰器）
     try:
-        from server.api.grpc_gateway import _ensure_endpoints_registered, SUPPORTED_ENDPOINTS
-        _ensure_endpoints_registered()
+        from server.api.grpc_gateway import _reload_endpoints, SUPPORTED_ENDPOINTS
+        
+        # 检查端点数量，如果不足则强制完整重载
+        initial_count = len(SUPPORTED_ENDPOINTS)
+        logger.info(f"服务启动，当前端点数: {initial_count}")
+        
+        if initial_count < 40:  # 少于 40 个说明 handler import 失败
+            logger.warning(f"⚠️ 端点数量不足（{initial_count}/47），强制重载所有 handler 模块...")
+            _reload_endpoints()  # 强制完整重载，确保全部 47 个端点注册
+            final_count = len(SUPPORTED_ENDPOINTS)
+            logger.info(f"✅ 端点重载完成（{initial_count} → {final_count}）")
+        else:
+            logger.info(f"✅ 端点数量正常（{initial_count}），跳过重载")
         
         # 验证关键端点
-        key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi"]
+        key_endpoints = ["/daily-fortune-calendar/query", "/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi", "/bazi/pan/display"]
         missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
         if missing:
-            logger.error(f"🚨 服务启动后关键端点缺失: {missing}，当前端点数量: {len(SUPPORTED_ENDPOINTS)}")
-            # 再次尝试注册
-            _ensure_endpoints_registered()
-            missing_after = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
-            if missing_after:
-                logger.critical(f"🚨🚨 服务启动后关键端点仍然缺失: {missing_after}，系统可能无法正常工作！")
-            else:
-                logger.info(f"✅ 关键端点已恢复（总端点数: {len(SUPPORTED_ENDPOINTS)}）")
+            logger.critical(f"🚨🚨 关键端点缺失: {missing}，当前端点数: {len(SUPPORTED_ENDPOINTS)}")
         else:
-            logger.info(f"✅ 所有关键端点已注册（总端点数: {len(SUPPORTED_ENDPOINTS)}）")
+            logger.info(f"✅ 所有关键端点已注册（总数: {len(SUPPORTED_ENDPOINTS)}）")
     except Exception as e:
         logger.critical(f"🚨🚨 端点注册失败: {e}", exc_info=True)
     
