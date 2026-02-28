@@ -52,6 +52,7 @@ services:
       - /opt/HiFate-bazi/server:/app/server:ro      # Web 服务模块
       - /opt/HiFate-bazi/services:/app/services:ro  # 微服务模块
       - /opt/HiFate-bazi/proto:/app/proto:ro        # gRPC proto 文件
+      - /opt/HiFate-bazi/scripts:/app/scripts:ro   # 评测脚本（回归测试用，与 Node1 一致）
       - /opt/secure/keys:/opt/secure/keys:ro        # 支付密钥
       - /opt/HiFate-bazi/local_frontend:/app/local_frontend:ro  # 前端静态文件
     restart: always
