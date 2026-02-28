@@ -83,7 +83,8 @@ class TestCase:
 ENVIRONMENTS = {
     "local": "http://localhost:8001",
     "production": "http://8.210.52.217:8001",
-    "node2": "http://47.243.160.43:8002"  # Node2 使用 8002 端口
+    "node2": "http://47.243.160.43:8002",  # Node2 公网（需开放 8002）
+    "node2-local": "http://localhost:8002"  # Node2 本机（SSH 内执行用）
 }
 
 # 通用测试数据
@@ -713,7 +714,7 @@ class APITester:
 
 def main():
     parser = argparse.ArgumentParser(description="API 回归测试")
-    parser.add_argument("--env", choices=["local", "production", "node2"], default="local",
+    parser.add_argument("--env", choices=["local", "production", "node2", "node2-local"], default="local",
                         help="测试环境 (默认: local)")
     parser.add_argument("--url", help="自定义基础 URL (覆盖 --env)")
     parser.add_argument("--category", choices=["basic", "stream", "payment", "admin", "all"], 
