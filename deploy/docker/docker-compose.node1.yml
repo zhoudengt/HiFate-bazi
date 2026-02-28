@@ -70,42 +70,8 @@ services:
       retries: 5
 
   # ============================================
-  # MongoDB（Node1专用）
-  # ============================================
-  mongodb:
-    image: mongo:7.0
-    container_name: hifate-mongodb
-    ports:
-      - "27017:27017"
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?MONGO_PASSWORD env var required}
-    volumes:
-      - mongodb_data:/data/db
-      - mongodb_config:/data/configdb
-    restart: always
-    networks:
-      - hifate-network
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 2G
-        reservations:
-          memory: 1G
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ============================================
   # Web - 单节点 8001（前端已写死）
   # ============================================
   web:
     ports:
       - "8001:8001"
-
-volumes:
-  mongodb_data:
-  mongodb_config:
