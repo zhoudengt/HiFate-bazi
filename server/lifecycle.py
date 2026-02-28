@@ -24,17 +24,43 @@ async def lifespan(app: FastAPI):
     
     # ⭐ 第一层防护：服务启动时强制注册所有端点（不依赖装饰器）
     try:
-        from server.api.grpc_gateway import _reload_endpoints, SUPPORTED_ENDPOINTS
+        from server.api.grpc_gateway import SUPPORTED_ENDPOINTS
         
-        # 检查端点数量，如果不足则强制完整重载
+        # 检查端点数量，如果不足则强制重新 import handler 模块
         initial_count = len(SUPPORTED_ENDPOINTS)
         logger.info(f"服务启动，当前端点数: {initial_count}")
         
         if initial_count < 40:  # 少于 40 个说明 handler import 失败
-            logger.warning(f"⚠️ 端点数量不足（{initial_count}/47），强制重载所有 handler 模块...")
-            _reload_endpoints()  # 强制完整重载，确保全部 47 个端点注册
+            logger.warning(f"⚠️ 端点数量不足（{initial_count}/47），强制重新 import 所有 handler 模块...")
+            
+            import importlib
+            import sys
+            
+            # 不清空旧端点，直接重新 import（让 @_register 装饰器追加注册）
+            handler_modules = [
+                "server.api.grpc_gateway.handlers.payment_handlers",
+                "server.api.grpc_gateway.handlers.homepage_handlers",
+                "server.api.grpc_gateway.handlers.calendar_handlers",
+                "server.api.grpc_gateway.handlers.smart_handlers",
+                "server.api.grpc_gateway.handlers.media_handlers",
+                "server.api.grpc_gateway.handlers.admin_handlers",
+                "server.api.grpc_gateway.handlers.bazi_handlers",
+                "server.api.grpc_gateway.handlers.stream_handlers",
+            ]
+            
+            for module_name in handler_modules:
+                try:
+                    if module_name in sys.modules:
+                        importlib.reload(sys.modules[module_name])
+                        logger.debug(f"✓ 重新加载: {module_name}")
+                    else:
+                        __import__(module_name)
+                        logger.debug(f"✓ 首次加载: {module_name}")
+                except Exception as e:
+                    logger.error(f"🚨 加载 {module_name} 失败: {e}", exc_info=True)
+            
             final_count = len(SUPPORTED_ENDPOINTS)
-            logger.info(f"✅ 端点重载完成（{initial_count} → {final_count}）")
+            logger.info(f"✅ Handler 重新加载完成（{initial_count} → {final_count}）")
         else:
             logger.info(f"✅ 端点数量正常（{initial_count}），跳过重载")
         
