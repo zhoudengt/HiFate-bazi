@@ -412,7 +412,7 @@ gate_compose_hash() {
     local project_dir="$2"
     local node_label="$3"
     local hash
-    hash=$($ssh_func "cd $project_dir && md5sum docker-compose*.yml 2>/dev/null | md5sum | awk '{print \$1}'" 2>/dev/null) || hash="unknown"
+    hash=$($ssh_func "cd $project_dir/deploy/docker && md5sum docker-compose*.yml 2>/dev/null | md5sum | awk '{print \$1}'" 2>/dev/null) || hash="unknown"
     echo "$hash"
 }
 
@@ -424,11 +424,11 @@ gate_compose_sync() {
     local display_name="$5"
 
     local hash_after
-    hash_after=$($ssh_func "cd $project_dir && md5sum docker-compose*.yml 2>/dev/null | md5sum | awk '{print \$1}'" 2>/dev/null) || hash_after="unknown"
+    hash_after=$($ssh_func "cd $project_dir/deploy/docker && md5sum docker-compose*.yml 2>/dev/null | md5sum | awk '{print \$1}'" 2>/dev/null) || hash_after="unknown"
 
     if [ "$hash_before" != "$hash_after" ] && [ "$hash_before" != "unknown" ] && [ "$hash_after" != "unknown" ]; then
         echo -e "${YELLOW}检测到 $display_name compose 文件变更，执行容器重建...${NC}"
-        $ssh_func "cd $project_dir && docker compose up -d --build" || {
+        $ssh_func "cd $project_dir/deploy/docker && docker compose -f docker-compose.prod.yml -f docker-compose.${node_label}.yml --env-file $project_dir/.env up -d --no-deps web" || {
             echo -e "${RED}$display_name 容器重建失败${NC}"
             return 1
         }
