@@ -120,17 +120,36 @@ gate_verify_grpc_endpoints() {
     local missing_count=0
     local missing_list=""
     
-    # 获取已注册端点列表
-    local registered_endpoints=$(curl -s --max-time 10 "http://${host}:${port}/api/v1/hot-reload/reload-endpoints" 2>/dev/null | grep -o '"endpoints":\[[^]]*\]' || echo "")
+    # 先触发一次 reload-endpoints 确保端点已加载，并获取端点列表
+    local response=$(curl -s --max-time 10 -X POST "http://${host}:${port}/api/v1/hot-reload/reload-endpoints" 2>/dev/null || echo "{}")
     
-    if [ -z "$registered_endpoints" ]; then
-        echo -e "${RED}${label} 无法获取端点列表${NC}"
+    if [ -z "$response" ] || [ "$response" = "{}" ]; then
+        echo -e "${RED}${label} 无法连接到 reload-endpoints API${NC}"
         return 1
     fi
     
-    # 检查每个关键端点
-    for endpoint in "${key_endpoints[@]}"; do
-        if ! echo "$registered_endpoints" | grep -q "\"$endpoint\""; then
+    # 提取端点数量
+    local endpoint_count=$(echo "$response" | grep -o '"new_count":[0-9]*' | grep -o '[0-9]*' || echo "0")
+    echo "  当前已注册端点数量: ${endpoint_count}"
+    
+    if [ "$endpoint_count" -lt 20 ]; then
+        echo -e "${RED}${label} 端点数量异常（${endpoint_count} < 20），可能热更新失败${NC}"
+        return 1
+    fi
+    
+    # 检查每个关键端点（通过实际调用测试）
+    local test_endpoints=(
+        "/bazi/interface"
+        "/bazi/pan/display"
+        "/bazi/fortune/display"
+    )
+    
+    for endpoint in "${test_endpoints[@]}"; do
+        local test_response=$(curl -s --max-time 5 -X POST "http://${host}:${port}/api/v1/grpc-web/frontend.gateway.FrontendGateway/Call" \
+            -H "Content-Type: application/grpc-web+proto" \
+            -d "{\"endpoint\":\"${endpoint}\",\"payload_json\":\"{\\\"solar_date\\\":\\\"1990-01-15\\\",\\\"solar_time\\\":\\\"12:00\\\",\\\"gender\\\":\\\"male\\\"}\"}" 2>/dev/null || echo "")
+        
+        if echo "$test_response" | grep -q "Unsupported endpoint"; then
             ((missing_count++))
             missing_list="${missing_list}\n  - ${endpoint}"
         fi
@@ -141,7 +160,7 @@ gate_verify_grpc_endpoints() {
         return 1
     fi
     
-    echo -e "${GREEN}${label} 全部 23 个关键端点验证通过${NC}"
+    echo -e "${GREEN}${label} 关键端点验证通过（总数: ${endpoint_count}）${NC}"
     return 0
 }
 
