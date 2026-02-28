@@ -29,11 +29,13 @@ def _reload_endpoints() -> bool:
     重新注册所有端点（用于热更新后恢复）。
 
     流程：
-    1. 清空旧端点
-    2. importlib.reload 所有 handler 模块以触发 @_register 装饰器
-    3. 若关键端点仍缺失，降级手动注册
+    1. 备份旧端点
+    2. 清空并 importlib.reload 所有 handler 模块以触发 @_register 装饰器
+    3. 若重载后端点数量 < 40，回滚到旧端点（防止热更新导致端点丢失）
+    4. 若关键端点仍缺失，降级手动注册
     """
     old_count = len(SUPPORTED_ENDPOINTS)
+    old_endpoints = dict(SUPPORTED_ENDPOINTS)  # 备份旧端点
     SUPPORTED_ENDPOINTS.clear()
     logger.info(f"已清空 gRPC 端点注册表（旧端点数: {old_count}）")
 
@@ -53,22 +55,33 @@ def _reload_endpoints() -> bool:
             "server.api.grpc_gateway.handlers.stream_handlers",
         ]
         
+        failed_modules = []
         for module_name in handler_modules:
             if module_name in sys.modules:
                 try:
                     importlib.reload(sys.modules[module_name])
                     logger.debug(f"✓ 重新加载: {module_name}")
                 except Exception as e:
-                    logger.warning(f"⚠️  重新加载 {module_name} 失败: {e}")
+                    logger.error(f"🚨 重新加载 {module_name} 失败: {e}", exc_info=True)
+                    failed_modules.append(module_name)
             else:
                 try:
                     __import__(module_name)
                     logger.debug(f"✓ 首次加载: {module_name}")
                 except Exception as e:
-                    logger.warning(f"⚠️  加载 {module_name} 失败: {e}")
+                    logger.error(f"🚨 加载 {module_name} 失败: {e}", exc_info=True)
+                    failed_modules.append(module_name)
 
         endpoint_count = len(SUPPORTED_ENDPOINTS)
-        logger.info(f"重新加载后端点数量: {endpoint_count}")
+        logger.info(f"重新加载后端点数量: {endpoint_count}（失败模块: {failed_modules}）")
+
+        # 如果重载后端点数量不足，回滚到旧端点
+        if endpoint_count < 40 and old_count >= 40:
+            logger.error(f"🚨 重载后端点数量不足（{endpoint_count} < 40），回滚到旧端点（{old_count}）")
+            SUPPORTED_ENDPOINTS.clear()
+            SUPPORTED_ENDPOINTS.update(old_endpoints)
+            logger.info(f"✅ 已回滚到旧端点，当前端点数: {len(SUPPORTED_ENDPOINTS)}")
+            return False
 
         key_endpoints = ["/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi"]
         missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
@@ -93,6 +106,11 @@ def _reload_endpoints() -> bool:
         return endpoint_count > 0
     except Exception as e:
         logger.error(f"❌ gRPC 端点重新注册失败: {e}", exc_info=True)
+        # 发生异常时回滚
+        if old_count > 0:
+            SUPPORTED_ENDPOINTS.clear()
+            SUPPORTED_ENDPOINTS.update(old_endpoints)
+            logger.info(f"✅ 异常回滚到旧端点，当前端点数: {len(SUPPORTED_ENDPOINTS)}")
         return False
 
 
