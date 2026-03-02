@@ -85,9 +85,17 @@ bash deploy/scripts/deploy.sh node2
 - [04-日常运维](docs/04-日常运维.md) - 日常运维命令
 - [05-故障处理](docs/05-故障处理.md) - 故障排查和处理
 
+## 增量发布流程
+
+```bash
+bash deploy/scripts/gated_deploy.sh
+```
+
+流程：先到 Node2 测试（23 个 gRPC 端点 + 24 个 API 回归测试），合适则增量发布到 Node1。详见 `docs/deploy/门控发布详细说明.md`。
+
 ## CI/CD
 
-推送代码到 master 分支会自动触发部署：
+推送代码到 master 分支会自动触发构建：
 1. 构建 Docker 镜像
 2. 推送到 ACR
-3. 滚动部署到 Node1 → Node2
+3. 增量发布请使用 `gated_deploy.sh`（Node2 验证 → Node1）

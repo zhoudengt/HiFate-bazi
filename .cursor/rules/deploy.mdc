@@ -1,22 +1,23 @@
 ---
-description: 部署与上线流程（门控发布、热更新、验证）
+description: 增量发布流程（Node2 验证 → Node1 部署，含 23 接口测试）
 alwaysApply: false
 globs:
   - deploy/**
   - .github/workflows/**
 ---
 
-# 部署与上线规范
+# 增量发布规范
 
-> 完整文档：`standards/deployment.md`、`docs/deploy/门控发布详细说明.md`
+> 完整文档：`docs/deploy/门控发布详细说明.md`（发布规范，含 .env 配置说明）
+> **芝麻开门** / **芝麻开发** = 执行增量发布
 
 ## 核心流程
 
 ```
-本地开发 → 热更新验证 → 功能测试 → Git 提交 → 门控发布 → 生产验证
+本地开发 → 热更新验证 → 功能测试 → Git 提交 → 增量发布（Node2 验证 → Node1 部署）→ 生产验证
 ```
 
-**门控原则**：任何变更必须先在 Node2 部署并通过测试，才允许部署 Node1。
+**增量发布原则**：先到 Node2 测试对应开发是否合适（23 个 gRPC 端点 + 24 个 API 回归测试），合适则增量发布到 Node1。
 
 ---
 
@@ -24,10 +25,11 @@ globs:
 
 | 命令 | 说明 |
 |------|------|
-| `bash deploy/scripts/gated_deploy.sh` | 标准门控发布 |
-| `--dry-run` | 只在 Node2 验证 |
+| `bash deploy/scripts/gated_deploy.sh` | 增量发布（Node2 验证 → Node1 部署） |
+| **芝麻开门 快速** | `--skip-node2 --no-verify --non-interactive`（跳过 Node2+验证，直接 Node1 重启 web） |
+| `--dry-run` | 只在 Node2 验证，不动 Node1 |
 | `--skip-node2` | 紧急修复（慎用） |
-| `--rollback` | 回滚 |
+| `--rollback` | 回滚 Node1 |
 
 ---
 
@@ -35,7 +37,7 @@ globs:
 
 1. **热更新验证**：`python3 scripts/ai/auto_hot_reload.py --trigger` + `--verify`
 2. **回归测试**：`python3 scripts/evaluation/api_regression_test.py --env production --category basic --category stream --category payment --parallel`
-3. **Git 提交** → `bash deploy/scripts/gated_deploy.sh`
+3. **Git 提交** → `bash deploy/scripts/gated_deploy.sh`（增量发布：Node2 验证 23 接口 + 24 API → Node1）
 4. **生产验证**：health 接口 + 回归测试
 
 ---

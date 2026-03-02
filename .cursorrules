@@ -7,7 +7,7 @@
 ## 🔔 MCP 交互要求
 
 **重要操作前必须征求用户意见**：
-- 执行部署命令前（除非用户明确说"芝麻开门"）
+- 执行部署命令前（除非用户明确说「芝麻开门」即增量发布）
 - 修改核心文件前（`grpc_gateway.py`、`bazi_calculator.py` 等）
 - 删除文件前
 - 执行不可逆操作前
@@ -35,7 +35,7 @@
 ## 核心原则（必须遵守）
 
 ### 0. 代码修改流程
-> 本地开发 → Git提交 → **门控发布**（Node2 前哨验证 → Node1 生产部署）。禁止直接在服务器上修改代码。
+> 本地开发 → Git提交 → **增量发布**（先 Node2 测试 23 接口 + 24 API，合适则 Node1 部署）。禁止直接在服务器上修改代码。
 > 发布命令：`bash deploy/scripts/gated_deploy.sh`，详见 `@deploy.mdc`。
 > Phase 2 初始化：`bash deploy/scripts/init_staging.sh`（一次性，零停机）。
 
@@ -118,10 +118,12 @@
 ## 用户意图触发器
 
 > 用户说以下关键词时，**直接执行**对应命令，无需再确认（除非有未提交代码等阻碍）。
+> **芝麻开门** = 增量发布流程（Node2 验证 23 接口 + 24 API → Node1 部署），详见 `docs/deploy/门控发布详细说明.md`。
 
 | 用户说 | 执行 |
 |--------|------|
-| **芝麻开门** | `bash deploy/scripts/gated_deploy.sh` |
+| **芝麻开门** / **芝麻开发** | `bash deploy/scripts/gated_deploy.sh`（增量发布） |
+| **芝麻开门 快速** | `bash deploy/scripts/gated_deploy.sh --skip-node2 --no-verify --non-interactive`（跳过 Node2+验证，直接 Node1 重启 web） |
 | 芝麻开门 dry-run | `bash deploy/scripts/gated_deploy.sh --dry-run` |
 | 芝麻开门 紧急 | `bash deploy/scripts/gated_deploy.sh --skip-node2` |
 | 芝麻开门 回滚 | `bash deploy/scripts/gated_deploy.sh --rollback` |
@@ -137,7 +139,7 @@
 
 | 场景 | 引用 |
 |------|------|
-| 部署/门控发布 | `@deploy.mdc` |
+| 部署/增量发布 | `@deploy.mdc` |
 | 提交前检查 | `@dev-checklist.mdc` |
 | 修改缓存 | `@cache-rules.mdc` |
 | 修改 gRPC/API | `@grpc-rules.mdc` |
