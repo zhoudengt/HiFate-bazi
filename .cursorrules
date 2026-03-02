@@ -63,6 +63,7 @@
 3. 规则数据库化（`standards/rule-development.md`）
 4. 向后兼容、先测试后提交
 5. **文件拆分用 shell 命令**（`cp`/`sed`/`head`/`tail` 搬代码，不逐字重写。减少 token 消耗和出错概率）
+6. **生产代码隔离**：与生产无关的代码（测试脚本、基准测试、诊断工具、临时脚本）必须放在专门目录，不得与生产代码混在一起
 
 ---
 
@@ -74,11 +75,27 @@
 
 ---
 
-## 项目架构
+## 项目架构与目录规范
 
+### 生产代码目录（会部署到服务器）
 - **server/**：Web 服务 (8001)，`grpc_gateway.py` 为核心
 - **services/**：微服务 bazi_core(9001)、bazi_fortune(9002)、bazi_analyzer(9003) 等
-- **local_frontend/**：本地前端；生产前端由前端团队部署
+- **core/**：核心计算逻辑、分析器
+- **proto/**：gRPC 协议定义
+- **deploy/**：部署脚本与配置
+
+### 非生产代码目录（不会部署到服务器）
+- **scripts/**：运维脚本、诊断工具、基准测试、临时脚本
+  - 示例：`benchmark_*.py`、`diagnose_*.py`、`test_*.py`
+- **tests/**：单元测试、集成测试、回归测试
+  - 示例：`test_*.py`、`*_test.py`
+- **tools/**：开发工具、数据生成器、辅助工具
+  - 示例：`training_data/`、`data_migration/`
+- **docs/**：文档、说明、分析报告
+- **local_frontend/**：本地前端（生产前端由前端团队部署）
+
+### 重要规则
+> **任何与生产运行无关的代码，必须放在 `scripts/`、`tests/`、`tools/` 目录下，禁止放在生产代码目录（`server/`、`core/`、`services/`）中。**
 
 ---
 
@@ -112,6 +129,7 @@
 - ❌ 硬编码本地路径
 - ❌ 从文件读取规则（必须从数据库）
 - ❌ 下线功能只标 deprecated 不去注册（会被热更新重新加载）
+- ❌ 将测试/诊断/临时代码放在生产目录（`server/`、`core/`、`services/` 等）
 
 ---
 
