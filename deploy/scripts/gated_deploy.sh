@@ -1,14 +1,14 @@
 #!/bin/bash
 # ============================================
-# HiFate 门控发布脚本（物理隔离部署）
+# HiFate 增量发布脚本（门控发布）
 # ============================================
-# 核心原则：Node2 作为发布前哨，验证通过后才允许部署到 Node1
+# 核心原则：先到 Node2 测试，验证通过后才增量发布到 Node1
 #
 # 流程：
 #   1. 部署前检查（本地）
 #   2. 部署到 Node2（前哨节点）
-#   3. Node2 全量回归测试（门控）
-#   4. 门控判断：全部通过 → 部署 Node1；任意失败 → 停止
+#   3. Node2 门控验证：健康检查 + 23 个 gRPC 端点 + 24 个 API 回归测试
+#   4. 门控判断：全部通过 → 增量发布 Node1；任意失败 → 停止
 #   5. 部署到 Node1（生产节点）— 自动识别 Phase 1/2 模式
 #      Phase 1: 直接 git pull（无 staging 目录时）
 #      Phase 2: git pull → staging → rsync → live（零停机隔离）
@@ -53,6 +53,7 @@ SKIP_NODE2=false
 TEST_ONLY=false
 ROLLBACK_MODE=false
 NON_INTERACTIVE=false
+NO_VERIFY=false
 TEST_CATEGORIES="basic stream payment"
 
 while [ $# -gt 0 ]; do
@@ -63,6 +64,10 @@ while [ $# -gt 0 ]; do
             ;;
         --skip-node2)
             SKIP_NODE2=true
+            shift
+            ;;
+        --no-verify)
+            NO_VERIFY=true
             shift
             ;;
         --test-only)
@@ -85,9 +90,10 @@ while [ $# -gt 0 ]; do
             echo "HiFate 门控发布脚本"
             echo ""
             echo "用法:"
-            echo "  $0                          标准门控发布（Node2 验证 → Node1 部署）"
+            echo "  $0                          增量发布（Node2 验证 → Node1 部署）"
             echo "  $0 --dry-run                只部署 Node2 跑测试，不动 Node1"
             echo "  $0 --skip-node2             紧急模式：跳过 Node2 直接部署 Node1"
+            echo "  $0 --no-verify              跳过 Node1 验证，部署后重启 web（解决 gRPC 端点问题）"
             echo "  $0 --test-only              只跑 Node2 回归测试（不部署代码）"
             echo "  $0 --rollback               回滚 Node1 到上一次部署前的 commit"
             echo "  $0 --non-interactive / -y   非交互模式（自动确认）"
@@ -272,7 +278,11 @@ echo ""
 if [ "$DRY_RUN" = "true" ]; then
     echo -e "${YELLOW}模式: DRY-RUN（只部署 Node2 测试，不动 Node1）${NC}"
 elif [ "$SKIP_NODE2" = "true" ]; then
-    echo -e "${YELLOW}模式: 紧急（跳过 Node2，直接部署 Node1）${NC}"
+    if [ "$NO_VERIFY" = "true" ]; then
+        echo -e "${YELLOW}模式: 快速（跳过 Node2 + 跳过验证，部署后重启 web）${NC}"
+    else
+        echo -e "${YELLOW}模式: 紧急（跳过 Node2，直接部署 Node1）${NC}"
+    fi
 elif [ "$TEST_ONLY" = "true" ]; then
     echo -e "${YELLOW}模式: 仅测试（只跑 Node2 回归测试，不部署）${NC}"
 else
@@ -536,7 +546,15 @@ if [ "$SKIP_NODE2" = "false" ]; then
         exit 1
     fi
     
-    # 4.2 全量回归测试
+    # 4.2 23 个关键 gRPC 端点验证
+    echo ""
+    if ! gate_verify_grpc_endpoints "$NODE2_PUBLIC_IP" "Node2" "${NODE2_PORT:-8001}"; then
+        print_gate_decision "Node2 前哨验证" "false" "Node2 23 个 gRPC 端点验证失败，Node1 未被影响"
+        record_deploy_history "$DEPLOYMENT_ID" "failed" "node2_grpc" "23 端点验证失败" "$LOCAL_COMMIT"
+        exit 1
+    fi
+    
+    # 4.3 全量回归测试（24 个 API 用例：basic + stream + payment）
     echo ""
     echo "运行 Node2 全量回归测试..."
     echo "测试类别: $TEST_CATEGORIES"
@@ -548,7 +566,7 @@ if [ "$SKIP_NODE2" = "false" ]; then
         GATE_NODE2_RESULT="FAIL"
     fi
     
-    # 4.3 门控判断
+    # 4.4 门控判断
     if [ "$GATE_NODE2_RESULT" = "PASS" ]; then
         print_gate_decision "Node2 前哨验证" "true" "全部测试通过，允许部署到 Node1"
         record_deploy_history "$DEPLOYMENT_ID" "gate_pass" "node2_test" "Node2 测试全部通过" "$LOCAL_COMMIT"
@@ -708,13 +726,22 @@ else
     gate_compose_sync run_on_node1 "$PROJECT_DIR" "node1" "$NODE1_COMPOSE_HASH_BEFORE" "Node1"
 fi
 
-# 5.6 Node1 热更新（两种模式共用）
+# 5.6 Node1 热更新 或 重启 web（--no-verify 时重启以解决 gRPC 端点注册问题）
 echo ""
-gate_hot_reload "$NODE1_PUBLIC_IP" "Node1" 2
-
-# 5.7 Node1 gRPC 端点恢复（覆盖所有 worker）
-echo ""
-gate_reload_endpoints_multi "$NODE1_PUBLIC_IP" "Node1" 8
+if [ "$NO_VERIFY" = "true" ]; then
+    echo "重启 Node1 web 容器（--no-verify 模式，解决 gRPC 端点注册）..."
+    ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR/deploy/docker && docker compose -f docker-compose.prod.yml -f docker-compose.node1.yml --env-file $PROJECT_DIR/.env restart web" || {
+        echo -e "${RED}Node1 web 重启失败${NC}"
+        exit 1
+    }
+    echo -e "${GREEN}Node1 web 重启完成${NC}"
+    sleep 5
+else
+    gate_hot_reload "$NODE1_PUBLIC_IP" "Node1" 2
+    # 5.7 Node1 gRPC 端点恢复（覆盖所有 worker）
+    echo ""
+    gate_reload_endpoints_multi "$NODE1_PUBLIC_IP" "Node1" 8
+fi
 
 echo ""
 echo -e "${GREEN}[Step 5] Node1 部署完成${NC}"
@@ -722,6 +749,10 @@ echo ""
 
 # ==================== Step 6: Node1 生产验证 ====================
 
+if [ "$NO_VERIFY" = "true" ]; then
+    echo -e "${BLUE}[Step 6/7] 跳过 Node1 验证（--no-verify）${NC}"
+    NODE1_VERIFY="skipped"
+else
 echo -e "${BLUE}[Step 6/7] Node1 生产验证${NC}"
 echo "----------------------------------------"
 
@@ -790,6 +821,7 @@ fi
 echo ""
 echo -e "${GREEN}[Step 6] Node1 验证完成${NC}"
 echo ""
+fi
 
 # ==================== Step 7: 记录部署历史 ====================
 
