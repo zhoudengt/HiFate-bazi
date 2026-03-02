@@ -11,6 +11,7 @@ class LunarConverter:
     def solar_to_lunar(solar_date, solar_time=None):
         """
         将公历日期时间转换为农历信息
+        23:00-23:59 子时：日期加1天，时间改为00:00；年柱用原始日期，月/日/时柱用次日。
         Args:
             solar_date: 公历日期，格式 'YYYY-MM-DD'
             solar_time: 公历时间，格式 'HH:MM'，可选
@@ -26,13 +27,12 @@ class LunarConverter:
         else:
             hour, minute = 12, 0  # 默认中午12点
 
-        # 处理子时情况（23:00-24:00）
+        # 处理子时情况（23:00-24:00）：日期加1天，时间设为0点
         adjusted_year, adjusted_month, adjusted_day = year, month, day
         adjusted_hour, adjusted_minute = hour, minute
         is_zi_shi_adjusted = False
 
         if hour >= 23:
-            # 日期加1天，时间设为0点
             current_date = datetime(year, month, day)
             next_date = current_date + timedelta(days=1)
             adjusted_year, adjusted_month, adjusted_day = next_date.year, next_date.month, next_date.day
@@ -41,11 +41,7 @@ class LunarConverter:
 
         # 创建阳历对象（使用调整后的日期时间）
         solar = Solar.fromYmdHms(adjusted_year, adjusted_month, adjusted_day, adjusted_hour, adjusted_minute, 0)
-
-        # 转换为农历
         lunar = solar.getLunar()
-
-        # 获取八字信息
         bazi = lunar.getBaZi()
 
         # 获取原始日期的年柱
@@ -55,10 +51,10 @@ class LunarConverter:
 
         # 解析四柱 - 年柱使用原始日期，其他柱使用调整后日期
         bazi_pillars = {
-            'year': {'stem': original_bazi[0][0], 'branch': original_bazi[0][1]},  # 使用原始日期年柱
-            'month': {'stem': bazi[1][0], 'branch': bazi[1][1]},  # 使用调整后日期
-            'day': {'stem': bazi[2][0], 'branch': bazi[2][1]},    # 使用调整后日期
-            'hour': {'stem': bazi[3][0], 'branch': bazi[3][1]}    # 使用调整后日期
+            'year': {'stem': original_bazi[0][0], 'branch': original_bazi[0][1]},
+            'month': {'stem': bazi[1][0], 'branch': bazi[1][1]},
+            'day': {'stem': bazi[2][0], 'branch': bazi[2][1]},
+            'hour': {'stem': bazi[3][0], 'branch': bazi[3][1]}
         }
 
         # 保存农历日期
