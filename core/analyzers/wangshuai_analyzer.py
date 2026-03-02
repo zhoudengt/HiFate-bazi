@@ -362,31 +362,23 @@ class WangShuaiAnalyzer:
         """
         判定旺衰（使用固定阈值，数学比较）
         
-        阈值规则（更新后）：
-        - 总分 > +40分      → 极旺
-        - 10 <= 总分 <= 40  → 身旺
-        - -10 < 总分 < 10   → 平衡
-        - -40 <= 总分 <= -10 → 身弱
-        - 总分 < -40分      → 极弱
+        阈值规则（3级制）：
+        - 总分 > 10分       → 身旺
+        - -10 <= 总分 <= 10 → 平衡
+        - 总分 < -10分      → 身弱
         """
         logger.info(f"   根据总分{total_score}判定旺衰（数学比较）")
         
         # 按优先级判定（数学比较，不是绝对值）
-        if total_score > 40:
-            wangshuai = '极旺'
-            logger.info(f"   ✅ 总分{total_score} > 40，判定为: {wangshuai}")
-        elif 10 <= total_score <= 40:
+        if total_score > 10:
             wangshuai = '身旺'
-            logger.info(f"   ✅ 10 <= 总分{total_score} <= 40，判定为: {wangshuai}")
-        elif -10 < total_score < 10:
+            logger.info(f"   ✅ 总分{total_score} > 10，判定为: {wangshuai}")
+        elif -10 <= total_score <= 10:
             wangshuai = '平衡'
-            logger.info(f"   ✅ -10 < 总分{total_score} < 10，判定为: {wangshuai}")
-        elif -40 <= total_score <= -10:
+            logger.info(f"   ✅ -10 <= 总分{total_score} <= 10，判定为: {wangshuai}")
+        else:  # total_score < -10
             wangshuai = '身弱'
-            logger.info(f"   ✅ -40 <= 总分{total_score} <= -10，判定为: {wangshuai}")
-        else:  # total_score < -40
-            wangshuai = '极弱'
-            logger.info(f"   ✅ 总分{total_score} < -40，判定为: {wangshuai}")
+            logger.info(f"   ✅ 总分{total_score} < -10，判定为: {wangshuai}")
         
         return wangshuai
     
@@ -484,12 +476,10 @@ class WangShuaiAnalyzer:
         """
         计算旺衰程度量化评分（0-100分）
         
-        评分规则：
-        - 极旺：80-100分（总分越高，分数越高）
-        - 身旺：60-79分
-        - 平衡：40-60分
-        - 身弱：20-39分
-        - 极弱：0-19分（总分越低，分数越低）
+        评分规则（3级制）：
+        - 身旺：60-100分（总分越高，分数越高）
+        - 平衡：40-60分（以0分为中心）
+        - 身弱：0-40分（总分越低，分数越低）
         
         Args:
             total_score: 总分
@@ -498,28 +488,21 @@ class WangShuaiAnalyzer:
         Returns:
             旺衰程度评分（0-100）
         """
-        if wangshuai == '极旺':
-            # 总分 > 40，映射到 80-100
-            # 假设最高分约为100，最低极旺为40分
-            degree = 80 + min(20, (total_score - 40) / 3.0)  # 每3分增加1度
-            return min(100, max(80, degree))
-        elif wangshuai == '身旺':
-            # 10 <= 总分 <= 40，映射到 60-79
-            degree = 60 + ((total_score - 10) / 30.0) * 19  # 30分范围映射到19度
-            return min(79, max(60, degree))
+        if wangshuai == '身旺':
+            # 总分 > 10，映射到 60-100
+            # 假设最高分约为70，从10分开始映射
+            degree = 60 + min(40, (total_score - 10) / 1.5)  # 60分范围映射到40度
+            return min(100, max(60, degree))
         elif wangshuai == '平衡':
-            # -10 < 总分 < 10，映射到 40-60
+            # -10 <= 总分 <= 10，映射到 40-60
             # 以0分为中心，±10分映射到40-60
             degree = 50 + (total_score / 10.0) * 10  # 0分=50度，±10分=40或60度
             return min(60, max(40, degree))
         elif wangshuai == '身弱':
-            # -40 <= 总分 <= -10，映射到 20-39
-            degree = 39 - ((total_score + 10) / 30.0) * 19  # 30分范围映射到19度
-            return min(39, max(20, degree))
-        elif wangshuai == '极弱':
-            # 总分 < -40，映射到 0-19
-            degree = 19 - min(19, (abs(total_score) - 40) / 3.0)  # 每3分减少1度
-            return min(19, max(0, degree))
+            # 总分 < -10，映射到 0-40
+            # 从-10分开始，越低分数越低
+            degree = 40 - min(40, (abs(total_score) - 10) / 1.5)  # 60分范围映射到40度
+            return min(40, max(0, degree))
         else:
             # 未知状态，返回中性值
             return 50.0

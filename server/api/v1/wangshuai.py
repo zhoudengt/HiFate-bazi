@@ -53,9 +53,9 @@ async def calculate_wangshuai(request: WangShuaiRequest):
     根据八字信息计算：
     - 得令分（月支权重）：45分或0分
     - 得地分（年日时支）：根据藏干匹配计分
-    - 得势分（天干生扶）：10分或0分 ✅ 修正为10分
+    - 得势分（天干生扶）：10分或0分
     
-    最终判定：极旺、身旺、身弱、极弱、平衡
+    最终判定（3级制）：身旺、平衡、身弱
     并计算喜神和忌神的五行
     
     - **solar_date**: 阳历日期 (YYYY-MM-DD) 或农历日期（当calendar_type=lunar时）
