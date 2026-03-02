@@ -59,13 +59,13 @@ gate_hot_reload() {
     echo "触发 ${label} 热更新..."
     while [ $i -le $retries ]; do
         if [ -n "$ssh_host" ]; then
-            if sshpass -p "$ssh_pass" ssh -o StrictHostKeyChecking=no root@"$ssh_host" "curl -s -X POST --max-time 60 http://localhost:${port}${HOT_RELOAD_PATH}" > /dev/null 2>&1; then
+            if sshpass -p "$ssh_pass" ssh -o StrictHostKeyChecking=no root@"$ssh_host" "curl -s -X POST --max-time 90 http://localhost:${port}${HOT_RELOAD_PATH}" > /dev/null 2>&1; then
                 echo -e "${GREEN}${label} 热更新成功${NC}"
                 sleep 3
                 return 0
             fi
         else
-            if curl -s -X POST --max-time 60 "http://${host}:${port}${HOT_RELOAD_PATH}" > /dev/null 2>&1; then
+            if curl -s -X POST --max-time 90 "http://${host}:${port}${HOT_RELOAD_PATH}" > /dev/null 2>&1; then
                 echo -e "${GREEN}${label} 热更新成功${NC}"
                 sleep 3
                 return 0

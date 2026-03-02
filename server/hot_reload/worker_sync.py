@@ -190,7 +190,7 @@ class WorkerSyncManager:
             logger.warning(f"[Worker-{self._worker_id}] 写入 ACK 失败: {e}")
     
     @classmethod
-    def trigger_all_workers(cls, modules: list = None, wait_ack: bool = True, ack_timeout: float = 10.0) -> Dict[str, Any]:
+    def trigger_all_workers(cls, modules: list = None, wait_ack: bool = True, ack_timeout: float = 35.0) -> Dict[str, Any]:
         """
         触发所有 worker 执行热更新
         
@@ -200,7 +200,7 @@ class WorkerSyncManager:
         Args:
             modules: 要更新的模块列表（可选，用于记录）
             wait_ack: 是否等待 worker 确认（默认 True）
-            ack_timeout: ACK 等待超时（秒，默认 10）
+            ack_timeout: ACK 等待超时（秒，默认 35，确保所有 worker 完成重载再返回）
             
         Returns:
             dict: 触发结果（含 ACK 统计）
@@ -308,26 +308,8 @@ class WorkerSyncManager:
                     except Exception:
                         pass
             
-            # 如果已经收到至少 1 个 ACK 且等了至少 3 秒，可以提前结束
-            if acks and (time.time() - start) >= 3:
-                # 再等 1 秒看有没有新的
-                time.sleep(1)
-                # 再检查一次
-                if os.path.exists(cls.ACK_DIR):
-                    for fname in os.listdir(cls.ACK_DIR):
-                        if not fname.endswith('.json'):
-                            continue
-                        fpath = os.path.join(cls.ACK_DIR, fname)
-                        try:
-                            with open(fpath, 'r') as f:
-                                data = json.load(f)
-                            worker_id = data.get('worker_id', fname)
-                            if data.get('version') == version and worker_id not in acks:
-                                acks[worker_id] = data
-                        except Exception:
-                            pass
-                break
-            
+            # 不再提前结束：必须等待完整 timeout，确保所有 worker 完成重载
+            # 避免 reload-all 返回后仍有 worker 在 reload，导致支付等接口误报 503
             time.sleep(0.5)
         
         return acks
