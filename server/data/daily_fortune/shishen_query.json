@@ -1,0 +1,502 @@
+[
+  {
+    "day_stem": "甲",
+    "birth_stem": "甲",
+    "shishen": "比肩"
+  },
+  {
+    "day_stem": "乙",
+    "birth_stem": "甲",
+    "shishen": "劫财"
+  },
+  {
+    "day_stem": "丙",
+    "birth_stem": "甲",
+    "shishen": "偏印"
+  },
+  {
+    "day_stem": "丁",
+    "birth_stem": "甲",
+    "shishen": "正印"
+  },
+  {
+    "day_stem": "戊",
+    "birth_stem": "甲",
+    "shishen": "偏官"
+  },
+  {
+    "day_stem": "己",
+    "birth_stem": "甲",
+    "shishen": "正官"
+  },
+  {
+    "day_stem": "庚",
+    "birth_stem": "甲",
+    "shishen": "偏财"
+  },
+  {
+    "day_stem": "辛",
+    "birth_stem": "甲",
+    "shishen": "正财"
+  },
+  {
+    "day_stem": "壬",
+    "birth_stem": "甲",
+    "shishen": "食神"
+  },
+  {
+    "day_stem": "癸",
+    "birth_stem": "甲",
+    "shishen": "伤官"
+  },
+  {
+    "day_stem": "甲",
+    "birth_stem": "乙",
+    "shishen": "劫财"
+  },
+  {
+    "day_stem": "乙",
+    "birth_stem": "乙",
+    "shishen": "比肩"
+  },
+  {
+    "day_stem": "丙",
+    "birth_stem": "乙",
+    "shishen": "正印"
+  },
+  {
+    "day_stem": "丁",
+    "birth_stem": "乙",
+    "shishen": "偏印"
+  },
+  {
+    "day_stem": "戊",
+    "birth_stem": "乙",
+    "shishen": "正官"
+  },
+  {
+    "day_stem": "己",
+    "birth_stem": "乙",
+    "shishen": "偏官"
+  },
+  {
+    "day_stem": "庚",
+    "birth_stem": "乙",
+    "shishen": "正财"
+  },
+  {
+    "day_stem": "辛",
+    "birth_stem": "乙",
+    "shishen": "偏财"
+  },
+  {
+    "day_stem": "壬",
+    "birth_stem": "乙",
+    "shishen": "伤官"
+  },
+  {
+    "day_stem": "癸",
+    "birth_stem": "乙",
+    "shishen": "食神"
+  },
+  {
+    "day_stem": "甲",
+    "birth_stem": "丙",
+    "shishen": "食神"
+  },
+  {
+    "day_stem": "乙",
+    "birth_stem": "丙",
+    "shishen": "伤官"
+  },
+  {
+    "day_stem": "丙",
+    "birth_stem": "丙",
+    "shishen": "比肩"
+  },
+  {
+    "day_stem": "丁",
+    "birth_stem": "丙",
+    "shishen": "劫财"
+  },
+  {
+    "day_stem": "戊",
+    "birth_stem": "丙",
+    "shishen": "偏印"
+  },
+  {
+    "day_stem": "己",
+    "birth_stem": "丙",
+    "shishen": "正印"
+  },
+  {
+    "day_stem": "庚",
+    "birth_stem": "丙",
+    "shishen": "偏官"
+  },
+  {
+    "day_stem": "辛",
+    "birth_stem": "丙",
+    "shishen": "正官"
+  },
+  {
+    "day_stem": "壬",
+    "birth_stem": "丙",
+    "shishen": "偏财"
+  },
+  {
+    "day_stem": "癸",
+    "birth_stem": "丙",
+    "shishen": "正财"
+  },
+  {
+    "day_stem": "甲",
+    "birth_stem": "丁",
+    "shishen": "伤官"
+  },
+  {
+    "day_stem": "乙",
+    "birth_stem": "丁",
+    "shishen": "食神"
+  },
+  {
+    "day_stem": "丙",
+    "birth_stem": "丁",
+    "shishen": "劫财"
+  },
+  {
+    "day_stem": "丁",
+    "birth_stem": "丁",
+    "shishen": "比肩"
+  },
+  {
+    "day_stem": "戊",
+    "birth_stem": "丁",
+    "shishen": "正印"
+  },
+  {
+    "day_stem": "己",
+    "birth_stem": "丁",
+    "shishen": "偏印"
+  },
+  {
+    "day_stem": "庚",
+    "birth_stem": "丁",
+    "shishen": "正官"
+  },
+  {
+    "day_stem": "辛",
+    "birth_stem": "丁",
+    "shishen": "偏官"
+  },
+  {
+    "day_stem": "壬",
+    "birth_stem": "丁",
+    "shishen": "正财"
+  },
+  {
+    "day_stem": "癸",
+    "birth_stem": "丁",
+    "shishen": "偏财"
+  },
+  {
+    "day_stem": "甲",
+    "birth_stem": "戊",
+    "shishen": "偏财"
+  },
+  {
+    "day_stem": "乙",
+    "birth_stem": "戊",
+    "shishen": "正财"
+  },
+  {
+    "day_stem": "丙",
+    "birth_stem": "戊",
+    "shishen": "食神"
+  },
+  {
+    "day_stem": "丁",
+    "birth_stem": "戊",
+    "shishen": "伤官"
+  },
+  {
+    "day_stem": "戊",
+    "birth_stem": "戊",
+    "shishen": "比肩"
+  },
+  {
+    "day_stem": "己",
+    "birth_stem": "戊",
+    "shishen": "劫财"
+  },
+  {
+    "day_stem": "庚",
+    "birth_stem": "戊",
+    "shishen": "偏印"
+  },
+  {
+    "day_stem": "辛",
+    "birth_stem": "戊",
+    "shishen": "正印"
+  },
+  {
+    "day_stem": "壬",
+    "birth_stem": "戊",
+    "shishen": "偏官"
+  },
+  {
+    "day_stem": "癸",
+    "birth_stem": "戊",
+    "shishen": "正官"
+  },
+  {
+    "day_stem": "甲",
+    "birth_stem": "己",
+    "shishen": "正财"
+  },
+  {
+    "day_stem": "乙",
+    "birth_stem": "己",
+    "shishen": "偏财"
+  },
+  {
+    "day_stem": "丙",
+    "birth_stem": "己",
+    "shishen": "伤官"
+  },
+  {
+    "day_stem": "丁",
+    "birth_stem": "己",
+    "shishen": "食神"
+  },
+  {
+    "day_stem": "戊",
+    "birth_stem": "己",
+    "shishen": "劫财"
+  },
+  {
+    "day_stem": "己",
+    "birth_stem": "己",
+    "shishen": "比肩"
+  },
+  {
+    "day_stem": "庚",
+    "birth_stem": "己",
+    "shishen": "正印"
+  },
+  {
+    "day_stem": "辛",
+    "birth_stem": "己",
+    "shishen": "偏印"
+  },
+  {
+    "day_stem": "壬",
+    "birth_stem": "己",
+    "shishen": "正官"
+  },
+  {
+    "day_stem": "癸",
+    "birth_stem": "己",
+    "shishen": "偏官"
+  },
+  {
+    "day_stem": "甲",
+    "birth_stem": "庚",
+    "shishen": "偏官"
+  },
+  {
+    "day_stem": "乙",
+    "birth_stem": "庚",
+    "shishen": "正官"
+  },
+  {
+    "day_stem": "丙",
+    "birth_stem": "庚",
+    "shishen": "偏财"
+  },
+  {
+    "day_stem": "丁",
+    "birth_stem": "庚",
+    "shishen": "正财"
+  },
+  {
+    "day_stem": "戊",
+    "birth_stem": "庚",
+    "shishen": "食神"
+  },
+  {
+    "day_stem": "己",
+    "birth_stem": "庚",
+    "shishen": "伤官"
+  },
+  {
+    "day_stem": "庚",
+    "birth_stem": "庚",
+    "shishen": "比肩"
+  },
+  {
+    "day_stem": "辛",
+    "birth_stem": "庚",
+    "shishen": "劫财"
+  },
+  {
+    "day_stem": "壬",
+    "birth_stem": "庚",
+    "shishen": "偏印"
+  },
+  {
+    "day_stem": "癸",
+    "birth_stem": "庚",
+    "shishen": "正印"
+  },
+  {
+    "day_stem": "甲",
+    "birth_stem": "辛",
+    "shishen": "正官"
+  },
+  {
+    "day_stem": "乙",
+    "birth_stem": "辛",
+    "shishen": "偏官"
+  },
+  {
+    "day_stem": "丙",
+    "birth_stem": "辛",
+    "shishen": "正财"
+  },
+  {
+    "day_stem": "丁",
+    "birth_stem": "辛",
+    "shishen": "偏财"
+  },
+  {
+    "day_stem": "戊",
+    "birth_stem": "辛",
+    "shishen": "伤官"
+  },
+  {
+    "day_stem": "己",
+    "birth_stem": "辛",
+    "shishen": "食神"
+  },
+  {
+    "day_stem": "庚",
+    "birth_stem": "辛",
+    "shishen": "劫财"
+  },
+  {
+    "day_stem": "辛",
+    "birth_stem": "辛",
+    "shishen": "比肩"
+  },
+  {
+    "day_stem": "壬",
+    "birth_stem": "辛",
+    "shishen": "正印"
+  },
+  {
+    "day_stem": "癸",
+    "birth_stem": "辛",
+    "shishen": "偏印"
+  },
+  {
+    "day_stem": "甲",
+    "birth_stem": "壬",
+    "shishen": "偏印"
+  },
+  {
+    "day_stem": "乙",
+    "birth_stem": "壬",
+    "shishen": "正印"
+  },
+  {
+    "day_stem": "丙",
+    "birth_stem": "壬",
+    "shishen": "偏官"
+  },
+  {
+    "day_stem": "丁",
+    "birth_stem": "壬",
+    "shishen": "正官"
+  },
+  {
+    "day_stem": "戊",
+    "birth_stem": "壬",
+    "shishen": "偏财"
+  },
+  {
+    "day_stem": "己",
+    "birth_stem": "壬",
+    "shishen": "正财"
+  },
+  {
+    "day_stem": "庚",
+    "birth_stem": "壬",
+    "shishen": "食神"
+  },
+  {
+    "day_stem": "辛",
+    "birth_stem": "壬",
+    "shishen": "伤官"
+  },
+  {
+    "day_stem": "壬",
+    "birth_stem": "壬",
+    "shishen": "比肩"
+  },
+  {
+    "day_stem": "癸",
+    "birth_stem": "壬",
+    "shishen": "劫财"
+  },
+  {
+    "day_stem": "甲",
+    "birth_stem": "癸",
+    "shishen": "正印"
+  },
+  {
+    "day_stem": "乙",
+    "birth_stem": "癸",
+    "shishen": "偏印"
+  },
+  {
+    "day_stem": "丙",
+    "birth_stem": "癸",
+    "shishen": "正官"
+  },
+  {
+    "day_stem": "丁",
+    "birth_stem": "癸",
+    "shishen": "偏官"
+  },
+  {
+    "day_stem": "戊",
+    "birth_stem": "癸",
+    "shishen": "正财"
+  },
+  {
+    "day_stem": "己",
+    "birth_stem": "癸",
+    "shishen": "偏财"
+  },
+  {
+    "day_stem": "庚",
+    "birth_stem": "癸",
+    "shishen": "伤官"
+  },
+  {
+    "day_stem": "辛",
+    "birth_stem": "癸",
+    "shishen": "食神"
+  },
+  {
+    "day_stem": "壬",
+    "birth_stem": "癸",
+    "shishen": "劫财"
+  },
+  {
+    "day_stem": "癸",
+    "birth_stem": "癸",
+    "shishen": "比肩"
+  }
+]

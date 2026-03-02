@@ -1,0 +1,42 @@
+[
+  {
+    "day_stem": "甲",
+    "directions": "东北、西南"
+  },
+  {
+    "day_stem": "戊",
+    "directions": "东北、西南"
+  },
+  {
+    "day_stem": "庚",
+    "directions": "东北、西南"
+  },
+  {
+    "day_stem": "乙",
+    "directions": "正北、西南"
+  },
+  {
+    "day_stem": "己",
+    "directions": "正北、西南"
+  },
+  {
+    "day_stem": "丙",
+    "directions": "西北、正西"
+  },
+  {
+    "day_stem": "丁",
+    "directions": "西北、正西"
+  },
+  {
+    "day_stem": "壬",
+    "directions": "正东、东南"
+  },
+  {
+    "day_stem": "癸",
+    "directions": "正东、东南"
+  },
+  {
+    "day_stem": "辛",
+    "directions": "东北、正南"
+  }
+]

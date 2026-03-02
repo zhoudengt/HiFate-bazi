@@ -1,0 +1,457 @@
+[
+  {
+    "day_branch": "丑",
+    "relation_type": "合",
+    "target_branch": "子",
+    "target_zodiac": "鼠",
+    "content": "今日贵人运强，易得他人协助，适合寻求建议或团队协作。 六合贵人、得人相助、团队成功"
+  },
+  {
+    "day_branch": "丑",
+    "relation_type": "冲",
+    "target_branch": "未",
+    "target_zodiac": "羊",
+    "content": "今日需注意财务或合同细节，避免冲动决定，稳守为上。 财务波动、观念冲突、田园土地"
+  },
+  {
+    "day_branch": "丑",
+    "relation_type": "刑",
+    "target_branch": "未",
+    "target_zodiac": "羊",
+    "content": "今日心情易烦躁，需防与熟人间发生固执争执，各退一步。 无恩之刑、内心纠结、熟人矛盾。"
+  },
+  {
+    "day_branch": "丑",
+    "relation_type": "刑",
+    "target_branch": "戌",
+    "target_zodiac": "狗",
+    "content": "今日心情易烦躁，需防与熟人间发生固执争执，各退一步。 无恩之刑、内心纠结、熟人矛盾。"
+  },
+  {
+    "day_branch": "丑",
+    "relation_type": "破",
+    "target_branch": "辰",
+    "target_zodiac": "龙",
+    "content": "今日原有计划可能遇到小调整，顺其自然会有新启发。 计划微调、资源重组、内部协调"
+  },
+  {
+    "day_branch": "丑",
+    "relation_type": "害",
+    "target_branch": "午",
+    "target_zodiac": "马",
+    "content": "今日易感付出多而回报少，避免为他人作保，关注自身节奏。 付出消耗、为人作保、精力分散"
+  },
+  {
+    "day_branch": "亥",
+    "relation_type": "合",
+    "target_branch": "寅",
+    "target_zodiac": "虎",
+    "content": "执行力强，适合推进项目"
+  },
+  {
+    "day_branch": "亥",
+    "relation_type": "冲",
+    "target_branch": "巳",
+    "target_zodiac": "蛇",
+    "content": "避免重要决定，以静制动。"
+  },
+  {
+    "day_branch": "亥",
+    "relation_type": "刑",
+    "target_branch": "亥",
+    "target_zodiac": "猪",
+    "content": "多愁善感，需转移注意力。"
+  },
+  {
+    "day_branch": "亥",
+    "relation_type": "破",
+    "target_branch": "寅",
+    "target_zodiac": "虎",
+    "content": "亲密关系需小心呵护"
+  },
+  {
+    "day_branch": "亥",
+    "relation_type": "害",
+    "target_branch": "申",
+    "target_zodiac": "猴",
+    "content": "计划易生变数，准备B方案"
+  },
+  {
+    "day_branch": "午",
+    "relation_type": "合",
+    "target_branch": "未",
+    "target_zodiac": "羊",
+    "content": "人缘佳，利社交、开拓。"
+  },
+  {
+    "day_branch": "午",
+    "relation_type": "冲",
+    "target_branch": "子",
+    "target_zodiac": "鼠",
+    "content": "避免冲动，谨防破财。"
+  },
+  {
+    "day_branch": "午",
+    "relation_type": "刑",
+    "target_branch": "午",
+    "target_zodiac": "马",
+    "content": "心浮气躁，需静心"
+  },
+  {
+    "day_branch": "午",
+    "relation_type": "破",
+    "target_branch": "卯",
+    "target_zodiac": "兔",
+    "content": "情感或消费有小波动。"
+  },
+  {
+    "day_branch": "午",
+    "relation_type": "害",
+    "target_branch": "丑",
+    "target_zodiac": "牛",
+    "content": "易感疲惫，注意休息。"
+  },
+  {
+    "day_branch": "卯",
+    "relation_type": "合",
+    "target_branch": "戌",
+    "target_zodiac": "狗",
+    "content": "合作运佳，易遇诚信伙伴。"
+  },
+  {
+    "day_branch": "卯",
+    "relation_type": "冲",
+    "target_branch": "酉",
+    "target_zodiac": "鸡",
+    "content": "注意言行，避免争执。"
+  },
+  {
+    "day_branch": "卯",
+    "relation_type": "刑",
+    "target_branch": "子",
+    "target_zodiac": "鼠",
+    "content": "沟通易生误会，多点耐心。"
+  },
+  {
+    "day_branch": "卯",
+    "relation_type": "破",
+    "target_branch": "午",
+    "target_zodiac": "马",
+    "content": "小心财物小损，检查物品。"
+  },
+  {
+    "day_branch": "卯",
+    "relation_type": "害",
+    "target_branch": "辰",
+    "target_zodiac": "龙",
+    "content": "计划易被打乱，保持弹性。"
+  },
+  {
+    "day_branch": "子",
+    "relation_type": "合",
+    "target_branch": "丑",
+    "target_zodiac": "牛",
+    "content": "今日易遇可靠伙伴，适合敲定合作或处理重要事务，事半功倍。 六合贵人、合作顺利、计划落实"
+  },
+  {
+    "day_branch": "子",
+    "relation_type": "冲",
+    "target_branch": "午",
+    "target_zodiac": "马",
+    "content": "今日或有突发变动，保持灵活心态，避免正面冲突，以柔克刚。 突发变化、意见对立、交通出行"
+  },
+  {
+    "day_branch": "子",
+    "relation_type": "刑",
+    "target_branch": "卯",
+    "target_zodiac": "兔",
+    "content": "今日需注意沟通方式，避免因无心之言产生误会，谨言慎行。 无礼之刑、口舌误会、法律细节"
+  },
+  {
+    "day_branch": "子",
+    "relation_type": "破",
+    "target_branch": "酉",
+    "target_zodiac": "鸡",
+    "content": "今日琐事较多，人际互动易有微小摩擦，细心处理便可无忧。 轻微破损、琐事烦心、关系微调"
+  },
+  {
+    "day_branch": "子",
+    "relation_type": "害",
+    "target_branch": "未",
+    "target_zodiac": "羊",
+    "content": "今日易感计划受阻，或与人有隔阂，耐心沟通可化解心结。 暗中不利、计划拖延、人际隔阂"
+  },
+  {
+    "day_branch": "寅",
+    "relation_type": "合",
+    "target_branch": "亥",
+    "target_zodiac": "猪",
+    "content": "今日创意与灵感丰富，适合策划、创作，易得长辈关照。 六合贵人、灵感迸发、长辈缘佳"
+  },
+  {
+    "day_branch": "寅",
+    "relation_type": "冲",
+    "target_branch": "申",
+    "target_zodiac": "猴",
+    "content": "今日需谨防忙中出错，重要决策宜缓一缓，避免长途奔波。 金木相冲、意外变动、器械安全"
+  },
+  {
+    "day_branch": "寅",
+    "relation_type": "刑",
+    "target_branch": "巳",
+    "target_zodiac": "蛇",
+    "content": "、猴 (申) 今日是非较多，处理文书法律事务需格外仔细，避免卷入纠纷。 恃势之刑、官司是非、合同文书"
+  },
+  {
+    "day_branch": "寅",
+    "relation_type": "破",
+    "target_branch": "亥",
+    "target_zodiac": "猪",
+    "content": "今日人际关系有小小考验，真诚沟通能加固彼此信任。 关系微澜、合作调试、情感交流"
+  },
+  {
+    "day_branch": "寅",
+    "relation_type": "害",
+    "target_branch": "巳",
+    "target_zodiac": "蛇",
+    "content": "今日易感被人背后议论，专注做好自己的事，谣言自散。 暗中妨害、口舌是非、信任考验"
+  },
+  {
+    "day_branch": "巳",
+    "relation_type": "合",
+    "target_branch": "申",
+    "target_zodiac": "猴",
+    "content": "思维活跃，利谈判、策划。"
+  },
+  {
+    "day_branch": "巳",
+    "relation_type": "冲",
+    "target_branch": "亥",
+    "target_zodiac": "猪",
+    "content": "事多反复，避免情绪决策"
+  },
+  {
+    "day_branch": "巳",
+    "relation_type": "刑",
+    "target_branch": "寅",
+    "target_zodiac": "虎",
+    "content": "远离是非，莫管闲事。"
+  },
+  {
+    "day_branch": "巳",
+    "relation_type": "刑",
+    "target_branch": "申",
+    "target_zodiac": "猴",
+    "content": "远离是非，莫管闲事。"
+  },
+  {
+    "day_branch": "巳",
+    "relation_type": "破",
+    "target_branch": "申",
+    "target_zodiac": "猴",
+    "content": "合作易有分歧，明确权责。"
+  },
+  {
+    "day_branch": "巳",
+    "relation_type": "害",
+    "target_branch": "寅",
+    "target_zodiac": "虎",
+    "content": "易遇竞争，保持低调。"
+  },
+  {
+    "day_branch": "戌",
+    "relation_type": "合",
+    "target_branch": "卯",
+    "target_zodiac": "兔",
+    "content": "人缘和睦，利处理人际事务"
+  },
+  {
+    "day_branch": "戌",
+    "relation_type": "冲",
+    "target_branch": "辰",
+    "target_zodiac": "龙",
+    "content": "控制脾气，避免冲突"
+  },
+  {
+    "day_branch": "戌",
+    "relation_type": "刑",
+    "target_branch": "未",
+    "target_zodiac": "羊",
+    "content": "莫翻旧账，关注当下"
+  },
+  {
+    "day_branch": "戌",
+    "relation_type": "刑",
+    "target_branch": "丑",
+    "target_zodiac": "牛",
+    "content": "莫翻旧账，关注当下"
+  },
+  {
+    "day_branch": "戌",
+    "relation_type": "破",
+    "target_branch": "未",
+    "target_zodiac": "羊",
+    "content": "团队协作需多协调，避免误解"
+  },
+  {
+    "day_branch": "戌",
+    "relation_type": "害",
+    "target_branch": "酉",
+    "target_zodiac": "鸡",
+    "content": "沟通易有火气，注意语气"
+  },
+  {
+    "day_branch": "未",
+    "relation_type": "合",
+    "target_branch": "午",
+    "target_zodiac": "马",
+    "content": "心情愉悦，利享受生活与艺术。"
+  },
+  {
+    "day_branch": "未",
+    "relation_type": "冲",
+    "target_branch": "丑",
+    "target_zodiac": "牛",
+    "content": "避免固执己见，求同存异"
+  },
+  {
+    "day_branch": "未",
+    "relation_type": "刑",
+    "target_branch": "戌",
+    "target_zodiac": "狗",
+    "content": "小心承诺，防失信于人"
+  },
+  {
+    "day_branch": "未",
+    "relation_type": "刑",
+    "target_branch": "丑",
+    "target_zodiac": "牛",
+    "content": "小心承诺，防失信于人"
+  },
+  {
+    "day_branch": "未",
+    "relation_type": "破",
+    "target_branch": "戌",
+    "target_zodiac": "狗",
+    "content": "原有安排微调，随遇而安"
+  },
+  {
+    "day_branch": "未",
+    "relation_type": "害",
+    "target_branch": "子",
+    "target_zodiac": "鼠",
+    "content": "易感压力，寻求倾诉"
+  },
+  {
+    "day_branch": "申",
+    "relation_type": "合",
+    "target_branch": "巳",
+    "target_zodiac": "蛇",
+    "content": "得人指点，利学习新技能"
+  },
+  {
+    "day_branch": "申",
+    "relation_type": "冲",
+    "target_branch": "寅",
+    "target_zodiac": "虎",
+    "content": "变动较大，主动适应"
+  },
+  {
+    "day_branch": "申",
+    "relation_type": "刑",
+    "target_branch": "寅",
+    "target_zodiac": "虎",
+    "content": "行事勿取巧，踏实行事"
+  },
+  {
+    "day_branch": "申",
+    "relation_type": "刑",
+    "target_branch": "巳",
+    "target_zodiac": "蛇",
+    "content": "行事勿取巧，踏实行事"
+  },
+  {
+    "day_branch": "申",
+    "relation_type": "破",
+    "target_branch": "巳",
+    "target_zodiac": "蛇",
+    "content": "合作方案需微调，耐心磨合"
+  },
+  {
+    "day_branch": "申",
+    "relation_type": "害",
+    "target_branch": "亥",
+    "target_zodiac": "猪",
+    "content": "想法易被否定，坚持核心"
+  },
+  {
+    "day_branch": "辰",
+    "relation_type": "合",
+    "target_branch": "酉",
+    "target_zodiac": "鸡",
+    "content": "才华易被赏识，利表现。"
+  },
+  {
+    "day_branch": "辰",
+    "relation_type": "冲",
+    "target_branch": "戌",
+    "target_zodiac": "狗",
+    "content": "人际易有冲突，多包容。"
+  },
+  {
+    "day_branch": "辰",
+    "relation_type": "刑",
+    "target_branch": "辰",
+    "target_zodiac": "龙",
+    "content": "自我设限，需突破心结"
+  },
+  {
+    "day_branch": "辰",
+    "relation_type": "破",
+    "target_branch": "丑",
+    "target_zodiac": "牛",
+    "content": "内部协作有小摩擦，主动协调。"
+  },
+  {
+    "day_branch": "辰",
+    "relation_type": "害",
+    "target_branch": "卯",
+    "target_zodiac": "兔",
+    "content": "提防好心办坏事，量力而行"
+  },
+  {
+    "day_branch": "酉",
+    "relation_type": "合",
+    "target_branch": "辰",
+    "target_zodiac": "龙",
+    "content": "易遇权威人士，利展示能力"
+  },
+  {
+    "day_branch": "酉",
+    "relation_type": "冲",
+    "target_branch": "卯",
+    "target_zodiac": "兔",
+    "content": "谨言慎行，避免口舌"
+  },
+  {
+    "day_branch": "酉",
+    "relation_type": "刑",
+    "target_branch": "酉",
+    "target_zodiac": "鸡",
+    "content": "追求完美反生烦恼，学会放下"
+  },
+  {
+    "day_branch": "酉",
+    "relation_type": "破",
+    "target_branch": "子",
+    "target_zodiac": "鼠",
+    "content": "有小破财可能，管理支出"
+  },
+  {
+    "day_branch": "酉",
+    "relation_type": "害",
+    "target_branch": "戌",
+    "target_zodiac": "狗",
+    "content": "人际易有摩擦，宽容待人"
+  }
+]

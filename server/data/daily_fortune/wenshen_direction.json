@@ -1,0 +1,50 @@
+[
+  {
+    "day_branch": "子",
+    "direction": "正北"
+  },
+  {
+    "day_branch": "丑",
+    "direction": "东北"
+  },
+  {
+    "day_branch": "寅",
+    "direction": "东北"
+  },
+  {
+    "day_branch": "卯",
+    "direction": "正东"
+  },
+  {
+    "day_branch": "辰",
+    "direction": "东南"
+  },
+  {
+    "day_branch": "巳",
+    "direction": "东南"
+  },
+  {
+    "day_branch": "午",
+    "direction": "正南"
+  },
+  {
+    "day_branch": "未",
+    "direction": "西南"
+  },
+  {
+    "day_branch": "申",
+    "direction": "西南"
+  },
+  {
+    "day_branch": "酉",
+    "direction": "正西"
+  },
+  {
+    "day_branch": "戌",
+    "direction": "西北"
+  },
+  {
+    "day_branch": "亥",
+    "direction": "西北"
+  }
+]

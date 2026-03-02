@@ -1,0 +1,42 @@
+[
+  {
+    "direction": "正北",
+    "colors": "黑色、深蓝色"
+  },
+  {
+    "direction": "西南",
+    "colors": "黄色、棕色"
+  },
+  {
+    "direction": "正东",
+    "colors": "绿色、青色"
+  },
+  {
+    "direction": "东南",
+    "colors": "绿色、青色"
+  },
+  {
+    "direction": "中宫",
+    "colors": "黄色、棕色"
+  },
+  {
+    "direction": "西北",
+    "colors": "白色、金色、银色"
+  },
+  {
+    "direction": "正西",
+    "colors": "白色、金色、银色"
+  },
+  {
+    "direction": "东北",
+    "colors": "黄色、棕色"
+  },
+  {
+    "direction": "正南",
+    "colors": "红色、紫色、橙色"
+  },
+  {
+    "direction": "方位",
+    "colors": "幸运颜色"
+  }
+]

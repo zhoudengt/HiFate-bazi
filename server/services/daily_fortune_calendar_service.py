@@ -19,7 +19,17 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 from server.services.calendar_api_service import CalendarAPIService
-from shared.config.database import get_mysql_connection, return_mysql_connection
+from server.data.daily_fortune_data_loader import (
+    get_jiazi_fortune as _loader_jiazi,
+    get_shishen_hint as _loader_shishen_hint,
+    get_zodiac_relations as _loader_zodiac,
+    get_jianchu_info as _loader_jianchu,
+    get_shishen as _loader_shishen,
+    get_lucky_colors_wannianli as _loader_lucky_wannianli,
+    get_lucky_color_shishen as _loader_lucky_shishen,
+    get_guiren_direction as _loader_guiren,
+    get_wenshen_direction as _loader_wenshen,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -523,36 +533,7 @@ class DailyFortuneCalendarService:
         Returns:
             str: 整体运势内容，如果未找到返回None
         """
-        # 如果传入的格式不带"日"，自动添加
-        if not jiazi_day.endswith('日'):
-            jiazi_day = jiazi_day + '日'
-        conn = None
-        try:
-            conn = get_mysql_connection()
-            if not conn:
-                return None
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT content FROM daily_fortune_jiazi WHERE jiazi_day = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
-                    (jiazi_day,)
-                )
-                result = cursor.fetchone()
-                if result:
-                    content = result.get('content')
-                    if content and isinstance(content, str):
-                        if '\\n' in content:
-                            content = content.replace('\\n', '\n')
-                    return content
-                return None
-        except Exception as e:
-            logger.error(f"查询六十甲子运势失败: {e}")
-            return None
-        finally:
-            if conn:
-                try:
-                    return_mysql_connection(conn)
-                except Exception:
-                    pass
+        return _loader_jiazi(jiazi_day)
     
     @staticmethod
     def get_shishen_hint(day_stem: str, birth_stem: str) -> Optional[str]:
@@ -566,57 +547,7 @@ class DailyFortuneCalendarService:
         Returns:
             str: 十神提示内容（包含十神提示和十神象义提示词），如果未找到返回None
         """
-        conn = None
-        try:
-            conn = get_mysql_connection()
-            if not conn:
-                return None
-            with conn.cursor() as cursor:
-                # 1. 查询十神
-                cursor.execute(
-                    "SELECT shishen FROM daily_fortune_shishen_query WHERE BINARY day_stem = %s AND BINARY birth_stem = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
-                    (day_stem, birth_stem)
-                )
-                query_result = cursor.fetchone()
-                if not query_result:
-                    return None
-                
-                shishen = query_result.get('shishen')
-                
-                # 十神名称映射（偏官 = 七杀）
-                shishen_mapping = {
-                    '偏官': '七杀',
-                    '偏印': '偏印',
-                }
-                mapped_shishen = shishen_mapping.get(shishen, shishen)
-                
-                # 2. 查询十神象义
-                cursor.execute(
-                    "SELECT hint, hint_keywords FROM daily_fortune_shishen_meaning WHERE BINARY shishen = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
-                    (mapped_shishen,)
-                )
-                meaning_result = cursor.fetchone()
-                if not meaning_result:
-                    return None
-                
-                hint = meaning_result.get('hint', '')
-                hint_keywords = meaning_result.get('hint_keywords', '')
-                
-                # 3. 组合输出
-                if hint_keywords:
-                    return f"{hint}今日提示词：{hint_keywords}"
-                else:
-                    return hint
-                    
-        except Exception as e:
-            logger.error(f"查询十神提示失败: {e}")
-            return None
-        finally:
-            if conn:
-                try:
-                    return_mysql_connection(conn)
-                except Exception:
-                    pass
+        return _loader_shishen_hint(day_stem, birth_stem)
     
     @staticmethod
     def get_zodiac_relations(day_branch: str) -> Optional[str]:
@@ -629,43 +560,7 @@ class DailyFortuneCalendarService:
         Returns:
             str: 生肖简运内容（按合、冲、刑、破、害顺序），如果未找到返回None
         """
-        conn = None
-        try:
-            conn = get_mysql_connection()
-            if not conn:
-                return None
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT relation_type, target_branch, target_zodiac, content FROM daily_fortune_zodiac WHERE day_branch = %s AND COALESCE(enabled, 1) = 1 ORDER BY FIELD(relation_type, '合', '冲', '刑', '破', '害')",
-                    (day_branch,)
-                )
-                results = cursor.fetchall()
-                
-                if not results:
-                    return None
-                
-                # 按顺序组合输出
-                lines = []
-                for row in results:
-                    relation_type = row.get('relation_type', '')
-                    target_zodiac = row.get('target_zodiac', '')
-                    target_branch = row.get('target_branch', '')
-                    content = row.get('content', '')
-                    
-                    line = f"{relation_type} {target_zodiac} ({target_branch})：{content}"
-                    lines.append(line)
-                
-                return "\n".join(lines)
-                
-        except Exception as e:
-            logger.error(f"查询生肖刑冲破害失败: {e}")
-            return None
-        finally:
-            if conn:
-                try:
-                    return_mysql_connection(conn)
-                except Exception:
-                    pass
+        return _loader_zodiac(day_branch)
     
     @staticmethod
     def get_jianchu_summary(jianchu: str) -> Optional[str]:
@@ -692,54 +587,7 @@ class DailyFortuneCalendarService:
         Returns:
             dict: 包含 name, energy, summary 的字典，如果未找到返回None
         """
-        if not jianchu:
-            return None
-        conn = None
-        try:
-            conn = get_mysql_connection()
-            if not conn:
-                return None
-            with conn.cursor() as cursor:
-                # 检查score列是否存在，如果不存在就不查询score
-                cursor.execute("SHOW COLUMNS FROM daily_fortune_jianchu LIKE 'score'")
-                has_score = cursor.fetchone() is not None
-                
-                if has_score:
-                    cursor.execute(
-                        "SELECT jianchu, content, score FROM daily_fortune_jianchu WHERE BINARY jianchu = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
-                        (jianchu,)
-                    )
-                else:
-                    cursor.execute(
-                        "SELECT jianchu, content FROM daily_fortune_jianchu WHERE BINARY jianchu = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
-                        (jianchu,)
-                    )
-                result = cursor.fetchone()
-                if result:
-                    score_value = result.get('score') if has_score else None
-                    # 如果score为None，返回None（让前端显示"暂无"）
-                    # 注意：score=0是有效值，不应该转换为None
-                    # 只有score为None时才返回None
-                    return {
-                        'name': result.get('jianchu', jianchu),
-                        'energy': score_value,  # 保留原始值（包括0），字段名改为energy
-                        'summary': result.get('content', '')
-                    }
-                # 如果数据库中没有数据，至少返回名称
-                return {
-                    'name': jianchu,
-                    'energy': None,
-                    'summary': None
-                }
-        except Exception as e:
-            logger.error(f"查询建除十二神信息失败: {e}")
-            return None
-        finally:
-            if conn:
-                try:
-                    return_mysql_connection(conn)
-                except Exception:
-                    pass
+        return _loader_jianchu(jianchu)
     
     @staticmethod
     def get_master_info(
@@ -784,8 +632,7 @@ class DailyFortuneCalendarService:
                     if not _bs:
                         _bs = DailyFortuneCalendarService._get_birth_stem(user_solar_date, user_solar_time, user_gender)
                     if day_stem and _bs:
-                        # 查询十神
-                        shishen = DailyFortuneCalendarService._get_shishen_from_stems(day_stem, _bs)
+                        shishen = _loader_shishen(day_stem, _bs)
                         if shishen:
                             today_shishen = shishen
                 except Exception:
@@ -822,42 +669,6 @@ class DailyFortuneCalendarService:
         }
         element = element_map.get(stem, '')
         return f"{stem}{element}" if element else stem
-    
-    @staticmethod
-    def _get_shishen_from_stems(day_stem: str, birth_stem: str) -> Optional[str]:
-        """
-        根据日干和命主日干查询十神
-        
-        Args:
-            day_stem: 当日日干
-            birth_stem: 命主日干
-            
-        Returns:
-            str: 十神名称，如果未找到返回None
-        """
-        conn = None
-        try:
-            conn = get_mysql_connection()
-            if not conn:
-                return None
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT shishen FROM daily_fortune_shishen_query WHERE BINARY day_stem = %s AND BINARY birth_stem = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
-                    (day_stem, birth_stem)
-                )
-                result = cursor.fetchone()
-                if result:
-                    return result.get('shishen')
-                return None
-        except Exception as e:
-            logger.error(f"查询十神失败: {e}")
-            return None
-        finally:
-            if conn:
-                try:
-                    return_mysql_connection(conn)
-                except Exception:
-                    pass
     
     @staticmethod
     def _filter_colors_to_limit(colors: list, max_count: int = 4) -> list:
@@ -937,75 +748,31 @@ class DailyFortuneCalendarService:
         fushen_direction = deities.get('fushen', '')
         
         # 2. 查询万年历方位对应的颜色
-        conn = None
-        try:
-            conn = get_mysql_connection()
-            if not conn:
-                return None  # 返回None而不是空字符串
-            with conn.cursor() as cursor:
-                # 查询喜神方位颜色（使用BINARY比较确保编码正确）
-                if xishen_direction:
-                    cursor.execute(
-                        "SELECT colors FROM daily_fortune_lucky_color_wannianli WHERE BINARY direction = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
-                        (xishen_direction,)
+        if xishen_direction:
+            colors_str = _loader_lucky_wannianli(xishen_direction)
+            if colors_str:
+                colors.extend([c.strip() for c in colors_str.replace('、', ',').split(',') if c.strip()])
+        if fushen_direction:
+            colors_str = _loader_lucky_wannianli(fushen_direction)
+            if colors_str:
+                colors.extend([c.strip() for c in colors_str.replace('、', ',').split(',') if c.strip()])
+        # 3. 查询今日十神颜色（需要用户生辰且为喜用）
+        if user_solar_date and user_solar_time and user_gender:
+            day_stem = DailyFortuneCalendarService._get_day_stem(target_date)
+            _bs = birth_stem
+            if not _bs:
+                _bs = DailyFortuneCalendarService._get_birth_stem(user_solar_date, user_solar_time, user_gender)
+            if day_stem and _bs:
+                today_shishen = _loader_shishen(day_stem, _bs)
+                if today_shishen:
+                    is_xishen = DailyFortuneCalendarService._is_shishen_xishen(
+                        user_solar_date, user_solar_time, user_gender, today_shishen,
+                        wangshuai_data=wangshuai_data
                     )
-                    result = cursor.fetchone()
-                    if result:
-                        colors_str = result.get('colors', '')
-                        if colors_str:
-                            colors_list = [c.strip() for c in colors_str.replace('、', ',').split(',') if c.strip()]
-                            colors.extend(colors_list)
-                
-                # 查询福神方位颜色（使用BINARY比较确保编码正确）
-                if fushen_direction:
-                    cursor.execute(
-                        "SELECT colors FROM daily_fortune_lucky_color_wannianli WHERE BINARY direction = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
-                        (fushen_direction,)
-                    )
-                    result = cursor.fetchone()
-                    if result:
-                        colors_str = result.get('colors', '')
-                        if colors_str:
-                            colors_list = [c.strip() for c in colors_str.replace('、', ',').split(',') if c.strip()]
-                            colors.extend(colors_list)
-                
-                # 3. 查询今日十神颜色（需要用户生辰且为喜用）
-                if user_solar_date and user_solar_time and user_gender:
-                    day_stem = DailyFortuneCalendarService._get_day_stem(target_date)
-                    # ✅ 数据总线：优先使用传入的 birth_stem
-                    _bs = birth_stem
-                    if not _bs:
-                        _bs = DailyFortuneCalendarService._get_birth_stem(user_solar_date, user_solar_time, user_gender)
-                    
-                    if day_stem and _bs:
-                        # 获取今日十神
-                        today_shishen = DailyFortuneCalendarService._get_shishen_from_stems(day_stem, _bs)
-                        
-                        if today_shishen:
-                            # ✅ 数据总线：优先使用传入的 wangshuai_data 判断喜用
-                            is_xishen = DailyFortuneCalendarService._is_shishen_xishen(
-                                user_solar_date, user_solar_time, user_gender, today_shishen,
-                                wangshuai_data=wangshuai_data
-                            )
-                            
-                            if is_xishen:
-                                cursor.execute(
-                                    "SELECT color FROM daily_fortune_lucky_color_shishen WHERE BINARY shishen = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
-                                    (today_shishen,)
-                                )
-                                result = cursor.fetchone()
-                                if result:
-                                    color = result.get('color', '').strip()
-                                    if color:
-                                        colors.append(color)
-        except Exception as e:
-            logger.error(f"获取幸运颜色失败: {e}")
-        finally:
-            if conn:
-                try:
-                    return_mysql_connection(conn)
-                except Exception:
-                    pass
+                    if is_xishen:
+                        color = _loader_lucky_shishen(today_shishen)
+                        if color:
+                            colors.append(color)
         
         # 去重并返回
         unique_colors = list(dict.fromkeys(colors))  # 保持顺序的去重
@@ -1100,32 +867,10 @@ class DailyFortuneCalendarService:
         # 2. 获取当日日干
         day_stem = DailyFortuneCalendarService._get_day_stem(target_date)
         
-        # 3. 查询日干对应方位
         if day_stem:
-            conn = None
-            try:
-                conn = get_mysql_connection()
-                if conn:
-                    with conn.cursor() as cursor:
-                        cursor.execute(
-                            "SELECT directions FROM daily_fortune_guiren_direction WHERE BINARY day_stem = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
-                            (day_stem,)
-                        )
-                        result = cursor.fetchone()
-                        if result:
-                            directions_str = result.get('directions', '')
-                            if directions_str:
-                                # 处理方位字符串（可能是"、"或","分隔）
-                                directions_list = [d.strip() for d in directions_str.replace('、', ',').split(',') if d.strip()]
-                                directions.extend(directions_list)
-            except Exception as e:
-                logger.error(f"获取贵人指路失败: {e}")
-            finally:
-                if conn:
-                    try:
-                        return_mysql_connection(conn)
-                    except Exception:
-                        pass
+            directions_str = _loader_guiren(day_stem)
+            if directions_str:
+                directions.extend([d.strip() for d in directions_str.replace('、', ',').split(',') if d.strip()])
         
         # 去重并返回
         unique_directions = list(dict.fromkeys(directions))  # 保持顺序的去重
@@ -1158,30 +903,10 @@ class DailyFortuneCalendarService:
         # 2. 获取当日日支
         day_branch = DailyFortuneCalendarService._get_day_branch(target_date)
         
-        # 3. 查询日支对应方位
         if day_branch:
-            conn = None
-            try:
-                conn = get_mysql_connection()
-                if conn:
-                    with conn.cursor() as cursor:
-                        cursor.execute(
-                            "SELECT direction FROM daily_fortune_wenshen_direction WHERE BINARY day_branch = %s AND COALESCE(enabled, 1) = 1 LIMIT 1",
-                            (day_branch,)
-                        )
-                        result = cursor.fetchone()
-                        if result:
-                            direction = result.get('direction', '').strip()
-                            if direction:
-                                directions.append(direction)
-            except Exception as e:
-                logger.error(f"获取瘟神方位失败: {e}")
-            finally:
-                if conn:
-                    try:
-                        return_mysql_connection(conn)
-                    except Exception:
-                        pass
+            direction = _loader_wenshen(day_branch)
+            if direction:
+                directions.append(direction)
         
         # 去重并返回
         unique_directions = list(dict.fromkeys(directions))  # 保持顺序的去重
