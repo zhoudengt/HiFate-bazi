@@ -233,15 +233,15 @@
   {
     "day_branch": "巳",
     "relation_type": "刑",
-    "target_branch": "寅",
-    "target_zodiac": "虎",
+    "target_branch": "申",
+    "target_zodiac": "猴",
     "content": "远离是非，莫管闲事。"
   },
   {
     "day_branch": "巳",
     "relation_type": "刑",
-    "target_branch": "申",
-    "target_zodiac": "猴",
+    "target_branch": "寅",
+    "target_zodiac": "虎",
     "content": "远离是非，莫管闲事。"
   },
   {
@@ -359,15 +359,15 @@
   {
     "day_branch": "申",
     "relation_type": "刑",
-    "target_branch": "寅",
-    "target_zodiac": "虎",
+    "target_branch": "巳",
+    "target_zodiac": "蛇",
     "content": "行事勿取巧，踏实行事"
   },
   {
     "day_branch": "申",
     "relation_type": "刑",
-    "target_branch": "巳",
-    "target_zodiac": "蛇",
+    "target_branch": "寅",
+    "target_zodiac": "虎",
     "content": "行事勿取巧，踏实行事"
   },
   {

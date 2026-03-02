@@ -2,8 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 一次性导出每日运势相关表数据为JSON文件
+
+用法:
+  本地: python scripts/export_daily_fortune_data.py
+  生产: python scripts/export_daily_fortune_data.py --prod
+       (需设置 MYSQL_HOST, MYSQL_PASSWORD 或 PROD_MYSQL_PASSWORD)
 """
 
+import argparse
 import os
 import sys
 import json
@@ -24,6 +30,15 @@ if os.path.exists(_env_path):
                 if line and not line.startswith('#') and '=' in line:
                     k, v = line.split('=', 1)
                     os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+# --prod: 从生产数据库导出
+# 若 MySQL 未对外暴露，需在生产服务器上执行: ssh root@8.210.52.217 "cd /root/project/HiFate-bazi && MYSQL_HOST=127.0.0.1 MYSQL_PASSWORD=Yuanqizhan@163 python3 scripts/export_daily_fortune_data.py --prod"
+parser = argparse.ArgumentParser()
+parser.add_argument('--prod', action='store_true', help='使用 PROD_MYSQL_PASSWORD')
+args = parser.parse_args()
+if args.prod and os.environ.get('PROD_MYSQL_PASSWORD'):
+    os.environ['MYSQL_PASSWORD'] = os.environ['PROD_MYSQL_PASSWORD']
+    print("使用生产数据库密码 (MYSQL_HOST=%s)" % os.environ.get('MYSQL_HOST', 'localhost'))
 
 from shared.config.database import get_mysql_connection, return_mysql_connection
 
