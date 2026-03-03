@@ -95,9 +95,9 @@ class ApiEndpoints:
     HEALTH_ANALYSIS_TEST = "/health/debug"  # ✅ 使用 debug 接口，与流式接口一致
     CHILDREN_STUDY_TEST = "/children-study/debug"  # ✅ 使用 debug 接口，与流式接口一致
     ANNUAL_REPORT_TEST = "/annual-report/debug"  # 与 stream 数据一致，供评测使用
-    WUXING_PROPORTION_TEST = "/bazi/wuxing-proportion/test"  # TODO: 检查 test 接口是否与流式接口一致
-    XISHEN_JISHEN_TEST = "/bazi/xishen-jishen/test"  # TODO: 检查 test 接口是否与流式接口一致
-    DAILY_FORTUNE_CALENDAR_TEST = "/daily-fortune-calendar/test"  # TODO: 检查 test 接口是否与流式接口一致
+    WUXING_PROPORTION_TEST = "/bazi/wuxing-proportion/test"  # 评测时用 _format_wuxing_for_llm 与流式一致
+    XISHEN_JISHEN_TEST = "/bazi/xishen-jishen/test"  # 评测时用 _format_xishen_jishen_for_llm 与流式一致
+    DAILY_FORTUNE_CALENDAR_TEST = "/daily-fortune-calendar/test"  # 评测时用宜忌 prompt 与流式一致
 
 
 # Excel列映射配置

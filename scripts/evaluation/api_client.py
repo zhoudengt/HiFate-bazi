@@ -723,12 +723,11 @@ class BaziApiClient:
             if not result.get('success'):
                 return await self._post_grpc("/career-wealth/debug", data)
             
-            # ✅ 适配：/career-wealth/debug 返回的是 input_data，需要构建 formatted_data
+            # ✅ 使用与流式接口完全相同的 format 函数（format_career_wealth_for_llm）
             if result and result.get('success'):
                 input_data = result.get('input_data', {})
-                # ✅ 使用与流式接口相同的函数构建 formatted_data（从工具模块导入，无 FastAPI 依赖）
-                from server.utils.prompt_builders import format_career_wealth_input_data_for_coze
-                formatted_data = format_career_wealth_input_data_for_coze(input_data)
+                from server.utils.prompt_builders import format_career_wealth_for_llm
+                formatted_data = format_career_wealth_for_llm(input_data)
                 return {
                     "success": True,
                     "formatted_data": formatted_data,
@@ -761,12 +760,11 @@ class BaziApiClient:
         }
         result = await self._post_json(ApiEndpoints.GENERAL_REVIEW_TEST, data)
         
-        # ✅ 适配：/general-review/debug 返回的是 input_data，需要构建 formatted_data
+        # ✅ 使用与流式接口完全相同的 format 函数（format_general_review_for_llm）
         if result and result.get('success'):
             input_data = result.get('input_data', {})
-            # ✅ 使用与流式接口相同的函数构建 formatted_data（从工具模块导入，无 FastAPI 依赖）
-            from server.utils.prompt_builders import format_general_review_input_data_for_coze
-            formatted_data = format_general_review_input_data_for_coze(input_data)
+            from server.utils.prompt_builders import format_general_review_for_llm
+            formatted_data = format_general_review_for_llm(input_data)
             return {
                 "success": True,
                 "formatted_data": formatted_data,
@@ -794,12 +792,11 @@ class BaziApiClient:
         }
         result = await self._post_json(ApiEndpoints.MARRIAGE_ANALYSIS_TEST, data)
         
-        # ✅ 适配：/bazi/marriage-analysis/debug 返回的是 input_data，需要构建 formatted_data
+        # ✅ 使用与流式接口完全相同的 format 函数（format_marriage_for_llm）
         if result and result.get('success'):
             input_data = result.get('input_data', {})
-            # ✅ 使用与流式接口相同的函数构建 formatted_data（从工具模块导入，无 FastAPI 依赖）
-            from server.utils.prompt_builders import format_marriage_input_data_for_coze
-            formatted_data = format_marriage_input_data_for_coze(input_data)
+            from server.utils.prompt_builders import format_marriage_for_llm
+            formatted_data = format_marriage_for_llm(input_data)
             return {
                 "success": True,
                 "formatted_data": formatted_data,
@@ -827,12 +824,11 @@ class BaziApiClient:
         }
         result = await self._post_json(ApiEndpoints.HEALTH_ANALYSIS_TEST, data)
         
-        # ✅ 适配：/health/debug 返回的是 input_data，需要构建 prompt
+        # ✅ 使用与流式接口完全相同的 format 函数（format_health_for_llm）
         if result and result.get('success'):
             input_data = result.get('input_data', {})
-            # ✅ 使用与流式接口相同的函数构建 prompt（从工具模块导入，无 FastAPI 依赖）
-            from server.utils.prompt_builders import build_health_prompt
-            prompt = build_health_prompt(input_data)
+            from server.utils.prompt_builders import format_health_for_llm
+            prompt = format_health_for_llm(input_data)
             return {
                 "success": True,
                 "formatted_data": prompt,  # 使用相同的函数构建 prompt
@@ -860,12 +856,11 @@ class BaziApiClient:
         }
         result = await self._post_json(ApiEndpoints.CHILDREN_STUDY_TEST, data)
         
-        # ✅ 适配：/children-study/debug 返回的是 input_data，需要构建 formatted_data
+        # ✅ 使用与流式接口完全相同的 format 函数（format_children_study_for_llm）
         if result and result.get('success'):
             input_data = result.get('input_data', {})
-            # ✅ 使用与流式接口相同的函数构建 formatted_data（从工具模块导入，无 FastAPI 依赖）
-            from server.utils.prompt_builders import format_children_study_input_data_for_coze
-            formatted_data = format_children_study_input_data_for_coze(input_data)
+            from server.utils.prompt_builders import format_children_study_for_llm
+            formatted_data = format_children_study_for_llm(input_data)
             return {
                 "success": True,
                 "formatted_data": formatted_data,
@@ -926,10 +921,7 @@ class BaziApiClient:
         """
         调用五行占比测试接口，获取 formatted_data
         
-        优先尝试 REST 接口，失败时回退到 gRPC 网关。
-        
-        Returns:
-            包含 success, formatted_data 的字典
+        ✅ 使用与流式接口完全相同的 _format_wuxing_for_llm
         """
         data = {
             "solar_date": solar_date,
@@ -937,22 +929,30 @@ class BaziApiClient:
             "gender": gender
         }
         try:
-            return await self._post_json(ApiEndpoints.WUXING_PROPORTION_TEST, data)
+            result = await self._post_json(ApiEndpoints.WUXING_PROPORTION_TEST, data)
         except RuntimeError as e:
             if "404" in str(e):
-                # REST 接口不可用，尝试 gRPC 网关
-                return await self._post_grpc(ApiEndpoints.WUXING_PROPORTION_TEST, data)
-            raise
+                result = await self._post_grpc(ApiEndpoints.WUXING_PROPORTION_TEST, data)
+            else:
+                raise
+        if result and result.get('success'):
+            input_data = result.get('input_data', {})
+            from server.api.v1.wuxing_proportion import _format_wuxing_for_llm
+            formatted_data = _format_wuxing_for_llm(input_data)
+            return {
+                "success": True,
+                "formatted_data": formatted_data,
+                "formatted_data_length": len(formatted_data),
+                "input_data": input_data,
+            }
+        return result
     
     async def call_xishen_jishen_test(self, solar_date: str, solar_time: str,
                                        gender: str) -> Dict[str, Any]:
         """
         调用喜神忌神测试接口，获取 formatted_data
         
-        优先尝试 REST 接口，失败时回退到 gRPC 网关。
-        
-        Returns:
-            包含 success, formatted_data 的字典
+        ✅ 使用与流式接口完全相同的 _format_xishen_jishen_for_llm
         """
         data = {
             "solar_date": solar_date,
@@ -960,28 +960,30 @@ class BaziApiClient:
             "gender": gender
         }
         try:
-            return await self._post_json(ApiEndpoints.XISHEN_JISHEN_TEST, data)
+            result = await self._post_json(ApiEndpoints.XISHEN_JISHEN_TEST, data)
         except RuntimeError as e:
             if "404" in str(e):
-                # REST 接口不可用，尝试 gRPC 网关
-                return await self._post_grpc(ApiEndpoints.XISHEN_JISHEN_TEST, data)
-            raise
+                result = await self._post_grpc(ApiEndpoints.XISHEN_JISHEN_TEST, data)
+            else:
+                raise
+        if result and result.get('success'):
+            input_data = result.get('input_data', {})
+            from server.api.v1.xishen_jishen import _format_xishen_jishen_for_llm
+            formatted_data = _format_xishen_jishen_for_llm(input_data)
+            return {
+                "success": True,
+                "formatted_data": formatted_data,
+                "formatted_data_length": len(formatted_data),
+                "input_data": input_data,
+            }
+        return result
     
     async def call_daily_fortune_calendar_test(self, solar_date: str, solar_time: str,
                                                 gender: str, date: Optional[str] = None) -> Dict[str, Any]:
         """
         调用每日运势测试接口，获取 formatted_data
         
-        优先尝试 REST 接口，失败时回退到 gRPC 网关。
-        
-        Args:
-            solar_date: 用户生辰阳历日期（可选）
-            solar_time: 用户生辰时间（可选）
-            gender: 用户性别（可选）
-            date: 查询日期（可选，默认为今天）
-        
-        Returns:
-            包含 success, formatted_data 的字典
+        ✅ 使用与流式接口完全相同的 prompt 格式：宜：xxx\n忌：xxx
         """
         data = {}
         if solar_date:
@@ -993,12 +995,31 @@ class BaziApiClient:
         if date:
             data["date"] = date
         try:
-            return await self._post_json(ApiEndpoints.DAILY_FORTUNE_CALENDAR_TEST, data)
+            result = await self._post_json(ApiEndpoints.DAILY_FORTUNE_CALENDAR_TEST, data)
         except RuntimeError as e:
             if "404" in str(e):
-                # REST 接口不可用，尝试 gRPC 网关
-                return await self._post_grpc(ApiEndpoints.DAILY_FORTUNE_CALENDAR_TEST, data)
-            raise
+                result = await self._post_grpc(ApiEndpoints.DAILY_FORTUNE_CALENDAR_TEST, data)
+            else:
+                raise
+        if result and result.get('success'):
+            raw_data = result.get('formatted_data', '{}')
+            try:
+                response_data = json.loads(raw_data) if isinstance(raw_data, str) else raw_data
+            except (json.JSONDecodeError, TypeError):
+                return result
+            yi_list = response_data.get('yi', []) or []
+            ji_list = response_data.get('ji', []) or []
+            yi_text = '、'.join(yi_list) if yi_list else '无'
+            ji_text = '、'.join(ji_list) if ji_list else '无'
+            formatted_data = f"""宜：{yi_text}
+忌：{ji_text}"""
+            return {
+                "success": True,
+                "formatted_data": formatted_data,
+                "formatted_data_length": len(formatted_data),
+                "input_data": response_data,
+            }
+        return result
     
     @staticmethod
     def generate_user_id() -> str:
