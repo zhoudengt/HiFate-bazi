@@ -244,10 +244,16 @@ class BaziDataAssembler:
                 shishen_rules = [r for r in rules_data if r.get('rule_type', '') == 'shishen']
                 if shishen_rules:
                     shishen_mingge_names = extract_mingge_names_from_rules(shishen_rules)
+            # 与 formula_analysis 保持一致：十神命格为空时使用默认「常格」
+            if not shishen_mingge_names:
+                shishen_mingge_names = ['常格']
 
             xi_shen_elements = ConfigService.map_elements_to_ids(xi_shen_elements_raw)
             ji_shen_elements = ConfigService.map_elements_to_ids(ji_shen_elements_raw)
             shishen_mingge = ConfigService.map_mingge_to_ids(shishen_mingge_names)
+            # 若 DB 无对应命格导致 mapping 仍为空，兜底返回常格（保证不为空）
+            if not shishen_mingge and shishen_mingge_names:
+                shishen_mingge = [{'name': '常格', 'id': None}]
 
             bazi_pillars = bazi_data.get('bazi_pillars', {})
             day_stem = bazi_pillars.get('day', {}).get('stem', '')
