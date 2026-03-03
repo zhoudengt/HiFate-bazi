@@ -155,6 +155,7 @@ class ExcelColumns:
     BAILIAN_CHILDREN_STUDY = 38      # 百炼-子女学习
     BAILIAN_GENERAL_REVIEW = 39      # 百炼-总评
     BAILIAN_DAILY_FORTUNE = 40       # 百炼-每日运势
+    BAILIAN_ANNUAL_REPORT = 41       # 百炼-年运报告
 
 
 # 默认配置实例

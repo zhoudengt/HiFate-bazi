@@ -372,6 +372,7 @@ class BaziEvaluator:
             'wuxing_proportion': self.api_client.call_wuxing_proportion_test,
             'xishen_jishen': self.api_client.call_xishen_jishen_test,
             'daily_fortune': self.api_client.call_daily_fortune_calendar_test,
+            'annual_report': self.api_client.call_annual_report_test,
         }
         
         test_method = scene_to_test_method.get(scene_key)
@@ -379,9 +380,11 @@ class BaziEvaluator:
             return None
         
         try:
-            # 每日运势接口需要 date 参数（可选），其他接口使用相同的参数
+            # 每日运势接口需要 date 参数（可选），年运报告支持 year 参数（可选），其他接口使用相同参数
             if scene_key == 'daily_fortune':
                 result = await test_method(solar_date, solar_time, gender, date=None)
+            elif scene_key == 'annual_report':
+                result = await test_method(solar_date, solar_time, gender, year=None)
             else:
                 result = await test_method(solar_date, solar_time, gender)
             if result and result.get('success') and result.get('formatted_data'):
@@ -478,7 +481,7 @@ class BaziEvaluator:
             self._log_progress(f"  基础数据接口完成，耗时: {basic_data_time:.1f}秒")
             
             # ==================== 阶段1：并行调用 Coze API（大模型接口）====================
-            coze_results = [None] * 9  # Coze 结果占位（基础数据已独立，现在是9个）
+            coze_results = [None] * 10  # Coze 结果占位（基础数据已独立，10个流式接口）
             
             if self.config.use_coze:
                 self._log_progress("  并行调用 Coze API 接口...")
@@ -494,6 +497,7 @@ class BaziEvaluator:
                     self.api_client.call_children_study_stream(solar_date, solar_time, gender),     # 6: 子女学习（原索引7）
                     self.api_client.call_general_review_stream(solar_date, solar_time, gender),     # 7: 总评（原索引8）
                     self.api_client.call_daily_fortune_calendar_stream(solar_date, solar_time, gender),  # 8: 每日运势（原索引9）
+                    self.api_client.call_annual_report_stream(solar_date, solar_time, gender),      # 9: 年运报告（原索引10）
                 ]
                 
                 coze_results = await asyncio.gather(*coze_tasks, return_exceptions=True)
@@ -524,6 +528,7 @@ class BaziEvaluator:
                     (6, 'children_study', '子女学习'),        # 原索引7，现在是6
                     (7, 'general_review', '总评'),            # 原索引8，现在是7
                     (8, 'daily_fortune', '每日运势'),         # 原索引9，现在是8
+                    (9, 'annual_report', '年运报告'),         # 原索引10，现在是9
                 ]
                 
                 for idx, key, name in stream_mapping:
@@ -580,6 +585,7 @@ class BaziEvaluator:
                     ("children_study", "bailian_children_study", "子女学习"),
                     ("general_review", "bailian_general_review", "总评"),
                     ("daily_fortune", "bailian_daily_fortune", "每日运势"),
+                    ("annual_report", "bailian_annual_report", "年运报告"),
                 ]
                 
                 # ==================== 新增：优先获取 formatted_data（与 Coze 使用相同数据）====================
@@ -645,6 +651,7 @@ class BaziEvaluator:
                         'bailian_children_study': 'children_study',
                         'bailian_general_review': 'general_review',
                         'bailian_daily_fortune': 'daily_fortune',
+                        'bailian_annual_report': 'annual_report',
                     }
                     
                     # 执行键名映射并删除原来的 bailian_* 键名

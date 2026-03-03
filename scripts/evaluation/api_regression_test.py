@@ -77,6 +77,7 @@ class TestCase:
     stream_form_file_key: Optional[str] = None
     stream_form_data: Optional[Dict[str, str]] = None  # 其他 Form 字段
     allow_success_false: bool = False  # 允许 success=false（如验证过期/无效订单，接口本身正常）
+    ignore_gate_failure: bool = False  # 门控发布时忽略该用例失败（如风水接口依赖外部服务）
 
 
 # 环境配置
@@ -318,7 +319,8 @@ TEST_CASES: List[TestCase] = [
         is_stream=True,
         stream_form_file_key="image",
         stream_form_data={},
-        description="办公桌风水分析-流式"
+        description="办公桌风水分析-流式",
+        ignore_gate_failure=True  # 门控发布可忽略（依赖 desk-fengshui 服务）
     ),
     
     # ==================== 支付接口 ====================
@@ -587,7 +589,8 @@ class APITester:
             "success": success,
             "message": message,
             "elapsed": round(elapsed, 2),
-            "description": case.description
+            "description": case.description,
+            "ignore_gate_failure": getattr(case, "ignore_gate_failure", False),
         }
         
         if success:
@@ -683,7 +686,8 @@ class APITester:
             "success": success,
             "message": message,
             "elapsed": round(elapsed, 2),
-            "description": case.description
+            "description": case.description,
+            "ignore_gate_failure": getattr(case, "ignore_gate_failure", False),
         }
     
     def print_summary(self):
@@ -694,23 +698,27 @@ class APITester:
         
         total = len(self.results)
         passed = sum(1 for r in self.results if r['success'])
-        failed = total - passed
+        failed_all = total - passed
+        # 门控判定：ignore_gate_failure 的失败不计入
+        failed_gate = sum(1 for r in self.results if not r['success'] and not r.get('ignore_gate_failure', False))
+        ignored = failed_all - failed_gate
         
         print(f"\n{'='*60}")
         print(f"测试摘要")
         print(f"{'='*60}")
-        print(f"总计: {total} | 通过: {passed} | 失败: {failed}")
+        print(f"总计: {total} | 通过: {passed} | 失败: {failed_all}" + (f" (其中 {ignored} 个可忽略)" if ignored else ""))
         print(f"通过率: {passed/total*100:.1f}%")
         
-        if failed > 0:
+        if failed_all > 0:
             print(f"\n失败的测试:")
             for r in self.results:
                 if not r['success']:
-                    print(f"  ❌ {r['name']}: {r['message']}")
+                    suffix = " [门控可忽略]" if r.get('ignore_gate_failure') else ""
+                    print(f"  ❌ {r['name']}: {r['message']}{suffix}")
         
         print(f"{'='*60}\n")
         
-        return failed == 0
+        return failed_gate == 0
 
 
 def main():

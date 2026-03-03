@@ -75,6 +75,13 @@ class ExcelHandler:
             if not birth_text or str(birth_text).strip() == "" or str(birth_text) == "nan":
                 continue
 
+            # 跳过表头行（birth 或 gender 列包含表头常见字样）
+            birth_str = str(birth_text).strip().lower()
+            gender_str = str(gender_text or "").strip().lower()
+            _header_keywords = ('birth', '生辰', 'user_', '日期', '性别', 'gender', '男/女')
+            if any(kw in birth_str for kw in _header_keywords) or any(kw in gender_str for kw in _header_keywords):
+                continue
+
             solar_date, solar_time, gender = "", "", ""
             parse_error = None
 
@@ -131,6 +138,7 @@ class ExcelHandler:
         self._write_cell(excel_row, ExcelColumns.CHILDREN_STUDY, result.get('children_study', ''))
         self._write_cell(excel_row, ExcelColumns.GENERAL_REVIEW, result.get('general_review', ''))
         self._write_cell(excel_row, ExcelColumns.DAILY_FORTUNE, result.get('daily_fortune', ''))
+        self._write_cell(excel_row, ExcelColumns.YEAR_FORTUNE, result.get('annual_report', ''))
 
         # AI 问答
         ai_qa = result.get('ai_qa', {})
@@ -151,6 +159,7 @@ class ExcelHandler:
         self._write_cell(excel_row, ExcelColumns.BAILIAN_CHILDREN_STUDY, result.get('bailian_children_study', ''))
         self._write_cell(excel_row, ExcelColumns.BAILIAN_GENERAL_REVIEW, result.get('bailian_general_review', ''))
         self._write_cell(excel_row, ExcelColumns.BAILIAN_DAILY_FORTUNE, result.get('bailian_daily_fortune', ''))
+        self._write_cell(excel_row, ExcelColumns.BAILIAN_ANNUAL_REPORT, result.get('bailian_annual_report', ''))
 
     def _write_cell(self, row: int, col: int, value: Any) -> None:
         """写入单元格（openpyxl 行列从 1 开始）"""
