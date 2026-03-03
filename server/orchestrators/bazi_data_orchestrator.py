@@ -763,48 +763,17 @@ class BaziDataOrchestrator:
             if sl_data:
                 result['special_liunians'] = sl_data
         
-        # 处理喜神忌神模块（优先使用组装数据，需要在 rules 处理之后）
-        if modules.get('xishen_jishen'):
-            rules_module_data = result.get('rules', [])
-            
-            if inner_bazi_data and wangshuai_data:
-                xishen_jishen_data = BaziDataAssembler.assemble_xishen_jishen(
-                    bazi_data=inner_bazi_data,
-                    wangshuai_data=wangshuai_data,
-                    rules_data=rules_module_data,
-                    solar_date=final_solar_date,
-                    solar_time=final_solar_time,
-                    gender=gender,
-                    calendar_type=calendar_type or "solar",
-                    location=location,
-                    latitude=latitude,
-                    longitude=longitude
-                )
-                if xishen_jishen_data:
-                    result['xishen_jishen'] = xishen_jishen_data
-                    logger.info("[BaziDataOrchestrator] 喜神忌神数据已自动组装")
-                else:
-                    if xishen_jishen_data_from_task:
-                        if isinstance(xishen_jishen_data_from_task, dict):
-                            result['xishen_jishen'] = xishen_jishen_data_from_task
-                        elif hasattr(xishen_jishen_data_from_task, 'model_dump'):
-                            result['xishen_jishen'] = xishen_jishen_data_from_task.model_dump()
-                        elif hasattr(xishen_jishen_data_from_task, 'dict'):
-                            result['xishen_jishen'] = xishen_jishen_data_from_task.dict()
-                        else:
-                            result['xishen_jishen'] = xishen_jishen_data_from_task
-                    logger.warning("[BaziDataOrchestrator] 喜神忌神数据组装失败，使用接口调用结果")
+        # 处理喜神忌神模块：与 /bazi/xishen-jishen/stream 同源，统一使用 get_xishen_jishen（formula_analysis）
+        if modules.get('xishen_jishen') and xishen_jishen_data_from_task:
+            if isinstance(xishen_jishen_data_from_task, dict):
+                result['xishen_jishen'] = xishen_jishen_data_from_task
+            elif hasattr(xishen_jishen_data_from_task, 'model_dump'):
+                result['xishen_jishen'] = xishen_jishen_data_from_task.model_dump()
+            elif hasattr(xishen_jishen_data_from_task, 'dict'):
+                result['xishen_jishen'] = xishen_jishen_data_from_task.dict()
             else:
-                if xishen_jishen_data_from_task:
-                    if isinstance(xishen_jishen_data_from_task, dict):
-                        result['xishen_jishen'] = xishen_jishen_data_from_task
-                    elif hasattr(xishen_jishen_data_from_task, 'model_dump'):
-                        result['xishen_jishen'] = xishen_jishen_data_from_task.model_dump()
-                    elif hasattr(xishen_jishen_data_from_task, 'dict'):
-                        result['xishen_jishen'] = xishen_jishen_data_from_task.dict()
-                    else:
-                        result['xishen_jishen'] = xishen_jishen_data_from_task
-                logger.info("[BaziDataOrchestrator] 使用接口调用的喜神忌神数据")
+                result['xishen_jishen'] = xishen_jishen_data_from_task
+            logger.info("[BaziDataOrchestrator] 喜神忌神数据已使用 get_xishen_jishen（与 stream 同源）")
         
         # 处理分析模块
         if modules.get('health'):
