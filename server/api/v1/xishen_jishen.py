@@ -329,10 +329,16 @@ async def get_xishen_jishen(request: XishenJishenRequest):
         
         logger.info(f"   十神命格: {shishen_mingge_names}")
         
+        # 与 data_assembler 保持一致：十神命格为空时使用默认「常格」
+        if not shishen_mingge_names:
+            shishen_mingge_names = ['常格']
+        
         # 3. 映射ID
         xi_shen_elements = ConfigService.map_elements_to_ids(xi_shen_elements_raw)
         ji_shen_elements = ConfigService.map_elements_to_ids(ji_shen_elements_raw)
         shishen_mingge = ConfigService.map_mingge_to_ids(shishen_mingge_names)
+        if not shishen_mingge and shishen_mingge_names:
+            shishen_mingge = [{'name': '常格', 'id': None}]
         
         # 4. 构建响应数据
         response_data = {
