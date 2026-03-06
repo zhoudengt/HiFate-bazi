@@ -1183,7 +1183,7 @@ async def _scenario_1_generator(
             if len(full_brief_response) > 100:
                 full_brief_response = full_brief_response[:100]
             
-            yield _sse_message("llm_end", {})
+            yield _sse_message("llm_end", {"full_content": full_brief_response})
         
         # ==================== 取预设问题结果（已与简短答复并行执行） ====================
         yield _sse_message("status", {"stage": "preset_questions", "message": "正在生成预设问题..."})
@@ -1529,7 +1529,7 @@ async def _scenario_2_generator(
                             logger.info("✅ 开始并行生成相关问题（答案已输出80字）")
                 elif result_type == 'complete':
                     # ⚡ 先发送 llm_end，让前端尽早感知LLM输出完成
-                    yield _sse_message("llm_end", {})
+                    yield _sse_message("llm_end", {"full_content": full_response})
                     
                     # ==================== 以下保存操作在 llm_end 之后执行（不影响前端体验） ====================
                     response_time_ms = int((time.time() - start_time) * 1000)
@@ -1858,7 +1858,7 @@ async def _original_scenario_generator(
                         logger.info(f"[smart_fortune_stream] ✅ LLM流式输出完成: 共{chunk_count}个chunk, 总长度{total_content_length}字符")
                         monitor.add_metric("llm_analysis", "chunk_count", chunk_count)
                         monitor.add_metric("llm_analysis", "total_length", total_content_length)
-                        yield _sse_message("llm_end", {})
+                        yield _sse_message("llm_end", {"full_content": full_response})
                         break
                     elif chunk_type == 'error':
                         error_msg = chunk.get('error', '未知错误')
