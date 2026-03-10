@@ -19,6 +19,7 @@ import json
 import logging
 import time
 import traceback
+import uuid
 from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, Dict, Optional
 
@@ -28,6 +29,28 @@ logger = logging.getLogger(__name__)
 def _sse_yield(msg: Dict[str, Any]) -> str:
     """将消息转为 SSE 格式"""
     return f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+
+
+def _sse_request_id(request_id: str) -> str:
+    """生成 request_id SSE 事件（流式输出首条发送）"""
+    return _sse_yield({'type': 'request_id', 'request_id': request_id})
+
+
+def generate_request_id(headers: Any = None) -> str:
+    """
+    生成或提取 request_id，保证每条流式消息一定有唯一 ID。
+
+    优先从请求头获取（阿里云 SLB/网关注入），兜底 uuid4。
+    headers 可以是 starlette Request.headers 或 None。
+    """
+    if headers:
+        rid = (
+            headers.get("X-Request-Id")
+            or headers.get("x-acs-request-id")
+        )
+        if rid:
+            return rid
+    return str(uuid.uuid4())
 
 
 class BaseAnalysisStreamHandler(ABC):
@@ -127,7 +150,8 @@ class BaseAnalysisStreamHandler(ABC):
         self,
         request: Any,
         bot_id: Optional[str] = None,
-        trace_id: Optional[str] = None
+        trace_id: Optional[str] = None,
+        request_id: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """
         通用 8 步流式生成器
@@ -141,6 +165,7 @@ class BaseAnalysisStreamHandler(ABC):
         7. SSE 格式化输出
         8. 交互日志
         """
+        _request_id = request_id or generate_request_id()
         api_start_time = time.time()
         frontend_input = {
             'solar_date': getattr(request, 'solar_date', ''),
@@ -161,7 +186,10 @@ class BaseAnalysisStreamHandler(ABC):
         formatted_text = ''
 
         try:
-            # 0. 前置校验（如 bot_id 配置）
+            # 0. 首条发送 request_id（供前端评价功能引用）
+            yield _sse_request_id(_request_id)
+
+            # 0.1 前置校验（如 bot_id 配置）
             validation_error = self.validate_request(request)
             if validation_error:
                 yield _sse_yield({'type': 'error', 'content': validation_error})
@@ -233,6 +261,7 @@ class BaseAnalysisStreamHandler(ABC):
                     llm_platform=None,
                     status='cache_hit',
                     cache_hit=True,
+                    request_id=_request_id,
                 )
                 return
             
@@ -303,6 +332,7 @@ class BaseAnalysisStreamHandler(ABC):
                 actual_bot_id=actual_bot_id,
                 llm_platform=llm_platform,
                 status='success' if has_content else 'failed',
+                request_id=_request_id,
             )
             
         except Exception as e:
@@ -327,6 +357,7 @@ class BaseAnalysisStreamHandler(ABC):
                 llm_platform=None,
                 status='failed',
                 error_message=str(e),
+                request_id=_request_id,
             )
     
     def _log_stream_call(
@@ -344,6 +375,7 @@ class BaseAnalysisStreamHandler(ABC):
         status: str,
         error_message: Optional[str] = None,
         cache_hit: bool = False,
+        request_id: Optional[str] = None,
     ) -> None:
         """记录流式接口调用日志"""
         try:
@@ -365,6 +397,7 @@ class BaseAnalysisStreamHandler(ABC):
                 status=status,
                 error_message=error_message,
                 cache_hit=cache_hit,
+                request_id=request_id,
             )
         except Exception as log_err:
             logger.warning(f"[{self.scene}] 流式调用日志记录失败: {log_err}", exc_info=True)

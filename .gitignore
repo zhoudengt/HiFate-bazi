@@ -110,3 +110,6 @@ scripts/db/sync_config_tables_temp.sql
 
 # 废弃文件存档（不提交）
 deprecated/
+
+# 六爻百科抓取工具（本地使用，不提交）
+tools/liuyao_wiki_scraper/

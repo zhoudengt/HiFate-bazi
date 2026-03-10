@@ -27,6 +27,7 @@ from server.utils.dayun_liunian_helper import (
     get_current_dayun,
     build_enhanced_dayun_structure
 )
+from server.api.base.stream_handler import generate_request_id
 
 router = APIRouter()
 bazi_service = BaziService()
@@ -785,6 +786,7 @@ async def get_smart_analyze_stream_generator(
     gender = payload.get("gender")
     user_id = payload.get("user_id")
     category = payload.get("category")
+    request_id = payload.pop("_request_id", None) or payload.get("request_id") or generate_request_id()
     monitor = PerformanceMonitor()
     is_scenario_1 = category and (not question or question == category)
     is_scenario_2 = category and question and question != category
@@ -792,15 +794,15 @@ async def get_smart_analyze_stream_generator(
     if is_scenario_1:
         if not user_id or not year or not month or not day or not gender:
             return None, {"success": False, "error": "场景1需要提供完整的生辰信息（year, month, day, gender, user_id）"}
-        gen = _scenario_1_generator(year, month, day, hour, gender, category, user_id, monitor)
+        gen = _scenario_1_generator(year, month, day, hour, gender, category, user_id, monitor, request_id)
         return gen, None
     if is_scenario_2:
         if not user_id:
             return None, {"success": False, "error": "场景2需要提供user_id参数"}
-        gen = _scenario_2_generator(question, category, user_id, year, month, day, hour, gender, monitor)
+        gen = _scenario_2_generator(question, category, user_id, year, month, day, hour, gender, monitor, request_id)
         return gen, None
     if question and year and month and day and gender:
-        gen = _original_scenario_generator(question, year, month, day, hour, gender, user_id, monitor)
+        gen = _original_scenario_generator(question, year, month, day, hour, gender, user_id, monitor, request_id)
         return gen, None
     return None, {"success": False, "error": "参数不完整，请检查输入"}
 
@@ -826,6 +828,7 @@ async def smart_analyze_stream(request: Request):
         """生成SSE事件流"""
         # 初始化性能监控器
         monitor = PerformanceMonitor()
+        request_id = generate_request_id(request.headers) if request else generate_request_id()
         
         try:
             # ✅ 性能优化：立即返回首条消息，让用户感知到连接已建立
@@ -866,7 +869,7 @@ async def smart_analyze_stream(request: Request):
                 
                 # 执行场景1逻辑
                 async for event in _scenario_1_generator(
-                    year, month, day, hour, gender, category, user_id, monitor
+                    year, month, day, hour, gender, category, user_id, monitor, request_id
                 ):
                     yield event
                 return
@@ -879,7 +882,7 @@ async def smart_analyze_stream(request: Request):
                     return
                 # 执行场景2逻辑
                 async for event in _scenario_2_generator(
-                    question, category, user_id, year, month, day, hour, gender, monitor
+                    question, category, user_id, year, month, day, hour, gender, monitor, request_id
                 ):
                     yield event
                 return
@@ -894,7 +897,7 @@ async def smart_analyze_stream(request: Request):
                 
                 # 执行原有逻辑
                 async for event in _original_scenario_generator(
-                    question, year, month, day, hour, gender, user_id or None, monitor  # 允许 user_id 为空
+                    question, year, month, day, hour, gender, user_id or None, monitor, request_id  # 允许 user_id 为空
                 ):
                     yield event
                 return
@@ -1112,7 +1115,8 @@ async def _fetch_bazi_data_via_orchestrator(
 
 async def _scenario_1_generator(
     year: int, month: int, day: int, hour: int, gender: str,
-    category: str, user_id: str, monitor: PerformanceMonitor
+    category: str, user_id: str, monitor: PerformanceMonitor,
+    request_id: Optional[str] = None
 ):
     """场景1：点击选择项 → 生成简短答复 + 预设问题列表（百炼平台）"""
     from server.services.bazi_session_service import BaziSessionService
@@ -1120,8 +1124,10 @@ async def _scenario_1_generator(
     import time
     
     start_time = time.time()  # 记录开始时间，用于计算响应时间
+    request_id = request_id or generate_request_id()
     
     try:
+        yield f"data: {json.dumps({'type': 'request_id', 'request_id': request_id}, ensure_ascii=False)}\n\n"
         # ==================== 计算完整八字数据 ====================
         yield _sse_message("status", {"stage": "bazi", "message": "正在计算八字..."})
         
@@ -1392,7 +1398,8 @@ def _parse_questions_from_text(text: str) -> List[str]:
 async def _scenario_2_generator(
     question: str, category: Optional[str], user_id: str,
     year: Optional[int], month: Optional[int], day: Optional[int],
-    hour: int, gender: Optional[str], monitor: PerformanceMonitor
+    hour: int, gender: Optional[str], monitor: PerformanceMonitor,
+    request_id: Optional[str] = None
 ):
     """场景2：点击预设问题/输入问题 → 生成详细流式回答 + 2个相关问题（category可选，百炼平台）"""
     from server.services.bazi_session_service import BaziSessionService
@@ -1400,8 +1407,10 @@ async def _scenario_2_generator(
     import time
     
     start_time = time.time()  # 记录开始时间，用于计算响应时间
+    request_id = request_id or generate_request_id()
     
     try:
+        yield f"data: {json.dumps({'type': 'request_id', 'request_id': request_id}, ensure_ascii=False)}\n\n"
         # ==================== 并行获取会话数据（非阻塞，2个Redis调用并行执行） ====================
         loop = asyncio.get_event_loop()
         complete_bazi_data, history_context = await asyncio.gather(
@@ -1640,10 +1649,13 @@ async def _scenario_2_generator(
 
 async def _original_scenario_generator(
     question: str, year: int, month: int, day: int, hour: int,
-    gender: str, user_id: Optional[str], monitor: PerformanceMonitor
+    gender: str, user_id: Optional[str], monitor: PerformanceMonitor,
+    request_id: Optional[str] = None
 ):
     """原有场景：兼容原有逻辑（保留原有完整流程）"""
+    request_id = request_id or generate_request_id()
     try:
+        yield f"data: {json.dumps({'type': 'request_id', 'request_id': request_id}, ensure_ascii=False)}\n\n"
         # ==================== 阶段1：意图识别 ====================
         yield _sse_message("status", {"stage": "intent", "message": "正在识别意图..."})
         

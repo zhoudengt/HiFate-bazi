@@ -69,6 +69,7 @@ class StreamCallLogger:
         bot_id: Optional[str] = None,
         llm_platform: Optional[str] = None,
         trace_id: Optional[str] = None,
+        request_id: Optional[str] = None,
     ):
         """
         异步记录流式接口调用（即发即忘，不阻塞业务）
@@ -89,6 +90,7 @@ class StreamCallLogger:
             bot_id: Bot ID
             llm_platform: 大模型平台（coze / bailian）
             trace_id: 请求追踪 ID，不传则自动生成
+            request_id: 请求唯一ID，供前端评价引用（UUID），不传则不写入
         """
         _trace_id = trace_id or str(uuid.uuid4())
         self.executor.submit(
@@ -97,7 +99,7 @@ class StreamCallLogger:
             frontend_input, input_data, llm_output,
             api_total_ms, input_data_gen_ms, llm_first_token_ms, llm_total_ms,
             status, error_message, cache_hit,
-            bot_id, llm_platform,
+            bot_id, llm_platform, request_id,
         )
 
     def _write_sync(
@@ -117,6 +119,7 @@ class StreamCallLogger:
         cache_hit: bool,
         bot_id: Optional[str],
         llm_platform: Optional[str],
+        request_id: Optional[str] = None,
     ):
         """在后台线程中同步写入数据库"""
         try:
@@ -136,6 +139,7 @@ class StreamCallLogger:
                 cache_hit=cache_hit,
                 bot_id=bot_id,
                 llm_platform=llm_platform,
+                request_id=request_id,
             )
         except Exception as e:
             logger.error(f"[StreamCallLogger] 写入失败: {e}", exc_info=True)

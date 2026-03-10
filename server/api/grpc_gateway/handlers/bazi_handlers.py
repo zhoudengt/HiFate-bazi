@@ -272,8 +272,9 @@ async def _handle_wuxing_proportion_test(payload: Dict[str, Any]):
 
 @_register("/bazi/wuxing-proportion/stream")
 async def _handle_wuxing_proportion_stream(payload: Dict[str, Any]):
+    _request_id = payload.pop("_request_id", None)
     request_model = WuxingProportionRequest(**payload)
-    generator = wuxing_proportion_stream_generator(request_model)
+    generator = wuxing_proportion_stream_generator(request_model, request_id=_request_id)
     return await _collect_sse_stream(generator)
 
 
@@ -285,6 +286,7 @@ async def _handle_xishen_jishen_test(payload: Dict[str, Any]):
 
 @_register("/bazi/xishen-jishen/stream")
 async def _handle_xishen_jishen_stream(payload: Dict[str, Any]):
+    _request_id = payload.pop("_request_id", None)
     request_model = XishenJishenRequest(**payload)
-    generator = xishen_jishen_stream_generator(request_model)
+    generator = xishen_jishen_stream_generator(request_model, request_id=_request_id)
     return await _collect_sse_stream(generator)

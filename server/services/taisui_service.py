@@ -328,9 +328,9 @@ class TaisuiService:
         if '刑' in fanshaisui_types:
             suggestions.append("刑太岁，易有口舌是非，建议行善积德，避免口舌争执。")
         if '害' in fanshaisui_types:
-            suggestions.append("害太岁，易有小人作祟，建议谨慎交友，避免冲突。")
+            suggestions.append("害太岁，人际摩擦易增多，建议谨慎交友，避免冲突。")
         if '破' in fanshaisui_types:
-            suggestions.append("破太岁，易有破财，建议理性投资，避免冲动消费。")
+            suggestions.append("破太岁，财务波动易增大，建议理性投资，避免冲动消费。")
         
         # 结合命盘分析（如果有八字数据）
         if bazi_data:

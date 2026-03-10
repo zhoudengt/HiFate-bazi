@@ -32,6 +32,7 @@ from server.utils.api_cache_helper import (
     generate_cache_key, get_cached_result, set_cached_result, L2_TTL, get_current_date_str
 )
 from server.utils.api_error_handler import api_error_handler
+from server.api.base.stream_handler import generate_request_id
 
 # 导入配置加载器（从数据库读取配置）
 try:
@@ -227,7 +228,8 @@ class ActionSuggestionsRequest(BaseModel):
 async def action_suggestions_stream_generator(
     yi_list: List[str],
     ji_list: List[str],
-    bot_id: Optional[str] = None
+    bot_id: Optional[str] = None,
+    request_id: Optional[str] = None
 ):
     """
     流式生成行动建议的生成器
@@ -238,6 +240,9 @@ async def action_suggestions_stream_generator(
         bot_id: Coze Bot ID（可选，优先级：参数 > DAILY_FORTUNE_ACTION_BOT_ID > 默认值）
     """
     try:
+        request_id = request_id or generate_request_id()
+        yield f"data: {json.dumps({'type': 'request_id', 'request_id': request_id}, ensure_ascii=False)}\n\n"
+
         # 确定使用的 bot_id（优先级：参数 > 数据库配置）
         if not bot_id:
             # 只从数据库读取，不降级到环境变量
@@ -333,7 +338,8 @@ async def action_suggestions_stream(request: ActionSuggestionsRequest):
             action_suggestions_stream_generator(
                 request.yi,
                 request.ji,
-                request.bot_id  # bot_id 在 generator 中处理默认值
+                request.bot_id,  # bot_id 在 generator 中处理默认值
+                request_id=None
             ),
             media_type="text/event-stream",
             headers={
@@ -353,7 +359,8 @@ async def action_suggestions_stream(request: ActionSuggestionsRequest):
 async def daily_fortune_stream_generator(
     request: DailyFortuneCalendarRequest,
     bot_id: Optional[str] = None,
-    http_request: Optional[Request] = None
+    http_request: Optional[Request] = None,
+    request_id: Optional[str] = None
 ):
     """
     每日运势流式生成器
@@ -379,6 +386,9 @@ async def daily_fortune_stream_generator(
         return False
     
     try:
+        request_id = request_id or generate_request_id()
+        yield f"data: {json.dumps({'type': 'request_id', 'request_id': request_id}, ensure_ascii=False)}\n\n"
+
         # 1. 判断是否有完整的用户生辰信息
         has_user_info = request.solar_date and request.solar_time and request.gender
         
@@ -765,7 +775,11 @@ async def query_daily_fortune_calendar_stream(request: DailyFortuneCalendarReque
     """
     try:
         return StreamingResponse(
-            daily_fortune_stream_generator(request, http_request=http_request),
+            daily_fortune_stream_generator(
+                request,
+                http_request=http_request,
+                request_id=generate_request_id(http_request.headers) if http_request else None
+            ),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",

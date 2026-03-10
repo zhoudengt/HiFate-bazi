@@ -206,6 +206,10 @@ async def grpc_web_gateway(request: Request):
         logger.warning(error_msg)
         return build_error_response(error_msg, http_status=400, grpc_status=3)
 
+    # 注入 request_id（供流式接口评价功能使用，不影响非流式接口）
+    from server.api.base.stream_handler import generate_request_id
+    payload["_request_id"] = generate_request_id(request.headers)
+
     # ---- 2. 查找 handler ----
     handler = SUPPORTED_ENDPOINTS.get(endpoint)
     if not handler and endpoint:

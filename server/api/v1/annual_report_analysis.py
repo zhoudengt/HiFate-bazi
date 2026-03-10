@@ -30,6 +30,7 @@ from server.services.annual_report_service import AnnualReportService
 from server.utils.prompt_builders import format_annual_report_for_llm
 
 # 导入配置加载器（从数据库读取配置）
+from server.api.base.stream_handler import generate_request_id
 try:
     from server.config.config_loader import get_config_from_db_only
 except ImportError:
@@ -272,9 +273,12 @@ async def annual_report_stream_generator(
     focus_tags: Optional[List[str]] = None,
     relationship_status: Optional[str] = None,
     career_status: Optional[str] = None,
+    request_id: Optional[str] = None,
 ):
     """流式生成年运报告的生成器（一级接口）"""
+    request_id = request_id or generate_request_id()
     try:
+        yield f"data: {json.dumps({'type': 'request_id', 'request_id': request_id}, ensure_ascii=False)}\n\n"
         # ✅ 性能优化：立即返回首条消息，让用户感知到连接已建立
         # 这个优化将首次响应时间从 24秒 降低到 <1秒
         # ✅ 架构优化：移除无意义的进度消息，直接开始数据处理

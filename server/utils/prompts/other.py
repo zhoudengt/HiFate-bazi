@@ -336,7 +336,7 @@ def format_annual_report_for_llm(input_data: Dict[str, Any]) -> str:
     if wuhuang:
         position = wuhuang.get('position', '')
         direction = wuhuang.get('direction', '')
-        warning = wuhuang.get('warning', wuhuang.get('description', ''))
+        warning = wuhuang.get('warning', wuhuang.get('description', wuhuang.get('impact', '')))
         wuhuang_text = f"五黄在{position or direction}"
         if warning:
             wuhuang_text += f"({warning})"
@@ -344,7 +344,7 @@ def format_annual_report_for_llm(input_data: Dict[str, Any]) -> str:
     if erhei:
         position = erhei.get('position', '')
         direction = erhei.get('direction', '')
-        warning = erhei.get('warning', erhei.get('description', ''))
+        warning = erhei.get('warning', erhei.get('description', erhei.get('impact', '')))
         erhei_text = f"二黑在{position or direction}"
         if warning:
             erhei_text += f"({warning})"
@@ -414,7 +414,39 @@ def format_annual_report_for_llm(input_data: Dict[str, Any]) -> str:
             special_liunians=dayun_liunian.get('special_liunians', [])
         ))
     
-    return '\n'.join(lines)
+    result = '\n'.join(lines)
+    # 百炼内容安全：替换易触发 DataInspectionFailed 的敏感词（输入侧兜底）
+    result = _sanitize_for_bailian_content_filter(result)
+    return result
+
+
+def _sanitize_for_bailian_content_filter(text: str) -> str:
+    """
+    替换易触发百炼 DataInspectionFailed 的敏感词，用于年运报告等命理场景。
+    在 format_annual_report_for_llm 输出后调用，作为输入侧兜底。
+    """
+    if not text or not isinstance(text, str):
+        return text
+    replacements = [
+        ('血光之灾', '需留意意外与出行安全'),
+        ('破财损丁', '财务波动与健康耗损'),
+        ('小人作祟', '人际摩擦增多'),
+        ('小人陷害', '人际摩擦'),
+        ('官司纠纷', '口舌是非、文书宜谨慎'),
+        ('破财严重', '财务波动较大'),
+        ('破财漏财', '支出易超预期'),
+        ('主灾祸', '需留意意外'),
+        ('主病符', '需留意健康'),
+        ('意外灾祸', '意外风险'),
+        ('易有破财', '易有财务波动'),
+        ('防破财', '防财务波动'),
+        ('破财风险', '财务波动风险'),
+        ('防破财', '防财务波动'),
+        ('破财风险', '财务波动风险'),
+    ]
+    for old, new in replacements:
+        text = text.replace(old, new)
+    return text
 
 
 # 面相分析V2格式化函数

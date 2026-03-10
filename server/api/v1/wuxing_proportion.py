@@ -176,14 +176,15 @@ _WUXING_HANDLER = WuxingStreamHandler()
 
 async def wuxing_proportion_stream_generator(
     request: WuxingProportionRequest,
-    bot_id: Optional[str] = None
+    bot_id: Optional[str] = None,
+    request_id: Optional[str] = None,
 ):
     """
     五行占比流式分析生成器（基于 BaseAnalysisStreamHandler）
     
     先返回完整的五行占比数据，然后流式返回大模型分析
     """
-    async for chunk in _WUXING_HANDLER.stream_generator(request, bot_id=bot_id):
+    async for chunk in _WUXING_HANDLER.stream_generator(request, bot_id=bot_id, request_id=request_id):
         yield chunk
 
 

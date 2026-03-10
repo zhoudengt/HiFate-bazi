@@ -72,6 +72,7 @@ async def _handle_career_wealth_debug(payload: Dict[str, Any]):
 @_register("/bazi/marriage-analysis/stream")
 async def _handle_marriage_analysis_stream(payload: Dict[str, Any]):
     """处理感情婚姻流式分析请求"""
+    _request_id = payload.pop("_request_id", None)
     request_model = MarriageAnalysisRequest(**payload)
     trace_id = str(uuid.uuid4())[:8]
     logger.info(f"[{trace_id}] 📥 收到婚姻分析请求: solar_date={request_model.solar_date}, gender={request_model.gender}")
@@ -79,7 +80,7 @@ async def _handle_marriage_analysis_stream(payload: Dict[str, Any]):
         request_model.solar_date, request_model.solar_time, request_model.gender,
         request_model.calendar_type, request_model.location,
         request_model.latitude, request_model.longitude,
-        request_model.bot_id, trace_id=trace_id
+        request_model.bot_id, trace_id=trace_id, request_id=_request_id,
     )
     return await _collect_sse_stream(generator)
 
@@ -102,11 +103,13 @@ async def _handle_marriage_analysis_debug(payload: Dict[str, Any]):
 @_register("/career-wealth/stream")
 async def _handle_career_wealth_stream(payload: Dict[str, Any]):
     """处理事业财富流式分析请求"""
+    _request_id = payload.pop("_request_id", None)
     request_model = CareerWealthRequest(**payload)
     generator = career_wealth_stream_generator(
         request_model.solar_date, request_model.solar_time, request_model.gender,
         request_model.calendar_type, request_model.location,
-        request_model.latitude, request_model.longitude, request_model.bot_id
+        request_model.latitude, request_model.longitude, request_model.bot_id,
+        request_id=_request_id,
     )
     return await _collect_sse_stream(generator)
 
@@ -114,11 +117,13 @@ async def _handle_career_wealth_stream(payload: Dict[str, Any]):
 @_register("/children-study/stream")
 async def _handle_children_study_stream(payload: Dict[str, Any]):
     """处理子女学习流式分析请求"""
+    _request_id = payload.pop("_request_id", None)
     request_model = ChildrenStudyRequest(**payload)
     generator = children_study_analysis_stream_generator(
         request_model.solar_date, request_model.solar_time, request_model.gender,
         request_model.calendar_type, request_model.location,
-        request_model.latitude, request_model.longitude, request_model.bot_id
+        request_model.latitude, request_model.longitude, request_model.bot_id,
+        request_id=_request_id,
     )
     return await _collect_sse_stream(generator)
 
@@ -141,11 +146,13 @@ async def _handle_children_study_debug(payload: Dict[str, Any]):
 @_register("/health/stream")
 async def _handle_health_stream(payload: Dict[str, Any]):
     """处理健康分析流式请求"""
+    _request_id = payload.pop("_request_id", None)
     request_model = HealthAnalysisRequest(**payload)
     generator = health_analysis_stream_generator(
         request_model.solar_date, request_model.solar_time, request_model.gender,
         request_model.calendar_type, request_model.location,
-        request_model.latitude, request_model.longitude, request_model.bot_id
+        request_model.latitude, request_model.longitude, request_model.bot_id,
+        request_id=_request_id,
     )
     return await _collect_sse_stream(generator)
 
@@ -168,11 +175,13 @@ async def _handle_health_debug(payload: Dict[str, Any]):
 @_register("/general-review/stream")
 async def _handle_general_review_stream(payload: Dict[str, Any]):
     """处理总评分析流式请求"""
+    _request_id = payload.pop("_request_id", None)
     request_model = GeneralReviewRequest(**payload)
     generator = general_review_analysis_stream_generator(
         request_model.solar_date, request_model.solar_time, request_model.gender,
         request_model.calendar_type, request_model.location,
-        request_model.latitude, request_model.longitude, request_model.bot_id
+        request_model.latitude, request_model.longitude, request_model.bot_id,
+        request_id=_request_id,
     )
     return await _collect_sse_stream(generator)
 
@@ -195,10 +204,12 @@ async def _handle_general_review_debug(payload: Dict[str, Any]):
 @_register("/annual-report/stream")
 async def _handle_annual_report_stream(payload: Dict[str, Any]):
     """处理年运报告流式请求"""
+    _request_id = payload.pop("_request_id", None)
     request_model = AnnualReportRequest(**payload)
     generator = annual_report_stream_generator(
         request_model.solar_date, request_model.solar_time,
-        request_model.gender, request_model.bot_id
+        request_model.gender, request_model.bot_id,
+        request_id=_request_id,
     )
     return await _collect_sse_stream(generator)
 
@@ -215,3 +226,12 @@ async def _handle_annual_report_test(payload: Dict[str, Any]):
     """处理年运报告测试接口请求"""
     request_model = AnnualReportRequest(**payload)
     return await annual_report_debug(request_model)
+
+
+@_register("/message-feedback")
+async def _handle_message_feedback(payload: Dict[str, Any]):
+    """处理消息评价请求（赞/踩）"""
+    payload.pop("_request_id", None)
+    from server.api.v1.message_feedback import MessageFeedbackRequest, submit_message_feedback
+    request_model = MessageFeedbackRequest(**payload)
+    return await submit_message_feedback(request_model)

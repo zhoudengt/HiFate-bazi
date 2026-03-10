@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(project_root, 'services', 'desk_fengshui'))
 from server.services.llm_service_factory import LLMServiceFactory
 from server.services.stream_call_logger import get_stream_call_logger
 from server.config.config_loader import get_config_from_db_only
+from server.api.base.stream_handler import generate_request_id
 from server.utils.prompt_builders import format_desk_fengshui_input_data_for_coze
 
 # 配置日志
@@ -149,7 +150,8 @@ async def desk_fengshui_stream(
 
 async def desk_fengshui_stream_generator(
     image: UploadFile,
-    bot_id: Optional[str] = None
+    bot_id: Optional[str] = None,
+    request_id: Optional[str] = None
 ):
     """
     流式生成办公桌风水分析的生成器
@@ -162,11 +164,14 @@ async def desk_fengshui_stream_generator(
     frontend_input = {
         'filename': image.filename
     }
+    request_id = request_id or generate_request_id()
     llm_first_token_time = None
     llm_output_chunks = []
     llm_start_time = None
     
     try:
+        yield f"data: {json.dumps({'type': 'request_id', 'request_id': request_id}, ensure_ascii=False)}\n\n"
+
         # 1. 确定使用的 bot_id（优先级：参数 > 数据库配置）
         used_bot_id = bot_id
         if not used_bot_id:
@@ -322,6 +327,7 @@ async def desk_fengshui_stream_generator(
             bot_id=used_bot_id,
             llm_platform='bailian',
             status='success' if has_content else 'failed',
+            request_id=request_id,
         )
         
     except ValueError as e:
@@ -343,6 +349,7 @@ async def desk_fengshui_stream_generator(
             llm_platform='bailian',
             status='failed',
             error_message=str(e),
+            request_id=request_id,
         )
     except Exception as e:
         # 其他错误
@@ -364,4 +371,5 @@ async def desk_fengshui_stream_generator(
             llm_platform='bailian',
             status='failed',
             error_message=str(e),
+            request_id=request_id,
         )

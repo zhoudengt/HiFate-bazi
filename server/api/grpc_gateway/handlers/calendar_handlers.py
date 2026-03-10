@@ -43,6 +43,7 @@ async def _handle_daily_fortune_calendar_stream(payload: Dict[str, Any]):
     """处理每日运势日历流式查询请求（gRPC-Web 转发）"""
     from server.api.v1.daily_fortune_calendar import daily_fortune_stream_generator
     from server.api.grpc_gateway.utils import _collect_sse_stream
+    _request_id = payload.pop("_request_id", None)
     request_model = DailyFortuneCalendarRequest(**payload)
-    generator = daily_fortune_stream_generator(request_model)
+    generator = daily_fortune_stream_generator(request_model, request_id=_request_id)
     return await _collect_sse_stream(generator)

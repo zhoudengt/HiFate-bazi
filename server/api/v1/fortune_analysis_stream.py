@@ -12,6 +12,7 @@ import asyncio
 import logging
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header, Depends
 from fastapi.responses import StreamingResponse
+from server.api.base.stream_handler import generate_request_id
 from pydantic import BaseModel
 from typing import Optional
 import grpc
@@ -150,9 +151,13 @@ async def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Ke
 
 async def analyze_hand_stream_generator(image_bytes: bytes, image_format: str, 
                                         solar_date: Optional[str], solar_time: Optional[str], 
-                                        gender: Optional[str], use_bazi: bool):
+                                        gender: Optional[str], use_bazi: bool,
+                                        request_id: Optional[str] = None):
     """手相分析流式生成器（真正的流式响应）"""
     try:
+        request_id = request_id or generate_request_id()
+        yield f"data: {json.dumps({'type': 'request_id', 'request_id': request_id}, ensure_ascii=False)}\n\n"
+
         # 发送开始消息（包含显示指令）
         start_msg = {
             'type': 'start',
@@ -322,7 +327,8 @@ async def analyze_hand_stream(
         
         return StreamingResponse(
             analyze_hand_stream_generator(
-                image_bytes, image_format, solar_date, solar_time, gender, use_bazi
+                image_bytes, image_format, solar_date, solar_time, gender, use_bazi,
+                request_id=None
             ),
             media_type="text/event-stream",
             headers={
@@ -339,9 +345,13 @@ async def analyze_hand_stream(
 
 async def analyze_face_stream_generator(image_bytes: bytes, image_format: str,
                                        solar_date: Optional[str], solar_time: Optional[str],
-                                       gender: Optional[str], use_bazi: bool):
+                                       gender: Optional[str], use_bazi: bool,
+                                       request_id: Optional[str] = None):
     """面相分析流式生成器（真正的流式响应）"""
     try:
+        request_id = request_id or generate_request_id()
+        yield f"data: {json.dumps({'type': 'request_id', 'request_id': request_id}, ensure_ascii=False)}\n\n"
+
         # 发送开始消息（包含显示指令）
         start_msg = {
             'type': 'start',
@@ -510,7 +520,8 @@ async def analyze_face_stream(
         
         return StreamingResponse(
             analyze_face_stream_generator(
-                image_bytes, image_format, solar_date, solar_time, gender, use_bazi
+                image_bytes, image_format, solar_date, solar_time, gender, use_bazi,
+                request_id=None
             ),
             media_type="text/event-stream",
             headers={

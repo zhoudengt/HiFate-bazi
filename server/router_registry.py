@@ -209,6 +209,15 @@ except ImportError as e:
     feedback_router = None
     FEEDBACK_ROUTER_AVAILABLE = False
 
+# 新增：消息评价路由（流式消息赞/踩）
+try:
+    from server.api.v1.message_feedback import router as message_feedback_router
+    MESSAGE_FEEDBACK_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"消息评价路由导入失败（可选功能）: {e}")
+    message_feedback_router = None
+    MESSAGE_FEEDBACK_ROUTER_AVAILABLE = False
+
 # 新增：算法公式分析路由（基于2025.11.20规则）
 try:
     from server.api.v1.formula_analysis import router as formula_analysis_router
@@ -551,6 +560,15 @@ def _register_all_routers_to_manager(router_manager):
         prefix="/api/v1",
         tags=["用户反馈"],
         enabled_getter=lambda: FEEDBACK_ROUTER_AVAILABLE and feedback_router is not None
+    )
+    
+    # 消息评价路由（流式消息赞/踩）
+    router_manager.register_router(
+        "message_feedback",
+        lambda: message_feedback_router,
+        prefix="/api/v1",
+        tags=["消息评价"],
+        enabled_getter=lambda: MESSAGE_FEEDBACK_ROUTER_AVAILABLE and message_feedback_router is not None
     )
     
     # 统一支付路由（条件可用）

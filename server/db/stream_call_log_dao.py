@@ -33,6 +33,7 @@ class StreamCallLogDAO:
         cache_hit: bool = False,
         bot_id: Optional[str] = None,
         llm_platform: Optional[str] = None,
+        request_id: Optional[str] = None,
     ) -> bool:
         """
         插入一条流式接口调用记录
@@ -55,14 +56,16 @@ class StreamCallLogDAO:
                         api_total_ms, input_data_gen_ms, llm_first_token_ms, llm_total_ms,
                         status, error_message, cache_hit,
                         bot_id, llm_platform,
-                        input_data_size, llm_output_size
+                        input_data_size, llm_output_size,
+                        request_id
                     ) VALUES (
                         %s, %s, %s,
                         %s, %s, %s,
                         %s, %s, %s, %s,
                         %s, %s, %s,
                         %s, %s,
-                        %s, %s
+                        %s, %s,
+                        %s
                     )
                 """
                 frontend_input_json = json.dumps(frontend_input, ensure_ascii=False) if frontend_input else '{}'
@@ -73,6 +76,7 @@ class StreamCallLogDAO:
                     status, error_message, 1 if cache_hit else 0,
                     bot_id, llm_platform,
                     input_data_size, llm_output_size,
+                    request_id,
                 ))
                 conn.commit()
                 logger.debug(f"[StreamCallLogDAO] 记录插入成功: trace_id={trace_id}, function_type={function_type}")

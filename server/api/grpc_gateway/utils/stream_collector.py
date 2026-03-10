@@ -67,7 +67,13 @@ async def collect_sse_stream(generator) -> Dict[str, Any]:
                             event_type_to_use = current_event_type
                             logger.debug(f"[collect_sse_stream] 使用 event 行类型: {event_type_to_use}")
 
-                        if event_type_to_use == 'data':
+                        if event_type_to_use == 'request_id':
+                            rid = msg.get('request_id', '')
+                            if rid:
+                                data_content['request_id'] = rid
+                                logger.debug(f"[collect_sse_stream] 保存 request_id: {rid}")
+
+                        elif event_type_to_use == 'data':
                             content = msg.get('content', {})
                             if content:
                                 data_content['data'] = content

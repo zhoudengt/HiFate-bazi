@@ -40,12 +40,12 @@ WUHUANG_ERHEI_POSITIONS = {
     2026: {
         'wuhuang': {
             'direction': '东·震宫',
-            'impact': '主灾祸、急性病',
+            'impact': '需留意意外与健康，宜养护身心',
             'resolution': '铜葫芦、五帝钱'
         },
         'erhei': {
             'direction': '南·离宫',
-            'impact': '主病符、慢性病',
+            'impact': '需留意健康养护，宜定期调理',
             'resolution': '白玉摆件、黑曜石'
         }
     }
@@ -127,12 +127,12 @@ class FengshuiService:
                 'year': 2026,
                 'wuhuang': {
                     'direction': '东·震宫',
-                    'impact': '主灾祸、急性病',
+                    'impact': '需留意意外与健康，宜养护身心',
                     'resolution': '铜葫芦、五帝钱'
                 },
                 'erhei': {
                     'direction': '南·离宫',
-                    'impact': '主病符、慢性病',
+                    'impact': '需留意健康养护，宜定期调理',
                     'resolution': '白玉摆件、黑曜石'
                 }
             }

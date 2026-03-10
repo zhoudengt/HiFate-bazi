@@ -29,6 +29,7 @@ from server.utils.data_validator import validate_bazi_data
 from server.api.v1.models.bazi_base_models import BaziBaseRequest
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.services.stream_call_logger import get_stream_call_logger
+from server.api.base.stream_handler import generate_request_id
 import time
 from server.services.industry_service import IndustryService
 
@@ -833,7 +834,8 @@ async def career_wealth_stream_generator(
     location: Optional[str] = None,
     latitude: Optional[float] = None,
     longitude: Optional[float] = None,
-    bot_id: Optional[str] = None
+    bot_id: Optional[str] = None,
+    request_id: Optional[str] = None
 ):
     """
     流式生成事业财富分析的生成器
@@ -850,6 +852,7 @@ async def career_wealth_stream_generator(
     """
     # 生成 trace_id 用于请求追踪
     trace_id = str(uuid.uuid4())[:8]
+    request_id = request_id or generate_request_id()
     
     # 记录开始时间和前端输入
     api_start_time = time.time()
@@ -866,6 +869,7 @@ async def career_wealth_stream_generator(
     llm_output_chunks = []
     
     try:
+        yield f"data: {json.dumps({'type': 'request_id', 'request_id': request_id}, ensure_ascii=False)}\n\n"
         # ✅ 性能优化：立即返回首条消息，让用户感知到连接已建立
         # 这个优化将首次响应时间从 24秒 降低到 <1秒
         # ✅ 架构优化：移除无意义的进度消息，直接开始数据处理
@@ -1148,7 +1152,8 @@ async def career_wealth_stream_generator(
                 llm_total_ms=llm_total_time_ms,
                 bot_id=actual_bot_id,
                 llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
-                status='success' if has_content else 'failed'
+                status='success' if has_content else 'failed',
+                request_id=request_id,
             )
                 
         except Exception as e:
@@ -1172,7 +1177,8 @@ async def career_wealth_stream_generator(
                 bot_id=actual_bot_id if 'actual_bot_id' in locals() else None,
                 llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
                 status='failed',
-                error_message=str(e)
+                error_message=str(e),
+                request_id=request_id,
             )
             
     except Exception as e:
@@ -1195,6 +1201,7 @@ async def career_wealth_stream_generator(
             llm_total_ms=None,
             llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
             status='failed',
-            error_message=str(e)
+            error_message=str(e),
+            request_id=request_id,
         )
 

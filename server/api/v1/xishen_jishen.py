@@ -32,6 +32,7 @@ from server.config.config_loader import get_config_from_db_only
 from server.utils.api_cache_helper import (
     generate_cache_key, get_cached_result, set_cached_result, L2_TTL
 )
+from server.api.base.stream_handler import generate_request_id, _sse_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -483,7 +484,8 @@ async def xishen_jishen_test(request: XishenJishenRequest):
 
 async def xishen_jishen_stream_generator(
     request: XishenJishenRequest,
-    bot_id: Optional[str] = None
+    bot_id: Optional[str] = None,
+    request_id: Optional[str] = None,
 ):
     """
     流式生成喜神忌神大模型分析
@@ -511,8 +513,10 @@ async def xishen_jishen_stream_generator(
     llm_first_token_time = None
     llm_output_chunks = []
     llm_start_time = None
+    request_id = request_id or generate_request_id()
     
     try:
+        yield f"data: {json.dumps({'type': 'request_id', 'request_id': request_id}, ensure_ascii=False)}\n\n"
         # 1. 处理农历输入和时区转换
         final_solar_date, final_solar_time, conversion_info = BaziInputProcessor.process_input(
             request.solar_date,
@@ -736,6 +740,7 @@ async def xishen_jishen_stream_generator(
                 bot_id=actual_bot_id if 'actual_bot_id' in locals() else None,
                 llm_platform='bailian' if isinstance(llm_service, BailianStreamService) else 'coze',
                 status='success' if has_content else 'failed',
+                request_id=request_id,
             )
         except Exception as e:
             logger.warning(f"[喜神忌神流式] 数据库记录失败: {e}", exc_info=True)
@@ -761,6 +766,7 @@ async def xishen_jishen_stream_generator(
                 llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
                 status='failed',
                 error_message=str(e),
+                request_id=request_id,
             )
         except Exception as log_error:
             logger.warning(f"[喜神忌神流式] 错误记录失败: {log_error}", exc_info=True)
