@@ -36,6 +36,17 @@ set -e
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 PROJECT_ROOT=$(cd "${SCRIPT_DIR}/../.." && pwd)
 
+# 并发锁：同一时间只允许一个发布实例
+LOCK_DIR="/tmp/hifate_gated_deploy.lock"
+_cleanup_lock() { rmdir "$LOCK_DIR" 2>/dev/null || true; }
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    LOCK_OWNER=$(cat "$LOCK_DIR/pid" 2>/dev/null || echo "unknown")
+    echo -e "\033[0;31m另一个发布进程正在运行 (PID: $LOCK_OWNER)，请等待完成后重试\033[0m"
+    exit 1
+fi
+echo $$ > "$LOCK_DIR/pid"
+trap _cleanup_lock EXIT
+
 # 加载门控检查函数库
 source "${SCRIPT_DIR}/lib/gate_check.sh"
 
@@ -473,13 +484,15 @@ if [ "$SKIP_NODE2" = "false" ] && [ "$TEST_ONLY" = "false" ]; then
         }
     fi
     
-    # 3.2 验证 Node2 代码版本
+    # 3.2 验证 Node2 代码版本（必须与本地一致，否则门控测试在错误代码上运行无意义）
     NODE2_COMMIT=$(node2_ssh "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
-    if [ "$NODE2_COMMIT" != "$LOCAL_COMMIT" ]; then
-        echo -e "${YELLOW}警告：Node2 版本 (${NODE2_COMMIT:0:8}) 与本地 (${LOCAL_COMMIT:0:8}) 不一致${NC}"
-        echo -e "${YELLOW}请确保已推送到 GitHub${NC}"
-    fi
     echo "Node2 版本: ${NODE2_COMMIT:0:8}"
+    if [ "$NODE2_COMMIT" != "$LOCAL_COMMIT" ]; then
+        echo -e "${RED}Node2 版本 (${NODE2_COMMIT:0:8}) 与本地 (${LOCAL_COMMIT:0:8}) 不一致${NC}"
+        echo -e "${RED}请先确保 git push 完成，再重新运行发布${NC}"
+        record_deploy_history "$DEPLOYMENT_ID" "failed" "node2_version_mismatch" "版本不一致: node2=${NODE2_COMMIT:0:8} local=${LOCAL_COMMIT:0:8}" "$LOCAL_COMMIT"
+        exit 1
+    fi
     
     # 3.3 Node2 语法验证
     echo ""
@@ -517,6 +530,10 @@ print('OK')
     # 3.6 Node2 gRPC 端点恢复（覆盖所有 worker）
     echo ""
     gate_reload_endpoints_multi "$NODE2_PUBLIC_IP" "Node2" 8 "${NODE2_PORT:-8001}"
+
+    # 3.7 清理 Node2 业务缓存
+    echo ""
+    gate_clear_business_cache node2_ssh "hifate-redis-slave" "Node2"
 
     echo ""
     echo -e "${GREEN}[Step 3] Node2 部署完成${NC}"
@@ -685,9 +702,28 @@ print('OK')
     # 5.4 rsync 同步 staging → live（只同步代码目录，增量同步，通常 <3s）
     echo ""
     echo "同步代码到 live 目录..."
+    RSYNC_FAILED=""
     for dir in $SYNC_DIRS; do
-        ssh_exec $NODE1_PUBLIC_IP "[ -d $STAGING_DIR/$dir ] && rsync -a --delete $STAGING_DIR/$dir/ $PROJECT_DIR/$dir/" 2>/dev/null || true
+        local has_dir=$(ssh_exec $NODE1_PUBLIC_IP "[ -d $STAGING_DIR/$dir ] && echo yes || echo no" 2>/dev/null)
+        if [ "$has_dir" = "yes" ]; then
+            if ! ssh_exec $NODE1_PUBLIC_IP "rsync -a --delete $STAGING_DIR/$dir/ $PROJECT_DIR/$dir/"; then
+                RSYNC_FAILED="$dir"
+                break
+            fi
+        fi
     done
+    if [ -n "$RSYNC_FAILED" ]; then
+        echo -e "${RED}rsync 同步 $RSYNC_FAILED 失败，从备份回滚...${NC}"
+        NODE1_HAS_ROLLBACK=$(ssh_exec $NODE1_PUBLIC_IP "[ -d $ROLLBACK_DIR/server ] && echo 'yes' || echo 'no'" 2>/dev/null)
+        if [ "$NODE1_HAS_ROLLBACK" = "yes" ]; then
+            for dir in $SYNC_DIRS; do
+                ssh_exec $NODE1_PUBLIC_IP "[ -d $ROLLBACK_DIR/$dir ] && rsync -a --delete $ROLLBACK_DIR/$dir/ $PROJECT_DIR/$dir/" 2>/dev/null || true
+            done
+        fi
+        gate_hot_reload "$NODE1_PUBLIC_IP" "Node1" 2
+        record_deploy_history "$DEPLOYMENT_ID" "rollback" "node1_rsync_fail" "rsync $RSYNC_FAILED 失败，已回滚" "$LOCAL_COMMIT"
+        exit 1
+    fi
     echo -e "${GREEN}代码同步完成${NC}"
     
     # 5.5 同步 staging 的 git 信息到 live（让 live 目录知道当前版本）
@@ -742,6 +778,10 @@ else
     echo ""
     gate_reload_endpoints_multi "$NODE1_PUBLIC_IP" "Node1" 8
 fi
+
+# 5.8 清理 Node1 业务缓存
+echo ""
+gate_clear_business_cache run_on_node1 "hifate-redis-master" "Node1"
 
 echo ""
 echo -e "${GREEN}[Step 5] Node1 部署完成${NC}"
@@ -830,8 +870,8 @@ echo "----------------------------------------"
 
 DEPLOY_END_TIME=$(date '+%Y-%m-%d %H:%M:%S')
 
-# 更新上次成功 commit
-echo "$NODE1_AFTER_COMMIT" > "${DEPLOY_LOG_DIR}/last_success_commit.txt"
+# last_success_commit.txt 保持为 NODE1_BEFORE_COMMIT（Step 5 写入），
+# 这样 --rollback 能正确回退到部署前版本。
 
 # 记录完整历史
 record_deploy_history "$DEPLOYMENT_ID" "success" "complete" "门控发布成功" "$NODE1_AFTER_COMMIT"

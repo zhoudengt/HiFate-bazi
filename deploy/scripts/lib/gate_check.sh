@@ -21,6 +21,28 @@ HEALTH_PORT="${HEALTH_PORT:-8001}"
 NODE2_PORT="${NODE2_PORT:-8001}"  # Node2 可能使用不同端口
 
 # ----------------------------------------
+# gate_clear_business_cache <ssh_func> <redis_container> <label>
+# 清理 Redis 业务缓存（按 pattern 删除），保留 conversation_history 等
+# ssh_func: 如 run_on_node1 或 node2_ssh
+# redis_container: hifate-redis-master（Node1）或 hifate-redis-slave（Node2）
+# ----------------------------------------
+gate_clear_business_cache() {
+    local ssh_func="$1"
+    local redis_container="$2"
+    local label="$3"
+    # 业务缓存 pattern，不包含 conversation_history
+    local cmd="docker exec $redis_container sh -c 'for p in \"bazi*\" \"fortune*\" \"special_liunians*\" \"desk_fengshui_rules*\" \"cache:*\"; do redis-cli --scan --pattern \"\$p\" 2>/dev/null | xargs redis-cli DEL 2>/dev/null; done'"
+
+    echo "清理 ${label} Redis 业务缓存（保留会话历史）..."
+    if $ssh_func "$cmd" 2>/dev/null; then
+        echo -e "${GREEN}${label} 业务缓存已清理${NC}"
+    else
+        echo -e "${YELLOW}${label} 缓存清理失败或 Redis 不可用，继续...${NC}"
+    fi
+    return 0
+}
+
+# ----------------------------------------
 # gate_reload_endpoints_multi <host> <label> [count] [port]
 # 多次调用 reload-endpoints，覆盖多 worker（解决部分 worker 端点空问题）
 # ----------------------------------------
@@ -31,14 +53,24 @@ gate_reload_endpoints_multi() {
     local port="${4:-$HEALTH_PORT}"
     local url="http://${host}:${port}${RELOAD_ENDPOINTS_PATH}"
     local i=1
+    local fail_count=0
 
     echo "触发 ${label} gRPC 端点恢复（${count} 次，覆盖多 worker）..."
     while [ $i -le $count ]; do
-        curl -s -X POST --max-time 15 "$url" > /dev/null 2>&1 || true
+        if ! curl -s -X POST --max-time 15 "$url" > /dev/null 2>&1; then
+            ((fail_count++))
+        fi
         sleep 1
         ((i++))
     done
-    echo -e "${GREEN}${label} gRPC 端点恢复完成${NC}"
+    if [ $fail_count -ge $count ]; then
+        echo -e "${RED}${label} gRPC 端点恢复全部失败（${fail_count}/${count}），服务可能异常${NC}"
+        return 1
+    elif [ $fail_count -gt 0 ]; then
+        echo -e "${YELLOW}${label} gRPC 端点恢复部分失败（${fail_count}/${count}），可能有 worker 未覆盖${NC}"
+    else
+        echo -e "${GREEN}${label} gRPC 端点恢复完成（${count}/${count}）${NC}"
+    fi
     return 0
 }
 
@@ -115,7 +147,7 @@ gate_verify_grpc_endpoints() {
         "/homepage/contents"
     )
     
-    echo "验证 ${label} gRPC 端点注册（23 个关键端点）..."
+    echo "验证 ${label} gRPC 端点（注册数量 + 21 个端点调用测试 + 2 个支付端点注册验证）..."
     
     local missing_count=0
     local missing_list=""
@@ -137,30 +169,51 @@ gate_verify_grpc_endpoints() {
         return 1
     fi
     
-    # 检查每个关键端点（通过实际调用测试）
+    # 实际调用测试（21 个非支付端点；支付端点仅靠上面的数量检查）
     local test_endpoints=(
         "/bazi/interface"
         "/bazi/pan/display"
         "/bazi/fortune/display"
+        "/bazi/shengong-minggong"
+        "/bazi/wangshuai"
+        "/bazi/formula-analysis"
+        "/bazi/rizhu-liujiazi"
+        "/bazi/data"
+        "/bazi/wuxing-proportion/test"
+        "/bazi/wuxing-proportion/stream"
+        "/bazi/xishen-jishen/test"
+        "/bazi/xishen-jishen/stream"
+        "/bazi/marriage-analysis/stream"
+        "/career-wealth/stream"
+        "/children-study/stream"
+        "/health/stream"
+        "/general-review/stream"
+        "/annual-report/stream"
+        "/daily-fortune-calendar/query"
+        "/daily-fortune-calendar/stream"
+        "/homepage/contents"
     )
     
+    local tested=0
     for endpoint in "${test_endpoints[@]}"; do
-        local test_response=$(curl -s --max-time 5 -X POST "http://${host}:${port}/api/v1/grpc-web/frontend.gateway.FrontendGateway/Call" \
+        local test_response=$(curl -s --max-time 8 -X POST "http://${host}:${port}/api/v1/grpc-web/frontend.gateway.FrontendGateway/Call" \
             -H "Content-Type: application/grpc-web+proto" \
             -d "{\"endpoint\":\"${endpoint}\",\"payload_json\":\"{\\\"solar_date\\\":\\\"1990-01-15\\\",\\\"solar_time\\\":\\\"12:00\\\",\\\"gender\\\":\\\"male\\\"}\"}" 2>/dev/null || echo "")
         
         if echo "$test_response" | grep -q "Unsupported endpoint"; then
             ((missing_count++))
             missing_list="${missing_list}\n  - ${endpoint}"
+        else
+            ((tested++))
         fi
     done
     
     if [ $missing_count -gt 0 ]; then
-        echo -e "${RED}${label} 缺失 ${missing_count} 个关键端点:${missing_list}${NC}"
+        echo -e "${RED}${label} 缺失 ${missing_count} 个端点:${missing_list}${NC}"
         return 1
     fi
     
-    echo -e "${GREEN}${label} 关键端点验证通过（总数: ${endpoint_count}）${NC}"
+    echo -e "${GREEN}${label} 端点验证通过（注册: ${endpoint_count}, 调用测试: ${tested}/21, 支付端点: 仅注册验证）${NC}"
     return 0
 }
 
