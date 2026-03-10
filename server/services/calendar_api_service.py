@@ -119,18 +119,7 @@ class CalendarAPIService:
         weekday_en = date_obj.strftime('%A')
         weekday_cn = self.WEEKDAY_MAP.get(weekday_en, weekday_en)
         
-        # 如果有API密钥，尝试调用第三方API
-        if self.api_key and not self.use_mock:
-            try:
-                if self.provider == 'jisuapi':
-                    return self._call_jisuapi(date)
-                elif self.provider == 'tianapi':
-                    return self._call_tianapi(date)
-                elif self.provider == '6api':
-                    return self._call_6api(date)
-            except Exception as e:
-                logger.warning(f"调用第三方API失败，使用本地计算: {e}")
-        
+        # [DEPRECATED] 第三方万年历 API 已下线，统一使用本地 lunar_python 计算
         # 使用本地计算（农历和干支）
         return self._calculate_local(date, date_obj, weekday_cn, weekday_en)
     
@@ -159,6 +148,7 @@ class CalendarAPIService:
             'yi': [],
             'ji': [],
             'luck_level': '中平',
+            'luck_score': 50,
             'deities': {},
             'chong_he_sha': {},
             'xingxiu': {},
@@ -283,6 +273,18 @@ class CalendarAPIService:
             else:
                 luck_level = '中平'
             
+            # 将原始 score 映射为 0-100 展示分数，与 luck_level（签）对齐
+            if luck_level == '大吉':
+                luck_score = min(99, 90 + min(8, score - 15))
+            elif luck_level == '吉':
+                luck_score = 75 + min(8, score - 8)
+            elif luck_level == '凶':
+                luck_score = 30 + min(8, score + 9)
+            elif luck_level == '大凶':
+                luck_score = max(5, 18 + max(-8, score + 10))
+            else:
+                luck_score = 55 + min(10, max(0, score + 4))
+            
             # 更新基础结果中的字段（lunar_python 计算成功）
             base_result.update({
                 'lunar_date': lunar_date_str,
@@ -300,6 +302,7 @@ class CalendarAPIService:
                 'yi': yi_list,
                 'ji': ji_list,
                 'luck_level': luck_level,
+                'luck_score': luck_score,
                 'deities': {
                     'xishen': xi_shen,
                     'caishen': cai_shen,

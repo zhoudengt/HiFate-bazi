@@ -282,6 +282,12 @@ class DailyFortuneCalendarService:
                 except Exception as e:
                     logger.warning(f"计算日主失败: {e}")
             
+            # 建除信息：energy 使用签分数（与 luck_level 对应），保持字段结构不变
+            _jianchu = parallel_results.get('jianchu_info')
+            _luck_score = calendar_result.get('luck_score')
+            if _jianchu and _luck_score is not None:
+                _jianchu = {**_jianchu, 'energy': _luck_score}
+            
             result = {
                 'success': True,
                 # 基础万年历信息
@@ -299,8 +305,7 @@ class DailyFortuneCalendarService:
                 'luck_level': calendar_result.get('luck_level', ''),
                 'deities': calendar_result.get('deities', {}),
                 'chong_he_sha': calendar_result.get('chong_he_sha', {}),
-                # 建除信息（包含能量值）
-                'jianchu': parallel_results.get('jianchu_info'),
+                'jianchu': _jianchu,
                 # 胎神信息
                 'taishen': taishen,
                 'taishen_explanation': taishen_explanation,
