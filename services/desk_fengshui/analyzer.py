@@ -15,6 +15,7 @@ from item_detector import DeskItemDetector
 from position_calculator import PositionCalculator
 from rule_engine import DeskFengshuiEngine
 from bazi_client import BaziClient
+from vision_analyzer import VisionAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ class DeskFengshuiAnalyzer:
     def __init__(self):
         """初始化分析器"""
         self.detector = DeskItemDetector()
+        self.vision = VisionAnalyzer()
         self.engine = DeskFengshuiEngine()
         self.bazi_client = BaziClient()
         
@@ -58,51 +60,74 @@ class DeskFengshuiAnalyzer:
         stages_time = {}
         
         try:
-            # 1. 异步检测物品（CPU密集型，在线程池中执行，带超时）
-            logger.info("开始物品检测（异步）...")
+            # 1. 物品检测：优先使用 VisionAnalyzer（Qwen-VL），失败则降级到 DeskItemDetector
+            logger.info("开始物品检测（VisionAnalyzer 优先）...")
             stage_start = time.time()
+            detection_result = None
+            use_vision = False
+
             try:
-                detection_result = await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(
-                        _executor,
-                        self.detector.detect,
-                        image_bytes
-                    ),
+                vision_result = await asyncio.wait_for(
+                    self.vision.analyze(image_bytes),
                     timeout=DETECTION_TIMEOUT
                 )
+                if vision_result and vision_result.get('success'):
+                    detection_result = vision_result
+                    use_vision = True
+                    logger.info(
+                        f"✅ VisionAnalyzer 识别成功，检测到 {len(vision_result.get('items', []))} 个物品"
+                    )
+                else:
+                    logger.warning(
+                        f"VisionAnalyzer 返回失败: {vision_result.get('error') if vision_result else 'None'}，降级到 YOLO"
+                    )
             except asyncio.TimeoutError:
-                elapsed = time.time() - stage_start
-                logger.error(f"❌ 物品检测超时（>{DETECTION_TIMEOUT}秒，已耗时: {elapsed:.2f}秒）")
-                return {
-                    'success': False,
-                    'error': f'物品检测超时（超过{DETECTION_TIMEOUT}秒），请尝试上传更小的图片'
-                }
-            
+                logger.warning(f"⚠️ VisionAnalyzer 超时（>{DETECTION_TIMEOUT}s），降级到 YOLO")
+            except Exception as e:
+                logger.warning(f"⚠️ VisionAnalyzer 异常: {e}，降级到 YOLO")
+
+            # 降级：使用旧 YOLO/OpenCV 检测器
+            if not use_vision:
+                try:
+                    detection_result = await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(
+                            _executor,
+                            self.detector.detect,
+                            image_bytes
+                        ),
+                        timeout=DETECTION_TIMEOUT
+                    )
+                except asyncio.TimeoutError:
+                    elapsed = time.time() - stage_start
+                    logger.error(f"❌ 物品检测超时（>{DETECTION_TIMEOUT}秒，已耗时: {elapsed:.2f}秒）")
+                    return {
+                        'success': False,
+                        'error': f'物品检测超时（超过{DETECTION_TIMEOUT}秒），请尝试上传更小的图片'
+                    }
+
             stages_time['detection'] = time.time() - stage_start
-            
-            # 🔴 防御性检查：确保 detection_result 不为 None
+
             if detection_result is None:
                 logger.error("物品检测返回 None")
-                return {
-                    'success': False,
-                    'error': '物品检测服务返回空结果，请稍后重试'
-                }
-            
+                return {'success': False, 'error': '物品检测服务返回空结果，请稍后重试'}
+
             if not detection_result.get('success'):
-                return {
-                    'success': False,
-                    'error': detection_result.get('error', '物品检测失败')
-                }
-            
+                return {'success': False, 'error': detection_result.get('error', '物品检测失败')}
+
             items = detection_result.get('items', [])
             img_shape = detection_result.get('image_shape')
-            
-            logger.info(f"检测到 {len(items)} 个物品（耗时: {stages_time['detection']:.2f}秒）")
-            
-            # 2. 计算位置（轻量级，同步执行）
-            logger.info("计算物品位置...")
+
+            logger.info(f"检测到 {len(items)} 个物品（耗时: {stages_time['detection']:.2f}秒，来源: {'qwen_vl' if use_vision else 'yolo'}）")
+
+            # 2. 计算位置
+            # VisionAnalyzer 的 items 已由 _convert_items 填充 position，无需再计算
+            # YOLO 的 items 只有 bbox，需要 PositionCalculator
             stage_start = time.time()
-            enriched_items = PositionCalculator.calculate_all_positions(items, img_shape)
+            if use_vision:
+                enriched_items = items  # position 已内嵌
+            else:
+                logger.info("计算物品位置...")
+                enriched_items = PositionCalculator.calculate_all_positions(items, img_shape)
             stages_time['position'] = time.time() - stage_start
             
             # 3. 并行获取八字信息和加载规则
@@ -296,6 +321,7 @@ class DeskFengshuiAnalyzer:
                     'total_time': total_time,
                     'stages_time': stages_time
                 },
+                'detection_source': detection_result.get('source', 'yolo'),
                 'using_backup': detection_result.get('using_backup', False),
                 'warning': detection_result.get('warning')
             }

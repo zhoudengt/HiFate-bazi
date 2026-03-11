@@ -215,6 +215,65 @@ class BailianClient:
             # 清理线程池
             executor.shutdown(wait=False)
     
+    async def call_with_image(
+        self,
+        app_id: str,
+        prompt: str,
+        image_base64: str,
+        image_format: str = 'jpeg',
+    ) -> str:
+        """
+        调用百炼多模态智能体（Qwen-VL），传入 base64 图片，返回完整文本。
+
+        Args:
+            app_id: 百炼应用 ID（需配置为 Qwen-VL 系列模型）
+            prompt: 文本提示词
+            image_base64: 图片 base64 编码（不含 data URI 前缀）
+            image_format: 图片格式，默认 jpeg
+
+        Returns:
+            模型返回的完整文本
+
+        Raises:
+            ValueError: 调用失败或返回空内容
+        """
+        from dashscope import Application
+
+        loop = asyncio.get_event_loop()
+
+        def _call():
+            messages = [{
+                "role": "user",
+                "content": [
+                    {"image": f"data:image/{image_format};base64,{image_base64}"},
+                    {"text": prompt},
+                ],
+            }]
+
+            response = Application.call(
+                app_id=app_id,
+                messages=messages,
+                stream=False,
+            )
+
+            if response.status_code != 200:
+                raise ValueError(
+                    f"百炼视觉应用调用失败: {response.status_code} "
+                    f"{getattr(response, 'code', '')} - {getattr(response, 'message', '')}"
+                )
+
+            output = response.output
+            if not output:
+                raise ValueError("百炼视觉应用返回空 output")
+
+            text = output.get('text', '')
+            if not text:
+                raise ValueError(f"百炼视觉应用返回空文本，output={output}")
+
+            return text
+
+        return await loop.run_in_executor(None, _call)
+
     async def call_sync(
         self,
         app_id: str,
