@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 办公桌风水视觉识别器
-使用百炼智能体 (Qwen-VL) 替代 YOLO 进行图片物品识别
+直接调用 dashscope SDK (Application.call) 进行图片物品识别，零外部依赖
 """
 
 import os
@@ -17,7 +17,6 @@ sys.path.insert(0, project_root)
 
 logger = logging.getLogger(__name__)
 
-# 位置映射：vision LLM 九宫格 → 规则引擎格式
 _POSITION_MAP = {
     'left_front':    {'relative': 'left',   'vertical': 'front',  'bagua_direction': 'southeast'},
     'center_front':  {'relative': 'center', 'vertical': 'front',  'bagua_direction': 'south'},
@@ -35,19 +34,18 @@ _VERTICAL_NAMES = {'front': '前方（朱雀位）', 'center': '中间', 'back':
 
 
 class VisionAnalyzer:
-    """使用百炼视觉智能体识别办公桌物品"""
+    """直接调用 dashscope Application API 识别办公桌物品，不依赖 scripts/ 目录"""
 
     def __init__(self, app_id: Optional[str] = None, api_key: Optional[str] = None):
         self._app_id = app_id
         self._api_key = api_key
-        self._client = None
+        self._sdk_ready = False
 
-    def _get_client(self):
-        if self._client is not None:
-            return self._client
-
-        from scripts.evaluation.bailian import BailianClient, BailianConfig
-
+    def _ensure_sdk(self):
+        """懒初始化 dashscope SDK"""
+        if self._sdk_ready:
+            return
+        import dashscope
         api_key = self._api_key
         if not api_key:
             try:
@@ -57,10 +55,10 @@ class VisionAnalyzer:
                 pass
         if not api_key:
             api_key = os.environ.get("DASHSCOPE_API_KEY", "")
-
-        config = BailianConfig(api_key=api_key)
-        self._client = BailianClient(config)
-        return self._client
+        if not api_key:
+            raise ValueError("未配置百炼 API Key（BAILIAN_API_KEY / DASHSCOPE_API_KEY）")
+        dashscope.api_key = api_key
+        self._sdk_ready = True
 
     def _get_app_id(self) -> str:
         if self._app_id:
@@ -75,24 +73,19 @@ class VisionAnalyzer:
         raise ValueError("未配置 BAILIAN_DESK_FENGSHUI_VISION_APP_ID")
 
     async def analyze(self, image_bytes: bytes) -> Dict[str, Any]:
-        """
-        调用 Qwen-VL 智能体识别桌面物品
-
-        Args:
-            image_bytes: 图片原始字节
-
-        Returns:
-            dict: 包含 success, items, scene, total_items, summary
-        """
+        """调用百炼 Qwen-VL 智能体识别桌面物品"""
         try:
-            client = self._get_client()
+            self._ensure_sdk()
+            from dashscope import Application
+
             app_id = self._get_app_id()
             img_b64 = base64.b64encode(image_bytes).decode('utf-8')
 
-            raw_text = await client.call_with_image(
-                app_id=app_id,
-                prompt="请分析这张办公桌照片",
-                image_base64=img_b64,
+            loop = asyncio.get_event_loop()
+            raw_text = await loop.run_in_executor(
+                None,
+                self._call_vision_app,
+                Application, app_id, img_b64,
             )
 
             vision_data = self._parse_response(raw_text)
@@ -110,6 +103,30 @@ class VisionAnalyzer:
         except Exception as e:
             logger.error(f"VisionAnalyzer 失败: {e}", exc_info=True)
             return {'success': False, 'error': str(e), 'source': 'qwen_vl'}
+
+    @staticmethod
+    def _call_vision_app(Application, app_id: str, img_b64: str) -> str:
+        """同步调用百炼视觉应用（在 executor 中运行）"""
+        response = Application.call(
+            app_id=app_id,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"image": f"data:image/jpeg;base64,{img_b64}"},
+                    {"text": "请分析这张办公桌照片"},
+                ],
+            }],
+            stream=False,
+        )
+        if response.status_code != 200:
+            raise ValueError(
+                f"百炼视觉应用错误: {response.status_code} "
+                f"{getattr(response, 'code', '')} - {getattr(response, 'message', '')}"
+            )
+        text = (response.output or {}).get('text', '')
+        if not text:
+            raise ValueError(f"百炼视觉应用返回空文本, output={response.output}")
+        return text
 
     # ------------------------------------------------------------------
 
