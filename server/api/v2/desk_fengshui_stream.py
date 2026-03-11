@@ -276,6 +276,36 @@ async def desk_fengshui_stream_generator(
         logger.info(f"分析成功，评分: {result.get('score', 0)}")
         
         # 6. 先返回基础数据（type: 'data'，带填充）
+        # 将 items 的 name 字段统一替换为中文 label
+        for _item in result.get('items', []):
+            if _item.get('label'):
+                _item['name'] = _item['label']
+        # 添加一行中文物品汇总（逗号分隔，不换行）
+        result['items_text'] = '、'.join(
+            _item.get('label', _item.get('name', '')) for _item in result.get('items', [])
+        )
+
+        # 生成标注图（原图 + 风水标记）
+        try:
+            from image_annotator import generate_annotated_image
+            result['annotated_image'] = generate_annotated_image(image_bytes, result.get('items', []), result)
+            logger.info("✅ 标注图生成成功")
+        except Exception as _e:
+            logger.warning(f"标注图生成失败（不影响主流程）: {_e}")
+
+        # 生成 AI 布局图（通义万相）
+        try:
+            from layout_generator import generate_layout_image
+            _layout_b64 = await asyncio.wait_for(
+                generate_layout_image(result.get('items', []), result),
+                timeout=60.0
+            )
+            if _layout_b64:
+                result['layout_image'] = _layout_b64
+                logger.info("✅ AI布局图生成成功")
+        except Exception as _e:
+            logger.warning(f"AI布局图生成失败（不影响主流程）: {_e}")
+
         PADDING = ' ' * 16384
         data_msg = {
             'type': 'data',
