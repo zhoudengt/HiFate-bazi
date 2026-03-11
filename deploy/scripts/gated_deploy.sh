@@ -704,7 +704,7 @@ print('OK')
     echo "同步代码到 live 目录..."
     RSYNC_FAILED=""
     for dir in $SYNC_DIRS; do
-        local has_dir=$(ssh_exec $NODE1_PUBLIC_IP "[ -d $STAGING_DIR/$dir ] && echo yes || echo no" 2>/dev/null)
+        has_dir=$(ssh_exec $NODE1_PUBLIC_IP "[ -d $STAGING_DIR/$dir ] && echo yes || echo no" 2>/dev/null)
         if [ "$has_dir" = "yes" ]; then
             if ! ssh_exec $NODE1_PUBLIC_IP "rsync -a --delete $STAGING_DIR/$dir/ $PROJECT_DIR/$dir/"; then
                 RSYNC_FAILED="$dir"
