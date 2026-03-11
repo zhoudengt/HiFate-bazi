@@ -595,8 +595,8 @@ if [ "$NODE1_HAS_STAGING" = "yes" ]; then
     fi
     echo -e "${GREEN}代码同步完成${NC}"
 
-    # 同步 git 信息到 live
-    ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git fetch origin && git checkout $GIT_BRANCH && (git stash || true) && git pull origin $GIT_BRANCH" 2>/dev/null || true
+    # 同步 git 信息到 live（只更新 .git 元数据，不动文件——文件已由 rsync 同步）
+    ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git fetch origin && git reset --hard origin/$GIT_BRANCH" 2>/dev/null || true
 
     NODE1_AFTER_COMMIT=$(ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR && git rev-parse HEAD" 2>/dev/null)
     echo "live 版本: ${NODE1_AFTER_COMMIT:0:8}"
