@@ -28,7 +28,7 @@ class MessageFeedbackDAO:
 
         Args:
             request_id: 关联 stream_api_call_logs.request_id
-            rating: 评价类型 (up / down)
+            rating: 评价类型 (good / neutral / bad)
             comment: 用户补充说明
             email: 用户邮箱（前端传入）
             name: 用户名称（前端传入）
