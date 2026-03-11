@@ -59,6 +59,7 @@ _handler_modules = [
     "server.api.grpc_gateway.handlers.admin_handlers",
     "server.api.grpc_gateway.handlers.bazi_handlers",
     "server.api.grpc_gateway.handlers.stream_handlers",
+    "server.api.grpc_gateway.handlers.liuyao_handlers",
 ]
 
 for _module_name in _handler_modules:

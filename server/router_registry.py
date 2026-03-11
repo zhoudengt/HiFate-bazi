@@ -128,6 +128,15 @@ except ImportError as e:
     xishen_jishen_router = None
     XISHEN_JISHEN_ROUTER_AVAILABLE = False
 
+# 六爻占卜路由（条件可用）
+try:
+    from server.api.v1.liuyao import router as liuyao_router
+    LIUYAO_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"六爻路由导入失败（可选功能）: {e}")
+    liuyao_router = None
+    LIUYAO_ROUTER_AVAILABLE = False
+
 # 感情婚姻分析路由（条件可用）
 try:
     from server.api.v1.marriage_analysis import router as marriage_analysis_router
@@ -499,6 +508,15 @@ def _register_all_routers_to_manager(router_manager):
         enabled_getter=lambda: XISHEN_JISHEN_ROUTER_AVAILABLE and xishen_jishen_router is not None
     )
     
+    # 六爻占卜路由（条件可用）
+    router_manager.register_router(
+        "liuyao",
+        lambda: liuyao_router,
+        prefix="/api/v1",
+        tags=["六爻"],
+        enabled_getter=lambda: LIUYAO_ROUTER_AVAILABLE and liuyao_router is not None
+    )
+
     # 感情婚姻分析路由（条件可用）
     router_manager.register_router(
         "marriage_analysis",
