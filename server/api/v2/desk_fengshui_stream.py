@@ -48,7 +48,34 @@ def _safe_import_desk_fengshui_analyzer():
     desk_fengshui_path = os.path.abspath(os.path.join(project_root, 'services', 'desk_fengshui'))
     if desk_fengshui_path not in sys.path:
         sys.path.insert(0, desk_fengshui_path)
-    
+
+    # 预加载 desk_fengshui 模块，覆盖 fortune_analysis 同名缓存（避免 rule_engine 等指向错误文件）
+    _DESK_DEPS = ['rule_engine', 'item_detector', 'position_calculator', 'bazi_client', 'vision_analyzer']
+    for _dep in _DESK_DEPS:
+        _dep_file = os.path.join(desk_fengshui_path, f'{_dep}.py')
+        if os.path.exists(_dep_file):
+            _cached = sys.modules.get(_dep)
+            _need_load = _cached is None or 'desk_fengshui' not in getattr(_cached, '__file__', '')
+            if _need_load:
+                _s = importlib.util.spec_from_file_location(_dep, _dep_file)
+                _m = importlib.util.module_from_spec(_s)
+                sys.modules[_dep] = _m
+                _s.loader.exec_module(_m)
+
+    # 预加载 desk_fengshui 依赖模块，覆盖 fortune_analysis 同名缓存
+    _DESK_DEPS = ['rule_engine', 'item_detector', 'position_calculator',
+                  'bazi_client', 'vision_analyzer']
+    for _dep in _DESK_DEPS:
+        _dep_file = os.path.join(desk_fengshui_path, f'{_dep}.py')
+        if not os.path.exists(_dep_file):
+            continue
+        cached = sys.modules.get(_dep)
+        if cached is None or 'desk_fengshui' not in getattr(cached, '__file__', ''):
+            _s = importlib.util.spec_from_file_location(_dep, _dep_file)
+            _m = importlib.util.module_from_spec(_s)
+            sys.modules[_dep] = _m
+            _s.loader.exec_module(_m)
+
     # 使用已缓存的模块或从文件加载
     if _MODULE_NAME in sys.modules:
         mod = sys.modules[_MODULE_NAME]
