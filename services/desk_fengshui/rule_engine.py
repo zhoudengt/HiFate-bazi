@@ -635,33 +635,19 @@ class DeskFengshuiEngine:
                             if any('\u4e00' <= c <= '\u9fff' for c in first_decode):
                                 return first_decode
                             
-                            # 如果不包含中文，可能是双重或三次编码，尝试修复
                             try:
-                                # 🔴 关键修复：使用 errors='replace' 处理特殊字符，支持多次解码
-                                # 第一步：将 latin1 字符串编码回字节（使用 errors='replace' 处理无法编码的字符）
-                                re_encoded1 = first_decode.encode('latin1', errors='replace')
-                                # 第二步：再次 UTF-8 解码
+                                re_encoded1 = DeskFengshuiEngine._encode_mysql_latin1(first_decode)
                                 second_decode = re_encoded1.decode('utf-8')
-                                
-                                # 检查是否包含中文
                                 if any('\u4e00' <= c <= '\u9fff' for c in second_decode):
-                                    logger.debug(f"✅ 双重编码修复成功: {second_decode[:30]}")
                                     return second_decode
-                                
-                                # 如果第二次解码仍不包含中文，尝试三次解码
                                 try:
-                                    re_encoded2 = second_decode.encode('latin1', errors='replace')
+                                    re_encoded2 = DeskFengshuiEngine._encode_mysql_latin1(second_decode)
                                     third_decode = re_encoded2.decode('utf-8')
                                     if any('\u4e00' <= c <= '\u9fff' for c in third_decode):
-                                        logger.debug(f"✅ 三次编码修复成功: {third_decode[:30]}")
                                         return third_decode
                                 except (UnicodeEncodeError, UnicodeDecodeError):
                                     pass
-                                
-                                # 如果修复失败，返回第二次解码的结果（可能部分正确）
-                                return second_decode
-                            except (UnicodeEncodeError, UnicodeDecodeError) as e:
-                                logger.debug(f"编码修复失败: {e}")
+                            except (UnicodeEncodeError, UnicodeDecodeError):
                                 pass
                             
                             # 如果修复失败，返回第一次解码的结果
@@ -1472,7 +1458,7 @@ class DeskFengshuiEngine:
                 continue
             
             rule_item_name = rule.get('item_name', '')
-            rule_item_label = rule.get('item_label', '')
+            rule_item_label = self._safe_decode(rule.get('item_label', ''))
             
             # 跳过位置规则（不是物品）
             if rule_item_name in ['left_items', 'right_items', 'front_area', 'back_area', 'desk', 'computer']:
@@ -1482,7 +1468,7 @@ class DeskFengshuiEngine:
             has_item = rule_item_name in detected_item_names
             
             # 如果是喜神相关规则，优先推荐（强制显示，即使已有类似物品）
-            if rule.get('related_element') == xishen:
+            if xishen and rule.get('related_element') and rule.get('related_element') == xishen:
                 ideal_pos = rule.get('ideal_position', {})
                 # 🔴 防御性检查：确保 ideal_pos 不为 None
                 if not ideal_pos:
@@ -1876,6 +1862,27 @@ class DeskFengshuiEngine:
         return None
     
     @staticmethod
+    def _encode_mysql_latin1(text: str) -> bytes:
+        """MySQL's latin1 = ISO-8859-1 for 0x80-0x9F control chars + cp1252 for printable chars."""
+        result = bytearray()
+        _cp1252_reverse = {}
+        for b in range(256):
+            try:
+                c = bytes([b]).decode('cp1252')
+                _cp1252_reverse[c] = b
+            except Exception:
+                pass
+        for c in text:
+            code = ord(c)
+            if code <= 0xFF:
+                result.append(code)
+            elif c in _cp1252_reverse:
+                result.append(_cp1252_reverse[c])
+            else:
+                result.append(0x3F)
+        return bytes(result)
+
+    @staticmethod
     def _safe_decode(text: str) -> str:
         """
         安全解码字符串，处理可能的编码问题
@@ -1928,19 +1935,13 @@ class DeskFengshuiEngine:
                         break
             
             if has_suspicious_chars and suspicious_char_count >= 3:
-                # 尝试修复：latin1 错误编码的 UTF-8 中文
                 try:
-                    # 将字符串按 latin1 编码回字节，再按 UTF-8 解码
-                    fixed = text.encode('latin1').decode('utf-8')
-                    # 验证修复后的文本是否包含中文字符
+                    fixed = self._encode_mysql_latin1(text).decode('utf-8')
                     chinese_count = sum(1 for c in fixed[:100] if '\u4e00' <= c <= '\u9fff')
                     chinese_punct_count = sum(1 for c in fixed[:100] if c in '，。！？；：')
-                    # 如果包含至少2个中文字符或1个中文标点，认为修复成功
                     if chinese_count >= 2 or chinese_punct_count >= 1:
-                        logger.debug(f"✅ 编码修复成功: {text[:30]} -> {fixed[:30]}")
                         return fixed
-                except (UnicodeEncodeError, UnicodeDecodeError) as e:
-                    logger.debug(f"编码修复失败: {e}")
+                except (UnicodeEncodeError, UnicodeDecodeError):
                     pass
             
             # 检查是否已经是正确的UTF-8（不包含可疑字符或修复失败）
@@ -1953,11 +1954,9 @@ class DeskFengshuiEngine:
                 # 如果有可疑字符但修复失败，可能是其他编码或非中文文本
                 return text
             except UnicodeEncodeError:
-                # 如果无法编码，尝试修复
                 try:
-                    fixed = text.encode('latin1').decode('utf-8')
-                    chinese_count = sum(1 for c in fixed[:100] if '\u4e00' <= c <= '\u9fff')
-                    if chinese_count >= 2:
+                    fixed = self._encode_mysql_latin1(text).decode('utf-8')
+                    if sum(1 for c in fixed[:100] if '\u4e00' <= c <= '\u9fff') >= 2:
                         return fixed
                 except (UnicodeEncodeError, UnicodeDecodeError):
                     pass
