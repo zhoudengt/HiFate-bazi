@@ -107,15 +107,17 @@ class BailianClient:
         DONE_SENTINEL = object()  # 结束标记
         
         # 构建请求参数
+        custom_headers = kwargs.pop("headers", None) or {}
         call_params = {
             "app_id": app_id,
             "prompt": prompt,
             "stream": True,
             "incremental_output": True,  # 增量输出
         }
-        
         if session_id:
             call_params["session_id"] = session_id
+        if custom_headers:
+            call_params["headers"] = custom_headers
         
         # 获取当前事件循环
         loop = asyncio.get_event_loop()

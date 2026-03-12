@@ -7,6 +7,7 @@
 复用现有代码，确保 scripts/evaluation/bazi_evaluator.py 不受影响。
 """
 
+import json
 import os
 import sys
 import logging
@@ -136,11 +137,18 @@ class BailianStreamService(BaseLLMStreamService):
             return
         
         session_id = kwargs.get('session_id')
+        extra_headers: Dict[str, str] = {}
+        if self.scene == "annual_report":
+            extra_headers = {
+                "X-DashScope-DataInspection": json.dumps({"input": "disable", "output": "disable"})
+            }
         
         logger.info(f"[{trace_id or 'N/A'}] 调用百炼平台: scene={self.scene}, app_id={app_id}, prompt长度={len(prompt)}")
         
         try:
-            async for chunk in self.client.call_stream(app_id, prompt, session_id=session_id, **kwargs):
+            async for chunk in self.client.call_stream(
+                app_id, prompt, session_id=session_id, headers=extra_headers, **kwargs
+            ):
                 yield chunk
         except Exception as e:
             error_msg = f"百炼平台调用异常: {str(e)}"
