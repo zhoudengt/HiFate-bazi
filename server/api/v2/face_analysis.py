@@ -9,9 +9,6 @@ from typing import Optional, List
 import base64
 import logging
 
-from services.face_analysis_v2.service import FaceAnalysisService
-from services.face_knowledge_v2.service import FaceKnowledgeService
-
 router = APIRouter(prefix="/api/v2/face", tags=["面相分析V2"])
 logger = logging.getLogger(__name__)
 
@@ -23,21 +20,23 @@ try:
 except ImportError as e:
     logger.warning(f"⚠️  面相分析流式接口路由导入失败（可选功能）: {e}")
 
-# 延迟初始化服务（避免启动时MediaPipe初始化失败）
+# 延迟初始化服务（懒加载：mediapipe/opencv 只在首次请求时加载，不影响 web 启动内存）
 face_service = None
 knowledge_service = None
 
 def get_face_service():
-    """获取面相分析服务（延迟初始化）"""
+    """获取面相分析服务（懒加载，首次调用时才 import mediapipe）"""
     global face_service
     if face_service is None:
+        from services.face_analysis_v2.service import FaceAnalysisService
         face_service = FaceAnalysisService()
     return face_service
 
 def get_knowledge_service():
-    """获取知识库服务（延迟初始化）"""
+    """获取知识库服务（懒加载）"""
     global knowledge_service
     if knowledge_service is None:
+        from services.face_knowledge_v2.service import FaceKnowledgeService
         knowledge_service = FaceKnowledgeService()
     return knowledge_service
 

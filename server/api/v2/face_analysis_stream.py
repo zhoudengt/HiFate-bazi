@@ -19,7 +19,6 @@ from pydantic import BaseModel, Field
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, project_root)
 
-from services.face_analysis_v2.service import FaceAnalysisService
 from server.services.llm_service_factory import LLMServiceFactory
 from server.services.stream_call_logger import get_stream_call_logger
 from server.config.config_loader import get_config_from_db_only
@@ -77,7 +76,8 @@ async def face_analysis_test(
                 'gender': gender or 'unknown'
             }
         
-        # 调用分析服务
+        # 调用分析服务（懒加载）
+        from services.face_analysis_v2.service import FaceAnalysisService
         service = FaceAnalysisService()
         result = service.analyze_face_features(
             image_data,
@@ -233,8 +233,9 @@ async def face_analysis_stream_generator(
                 'gender': gender or 'unknown'
             }
         
-        # 5. 调用基础分析服务
+        # 5. 调用基础分析服务（懒加载：首次请求时才 import mediapipe）
         try:
+            from services.face_analysis_v2.service import FaceAnalysisService
             service = FaceAnalysisService()
         except ImportError as e:
             error_msg = {

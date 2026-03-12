@@ -344,6 +344,125 @@ fi
 LOCAL_COMMIT=$(git rev-parse HEAD)
 echo "本地 commit: ${LOCAL_COMMIT:0:8}"
 
+# ==================== 变更范围检测 ====================
+# 根据 git diff 识别哪些服务发生了变化，用于：
+#   1. 选择性触发 gRPC 服务 docker exec 强制重载（确保测试前新代码已生效）
+#   2. 选择性运行测试集（只跑受影响服务的回归测试）
+detect_changed_services() {
+    local prev_commit="${1:-HEAD~1}"
+    local curr_commit="${2:-HEAD}"
+    local changed_files
+    changed_files=$(git diff --name-only "$prev_commit" "$curr_commit" 2>/dev/null || git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+
+    CHANGED_WEB=false
+    CHANGED_BAZI_COMPUTE=false
+    CHANGED_RULE_ENGINE=false
+    CHANGED_PAYMENT=false
+    CHANGED_INTENT=false
+    CHANGED_PROMPT_OPT=false
+
+    echo "$changed_files" | grep -qE "^server/|^proto/"                                                          && CHANGED_WEB=true
+    echo "$changed_files" | grep -qE "^core/"                                                                     && CHANGED_WEB=true && CHANGED_BAZI_COMPUTE=true
+    echo "$changed_files" | grep -qE "^services/(bazi_compute|bazi_core|bazi_fortune|bazi_analyzer|fortune_analysis)/" && CHANGED_BAZI_COMPUTE=true
+    echo "$changed_files" | grep -qE "^services/(rule_engine|bazi_rule|fortune_rule)/"                           && CHANGED_RULE_ENGINE=true
+    echo "$changed_files" | grep -qE "^services/payment_service/"                                                 && CHANGED_PAYMENT=true
+    echo "$changed_files" | grep -qE "^services/intent_service/"                                                  && CHANGED_INTENT=true
+    echo "$changed_files" | grep -qE "^services/prompt_optimizer/"                                                && CHANGED_PROMPT_OPT=true
+
+    # 如果检测不到变更（首次部署或 diff 失败），默认全量
+    if ! $CHANGED_WEB && ! $CHANGED_BAZI_COMPUTE && ! $CHANGED_RULE_ENGINE && ! $CHANGED_PAYMENT && ! $CHANGED_INTENT && ! $CHANGED_PROMPT_OPT; then
+        echo -e "${YELLOW}[变更检测] 无法识别变更范围，默认全量处理${NC}"
+        CHANGED_WEB=true; CHANGED_BAZI_COMPUTE=true; CHANGED_RULE_ENGINE=true
+        CHANGED_PAYMENT=true; CHANGED_INTENT=true; CHANGED_PROMPT_OPT=true
+    fi
+
+    echo ""
+    echo "本次变更范围："
+    $CHANGED_WEB           && echo "  ✦ web (server/ proto/ core/)"
+    $CHANGED_BAZI_COMPUTE  && echo "  ✦ bazi-compute (八字计算)"
+    $CHANGED_RULE_ENGINE   && echo "  ✦ rule-engine (规则引擎)"
+    $CHANGED_PAYMENT       && echo "  ✦ payment-service (支付)"
+    $CHANGED_INTENT        && echo "  ✦ intent-service (意图识别)"
+    $CHANGED_PROMPT_OPT    && echo "  ✦ prompt-optimizer (提示优化)"
+}
+
+# 根据变更范围构建测试集（避免对未变更服务跑无效测试）
+build_test_categories() {
+    GATE_TEST_CATS=""
+    # bazi-compute 或 web 变更 → 必须跑 basic
+    ( $CHANGED_BAZI_COMPUTE || $CHANGED_WEB || $CHANGED_RULE_ENGINE ) && GATE_TEST_CATS="basic"
+    # payment 变更 → 必须跑 payment
+    $CHANGED_PAYMENT && GATE_TEST_CATS="$GATE_TEST_CATS payment"
+    # web 变更（流式接口） → 跑 stream（仅警告）
+    $CHANGED_WEB     && GATE_TEST_CATS="$GATE_TEST_CATS stream"
+    # 兜底：若无法确定，全跑
+    [ -z "$(echo "$GATE_TEST_CATS" | tr -d ' ')" ] && GATE_TEST_CATS="basic payment stream"
+    GATE_TEST_CATS=$(echo "$GATE_TEST_CATS" | xargs)  # 去掉首尾空格
+    echo "选择的测试集: $GATE_TEST_CATS"
+}
+
+# 通过 docker exec 强制触发指定 gRPC 容器立即 reload（不等 30s watchdog）
+# 参数: $1=ssh函数名 $2=容器名 $3=服务名 $4=节点标签
+trigger_microservice_reload() {
+    local ssh_func="$1"
+    local container="$2"
+    local service_name="$3"
+    local node_label="$4"
+    echo "  → 触发 $service_name 立即重载..."
+    local result
+    result=$($ssh_func "docker exec $container python -c \
+\"import sys; sys.path.insert(0,'/app'); \
+from server.hot_reload.microservice_reloader import get_microservice_reloader; \
+r=get_microservice_reloader('$service_name'); \
+ok=r.force_reload() if r else None; \
+print('reload_result:', ok)\" 2>&1" 2>/dev/null) || true
+    if echo "$result" | grep -q "reload_result: True"; then
+        echo -e "  ${GREEN}✅ $service_name reload 成功${NC}"
+    elif echo "$result" | grep -q "reload_result: False"; then
+        echo -e "  ${RED}❌ $service_name reload 失败（代码可能有错误，请检查日志）${NC}"
+        return 1
+    else
+        echo -e "  ${YELLOW}⚠️  $service_name reload 状态未知（容器可能无内置 reloader），继续...${NC}"
+    fi
+    return 0
+}
+
+# 对本次变更的 gRPC 服务触发强制重载
+trigger_changed_microservices() {
+    local ssh_func="$1"
+    local node_label="$2"
+    local any_grpc_changed=false
+
+    $CHANGED_BAZI_COMPUTE && any_grpc_changed=true
+    $CHANGED_RULE_ENGINE  && any_grpc_changed=true
+    $CHANGED_PAYMENT      && any_grpc_changed=true
+    $CHANGED_INTENT       && any_grpc_changed=true
+    $CHANGED_PROMPT_OPT   && any_grpc_changed=true
+
+    if [ "$any_grpc_changed" = "false" ]; then
+        echo "  [gRPC reload] 本次无 gRPC 服务变更，跳过"
+        return 0
+    fi
+
+    echo "触发变更 gRPC 服务立即重载（$node_label）..."
+    local reload_failed=false
+    $CHANGED_BAZI_COMPUTE && trigger_microservice_reload "$ssh_func" "hifate-bazi-compute"   "bazi_compute"    "$node_label" || reload_failed=true
+    $CHANGED_RULE_ENGINE  && trigger_microservice_reload "$ssh_func" "hifate-rule-engine"    "rule_engine"     "$node_label" || reload_failed=true
+    $CHANGED_PAYMENT      && trigger_microservice_reload "$ssh_func" "hifate-payment-service" "payment_service" "$node_label" || reload_failed=true
+    $CHANGED_INTENT       && trigger_microservice_reload "$ssh_func" "hifate-intent-service" "intent_service"  "$node_label" || reload_failed=true
+    $CHANGED_PROMPT_OPT   && trigger_microservice_reload "$ssh_func" "hifate-prompt-optimizer" "prompt_optimizer" "$node_label" || reload_failed=true
+
+    if [ "$reload_failed" = "true" ]; then
+        echo -e "${RED}部分 gRPC 服务 reload 失败，请检查代码后重试${NC}"
+        return 1
+    fi
+}
+
+# 执行变更检测
+detect_changed_services "${NODE1_BEFORE_COMMIT:-HEAD~1}" "HEAD"
+build_test_categories
+echo ""
+
 echo ""
 echo "本地语法验证..."
 if ! python3 << 'PYEOF'
@@ -447,6 +566,14 @@ if [ "$SKIP_NODE2" = "false" ]; then
         echo ""
         gate_reload_endpoints_multi "$NODE2_PUBLIC_IP" "Node2" 4 "${NODE2_PORT:-8001}"
 
+        # 3.3.1 选择性触发变更 gRPC 服务立即重载（确保测试前新代码已生效，不依赖 30s watchdog）
+        echo ""
+        trigger_changed_microservices "node2_ssh" "Node2" || {
+            echo -e "${RED}Node2 gRPC 服务 reload 失败，停止部署${NC}"
+            record_deploy_history "$DEPLOYMENT_ID" "failed" "node2_grpc_reload" "gRPC 服务 reload 失败" "$LOCAL_COMMIT"
+            exit 1
+        }
+
         # 3.4 清理缓存
         echo ""
         gate_clear_business_cache node2_ssh "hifate-redis-slave" "Node2"
@@ -463,7 +590,8 @@ if [ "$SKIP_NODE2" = "false" ]; then
 
     echo -e "${BLUE}[门控关卡] Node2 回归测试${NC}"
     echo "========================================"
-    echo -e "${YELLOW}basic + payment 必须通过；stream 仅警告不阻断${NC}"
+    echo -e "${YELLOW}测试集（按变更范围）: ${GATE_TEST_CATS}${NC}"
+    echo -e "${YELLOW}basic/payment 必须通过；stream 仅警告不阻断${NC}"
     echo "========================================"
     echo ""
 
@@ -474,38 +602,49 @@ if [ "$SKIP_NODE2" = "false" ]; then
         exit 1
     fi
 
-    # 阻断级测试：basic + payment
-    echo ""
-    echo "运行阻断级测试（basic + payment）..."
+    # 阻断级测试：basic + payment（仅对本次变更范围）
+    GATE_BLOCKING_CATS=$(echo "$GATE_TEST_CATS" | tr ' ' '\n' | grep -E "^(basic|payment)$" | tr '\n' ' ' | xargs)
+    GATE_STREAM_CAT=$(echo "$GATE_TEST_CATS" | tr ' ' '\n' | grep -E "^stream$" | xargs)
+
     GATE_BLOCKING_PASS=true
-    if ! gate_regression_test "node2" "basic payment" "true" "$PROJECT_DIR" "$NODE2_PUBLIC_IP" "$SSH_PASSWORD"; then
-        GATE_BLOCKING_PASS=false
-    fi
-
-    if [ "$GATE_BLOCKING_PASS" = "false" ]; then
-        # 重试一次
+    if [ -n "$GATE_BLOCKING_CATS" ]; then
         echo ""
-        echo -e "${YELLOW}阻断级测试失败，自动重试一次...${NC}"
-        if gate_regression_test "node2" "basic payment" "true" "$PROJECT_DIR" "$NODE2_PUBLIC_IP" "$SSH_PASSWORD"; then
-            GATE_BLOCKING_PASS=true
+        echo "运行阻断级测试（$GATE_BLOCKING_CATS）..."
+        if ! gate_regression_test "node2" "$GATE_BLOCKING_CATS" "true" "$PROJECT_DIR" "$NODE2_PUBLIC_IP" "$SSH_PASSWORD"; then
+            GATE_BLOCKING_PASS=false
         fi
-    fi
 
-    if [ "$GATE_BLOCKING_PASS" = "false" ]; then
-        print_gate_decision "Node2 前哨验证" "false" "basic/payment 测试失败，Node1 不会被部署"
-        record_deploy_history "$DEPLOYMENT_ID" "gate_fail" "node2_test" "阻断级测试失败" "$LOCAL_COMMIT"
-        echo -e "${YELLOW}Node1 当前版本未受影响: ${NODE1_BEFORE_COMMIT:0:8}${NC}"
-        exit 1
+        if [ "$GATE_BLOCKING_PASS" = "false" ]; then
+            echo ""
+            echo -e "${YELLOW}阻断级测试失败，自动重试一次...${NC}"
+            if gate_regression_test "node2" "$GATE_BLOCKING_CATS" "true" "$PROJECT_DIR" "$NODE2_PUBLIC_IP" "$SSH_PASSWORD"; then
+                GATE_BLOCKING_PASS=true
+            fi
+        fi
+
+        if [ "$GATE_BLOCKING_PASS" = "false" ]; then
+            print_gate_decision "Node2 前哨验证" "false" "阻断级测试失败，Node1 不会被部署"
+            record_deploy_history "$DEPLOYMENT_ID" "gate_fail" "node2_test" "阻断级测试失败" "$LOCAL_COMMIT"
+            echo -e "${YELLOW}Node1 当前版本未受影响: ${NODE1_BEFORE_COMMIT:0:8}${NC}"
+            exit 1
+        fi
+    else
+        echo "  [跳过阻断级测试：本次变更不涉及 basic/payment 相关服务]"
     fi
 
     # 警告级测试：stream（失败不阻断）
-    echo ""
-    echo "运行警告级测试（stream）..."
-    if gate_regression_test "node2" "stream" "true" "$PROJECT_DIR" "$NODE2_PUBLIC_IP" "$SSH_PASSWORD"; then
-        GATE_NODE2_RESULT="PASS"
+    GATE_NODE2_RESULT="PASS"
+    if [ -n "$GATE_STREAM_CAT" ]; then
+        echo ""
+        echo "运行警告级测试（stream）..."
+        if gate_regression_test "node2" "stream" "true" "$PROJECT_DIR" "$NODE2_PUBLIC_IP" "$SSH_PASSWORD"; then
+            GATE_NODE2_RESULT="PASS"
+        else
+            GATE_NODE2_RESULT="PASS_WITH_WARN"
+            echo -e "${YELLOW}stream 测试存在失败，但不阻断发布（LLM 依赖可能波动）${NC}"
+        fi
     else
-        GATE_NODE2_RESULT="PASS_WITH_WARN"
-        echo -e "${YELLOW}stream 测试存在失败，但不阻断发布（LLM 依赖可能波动）${NC}"
+        echo "  [跳过 stream 测试：本次变更不涉及 web/流式接口]"
     fi
 
     print_gate_decision "Node2 前哨验证" "true" "阻断级测试全部通过，允许部署到 Node1（stream: ${GATE_NODE2_RESULT}）"
@@ -643,6 +782,9 @@ if [ "$NO_VERIFY" = "true" ]; then
     NODE1_VERIFY="skipped"
 else
     # 热更新 + 端点恢复 + 21 端点并发验证（整体最多 2 轮重试）
+    # 在热更新完成后，对变更的 gRPC 服务触发立即 reload（确保验证前新代码已生效）
+    trigger_changed_microservices "run_on_node1" "Node1" || echo -e "${YELLOW}Node1 gRPC reload 部分失败，继续验证...${NC}"
+
     if ! gate_hot_reload_and_verify "$NODE1_PUBLIC_IP" "Node1"; then
         echo -e "${RED}Node1 热更新+端点验证失败！尝试自动回滚...${NC}"
 

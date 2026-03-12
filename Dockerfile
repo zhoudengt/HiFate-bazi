@@ -77,23 +77,14 @@ RUN echo "=== 验证核心包 ===" && \
     python -c "import pytz; print('✅ pytz:', pytz.__version__)" && \
     echo "✅ 核心包验证完成"
 
-# 安装 PyTorch CPU 版本（可选，用于 YOLO）
-RUN echo "=== 安装 PyTorch CPU 版本 ===" && \
-    pip install --no-cache-dir \
-        --index-url https://download.pytorch.org/whl/cpu \
-        torch torchvision --no-deps || echo "⚠️ PyTorch 安装跳过（可选依赖）"
-
-# 安装风水分析依赖
-COPY services/desk_fengshui/requirements.txt /tmp/desk_fengshui_requirements.txt
-RUN echo "=== 安装风水分析依赖 ===" && \
-    pip install --no-cache-dir -r /tmp/desk_fengshui_requirements.txt && \
-    rm -f /tmp/desk_fengshui_requirements.txt && \
-    echo "✅ 风水分析依赖安装完成"
+# 注意：PyTorch/YOLO/desk_fengshui 依赖已移除
+# - PyTorch: ultralytics 已注释禁用，torch 从未被 import，无需安装
+# - desk_fengshui: 该服务容器在 docker-compose.prod.yml 中无定义，主路径已改用百炼 API
 
 # 清理缓存（保守清理，不删除可能影响包的文件）
 RUN echo "=== 清理缓存 ===" && \
     pip cache purge 2>/dev/null || true && \
-    rm -rf /root/.cache/pip /root/.cache/torch /root/.cache/huggingface /tmp/pip-* /var/tmp/* && \
+    rm -rf /root/.cache/pip /root/.cache/huggingface /tmp/pip-* /var/tmp/* && \
     # 只清理 __pycache__ 目录（安全）
     find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
     # 只清理测试目录（安全）
