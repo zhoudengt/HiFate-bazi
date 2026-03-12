@@ -27,11 +27,18 @@ PROJECT_ROOT=$(cd "${SCRIPT_DIR}/../.." && pwd)
 
 # 并发锁
 LOCK_DIR="/tmp/hifate_gated_deploy.lock"
-_cleanup_lock() { rmdir "$LOCK_DIR" 2>/dev/null || true; }
+_cleanup_lock() { rm -rf "$LOCK_DIR" 2>/dev/null || true; }
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
     LOCK_OWNER=$(cat "$LOCK_DIR/pid" 2>/dev/null || echo "unknown")
-    echo -e "\033[0;31m另一个发布进程正在运行 (PID: $LOCK_OWNER)，请等待完成后重试\033[0m"
-    exit 1
+    # 检查锁主进程是否仍存活；若已退出则为残留锁，自动清理后继续
+    if [ "$LOCK_OWNER" != "unknown" ] && kill -0 "$LOCK_OWNER" 2>/dev/null; then
+        echo -e "\033[0;31m另一个发布进程正在运行 (PID: $LOCK_OWNER)，请等待完成后重试\033[0m"
+        exit 1
+    else
+        echo -e "\033[0;33m检测到残留锁 (PID: $LOCK_OWNER 已退出)，自动清理后继续...\033[0m"
+        rm -rf "$LOCK_DIR"
+        mkdir "$LOCK_DIR" || { echo -e "\033[0;31m无法创建锁目录，请手动执行: rm -rf $LOCK_DIR\033[0m"; exit 1; }
+    fi
 fi
 echo $$ > "$LOCK_DIR/pid"
 trap _cleanup_lock EXIT
