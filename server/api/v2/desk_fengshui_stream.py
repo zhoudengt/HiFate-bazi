@@ -63,15 +63,20 @@ def _safe_import_desk_fengshui_analyzer():
                 _s.loader.exec_module(_m)
 
     # 使用已缓存的模块或从文件加载
-    if _MODULE_NAME in sys.modules:
-        mod = sys.modules[_MODULE_NAME]
-    else:
+    # 注意：热更新后缓存可能被污染（同名 analyzer.py 覆盖），需验证后再用
+    mod = sys.modules.get(_MODULE_NAME)
+    if mod is not None and not hasattr(mod, 'DeskFengshuiAnalyzer'):
+        # 缓存的模块不包含 DeskFengshuiAnalyzer（被其他 analyzer.py 污染），强制清除重载
+        del sys.modules[_MODULE_NAME]
+        mod = None
+
+    if mod is None:
         analyzer_path = os.path.join(desk_fengshui_path, 'analyzer.py')
         spec = importlib.util.spec_from_file_location(_MODULE_NAME, analyzer_path)
         mod = importlib.util.module_from_spec(spec)
         sys.modules[_MODULE_NAME] = mod
         spec.loader.exec_module(mod)
-    
+
     return mod.DeskFengshuiAnalyzer
 
 
