@@ -15,7 +15,7 @@ from typing import Any, Callable, Dict, Optional
 
 from fastapi import HTTPException
 
-from server.api.grpc_gateway.endpoints import SUPPORTED_ENDPOINTS
+from server.api.grpc_gateway.endpoints import SUPPORTED_ENDPOINTS, _capture_registrations
 
 logger = logging.getLogger(__name__)
 
@@ -28,90 +28,99 @@ def _reload_endpoints() -> bool:
     """
     重新注册所有端点（用于热更新后恢复）。
 
-    流程：
-    1. 备份旧端点
-    2. 清空并 importlib.reload 所有 handler 模块以触发 @_register 装饰器
-    3. 若重载后端点数量 < 40，回滚到旧端点（防止热更新导致端点丢失）
-    4. 若关键端点仍缺失，降级手动注册
+    流程（原子替换，消除窗口期）：
+    1. 用 _capture_registrations 上下文将 @_register 写入重定向到临时 dict
+    2. 在此期间 SUPPORTED_ENDPOINTS 保持不变，请求继续正常服务
+    3. 全部 handler reload 完成后，一次性 swap（clear + update，asyncio 单线程，两步等价原子）
+    4. 若新端点数量不足 40，放弃本次 reload，保留旧端点
+    5. 若关键端点仍缺失，降级手动注册
     """
+    import importlib
+    import sys
+
     old_count = len(SUPPORTED_ENDPOINTS)
-    old_endpoints = dict(SUPPORTED_ENDPOINTS)  # 备份旧端点
-    SUPPORTED_ENDPOINTS.clear()
-    logger.info(f"已清空 gRPC 端点注册表（旧端点数: {old_count}）")
+    old_endpoints = dict(SUPPORTED_ENDPOINTS)  # 备份旧端点（用于降级回滚）
+
+    handler_modules = [
+        "server.api.grpc_gateway.handlers.payment_handlers",
+        "server.api.grpc_gateway.handlers.homepage_handlers",
+        "server.api.grpc_gateway.handlers.calendar_handlers",
+        "server.api.grpc_gateway.handlers.smart_handlers",
+        "server.api.grpc_gateway.handlers.media_handlers",
+        "server.api.grpc_gateway.handlers.admin_handlers",
+        "server.api.grpc_gateway.handlers.bazi_handlers",
+        "server.api.grpc_gateway.handlers.stream_handlers",
+        "server.api.grpc_gateway.handlers.liuyao_handlers",
+    ]
 
     try:
-        import importlib
-        import sys
-
-        # 重新加载所有 handler 模块（关键！）
-        handler_modules = [
-            "server.api.grpc_gateway.handlers.payment_handlers",
-            "server.api.grpc_gateway.handlers.homepage_handlers",
-            "server.api.grpc_gateway.handlers.calendar_handlers",
-            "server.api.grpc_gateway.handlers.smart_handlers",
-            "server.api.grpc_gateway.handlers.media_handlers",
-            "server.api.grpc_gateway.handlers.admin_handlers",
-            "server.api.grpc_gateway.handlers.bazi_handlers",
-            "server.api.grpc_gateway.handlers.stream_handlers",
-            "server.api.grpc_gateway.handlers.liuyao_handlers",
-        ]
-        
         failed_modules = []
-        for module_name in handler_modules:
-            if module_name in sys.modules:
-                try:
-                    importlib.reload(sys.modules[module_name])
-                    logger.debug(f"✓ 重新加载: {module_name}")
-                except Exception as e:
-                    logger.error(f"🚨 重新加载 {module_name} 失败: {e}", exc_info=True)
-                    failed_modules.append(module_name)
-            else:
-                try:
-                    __import__(module_name)
-                    logger.debug(f"✓ 首次加载: {module_name}")
-                except Exception as e:
-                    logger.error(f"🚨 加载 {module_name} 失败: {e}", exc_info=True)
-                    failed_modules.append(module_name)
 
-        endpoint_count = len(SUPPORTED_ENDPOINTS)
-        logger.info(f"重新加载后端点数量: {endpoint_count}（失败模块: {failed_modules}）")
+        # --- 关键：在 capture 上下文内 reload，@_register 写入临时 dict ---
+        # SUPPORTED_ENDPOINTS 在此期间不受影响，线上请求正常服务
+        with _capture_registrations() as new_endpoints:
+            for module_name in handler_modules:
+                if module_name in sys.modules:
+                    try:
+                        importlib.reload(sys.modules[module_name])
+                        logger.debug(f"✓ 重新加载: {module_name}")
+                    except Exception as e:
+                        logger.error(f"🚨 重新加载 {module_name} 失败: {e}", exc_info=True)
+                        failed_modules.append(module_name)
+                else:
+                    try:
+                        __import__(module_name)
+                        logger.debug(f"✓ 首次加载: {module_name}")
+                    except Exception as e:
+                        logger.error(f"🚨 加载 {module_name} 失败: {e}", exc_info=True)
+                        failed_modules.append(module_name)
 
-        # 如果重载后端点数量不足，回滚到旧端点
-        if endpoint_count < 40 and old_count >= 40:
-            logger.error(f"🚨 重载后端点数量不足（{endpoint_count} < 40），回滚到旧端点（{old_count}）")
-            SUPPORTED_ENDPOINTS.clear()
-            SUPPORTED_ENDPOINTS.update(old_endpoints)
-            logger.info(f"✅ 已回滚到旧端点，当前端点数: {len(SUPPORTED_ENDPOINTS)}")
+        new_count = len(new_endpoints)
+        logger.info(f"新端点数量: {new_count}，旧端点数量: {old_count}，失败模块: {failed_modules}")
+
+        # 若新端点数量不足，放弃本次 reload（旧端点仍在服务中，无需回滚）
+        if new_count < 40 and old_count >= 40:
+            logger.error(
+                f"🚨 新端点数量不足（{new_count} < 40），放弃本次 reload，旧端点继续服务（{old_count}）"
+            )
             return False
 
-        key_endpoints = ["/bazi/interface", "/bazi/shengong-minggong", "/bazi/rizhu-liujiazi"]
+        # --- 原子 swap：asyncio 单线程，clear+update 之间无 await，等价原子操作 ---
+        SUPPORTED_ENDPOINTS.clear()
+        SUPPORTED_ENDPOINTS.update(new_endpoints)
+        logger.info(f"已清空 gRPC 端点注册表（旧端点数: {old_count}）")
+        logger.info(f"✅ gRPC 端点已重新注册，当前端点数量: {len(SUPPORTED_ENDPOINTS)}")
+
+        # 关键端点缺失检查 + 手动兜底
+        key_endpoints = [
+            "/bazi/interface",
+            "/bazi/pan/display",
+            "/bazi/fortune/display",
+            "/bazi/shengong-minggong",
+            "/bazi/rizhu-liujiazi",
+        ]
         missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
 
-        if endpoint_count == 0 or missing:
-            logger.warning(f"⚠️  端点未正确注册（总数: {endpoint_count}, 缺失: {missing}），尝试手动注册...")
+        if missing:
+            logger.warning(f"⚠️  关键端点缺失: {missing}，尝试手动注册...")
             _manual_register_core_endpoints()
+            _register_missing_endpoints(missing)
 
         endpoint_count = len(SUPPORTED_ENDPOINTS)
-        logger.info(f"✅ gRPC 端点已重新注册，当前端点数量: {endpoint_count}")
-
-        if endpoint_count > 0:
-            logger.debug(f"已注册的端点: {list(SUPPORTED_ENDPOINTS.keys())[:10]}...")
-            missing = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
-            if missing:
-                logger.warning(f"⚠️  关键端点未注册: {missing}")
-            else:
-                logger.info(f"✅ 关键端点验证通过: {key_endpoints}")
+        missing_final = [ep for ep in key_endpoints if ep not in SUPPORTED_ENDPOINTS]
+        if missing_final:
+            logger.warning(f"⚠️  仍有关键端点未注册: {missing_final}")
         else:
-            logger.error("❌ 端点重新注册后数量为0，可能存在模块加载问题")
+            logger.info(f"✅ 关键端点验证通过: {key_endpoints}")
 
         return endpoint_count > 0
+
     except Exception as e:
         logger.error(f"❌ gRPC 端点重新注册失败: {e}", exc_info=True)
-        # 发生异常时回滚
-        if old_count > 0:
-            SUPPORTED_ENDPOINTS.clear()
+        # 若 SUPPORTED_ENDPOINTS 已被意外清空，从备份恢复
+        if len(SUPPORTED_ENDPOINTS) == 0 and old_count > 0:
             SUPPORTED_ENDPOINTS.update(old_endpoints)
-            logger.info(f"✅ 异常回滚到旧端点，当前端点数: {len(SUPPORTED_ENDPOINTS)}")
+            logger.info(f"✅ 异常恢复旧端点，当前端点数: {len(SUPPORTED_ENDPOINTS)}")
         return False
 
 
@@ -125,6 +134,8 @@ def _ensure_endpoints_registered() -> None:
 
     key_endpoints = [
         "/bazi/interface",
+        "/bazi/pan/display",
+        "/bazi/fortune/display",
         "/bazi/shengong-minggong",
         "/bazi/rizhu-liujiazi",
         "/api/v2/desk-fengshui/analyze",
@@ -351,6 +362,63 @@ def _register_missing_endpoints(missing_endpoints: list) -> None:
             logger.error("🚨 手动注册端点: /bazi/rizhu-liujiazi")
         except Exception as e:
             logger.error(f"❌ 手动注册 /bazi/rizhu-liujiazi 端点失败: {e}", exc_info=True)
+
+    if "/bazi/pan/display" in missing_endpoints:
+        try:
+            from server.api.v1.bazi_display import BaziDisplayRequest, get_pan_display
+
+            async def _h_pan_display(payload: Dict[str, Any]):
+                request_model = BaziDisplayRequest(**payload)
+                return await get_pan_display(request_model)
+
+            SUPPORTED_ENDPOINTS["/bazi/pan/display"] = _h_pan_display
+            logger.error("🚨 手动注册端点: /bazi/pan/display")
+        except Exception as e:
+            logger.error(f"❌ 手动注册 /bazi/pan/display 失败: {e}", exc_info=True)
+
+    if "/bazi/fortune/display" in missing_endpoints:
+        try:
+            from server.api.v1.bazi_display import FortuneDisplayRequest, _assemble_fortune_display_response
+            from server.utils.bazi_input_processor import BaziInputProcessor
+            from server.orchestrators.bazi_data_orchestrator import BaziDataOrchestrator
+            from server.orchestrators.modules_config import get_modules_config
+            from datetime import datetime as _dt
+
+            async def _h_fortune_display(payload: Dict[str, Any]):
+                request_model = FortuneDisplayRequest(**payload)
+                final_sd, final_st, _ = BaziInputProcessor.process_input(
+                    request_model.solar_date, request_model.solar_time,
+                    request_model.calendar_type or "solar",
+                    request_model.location, request_model.latitude, request_model.longitude,
+                )
+                ct = _dt.now()
+                if request_model.current_time:
+                    try:
+                        ct = _dt.strptime(request_model.current_time, "%Y-%m-%d %H:%M")
+                    except ValueError:
+                        pass
+                mods = get_modules_config("fortune_display")
+                odata = await BaziDataOrchestrator.fetch_data(
+                    final_sd, final_st, request_model.gender,
+                    modules=mods, current_time=ct, preprocessed=True,
+                    calendar_type=request_model.calendar_type or "solar",
+                    location=request_model.location, latitude=request_model.latitude,
+                    longitude=request_model.longitude,
+                    dayun_index=request_model.dayun_index,
+                    dayun_year_start=request_model.dayun_year_start,
+                    dayun_year_end=request_model.dayun_year_end,
+                    target_year=request_model.target_year,
+                )
+                return _assemble_fortune_display_response(
+                    odata, final_sd, ct,
+                    request_model.dayun_index, request_model.dayun_year_start,
+                    request_model.dayun_year_end, request_model.target_year,
+                )
+
+            SUPPORTED_ENDPOINTS["/bazi/fortune/display"] = _h_fortune_display
+            logger.error("🚨 手动注册端点: /bazi/fortune/display")
+        except Exception as e:
+            logger.error(f"❌ 手动注册 /bazi/fortune/display 失败: {e}", exc_info=True)
 
     if "/api/v2/desk-fengshui/analyze" in missing_endpoints:
         try:
