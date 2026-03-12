@@ -59,7 +59,7 @@ TEST_ONLY=false
 ROLLBACK_MODE=false
 NON_INTERACTIVE=false
 NO_VERIFY=false
-TEST_CATEGORIES="basic stream payment"
+TEST_CATEGORIES="basic payment"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -400,10 +400,9 @@ build_test_categories() {
     ( $CHANGED_BAZI_COMPUTE || $CHANGED_WEB || $CHANGED_RULE_ENGINE ) && GATE_TEST_CATS="basic"
     # payment 变更 → 必须跑 payment
     $CHANGED_PAYMENT && GATE_TEST_CATS="$GATE_TEST_CATS payment"
-    # web 变更（流式接口） → 跑 stream（仅警告）
-    $CHANGED_WEB     && GATE_TEST_CATS="$GATE_TEST_CATS stream"
-    # 兜底：若无法确定，全跑
-    [ -z "$(echo "$GATE_TEST_CATS" | tr -d ' ')" ] && GATE_TEST_CATS="basic payment stream"
+    # stream 测试调用 LLM 费用较高，发布流程中不自动触发（可手动: --categories stream）
+    # 兜底：若无法确定，全跑（不含 stream）
+    [ -z "$(echo "$GATE_TEST_CATS" | tr -d ' ')" ] && GATE_TEST_CATS="basic payment"
     GATE_TEST_CATS=$(echo "$GATE_TEST_CATS" | xargs)  # 去掉首尾空格
     echo "选择的测试集: $GATE_TEST_CATS"
 }
