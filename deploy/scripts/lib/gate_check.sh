@@ -27,7 +27,7 @@ gate_clear_business_cache() {
     local ssh_func="$1"
     local redis_container="$2"
     local label="$3"
-    local cmd="docker exec $redis_container sh -c 'for p in \"bazi*\" \"fortune*\" \"special_liunians*\" \"desk_fengshui_rules*\" \"cache:*\"; do redis-cli --scan --pattern \"\$p\" 2>/dev/null | xargs redis-cli DEL 2>/dev/null; done'"
+    local cmd="docker exec $redis_container sh -c 'for p in \"bazi*\" \"fortune*\" \"special_liunians*\" \"desk_fengshui_rules*\" \"cache:*\" \"wangshuai*\"; do redis-cli --scan --pattern \"\$p\" 2>/dev/null | xargs redis-cli DEL 2>/dev/null; done'"
 
     echo "清理 ${label} Redis 业务缓存（保留会话历史）..."
     if $ssh_func "$cmd" 2>/dev/null; then
