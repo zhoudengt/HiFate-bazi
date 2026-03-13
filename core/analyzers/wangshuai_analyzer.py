@@ -52,8 +52,6 @@ def _is_yang_stem(stem: str) -> bool:
 
 def _get_ten_god(day_stem: str, other_stem: str) -> Optional[str]:
     """根据日干和另一天干求十神"""
-    if day_stem == other_stem:
-        return None
     day_el = STEM_ELEMENTS.get(day_stem)
     other_el = STEM_ELEMENTS.get(other_stem)
     if not day_el or not other_el:
