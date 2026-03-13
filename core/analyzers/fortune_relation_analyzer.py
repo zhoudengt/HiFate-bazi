@@ -242,8 +242,8 @@ class FortuneRelationAnalyzer:
         
         # 五行生克
         if elem1 and elem2:
-            from core.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
-            relations = WangShuaiAnalyzer.ELEMENT_RELATIONS.get(elem1, {})
+            from core.config.luck_fortune_config import ELEMENT_RELATIONS
+            relations = ELEMENT_RELATIONS.get(elem1, {})
             
             if relations.get('produces') == elem2:
                 return f"{stem1}生{stem2}"
@@ -297,8 +297,8 @@ class FortuneRelationAnalyzer:
         elem2 = BRANCH_ELEMENTS.get(branch2)
         
         if elem1 and elem2:
-            from core.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
-            relations = WangShuaiAnalyzer.ELEMENT_RELATIONS.get(elem1, {})
+            from core.config.luck_fortune_config import ELEMENT_RELATIONS
+            relations = ELEMENT_RELATIONS.get(elem1, {})
             
             if relations.get('produces') == elem2:
                 return f"{branch1}生{branch2}"
@@ -321,8 +321,8 @@ class FortuneRelationAnalyzer:
         if elem1 == elem2:
             return f"同属{elem1}"
         
-        from core.analyzers.wangshuai_analyzer import WangShuaiAnalyzer
-        relations = WangShuaiAnalyzer.ELEMENT_RELATIONS.get(elem1, {})
+        from core.config.luck_fortune_config import ELEMENT_RELATIONS
+        relations = ELEMENT_RELATIONS.get(elem1, {})
         
         if relations.get('produces') == elem2:
             return f"{elem1}生{elem2}"
