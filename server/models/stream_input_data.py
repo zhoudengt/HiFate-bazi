@@ -46,39 +46,54 @@ class BaziPillarsModel(BaseModel):
 
 class WangShuaiModel(BaseModel):
     """
-    旺衰数据模型（统一结构）
-    
+    旺衰数据模型（统一结构，五因子能量积分制 v2）
+
     注意：
-    - xi_shen_elements 和 ji_shen_elements 是五行列表
-    - xi_shen 和 ji_shen 是十神列表
-    - 数据直接从 WangShuaiService 提取，不做转换
+    - wangshuai 已升级为 5 级：从强/身强/中和/身弱/从弱
+    - xi_shen_elements / ji_shen_elements 是五行列表（关键！各服务使用）
+    - xi_shen / ji_shen 是十神列表
+    - total_score 现在等于 int(P)，P 值范围 0-300+
     """
-    wangshuai: str = Field(..., description="旺衰判断", example="身旺")
-    wangshuai_degree: Optional[int] = Field(None, description="旺衰程度(0-100)", example=65)
-    total_score: Optional[int] = Field(None, description="总分", example=45)
-    
+    # 5 级旺衰
+    wangshuai: str = Field(..., description="旺衰判断（5级）", example="身强")
+    wangshuai_degree: Optional[int] = Field(None, description="旺衰程度(0-100)", example=72)
+    total_score: Optional[int] = Field(None, description="P值取整（0-300+）", example=185)
+
     # 十神列表
-    xi_shen: List[str] = Field(default_factory=list, description="喜神（十神）", example=["正财", "偏财", "正官"])
-    ji_shen: List[str] = Field(default_factory=list, description="忌神（十神）", example=["比肩", "劫财", "印绶"])
-    
+    xi_shen: List[str] = Field(default_factory=list, description="喜神（十神）",
+                                example=["正财", "偏财", "正官"])
+    ji_shen: List[str] = Field(default_factory=list, description="忌神（十神）",
+                                example=["比肩", "劫财", "偏印"])
+
     # 五行列表（关键！各服务使用这个）
-    xi_shen_elements: List[str] = Field(default_factory=list, description="喜神（五行）", example=["木", "火"])
-    ji_shen_elements: List[str] = Field(default_factory=list, description="忌神（五行）", example=["水", "金"])
-    
+    xi_shen_elements: List[str] = Field(default_factory=list, description="喜神（五行）",
+                                         example=["木", "火"])
+    ji_shen_elements: List[str] = Field(default_factory=list, description="忌神（五行）",
+                                         example=["水", "金"])
+
     # 调候信息
     tiaohou: Optional[Dict[str, Any]] = Field(None, description="调候信息")
     final_xi_ji: Optional[Dict[str, Any]] = Field(None, description="最终喜忌（综合调候）")
-    
+
+    # v2 新增字段
+    p_score: Optional[float] = Field(None, description="P 值原始浮点数", example=185.3)
+    score_breakdown: Optional[Dict[str, Any]] = Field(
+        None, description="各因子分值 {M, R, S, B, K}")
+    special_pattern: Optional[str] = Field(
+        None, description="特殊格局：从旺格/从弱格/化气格", example=None)
+
     class Config:
         json_schema_extra = {
             "example": {
-                "wangshuai": "身旺",
-                "wangshuai_degree": 65,
-                "total_score": 45,
+                "wangshuai": "身强",
+                "wangshuai_degree": 72,
+                "total_score": 185,
+                "p_score": 185.3,
                 "xi_shen": ["正财", "偏财"],
                 "ji_shen": ["比肩", "劫财"],
                 "xi_shen_elements": ["木", "火"],
-                "ji_shen_elements": ["水", "金"]
+                "ji_shen_elements": ["水", "金"],
+                "special_pattern": None,
             }
         }
 

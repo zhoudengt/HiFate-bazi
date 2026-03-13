@@ -364,7 +364,7 @@ class EnhancedRuleCondition:
                     if not solar_date or not solar_time:
                         return False
                     
-                    wangshuai_result = WangShuaiAnalyzer.analyze(solar_date, solar_time, gender)
+                    wangshuai_result = WangShuaiAnalyzer().analyze(solar_date, solar_time, gender)
                     wangshuai_status = wangshuai_result.get('wangshuai', '')
                     
                     if isinstance(value, list):

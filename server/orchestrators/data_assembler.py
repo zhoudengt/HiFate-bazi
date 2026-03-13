@@ -276,11 +276,11 @@ class BaziDataAssembler:
 
             wangshuai_detail = {
                 'wangshuai': wangshuai_data_inner.get('wangshuai', ''),
-                'total_score': wangshuai_data_inner.get('total_score', 0)
+                'total_score': wangshuai_data_inner.get('total_score', 0),
+                'p_score': wangshuai_data_inner.get('p_score'),
+                'score_breakdown': wangshuai_data_inner.get('score_breakdown'),
+                'special_pattern': wangshuai_data_inner.get('special_pattern'),
             }
-            for key in ['de_ling', 'de_di', 'de_zhu']:
-                if key in wangshuai_data_inner:
-                    wangshuai_detail[key] = wangshuai_data_inner.get(key)
 
             response_data = {
                 'solar_date': solar_date,

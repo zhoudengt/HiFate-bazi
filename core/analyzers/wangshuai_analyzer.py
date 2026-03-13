@@ -1,556 +1,681 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-命局旺衰分析器 - 核心计算逻辑
+命局旺衰分析器 - 五因子能量积分制（v2）
+
+公式：P = (M×0.35) + (R×0.40) + (S×0.25) + (B×0.10) - (K×0.30)
+
+5级判定：
+  P ≥ 220   → 从强（专旺）
+  160 ≤ P < 220 → 身强
+  80 ≤ P < 160  → 中和
+  30 ≤ P < 80   → 身弱
+  P < 30    → 从弱
 """
 
 import logging
-from typing import Dict, List, Any, Optional
-from core.data.wangshuai_config import WangShuaiConfigLoader
-from core.calculators.BaziCalculator import BaziCalculator
+from typing import Dict, List, Any, Optional, Set, Tuple
+
+from core.data.wangshuai_config import (
+    ROOT_SCORES, ROOT_TYPE, STRONG_ROOT_TYPES, MEDIUM_ROOT_TYPES, WEAK_ROOT_TYPES,
+    MONTH_STATUS_SCORES, SOLAR_TERM_COEFF_EARLY, SOLAR_TERM_COEFF_LATE,
+    S_TEN_GOD_SCORES, S_ROOT_COEFFICIENTS,
+    B_ROOT_SCORES, B_ROOT_COEFFICIENTS,
+    K_TEN_GOD_SCORES, K_GUANSHA_ROOT_COEFFICIENTS,
+    BRANCH_DESTRUCTION, LIUHE_HUA, STEM_WUHE_HUA,
+    WANGSHUAI_THRESHOLDS, XI_JI_MAPPING,
+    CONGWANG_MRS_MIN, CONGWANG_K_MAX, CONGRUO_K_MIN, CONGRUO_MRS_MAX,
+    SANHE_ELEMENT, SANHUI_ELEMENT, SANHE_BONUS,
+)
 from core.data.constants import HIDDEN_STEMS, STEM_ELEMENTS
+from core.data.relations import (
+    BRANCH_CHONG, BRANCH_XING, BRANCH_LIUHE,
+    BRANCH_SANHE_GROUPS, BRANCH_SANHUI_GROUPS,
+)
+from core.calculators.BaziCalculator import BaziCalculator
 
 logger = logging.getLogger(__name__)
 
+# 五行生克关系
+ELEMENT_PRODUCES = {'木': '火', '火': '土', '土': '金', '金': '水', '水': '木'}
+ELEMENT_CONTROLS = {'木': '土', '土': '水', '水': '火', '火': '金', '金': '木'}
+
+# 天干序列（用于阴阳判断）
+HEAVENLY_STEMS_ORDER = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']
+
+
+def _is_yang_stem(stem: str) -> bool:
+    """判断天干阴阳：甲丙戊庚壬为阳（偶数索引0,2,4,6,8）"""
+    idx = HEAVENLY_STEMS_ORDER.index(stem) if stem in HEAVENLY_STEMS_ORDER else -1
+    return idx % 2 == 0
+
+
+def _get_ten_god(day_stem: str, other_stem: str) -> Optional[str]:
+    """根据日干和另一天干求十神"""
+    if day_stem == other_stem:
+        return None
+    day_el = STEM_ELEMENTS.get(day_stem)
+    other_el = STEM_ELEMENTS.get(other_stem)
+    if not day_el or not other_el:
+        return None
+    same_pol = _is_yang_stem(day_stem) == _is_yang_stem(other_stem)
+    if day_el == other_el:
+        return '比肩' if same_pol else '劫财'
+    if ELEMENT_PRODUCES.get(day_el) == other_el:
+        return '食神' if same_pol else '伤官'
+    if ELEMENT_PRODUCES.get(other_el) == day_el:
+        return '偏印' if same_pol else '正印'
+    if ELEMENT_CONTROLS.get(day_el) == other_el:
+        return '偏财' if same_pol else '正财'
+    if ELEMENT_CONTROLS.get(other_el) == day_el:
+        return '七杀' if same_pol else '正官'
+    return None
+
 
 class WangShuaiAnalyzer:
-    """命局旺衰分析器"""
-    
-    # 五行生克关系
-    ELEMENT_RELATIONS = {
-        '木': {'produces': '火', 'controls': '土', 'produced_by': '水', 'controlled_by': '金'},
-        '火': {'produces': '土', 'controls': '金', 'produced_by': '木', 'controlled_by': '水'},
-        '土': {'produces': '金', 'controls': '水', 'produced_by': '火', 'controlled_by': '木'},
-        '金': {'produces': '水', 'controls': '木', 'produced_by': '土', 'controlled_by': '火'},
-        '水': {'produces': '木', 'controls': '火', 'produced_by': '金', 'controlled_by': '土'}
-    }
-    
-    def __init__(self, config_loader: Optional[WangShuaiConfigLoader] = None):
-        """
-        初始化分析器
-        
-        Args:
-            config_loader: 配置加载器，默认自动创建
-        """
-        if config_loader is None:
-            config_loader = WangShuaiConfigLoader()
-        self.config = config_loader.config
-        logger.info("✅ 旺衰分析器初始化完成")
-    
+    """命局旺衰分析器（五因子能量积分制 v2）"""
+
+    def __init__(self, config_loader=None):
+        # config_loader 参数保留以兼容旧调用，不再使用
+        logger.info("✅ 旺衰分析器初始化（五因子能量积分制 v2）")
+
+    # ═══════════════════════════════════════════════════════
+    #  主入口
+    # ═══════════════════════════════════════════════════════
+
     def analyze(self, solar_date: str, solar_time: str, gender: str) -> Dict[str, Any]:
         """
-        分析命局旺衰
-        
-        Args:
-            solar_date: 出生日期 '1987-01-07'
-            solar_time: 出生时间 '09:55'
-            gender: 性别 'male'/'female'
-        
-        Returns:
-            旺衰分析结果
+        分析命局旺衰，返回完整结果。
+
+        Returns dict with keys:
+          wangshuai, total_score, p_score, wangshuai_degree,
+          score_breakdown, special_pattern,
+          xi_shen, ji_shen, xi_shen_elements, ji_shen_elements,
+          xi_ji, xi_ji_elements, tiaohou, final_xi_ji, bazi_info
         """
-        logger.info(f"🔍 开始分析旺衰 - 日期: {solar_date}, 时间: {solar_time}, 性别: {gender}")
-        
-        # 1. 计算八字
-        logger.info("📊 步骤1: 计算八字基础信息")
-        bazi = self._calculate_bazi(solar_date, solar_time, gender)
-        logger.info(f"   日干: {bazi['day_stem']}, 月支: {bazi['month_branch']}")
-        logger.info(f"   年柱: {bazi['year_stem']}{bazi['year_branch']}, "
-                   f"月柱: {bazi['month_stem']}{bazi['month_branch']}, "
-                   f"日柱: {bazi['day_stem']}{bazi['day_branch']}, "
-                   f"时柱: {bazi['hour_stem']}{bazi['hour_branch']}")
-        
-        # 2. 计算得令分（45分或-45分）
-        logger.info("📊 步骤2: 计算得令分（月支权重）")
-        de_ling_score = self._calculate_de_ling(bazi)
-        logger.info(f"   得令分: {de_ling_score} 分")
-        
-        # 3. 计算得地分（年日时三柱）
-        logger.info("📊 步骤3: 计算得地分（年日时支）")
-        de_di_score = self._calculate_de_di(bazi)
-        logger.info(f"   得地分: {de_di_score} 分")
-        
-        # 4. 计算得势分（10分或0分）✅ 修正为10分
-        logger.info("📊 步骤4: 计算得势分（天干生扶）")
-        de_shi_score = self._calculate_de_shi(bazi)
-        logger.info(f"   得势分: {de_shi_score} 分")
-        
-        # 5. 计算总分并判定旺衰
-        logger.info("📊 步骤5: 计算总分并判定旺衰")
-        total_score = de_ling_score + de_di_score + de_shi_score
-        logger.info(f"   总分: {total_score} = {de_ling_score} + {de_di_score} + {de_shi_score}")
-        wangshuai = self._determine_wangshuai(total_score)
-        logger.info(f"   旺衰判定: {wangshuai}")
-        
-        # 6. 判定喜忌
-        logger.info("📊 步骤6: 判定喜忌")
+        logger.info(f"🔍 旺衰分析 v2 - {solar_date} {solar_time} {gender}")
+
+        # ─── Step 1: 八字 ───────────────────────────────────
+        bazi, calc_result = self._calculate_bazi_full(solar_date, solar_time, gender)
+        day_stem = bazi['day_stem']
+        day_element = STEM_ELEMENTS[day_stem]
+
+        # ─── Step 2: 节气深浅 ──────────────────────────────
+        solar_term_days = self._get_solar_term_days(solar_date, solar_time)
+
+        # ─── Step 3: 地支关系（冲刑合） ──────────────────
+        branch_rels = self._get_branch_relationships(bazi)
+
+        # ─── Step 4: 化气格检测（最优先）────────────────
+        hua_qi = self._detect_hua_qi_ge(bazi, branch_rels)
+        special_pattern = '化气格' if hua_qi else None
+        effective_element = hua_qi if hua_qi else day_element
+
+        # ─── Step 5: 各因子原始值 ─────────────────────────
+        M = self._calculate_M(bazi, effective_element, solar_term_days)
+        R = self._calculate_R(bazi, effective_element, branch_rels)
+        S = self._calculate_S(bazi, effective_element, branch_rels)
+        B = self._calculate_B(bazi, effective_element, branch_rels)
+        K = self._calculate_K(bazi, effective_element, branch_rels)
+
+        # ─── Step 6: 动态修正 ──────────────────────────────
+        K = self._apply_tongguan(bazi, effective_element, K)
+        P_raw = (M * 0.35) + (R * 0.40) + (S * 0.25) + (B * 0.10) - (K * 0.30)
+        P = self._apply_riganhe(bazi, effective_element, P_raw)
+
+        # ─── Step 7: 从旺/从弱格检测 ──────────────────────
+        if not special_pattern:
+            special_pattern = self._detect_special_patterns(M, R, S, K)
+
+        # ─── Step 8: 5级旺衰判定 ──────────────────────────
+        if special_pattern == '从旺格':
+            wangshuai = '从强'
+        elif special_pattern == '从弱格':
+            wangshuai = '从弱'
+        else:
+            wangshuai = self._determine_wangshuai_v2(P)
+
+        total_score = int(round(P))
+        wangshuai_degree = self._calculate_wangshuai_degree_v2(P, wangshuai)
+
+        logger.info(f"   M={M:.1f} R={R:.1f} S={S:.1f} B={B:.1f} K={K:.1f} P={P:.1f} → {wangshuai}")
+
+        # ─── Step 9: 喜忌 ──────────────────────────────────
         xi_ji = self._determine_xi_ji(wangshuai)
-        logger.info(f"   喜神: {xi_ji['xi_shen']}")
-        logger.info(f"   忌神: {xi_ji['ji_shen']}")
-        
-        # 7. 计算喜忌五行
-        logger.info("📊 步骤7: 计算喜忌五行")
-        xi_ji_elements = self._calculate_xi_ji_elements(xi_ji, bazi)
-        logger.info(f"   喜神五行: {xi_ji_elements['xi_shen']}")
-        logger.info(f"   忌神五行: {xi_ji_elements['ji_shen']}")
-        
-        # 8. 计算调候信息
-        logger.info("📊 步骤8: 计算调候信息")
+        xi_ji_elements = self._calculate_xi_ji_elements(xi_ji, day_stem, effective_element)
+
+        # ─── Step 10: 调候 ─────────────────────────────────
         tiaohou_info = self.calculate_tiaohou(bazi['month_branch'])
-        logger.info(f"   调候五行: {tiaohou_info.get('tiaohou_element')}, "
-                   f"季节: {tiaohou_info.get('season')}")
-        
-        # 9. 综合判断调候与喜忌（使用TiaohouXijiAnalyzer）
-        logger.info("📊 步骤9: 综合判断调候与喜忌")
+
+        # ─── Step 11: 综合调候喜忌 ────────────────────────
         from core.analyzers.tiaohou_xiji_analyzer import TiaohouXijiAnalyzer
-        
-        # 准备旺衰结果
-        wangshuai_result = {
+        ws_for_tiaohou = {
             'wangshuai': wangshuai,
             'xi_ji': xi_ji,
-            'xi_ji_elements': xi_ji_elements
+            'xi_ji_elements': xi_ji_elements,
         }
-        
-        # 准备八字五行信息（从calculator获取）
-        calculator = BaziCalculator(solar_date, solar_time, gender)
-        full_result = calculator.calculate()
-        bazi_elements = {
-            'element_counts': full_result.get('element_counts', {})
-        }
-        
-        # 综合判断
+        bazi_elements = {'element_counts': calc_result.get('element_counts', {})}
         final_xi_ji = TiaohouXijiAnalyzer.determine_final_xi_ji(
-            wangshuai_result, tiaohou_info, bazi_elements
+            ws_for_tiaohou, tiaohou_info, bazi_elements
         )
-        
-        logger.info(f"   最终喜神: {final_xi_ji.get('final_xi_shen')}")
-        logger.info(f"   第一喜神: {final_xi_ji.get('first_xi_shen')}")
-        logger.info(f"   调候优先级: {final_xi_ji.get('tiaohou_priority')}")
-        
-        # 计算旺衰程度量化评分（0-100分）
-        wangshuai_degree = self._calculate_wangshuai_degree(total_score, wangshuai)
-        
-        result = {
+
+        return {
+            # ── 核心字段（LLM 和前端均使用）──
             'wangshuai': wangshuai,
-            'total_score': total_score,
-            'wangshuai_degree': wangshuai_degree,  # 新增：旺衰程度量化（0-100）
-            'scores': {
-                'de_ling': de_ling_score,
-                'de_di': de_di_score,
-                'de_shi': de_shi_score
+            'total_score': total_score,          # 兼容旧接口：int(P)
+            'wangshuai_degree': wangshuai_degree,
+            # ── 新增字段 ──
+            'p_score': round(P, 2),
+            'score_breakdown': {
+                'M': round(M, 2),
+                'R': round(R, 2),
+                'S': round(S, 2),
+                'B': round(B, 2),
+                'K': round(K, 2),
             },
-            # 保留原始喜忌（向后兼容）
+            'special_pattern': special_pattern,
+            # ── 喜忌（LLM 关键字段，key 名称不能改）──
             'xi_shen': xi_ji['xi_shen'],
             'ji_shen': xi_ji['ji_shen'],
             'xi_shen_elements': xi_ji_elements['xi_shen'],
             'ji_shen_elements': xi_ji_elements['ji_shen'],
-            # 新增调候信息
+            'xi_ji': xi_ji,
+            'xi_ji_elements': xi_ji_elements,    # Bug fix: fortune_context & annual_report 需要此 key
             'tiaohou': tiaohou_info,
-            # 新增最终喜忌（综合调候）
-            'final_xi_ji': final_xi_ji,
-            'xi_ji': xi_ji,  # 原始喜忌（仅基于旺衰）
+            'final_xi_ji': final_xi_ji,          # xishen_jishen 接口优先读取此字段
             'bazi_info': {
-                'day_stem': bazi['day_stem'],
-                'month_branch': bazi['month_branch']
-            }
+                'day_stem': day_stem,
+                'month_branch': bazi['month_branch'],
+            },
         }
-        
-        logger.info("✅ 旺衰分析完成（含调候综合判断）")
-        return result
-    
-    def _calculate_bazi(self, solar_date: str, solar_time: str, gender: str) -> Dict:
-        """计算八字基础信息"""
+
+    # ═══════════════════════════════════════════════════════
+    #  八字计算
+    # ═══════════════════════════════════════════════════════
+
+    def _calculate_bazi_full(self, solar_date: str, solar_time: str, gender: str):
+        """返回 (bazi_dict, full_calc_result)"""
+        calculator = BaziCalculator(solar_date, solar_time, gender)
+        result = calculator.calculate()
+        if not result or 'bazi_pillars' not in result:
+            raise ValueError("八字计算结果为空")
+        p = result['bazi_pillars']
+        bazi = {
+            'year_stem': p['year']['stem'],   'year_branch': p['year']['branch'],
+            'month_stem': p['month']['stem'], 'month_branch': p['month']['branch'],
+            'day_stem': p['day']['stem'],     'day_branch': p['day']['branch'],
+            'hour_stem': p['hour']['stem'],   'hour_branch': p['hour']['branch'],
+        }
+        return bazi, result
+
+    # ═══════════════════════════════════════════════════════
+    #  节气深浅（入节天数）
+    # ═══════════════════════════════════════════════════════
+
+    def _get_solar_term_days(self, solar_date: str, solar_time: str) -> float:
+        """获取距上一节气的天数（节气深浅）"""
         try:
-            calculator = BaziCalculator(solar_date, solar_time, gender)
-            result = calculator.calculate()
-            
-            if not result or 'bazi_pillars' not in result:
-                raise ValueError("八字计算结果为空")
-            
-            pillars = result['bazi_pillars']
-            return {
-                'year_stem': pillars['year']['stem'],
-                'year_branch': pillars['year']['branch'],
-                'month_stem': pillars['month']['stem'],
-                'month_branch': pillars['month']['branch'],
-                'day_stem': pillars['day']['stem'],
-                'day_branch': pillars['day']['branch'],
-                'hour_stem': pillars['hour']['stem'],
-                'hour_branch': pillars['hour']['branch']
-            }
+            from lunar_python import Solar
+            parts = solar_date.split('-')
+            time_parts = (solar_time or '00:00').split(':')
+            solar = Solar.fromYmdHms(
+                int(parts[0]), int(parts[1]), int(parts[2]),
+                int(time_parts[0]), int(time_parts[1]), 0
+            )
+            lunar = solar.getLunar()
+            prev_jie = lunar.getPrevJie()
+            if prev_jie:
+                prev_solar = prev_jie.getSolar()
+                # 计算时间差（天）
+                from datetime import datetime
+                birth_dt = datetime(int(parts[0]), int(parts[1]), int(parts[2]),
+                                    int(time_parts[0]), int(time_parts[1]))
+                term_dt = datetime(prev_solar.getYear(), prev_solar.getMonth(),
+                                   prev_solar.getDay(), prev_solar.getHour(),
+                                   prev_solar.getMinute())
+                delta = birth_dt - term_dt
+                return max(0.0, delta.total_seconds() / 86400.0)
         except Exception as e:
-            logger.error(f"计算八字失败: {e}", exc_info=True)
-            raise
-    
-    def _calculate_de_ling(self, bazi: Dict) -> int:
+            logger.debug(f"节气计算失败，使用默认值: {e}")
+        return 15.0  # 默认月中，取中气系数
+
+    def _get_solar_term_coeff(self, days: float) -> int:
+        """根据入节天数返回节气系数"""
+        if days < 7:
+            return SOLAR_TERM_COEFF_EARLY   # 初气 +10
+        return SOLAR_TERM_COEFF_LATE        # 中气 +20
+
+    # ═══════════════════════════════════════════════════════
+    #  地支关系检测
+    # ═══════════════════════════════════════════════════════
+
+    def _get_branch_relationships(self, bazi: Dict) -> Dict:
+        """检测四柱地支间的冲、刑、六合关系"""
+        branches = [bazi['year_branch'], bazi['month_branch'],
+                    bazi['day_branch'], bazi['hour_branch']]
+        chong_set: Set[str] = set()
+        xing_set: Set[str] = set()
+        he_pairs: Dict[str, Tuple[str, str]] = {}  # {branch: (partner, hua_element)}
+
+        for i in range(len(branches)):
+            for j in range(i + 1, len(branches)):
+                b1, b2 = branches[i], branches[j]
+                # 六冲
+                if BRANCH_CHONG.get(b1) == b2:
+                    chong_set.add(b1)
+                    chong_set.add(b2)
+                # 六刑
+                if b2 in BRANCH_XING.get(b1, []):
+                    xing_set.add(b1)
+                    xing_set.add(b2)
+                # 六合
+                key = frozenset({b1, b2})
+                if key in LIUHE_HUA:
+                    hua = LIUHE_HUA[key]
+                    if b1 not in he_pairs:
+                        he_pairs[b1] = (b2, hua)
+                    if b2 not in he_pairs:
+                        he_pairs[b2] = (b1, hua)
+
+        return {'chong': chong_set, 'xing': xing_set, 'he_pairs': he_pairs,
+                'branches': branches}
+
+    def _get_branch_factor(self, branch: str, day_element: str,
+                           branch_rels: Dict) -> float:
+        """计算单个地支的破坏系数（冲/刑/合化叠加）"""
+        factor = 1.0
+        # 被冲优先（同时被冲和合，冲优先）
+        if branch in branch_rels['chong']:
+            factor *= BRANCH_DESTRUCTION['被冲']
+            return factor  # 被冲后不再叠加其他
+        # 被刑
+        if branch in branch_rels['xing']:
+            factor *= BRANCH_DESTRUCTION['被刑']
+        # 被合化
+        if branch in branch_rels['he_pairs']:
+            _, hua = branch_rels['he_pairs'][branch]
+            if hua == day_element or ELEMENT_PRODUCES.get(hua) == day_element:
+                factor *= BRANCH_DESTRUCTION['被合化帮身']
+            else:
+                factor *= BRANCH_DESTRUCTION['被合化他物']
+        return factor
+
+    # ═══════════════════════════════════════════════════════
+    #  化气格检测
+    # ═══════════════════════════════════════════════════════
+
+    def _detect_hua_qi_ge(self, bazi: Dict, branch_rels: Dict) -> Optional[str]:
         """
-        计算得令分（45分或-45分）
-        
-        根据日干查询对应的月支：
-        - 若满足条件（得令）：+45分
-        - 若不满足条件（失令）：-45分
-        """
-        day_stem = bazi['day_stem']  # 日干：丙
-        month_branch = bazi['month_branch']  # 月支
-        
-        logger.info(f"   检查得令: 日干={day_stem}, 月支={month_branch}")
-        
-        # 从配置表查询日干对应的得令月支列表
-        month_config = self.config.get('month_branch', [])
-        de_ling_branches = []
-        
-        for row in month_config:
-            if row.get('日干') == day_stem:
-                # 获取该日干对应的得令月支列表
-                de_ling_branches = [
-                    row.get('月支1'),
-                    row.get('月支2'),
-                    row.get('月支3'),
-                    row.get('月支4')
-                ]
-                de_ling_branches = [b for b in de_ling_branches if b]  # 去除空值
-                logger.info(f"   日干{day_stem}的得令月支: {de_ling_branches}")
-                break
-        
-        if not de_ling_branches:
-            logger.warning(f"   未找到日干{day_stem}的得令配置，默认失令=-45分")
-            return -45
-        
-        if month_branch in de_ling_branches:
-            logger.info(f"   ✅ 月支{month_branch}在得令列表中，得令=+45分")
-            return 45
-        else:
-            logger.info(f"   ❌ 月支{month_branch}不在得令列表中，失令=-45分")
-            return -45
-    
-    def _calculate_de_di(self, bazi: Dict) -> int:
-        """
-        计算得地分（年日时三柱）
-        
-        根据日干确定生得地五行和同得地五行
-        检查年日时三柱的藏干，按顺序匹配计分
+        化气格：日主与月干或时干逢五合，且合化五行在月令当令。
+        返回合化元素（如 '土'），否则 None。
         """
         day_stem = bazi['day_stem']
-        day_element = STEM_ELEMENTS.get(day_stem)
-        
-        logger.info(f"   检查得地: 日干={day_stem}, 日干五行={day_element}")
-        
-        # 从配置表获取生得地和同得地五行
-        de_di_config = self.config.get('de_di', [])
-        sheng_de_di = None
-        tong_de_di = None
-        
-        for row in de_di_config:
-            if row.get('日干') == day_stem:
-                sheng_de_di = row.get('生得地五行')  # 木
-                tong_de_di = row.get('同得地五行')   # 火
-                break
-        
-        if not sheng_de_di or not tong_de_di:
-            logger.warning(f"   未找到日干{day_stem}的得地配置")
-            return 0
-        
-        logger.info(f"   生得地五行: {sheng_de_di}, 同得地五行: {tong_de_di}")
-        target_elements = [sheng_de_di, tong_de_di]
-        
-        total_score = 0
-        
-        # 检查年、日、时三柱
-        for pillar_name in ['year', 'day', 'hour']:
-            branch = bazi[f'{pillar_name}_branch']
-            hidden_stems = HIDDEN_STEMS.get(branch, [])
-            
-            logger.info(f"   {pillar_name}柱: {branch}, 藏干: {hidden_stems}")
-            
-            # 根据藏干数量匹配计分规则
-            hidden_count = len(hidden_stems)
-            score_rule = self._get_hidden_score_rule(hidden_count)
-            
-            if not score_rule:
-                logger.warning(f"   未找到{hidden_count}个藏干的计分规则")
+        month_element = STEM_ELEMENTS.get(
+            self._get_branch_main_element_stem(bazi['month_branch']), '')
+        for other_stem_key in ('month_stem', 'hour_stem'):
+            other_stem = bazi[other_stem_key]
+            key = frozenset({day_stem, other_stem})
+            if key in STEM_WUHE_HUA:
+                hua_el = STEM_WUHE_HUA[key]
+                # 合化五行须在月令当令（月令主元素 == 合化元素）
+                if hua_el == STEM_ELEMENTS.get(self._branch_main_stem(bazi['month_branch'])):
+                    logger.info(f"   🔮 化气格：{day_stem}+{other_stem} 化{hua_el}")
+                    return hua_el
+        return None
+
+    def _branch_main_stem(self, branch: str) -> str:
+        """取地支的主气天干（第一个藏干）"""
+        hidden = HIDDEN_STEMS.get(branch, [])
+        return hidden[0][0] if hidden else ''
+
+    def _get_branch_main_element_stem(self, branch: str) -> str:
+        """取地支主气天干字符"""
+        return self._branch_main_stem(branch)
+
+    # ═══════════════════════════════════════════════════════
+    #  M 因子：月令能量
+    # ═══════════════════════════════════════════════════════
+
+    def _calculate_M(self, bazi: Dict, day_element: str,
+                     solar_term_days: float) -> float:
+        """
+        月令能量：当令(100+系数) / 得生(60+系数) / 耗气(20) / 被克(0)
+        """
+        month_branch = bazi['month_branch']
+        month_main_stem = self._branch_main_stem(month_branch)
+        month_element = STEM_ELEMENTS.get(month_main_stem, '')
+
+        # 处理土月：辰戌丑未主气为土
+        from core.data.constants import BRANCH_ELEMENTS
+        month_element = BRANCH_ELEMENTS.get(month_branch, month_element)
+
+        coeff = self._get_solar_term_coeff(solar_term_days)
+
+        if month_element == day_element:
+            score = MONTH_STATUS_SCORES['当令'] + coeff
+            logger.info(f"   M: 当令({month_branch}/{month_element}) = {score}")
+        elif ELEMENT_PRODUCES.get(month_element) == day_element:
+            score = MONTH_STATUS_SCORES['得生'] + coeff
+            logger.info(f"   M: 得生({month_branch}/{month_element}生{day_element}) = {score}")
+        elif ELEMENT_PRODUCES.get(day_element) == month_element:
+            score = MONTH_STATUS_SCORES['耗气']
+            logger.info(f"   M: 耗气({day_element}生{month_branch}/{month_element}) = {score}")
+        else:
+            score = MONTH_STATUS_SCORES['被克']
+            logger.info(f"   M: 被克/反克({month_branch}/{month_element}↔{day_element}) = {score}")
+
+        return float(score)
+
+    # ═══════════════════════════════════════════════════════
+    #  R 因子：地支通根能量
+    # ═══════════════════════════════════════════════════════
+
+    def _calculate_R(self, bazi: Dict, day_element: str, branch_rels: Dict) -> float:
+        """
+        地支通根能量：扫描四柱地支，累加通根分值并应用破坏系数。
+        最后检查三合/三会局加成。
+        """
+        element_roots = ROOT_SCORES.get(day_element, {})
+        branches = branch_rels['branches']
+        total_r = 0.0
+
+        for branch in branches:
+            base = element_roots.get(branch, 0)
+            if base == 0:
                 continue
-            
-            # 按顺序匹配藏干
-            pillar_score = 0
-            for idx, hidden_stem_info in enumerate(hidden_stems):
-                # 提取天干和五行
-                stem_char = hidden_stem_info[0]  # 天干字符
-                stem_element = STEM_ELEMENTS.get(stem_char)
-                
-                if not stem_element:
-                    logger.warning(f"   未找到天干{stem_char}的五行")
+            factor = self._get_branch_factor(branch, day_element, branch_rels)
+            score = base * factor
+            root_type = ROOT_TYPE.get(day_element, {}).get(branch, '?')
+            logger.info(f"   R: {branch}({root_type}) base={base} ×{factor:.2f} = {score:.1f}")
+            total_r += score
+
+        # 三合/三会加成：若四柱地支构成完整三合/三会且该局五行帮扶日主
+        bonus = self._calculate_sanhe_bonus(branches, day_element)
+        if bonus > 0:
+            logger.info(f"   R: 三合/三会加成 +{bonus}")
+            total_r += bonus
+
+        logger.info(f"   R总计: {total_r:.1f}")
+        return total_r
+
+    def _calculate_sanhe_bonus(self, branches: List[str], day_element: str) -> float:
+        """检测三合/三会局，若形成印比之局则加成"""
+        branch_set = set(branches)
+        bonus = 0.0
+        # 三合
+        for group_tuple in BRANCH_SANHE_GROUPS:
+            group = set(group_tuple)
+            el = SANHE_ELEMENT.get(frozenset(group))
+            if group.issubset(branch_set) and el and (
+                    el == day_element or ELEMENT_PRODUCES.get(el) == day_element):
+                bonus += SANHE_BONUS
+                logger.info(f"   R: {''.join(group_tuple)} 三合{el}局 加成 +{SANHE_BONUS}")
+        # 三会
+        for group_tuple in BRANCH_SANHUI_GROUPS:
+            group = set(group_tuple)
+            el = SANHUI_ELEMENT.get(frozenset(group))
+            if el and group.issubset(branch_set) and (
+                    el == day_element or ELEMENT_PRODUCES.get(el) == day_element):
+                bonus += SANHE_BONUS
+                logger.info(f"   R: {''.join(group_tuple)} 三会{el}局 加成 +{SANHE_BONUS}")
+        return bonus
+
+    # ═══════════════════════════════════════════════════════
+    #  S 因子：天干生助能量
+    # ═══════════════════════════════════════════════════════
+
+    def _calculate_S(self, bazi: Dict, day_element: str, branch_rels: Dict) -> float:
+        """
+        天干生助能量：年干/月干/时干中的比劫(50)和印星(40)，乘以真假系数。
+        """
+        stems = [bazi['year_stem'], bazi['month_stem'], bazi['hour_stem']]
+        branches = branch_rels['branches']
+        day_stem = bazi['day_stem']
+        total_s = 0.0
+
+        for stem in stems:
+            tg = _get_ten_god(day_stem, stem)
+            if tg not in S_TEN_GOD_SCORES:
+                continue
+            base = S_TEN_GOD_SCORES[tg]
+            stem_el = STEM_ELEMENTS.get(stem, '')
+            root_type = self._get_stem_root_kind(stem_el, branches, branch_rels, day_element)
+            coeff = S_ROOT_COEFFICIENTS[root_type]
+            score = base * coeff
+            logger.info(f"   S: {stem}({tg}) base={base} ×{coeff} ({root_type}) = {score:.1f}")
+            total_s += score
+
+        logger.info(f"   S总计: {total_s:.1f}")
+        return total_s
+
+    def _get_stem_root_kind(self, stem_el: str, branches: List[str],
+                            branch_rels: Dict, day_element: str) -> str:
+        """判断天干的通根状况：真通根/半真根/虚浮无根"""
+        el_roots = ROOT_SCORES.get(stem_el, {})
+        for branch in branches:
+            if branch in el_roots:
+                root_tp = ROOT_TYPE.get(stem_el, {}).get(branch, '')
+                # 被冲的根不计
+                if branch in branch_rels['chong']:
                     continue
-                
-                position = idx + 1
-                if stem_element in target_elements:
-                    # 匹配到生得地或同得地
-                    key = f'第{position}个匹配'
-                    score = score_rule.get(key, 0)
-                    pillar_score += score
-                    logger.info(f"     第{position}个藏干{stem_char}({stem_element})匹配，得分: {score}")
-                else:
-                    # 未匹配
-                    key = f'第{position}个不匹配'
-                    score = score_rule.get(key, 0)
-                    pillar_score += score
-                    logger.info(f"     第{position}个藏干{stem_char}({stem_element})不匹配，得分: {score}")
-            
-            logger.info(f"   {pillar_name}柱得分: {pillar_score}")
-            total_score += pillar_score
-        
-        logger.info(f"   得地总分: {total_score}")
-        return total_score
-    
-    def _get_hidden_score_rule(self, hidden_count: int) -> Dict:
-        """根据藏干数量获取计分规则"""
-        hidden_config = self.config.get('hidden_scores', [])
-        
-        for row in hidden_config:
-            if row.get('藏干数量') == hidden_count:
-                # 返回该行的计分规则
-                rule = {}
-                for key, value in row.items():
-                    if key != '藏干数量' and value:
-                        rule[key] = value
-                logger.info(f"   找到{hidden_count}个藏干的计分规则: {rule}")
-                return rule
-        
-        return {}
-    
-    def _calculate_de_shi(self, bazi: Dict) -> int:
+                if root_tp in STRONG_ROOT_TYPES | MEDIUM_ROOT_TYPES:
+                    return '真通根'
+                if root_tp in WEAK_ROOT_TYPES:
+                    return '半真根'
+        return '虚浮无根'
+
+    # ═══════════════════════════════════════════════════════
+    #  B 因子：印星根基能量
+    # ═══════════════════════════════════════════════════════
+
+    def _calculate_B(self, bazi: Dict, day_element: str, branch_rels: Dict) -> float:
         """
-        计算得势分（10分或0分）✅ 修正为10分
-        
-        检查年干、月干、时干
-        若存在生扶日干的天干，记10分
+        印星根基能量：对每个印星天干，检查其在地支的根气强度。
+        """
+        stems = [bazi['year_stem'], bazi['month_stem'], bazi['hour_stem']]
+        branches = branch_rels['branches']
+        day_stem = bazi['day_stem']
+        total_b = 0.0
+
+        for stem in stems:
+            tg = _get_ten_god(day_stem, stem)
+            if tg not in ('偏印', '正印'):
+                continue
+            stem_el = STEM_ELEMENTS.get(stem, '')
+            el_roots = ROOT_SCORES.get(stem_el, {})
+            for branch in branches:
+                if branch not in el_roots:
+                    continue
+                if branch in branch_rels['chong']:
+                    continue  # 被冲的根不计
+                root_tp = ROOT_TYPE.get(stem_el, {}).get(branch, '')
+                base = B_ROOT_SCORES.get(root_tp, 0)
+                if base == 0:
+                    continue
+                # 权重系数
+                if root_tp in STRONG_ROOT_TYPES | MEDIUM_ROOT_TYPES:
+                    coeff = B_ROOT_COEFFICIENTS['真通根']
+                elif root_tp in WEAK_ROOT_TYPES:
+                    coeff = B_ROOT_COEFFICIENTS['墓库根']
+                else:
+                    coeff = B_ROOT_COEFFICIENTS['半真根']
+                # 破坏系数
+                factor = self._get_branch_factor(branch, stem_el, branch_rels)
+                score = base * coeff * factor
+                logger.info(f"   B: {stem}({tg})根于{branch}({root_tp}) "
+                            f"base={base} ×{coeff} ×{factor:.2f} = {score:.1f}")
+                total_b += score
+                break  # 每个印星只计最强的一个根
+
+        logger.info(f"   B总计: {total_b:.1f}")
+        return total_b
+
+    # ═══════════════════════════════════════════════════════
+    #  K 因子：克泄耗能量
+    # ═══════════════════════════════════════════════════════
+
+    def _calculate_K(self, bazi: Dict, day_element: str, branch_rels: Dict) -> float:
+        """
+        克泄耗能量：七杀(120)/正官(60)/食伤(40)/财星(50)
+        官杀根据根气强弱附加系数（1.3 / 1.0 / 0.5）
+        """
+        stems = [bazi['year_stem'], bazi['month_stem'], bazi['hour_stem']]
+        branches = branch_rels['branches']
+        day_stem = bazi['day_stem']
+        total_k = 0.0
+
+        for stem in stems:
+            tg = _get_ten_god(day_stem, stem)
+            if tg not in K_TEN_GOD_SCORES:
+                continue
+            base = K_TEN_GOD_SCORES[tg]
+            if tg in ('七杀', '正官'):
+                stem_el = STEM_ELEMENTS.get(stem, '')
+                root_kind = self._get_stem_root_kind(stem_el, branches, branch_rels, day_element)
+                coeff = K_GUANSHA_ROOT_COEFFICIENTS[root_kind]
+            else:
+                coeff = 1.0
+            score = base * coeff
+            logger.info(f"   K: {stem}({tg}) base={base} ×{coeff:.2f} = {score:.1f}")
+            total_k += score
+
+        logger.info(f"   K总计: {total_k:.1f}")
+        return total_k
+
+    # ═══════════════════════════════════════════════════════
+    #  动态修正
+    # ═══════════════════════════════════════════════════════
+
+    def _apply_tongguan(self, bazi: Dict, day_element: str, K: float) -> float:
+        """
+        通关减克：若有印星介于日主与官杀之间（官杀→印→日主连续相生），
+        官杀克力减半。
         """
         day_stem = bazi['day_stem']
-        day_element = STEM_ELEMENTS.get(day_stem)
-        
-        logger.info(f"   检查得势: 日干={day_stem}, 日干五行={day_element}")
-        
-        # 检查年干、月干、时干
-        for stem_name in ['year_stem', 'month_stem', 'hour_stem']:
-            stem = bazi[stem_name]
-            stem_element = STEM_ELEMENTS.get(stem)
-            
-            if not stem_element:
-                continue
-            
-            logger.info(f"   检查{stem_name}: {stem}({stem_element})")
-            
-            # 判断是否生扶日干
-            # 1. 同五行（如日干丙，出现丙或丁）
-            if stem_element == day_element:
-                logger.info(f"   ✅ {stem_name}{stem}与日干{day_stem}同五行，得势=10分")
-                return 10  # ✅ 修正为10分
-            
-            # 2. 生我者（如日干丙属火，出现甲或乙属木）
-            if self._is_sheng_wo(day_element, stem_element):
-                logger.info(f"   ✅ {stem_name}{stem}({stem_element})生日干{day_stem}({day_element})，得势=10分")
-                return 10  # ✅ 修正为10分
-        
-        logger.info(f"   ❌ 未找到生扶日干的天干，得势=0分")
-        return 0
-    
-    def _is_sheng_wo(self, day_element: str, stem_element: str) -> bool:
-        """判断是否生我者"""
-        relations = self.ELEMENT_RELATIONS.get(day_element, {})
-        return relations.get('produced_by') == stem_element
-    
-    def _determine_wangshuai(self, total_score: int) -> str:
+        stems = [bazi['year_stem'], bazi['month_stem'], bazi['hour_stem']]
+        has_guansha = any(_get_ten_god(day_stem, s) in ('七杀', '正官') for s in stems)
+        has_yin = any(_get_ten_god(day_stem, s) in ('偏印', '正印') for s in stems)
+        if has_guansha and has_yin:
+            logger.info(f"   通关减克：官杀克力减半 K: {K:.1f} → {K * 0.5:.1f}")
+            return K * 0.5
+        return K
+
+    def _apply_riganhe(self, bazi: Dict, day_element: str, P: float) -> float:
         """
-        判定旺衰（使用固定阈值，数学比较）
-        
-        阈值规则（3级制）：
-        - 总分 > 10分       → 身旺
-        - -10 <= 总分 <= 10 → 平衡
-        - 总分 < -10分      → 身弱
+        日主合绊修正：
+        - 日主被合化（化气格已单独处理，此处不重复）：P × 0 → 已在检测时处理
+        - 日主被合绊（形成合但不化）：P × 0.70
         """
-        logger.info(f"   根据总分{total_score}判定旺衰（数学比较）")
-        
-        # 按优先级判定（数学比较，不是绝对值）
-        if total_score > 10:
-            wangshuai = '身旺'
-            logger.info(f"   ✅ 总分{total_score} > 10，判定为: {wangshuai}")
-        elif -10 <= total_score <= 10:
-            wangshuai = '平衡'
-            logger.info(f"   ✅ -10 <= 总分{total_score} <= 10，判定为: {wangshuai}")
-        else:  # total_score < -10
-            wangshuai = '身弱'
-            logger.info(f"   ✅ 总分{total_score} < -10，判定为: {wangshuai}")
-        
-        return wangshuai
-    
-    def _determine_xi_ji(self, wangshuai: str) -> Dict[str, List[str]]:
-        """判定喜忌"""
-        xi_ji_config = self.config.get('xi_ji', [])
-        
-        for row in xi_ji_config:
-            if row.get('旺衰状态') == wangshuai:
-                xi_shen_str = row.get('喜神', '')
-                ji_shen_str = row.get('忌神', '')
-                
-                xi_shen = xi_shen_str.split(',') if isinstance(xi_shen_str, str) else (xi_shen_str or [])
-                ji_shen = ji_shen_str.split(',') if isinstance(ji_shen_str, str) else (ji_shen_str or [])
-                
-                # 去除空值
-                xi_shen = [x.strip() for x in xi_shen if x.strip()]
-                ji_shen = [j.strip() for j in ji_shen if j.strip()]
-                
-                return {
-                    'xi_shen': xi_shen,
-                    'ji_shen': ji_shen
-                }
-        
-        return {'xi_shen': [], 'ji_shen': []}
-    
-    def _calculate_xi_ji_elements(self, xi_ji: Dict, bazi: Dict) -> Dict[str, List[str]]:
-        """
-        计算喜忌五行（根据表格规则）
-        
-        规则：
-        - 扶（比肩、劫财）→ 日干五行（同我）
-        - 泄（食神、伤官）→ 日干所生的五行（我生）
-        - 耗（偏财、正财）→ 日干所克的五行（我克）
-        - 克（七杀、正官）→ 克日干的五行（克我）
-        - 生（偏印、正印）→ 生日干的五行（生我）
-        """
-        day_stem = bazi['day_stem']  # 日干：丙
-        day_element = STEM_ELEMENTS.get(day_stem)  # 日干五行：火
-        
-        if not day_element:
-            logger.warning(f"未找到日干{day_stem}的五行")
-            return {'xi_shen': [], 'ji_shen': []}
-        
-        # 获取五行生克关系
-        relations = self.ELEMENT_RELATIONS.get(day_element, {})
-        
-        # 十神到五行映射规则（根据表格）
-        ten_god_element_map = {
-            # 扶（同我）
-            '比肩': day_element,  # 日干五行
-            '劫财': day_element,  # 日干五行
-            
-            # 泄（我生）
-            '食神': relations.get('produces'),  # 日干所生的五行
-            '伤官': relations.get('produces'),  # 日干所生的五行
-            
-            # 耗（我克）
-            '偏财': relations.get('controls'),  # 日干所克的五行
-            '正财': relations.get('controls'),  # 日干所克的五行
-            
-            # 克（克我）
-            '七杀': relations.get('controlled_by'),  # 克日干的五行
-            '正官': relations.get('controlled_by'),  # 克日干的五行
-            
-            # 生（生我）
-            '偏印': relations.get('produced_by'),  # 生日干的五行
-            '正印': relations.get('produced_by')   # 生日干的五行
-        }
-        
-        xi_elements = []
-        ji_elements = []
-        
-        # 计算喜神五行
-        for ten_god in xi_ji['xi_shen']:
-            element = ten_god_element_map.get(ten_god)
-            if element and element not in xi_elements:
-                xi_elements.append(element)
-        
-        # 计算忌神五行
-        for ten_god in xi_ji['ji_shen']:
-            element = ten_god_element_map.get(ten_god)
-            if element and element not in ji_elements:
-                ji_elements.append(element)
-        
-        logger.info(f"   日干{day_stem}({day_element})的喜忌五行计算完成")
-        logger.info(f"   喜神五行: {xi_elements}, 忌神五行: {ji_elements}")
-        
-        return {
-            'xi_shen': xi_elements,
-            'ji_shen': ji_elements
-        }
-    
-    def _calculate_wangshuai_degree(self, total_score: int, wangshuai: str) -> float:
-        """
-        计算旺衰程度量化评分（0-100分）
-        
-        评分规则（3级制）：
-        - 身旺：60-100分（总分越高，分数越高）
-        - 平衡：40-60分（以0分为中心）
-        - 身弱：0-40分（总分越低，分数越低）
-        
-        Args:
-            total_score: 总分
-            wangshuai: 旺衰状态
-            
-        Returns:
-            旺衰程度评分（0-100）
-        """
-        if wangshuai == '身旺':
-            # 总分 > 10，映射到 60-100
-            # 假设最高分约为70，从10分开始映射
-            degree = 60 + min(40, (total_score - 10) / 1.5)  # 60分范围映射到40度
-            return min(100, max(60, degree))
-        elif wangshuai == '平衡':
-            # -10 <= 总分 <= 10，映射到 40-60
-            # 以0分为中心，±10分映射到40-60
-            degree = 50 + (total_score / 10.0) * 10  # 0分=50度，±10分=40或60度
-            return min(60, max(40, degree))
+        day_stem = bazi['day_stem']
+        for other_key in ('year_stem', 'month_stem', 'hour_stem'):
+            other_stem = bazi[other_key]
+            key = frozenset({day_stem, other_stem})
+            if key in STEM_WUHE_HUA:
+                # 检查是否合化（化气格已处理），此处只处理合绊
+                hua_el = STEM_WUHE_HUA[key]
+                month_main = STEM_ELEMENTS.get(self._branch_main_stem(bazi['month_branch']), '')
+                from core.data.constants import BRANCH_ELEMENTS
+                month_el = BRANCH_ELEMENTS.get(bazi['month_branch'], month_main)
+                if hua_el != month_el:
+                    # 合绊（不化），P 扣减 30%
+                    logger.info(f"   日主合绊({day_stem}+{other_stem})：P × 0.70")
+                    return P * 0.70
+        return P
+
+    # ═══════════════════════════════════════════════════════
+    #  特殊格局检测
+    # ═══════════════════════════════════════════════════════
+
+    def _detect_special_patterns(self, M: float, R: float,
+                                  S: float, K: float) -> Optional[str]:
+        """检测从旺格/从弱格（使用原始因子值，不加权重）"""
+        mrs = M + R + S
+        if mrs > CONGWANG_MRS_MIN and K < CONGWANG_K_MAX:
+            logger.info(f"   🔮 从旺格：M+R+S={mrs:.1f} > {CONGWANG_MRS_MIN}, K={K:.1f} < {CONGWANG_K_MAX}")
+            return '从旺格'
+        if K > CONGRUO_K_MIN and mrs < CONGRUO_MRS_MAX:
+            logger.info(f"   🔮 从弱格：K={K:.1f} > {CONGRUO_K_MIN}, M+R+S={mrs:.1f} < {CONGRUO_MRS_MAX}")
+            return '从弱格'
+        return None
+
+    # ═══════════════════════════════════════════════════════
+    #  5级旺衰判定
+    # ═══════════════════════════════════════════════════════
+
+    def _determine_wangshuai_v2(self, P: float) -> str:
+        """根据 P 值判定5级旺衰"""
+        for name, threshold in WANGSHUAI_THRESHOLDS:
+            if threshold is None or P >= threshold:
+                return name
+        return '从弱'
+
+    def _calculate_wangshuai_degree_v2(self, P: float, wangshuai: str) -> int:
+        """将 P 值映射到 0-100 旺衰程度"""
+        if wangshuai in ('从强',):
+            degree = 90 + min(10, (P - 220) / 10)
+        elif wangshuai == '身强':
+            degree = 70 + (P - 160) / 6.0
+        elif wangshuai == '中和':
+            degree = 40 + (P - 80) / 2.67
         elif wangshuai == '身弱':
-            # 总分 < -10，映射到 0-40
-            # 从-10分开始，越低分数越低
-            degree = 40 - min(40, (abs(total_score) - 10) / 1.5)  # 60分范围映射到40度
-            return min(40, max(0, degree))
+            degree = 15 + (P - 30) / 2.0
+        elif wangshuai == '从弱':
+            degree = max(0, 15 + P / 2.0)
         else:
-            # 未知状态，返回中性值
-            return 50.0
-    
+            degree = 50.0
+        return int(min(100, max(0, round(degree))))
+
+    # ═══════════════════════════════════════════════════════
+    #  喜忌神
+    # ═══════════════════════════════════════════════════════
+
+    def _determine_xi_ji(self, wangshuai: str) -> Dict[str, List[str]]:
+        """根据5级旺衰返回喜忌十神列表"""
+        mapping = XI_JI_MAPPING.get(wangshuai, {})
+        return {
+            'xi_shen': list(mapping.get('喜神', [])),
+            'ji_shen': list(mapping.get('忌神', [])),
+        }
+
+    def _calculate_xi_ji_elements(self, xi_ji: Dict, day_stem: str,
+                                   day_element: str) -> Dict[str, List[str]]:
+        """将喜忌十神转换为五行列表"""
+        relations = {
+            'produces': ELEMENT_PRODUCES.get(day_element, ''),
+            'controls': ELEMENT_CONTROLS.get(day_element, ''),
+            'produced_by': next((k for k, v in ELEMENT_PRODUCES.items() if v == day_element), ''),
+            'controlled_by': next((k for k, v in ELEMENT_CONTROLS.items() if v == day_element), ''),
+        }
+        ten_god_element_map = {
+            '比肩': day_element, '劫财': day_element,
+            '食神': relations['produces'],  '伤官': relations['produces'],
+            '偏财': relations['controls'],  '正财': relations['controls'],
+            '七杀': relations['controlled_by'], '正官': relations['controlled_by'],
+            '偏印': relations['produced_by'],   '正印': relations['produced_by'],
+        }
+        xi_els, ji_els = [], []
+        for tg in xi_ji['xi_shen']:
+            el = ten_god_element_map.get(tg)
+            if el and el not in xi_els:
+                xi_els.append(el)
+        for tg in xi_ji['ji_shen']:
+            el = ten_god_element_map.get(tg)
+            if el and el not in ji_els:
+                ji_els.append(el)
+        return {'xi_shen': xi_els, 'ji_shen': ji_els}
+
+    # ═══════════════════════════════════════════════════════
+    #  调候（保持不变，供外部调用）
+    # ═══════════════════════════════════════════════════════
+
     @staticmethod
     def calculate_tiaohou(month_branch: str) -> Dict[str, Any]:
-        """
-        计算调候五行
-        
-        调候：调节气候平衡
-        - 夏季炎热（巳午未月），需要水来调节降温
-        - 冬季寒冷（亥子丑月），需要火来调节取暖
-        - 春秋季节气候适中，不需要特别调候
-        
-        Args:
-            month_branch: 月支（如 '午'、'子'）
-        
-        Returns:
-            {
-                'tiaohou_element': '水' or '火' or None,
-                'season': '夏季' or '冬季' or '春秋',
-                'description': 说明文字
-            }
-        """
-        # 夏季三月：巳午未 → 需要水来调候
-        if month_branch in ['巳', '午', '未']:
-            return {
-                'tiaohou_element': '水',
-                'season': '夏季',
-                'month_branch': month_branch,
-                'description': '夏月炎热，需水调候'
-            }
-        
-        # 冬季三月：亥子丑 → 需要火来调候
-        elif month_branch in ['亥', '子', '丑']:
-            return {
-                'tiaohou_element': '火',
-                'season': '冬季',
-                'month_branch': month_branch,
-                'description': '冬月寒冷，需火调候'
-            }
-        
-        # 春秋季节：寅卯辰、申酉戌 → 气候适中
-        else:
-            return {
-                'tiaohou_element': None,
-                'season': '春秋',
-                'month_branch': month_branch,
-                'description': '春秋气候适中，无需特别调候'
-            }
-
+        """计算调候五行（夏喜水，冬喜火，春秋不调）"""
+        if month_branch in ('巳', '午', '未'):
+            return {'tiaohou_element': '水', 'season': '夏季',
+                    'month_branch': month_branch, 'description': '夏月炎热，需水调候'}
+        if month_branch in ('亥', '子', '丑'):
+            return {'tiaohou_element': '火', 'season': '冬季',
+                    'month_branch': month_branch, 'description': '冬月寒冷，需火调候'}
+        return {'tiaohou_element': None, 'season': '春秋',
+                'month_branch': month_branch, 'description': '春秋气候适中，无需特别调候'}
