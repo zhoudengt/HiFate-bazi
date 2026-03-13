@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-命局旺衰分析器 - 五因子能量积分制（v2）
+命局旺衰分析器 - 五因子能量积分制（v3）
 
 公式：P = (M×0.35) + (R×0.40) + (S×0.25) + (B×0.10) - (K×0.30)
 
-5级判定：
-  P ≥ 220   → 从强（专旺）
-  160 ≤ P < 220 → 身强
-  80 ≤ P < 160  → 中和
-  30 ≤ P < 80   → 身弱
-  P < 30    → 从弱
+判定体系：
+  P值阈值（3级）：P≥160→身强 / 80≤P<160→中和 / P<80→身弱
+  条件触发（优先）：从旺格→从强 / 从弱格→从弱 / 化气格→化气格
 """
 
 import logging
@@ -26,11 +23,14 @@ from core.data.wangshuai_config import (
     WANGSHUAI_THRESHOLDS, XI_JI_MAPPING,
     CONGWANG_MRS_MIN, CONGWANG_K_MAX, CONGRUO_K_MIN, CONGRUO_MRS_MAX,
     SANHE_ELEMENT, SANHUI_ELEMENT, SANHE_BONUS,
+    BANHE_PAIRS, GONGHE_PAIRS,
+    SANHE_YINBI_BONUS, SANHE_CAIGUAN_BONUS, SANHUI_BONUS, BANHE_BONUS, GONGHE_BONUS,
 )
 from core.data.constants import HIDDEN_STEMS, STEM_ELEMENTS
 from core.data.relations import (
     BRANCH_CHONG, BRANCH_XING, BRANCH_LIUHE,
     BRANCH_SANHE_GROUPS, BRANCH_SANHUI_GROUPS,
+    BRANCH_HAI,
 )
 from core.calculators.BaziCalculator import BaziCalculator
 
@@ -91,17 +91,18 @@ class WangShuaiAnalyzer:
           xi_shen, ji_shen, xi_shen_elements, ji_shen_elements,
           xi_ji, xi_ji_elements, tiaohou, final_xi_ji, bazi_info
         """
-        logger.info(f"🔍 旺衰分析 v2 - {solar_date} {solar_time} {gender}")
+        logger.info(f"🔍 旺衰分析 v3 - {solar_date} {solar_time} {gender}")
 
         # ─── Step 1: 八字 ───────────────────────────────────
         bazi, calc_result = self._calculate_bazi_full(solar_date, solar_time, gender)
         day_stem = bazi['day_stem']
         day_element = STEM_ELEMENTS[day_stem]
+        element_counts = calc_result.get('element_counts', {})
 
         # ─── Step 2: 节气深浅 ──────────────────────────────
         solar_term_days = self._get_solar_term_days(solar_date, solar_time)
 
-        # ─── Step 3: 地支关系（冲刑合） ──────────────────
+        # ─── Step 3: 地支关系（冲刑合害空亡） ────────────
         branch_rels = self._get_branch_relationships(bazi)
 
         # ─── Step 4: 化气格检测（最优先）────────────────
@@ -111,10 +112,11 @@ class WangShuaiAnalyzer:
 
         # ─── Step 5: 各因子原始值 ─────────────────────────
         M = self._calculate_M(bazi, effective_element, solar_term_days)
-        R = self._calculate_R(bazi, effective_element, branch_rels)
+        R, K_sanhe_bonus = self._calculate_R(bazi, effective_element, branch_rels)
         S = self._calculate_S(bazi, effective_element, branch_rels)
         B = self._calculate_B(bazi, effective_element, branch_rels)
         K = self._calculate_K(bazi, effective_element, branch_rels)
+        K += K_sanhe_bonus  # 三合财官局加成
 
         # ─── Step 6: 动态修正 ──────────────────────────────
         K = self._apply_tongguan(bazi, effective_element, K)
@@ -123,13 +125,15 @@ class WangShuaiAnalyzer:
 
         # ─── Step 7: 从旺/从弱格检测 ──────────────────────
         if not special_pattern:
-            special_pattern = self._detect_special_patterns(M, R, S, K)
+            special_pattern = self._detect_special_patterns(M, R, S, K, bazi, branch_rels)
 
-        # ─── Step 8: 5级旺衰判定 ──────────────────────────
+        # ─── Step 8: 旺衰判定（3级P阈值 + 特殊格局覆盖）──
         if special_pattern == '从旺格':
             wangshuai = '从强'
         elif special_pattern == '从弱格':
             wangshuai = '从弱'
+        elif special_pattern == '化气格':
+            wangshuai = '化气格'
         else:
             wangshuai = self._determine_wangshuai_v2(P)
 
@@ -139,7 +143,13 @@ class WangShuaiAnalyzer:
         logger.info(f"   M={M:.1f} R={R:.1f} S={S:.1f} B={B:.1f} K={K:.1f} P={P:.1f} → {wangshuai}")
 
         # ─── Step 9: 喜忌 ──────────────────────────────────
-        xi_ji = self._determine_xi_ji(wangshuai)
+        if wangshuai == '中和':
+            # 中和格：动态四法（调候>通关>扶抑>气势）
+            xi_ji = self._determine_xi_ji_zhonghe(
+                bazi, effective_element, M, R, S, K, element_counts, branch_rels
+            )
+        else:
+            xi_ji = self._determine_xi_ji(wangshuai)
         xi_ji_elements = self._calculate_xi_ji_elements(xi_ji, day_stem, effective_element)
 
         # ─── Step 10: 调候 ─────────────────────────────────
@@ -152,9 +162,9 @@ class WangShuaiAnalyzer:
             'xi_ji': xi_ji,
             'xi_ji_elements': xi_ji_elements,
         }
-        bazi_elements = {'element_counts': calc_result.get('element_counts', {})}
+        bazi_elements_ctx = {'element_counts': element_counts}
         final_xi_ji = TiaohouXijiAnalyzer.determine_final_xi_ji(
-            ws_for_tiaohou, tiaohou_info, bazi_elements
+            ws_for_tiaohou, tiaohou_info, bazi_elements_ctx
         )
 
         return {
@@ -178,7 +188,7 @@ class WangShuaiAnalyzer:
             'xi_shen_elements': xi_ji_elements['xi_shen'],
             'ji_shen_elements': xi_ji_elements['ji_shen'],
             'xi_ji': xi_ji,
-            'xi_ji_elements': xi_ji_elements,    # Bug fix: fortune_context & annual_report 需要此 key
+            'xi_ji_elements': xi_ji_elements,    # fortune_context & annual_report 需要此 key
             'tiaohou': tiaohou_info,
             'final_xi_ji': final_xi_ji,          # xishen_jishen 接口优先读取此字段
             'bazi_info': {
@@ -198,11 +208,17 @@ class WangShuaiAnalyzer:
         if not result or 'bazi_pillars' not in result:
             raise ValueError("八字计算结果为空")
         p = result['bazi_pillars']
+        # 提取空亡（以日柱旬空为准）
+        details = result.get('details', {})
+        day_kongwang = details.get('day', {}).get('kongwang', set())
+        if not isinstance(day_kongwang, set):
+            day_kongwang = set(day_kongwang) if day_kongwang else set()
         bazi = {
             'year_stem': p['year']['stem'],   'year_branch': p['year']['branch'],
             'month_stem': p['month']['stem'], 'month_branch': p['month']['branch'],
             'day_stem': p['day']['stem'],     'day_branch': p['day']['branch'],
             'hour_stem': p['hour']['stem'],   'hour_branch': p['hour']['branch'],
+            'void_branches': day_kongwang,    # 空亡地支集合
         }
         return bazi, result
 
@@ -248,12 +264,14 @@ class WangShuaiAnalyzer:
     # ═══════════════════════════════════════════════════════
 
     def _get_branch_relationships(self, bazi: Dict) -> Dict:
-        """检测四柱地支间的冲、刑、六合关系"""
+        """检测四柱地支间的冲、刑、六合、六害关系，以及空亡"""
         branches = [bazi['year_branch'], bazi['month_branch'],
                     bazi['day_branch'], bazi['hour_branch']]
         chong_set: Set[str] = set()
         xing_set: Set[str] = set()
-        he_pairs: Dict[str, Tuple[str, str]] = {}  # {branch: (partner, hua_element)}
+        hai_set: Set[str] = set()                    # 六害
+        he_pairs: Dict[str, Tuple[str, str]] = {}    # {branch: (partner, hua_element)}
+        void_set: Set[str] = set()                   # 空亡（旬空）
 
         for i in range(len(branches)):
             for j in range(i + 1, len(branches)):
@@ -274,21 +292,31 @@ class WangShuaiAnalyzer:
                         he_pairs[b1] = (b2, hua)
                     if b2 not in he_pairs:
                         he_pairs[b2] = (b1, hua)
+                # 六害
+                if b2 in BRANCH_HAI.get(b1, []):
+                    hai_set.add(b1)
+                    hai_set.add(b2)
 
-        return {'chong': chong_set, 'xing': xing_set, 'he_pairs': he_pairs,
-                'branches': branches}
+        # 空亡：与日柱旬空交集
+        void_branches = bazi.get('void_branches', set())
+        for b in branches:
+            if b in void_branches:
+                void_set.add(b)
+
+        return {'chong': chong_set, 'xing': xing_set, 'hai': hai_set,
+                'he_pairs': he_pairs, 'void': void_set, 'branches': branches}
 
     def _get_branch_factor(self, branch: str, day_element: str,
                            branch_rels: Dict) -> float:
-        """计算单个地支的破坏系数（冲/刑/合化叠加）"""
+        """
+        计算单个地支的破坏/增益系数。
+        优先级：被冲（最强，直接返回）> 被合化 > 被刑 > 被害 > 被克 > 空亡（可叠加）
+        """
         factor = 1.0
         # 被冲优先（同时被冲和合，冲优先）
         if branch in branch_rels['chong']:
             factor *= BRANCH_DESTRUCTION['被冲']
             return factor  # 被冲后不再叠加其他
-        # 被刑
-        if branch in branch_rels['xing']:
-            factor *= BRANCH_DESTRUCTION['被刑']
         # 被合化
         if branch in branch_rels['he_pairs']:
             _, hua = branch_rels['he_pairs'][branch]
@@ -296,7 +324,31 @@ class WangShuaiAnalyzer:
                 factor *= BRANCH_DESTRUCTION['被合化帮身']
             else:
                 factor *= BRANCH_DESTRUCTION['被合化他物']
+        # 被刑
+        if branch in branch_rels['xing']:
+            factor *= BRANCH_DESTRUCTION['被刑']
+        # 被害（六害）
+        if branch in branch_rels.get('hai', set()):
+            factor *= BRANCH_DESTRUCTION['被害']
+        # 被克（邻近地支五行相克日主根所在地支）
+        # 规则：四柱中若有地支的五行 克 该地支的五行，则该根被克
+        branch_el = self._get_branch_element(branch)
+        if branch_el:
+            controllers_in_chart = {
+                ELEMENT_CONTROLS.get(self._get_branch_element(b), '')
+                for b in branch_rels['branches'] if b != branch
+            }
+            if branch_el in controllers_in_chart:
+                factor *= BRANCH_DESTRUCTION['被克']
+        # 空亡
+        if branch in branch_rels.get('void', set()):
+            factor *= BRANCH_DESTRUCTION['空亡']
         return factor
+
+    def _get_branch_element(self, branch: str) -> str:
+        """获取地支的主五行"""
+        from core.data.constants import BRANCH_ELEMENTS
+        return BRANCH_ELEMENTS.get(branch, '')
 
     # ═══════════════════════════════════════════════════════
     #  化气格检测
@@ -368,10 +420,12 @@ class WangShuaiAnalyzer:
     #  R 因子：地支通根能量
     # ═══════════════════════════════════════════════════════
 
-    def _calculate_R(self, bazi: Dict, day_element: str, branch_rels: Dict) -> float:
+    def _calculate_R(self, bazi: Dict, day_element: str, branch_rels: Dict) -> Tuple[float, float]:
         """
-        地支通根能量：扫描四柱地支，累加通根分值并应用破坏系数。
-        最后检查三合/三会局加成。
+        地支通根能量。
+        返回 (R总值, K加成)：
+          - R总值：印比通根 + 各类合局帮身加成
+          - K加成：三合财官局（克泄耗日主）→ 额外加入K
         """
         element_roots = ROOT_SCORES.get(day_element, {})
         branches = branch_rels['branches']
@@ -387,36 +441,70 @@ class WangShuaiAnalyzer:
             logger.info(f"   R: {branch}({root_type}) base={base} ×{factor:.2f} = {score:.1f}")
             total_r += score
 
-        # 三合/三会加成：若四柱地支构成完整三合/三会且该局五行帮扶日主
-        bonus = self._calculate_sanhe_bonus(branches, day_element)
-        if bonus > 0:
-            logger.info(f"   R: 三合/三会加成 +{bonus}")
-            total_r += bonus
+        # 各类合局加成（分类细化 v3）
+        r_bonus, k_bonus = self._calculate_branch_group_bonuses(branches, day_element)
+        if r_bonus > 0:
+            total_r += r_bonus
 
-        logger.info(f"   R总计: {total_r:.1f}")
-        return total_r
+        logger.info(f"   R总计: {total_r:.1f}（合局K加成: {k_bonus:.1f}）")
+        return total_r, k_bonus
 
-    def _calculate_sanhe_bonus(self, branches: List[str], day_element: str) -> float:
-        """检测三合/三会局，若形成印比之局则加成"""
+    def _calculate_branch_group_bonuses(self, branches: List[str],
+                                        day_element: str) -> Tuple[float, float]:
+        """
+        检测三合/三会/半合/拱合局，返回 (R加成, K加成)。
+
+        R加成：三合印比(+100) / 三会印比(+120) / 半合印比(+50) / 拱合(+30)
+        K加成：三合财官（合化元素克日主）→ +80 计入K
+        """
         branch_set = set(branches)
-        bonus = 0.0
-        # 三合
+        r_bonus = 0.0
+        k_bonus = 0.0
+
+        def _is_yinbi(el: str) -> bool:
+            """合化五行是否帮扶日主（印比之局）"""
+            return el == day_element or ELEMENT_PRODUCES.get(el) == day_element
+
+        def _is_caiguan(el: str) -> bool:
+            """合化五行是否克日主（财官之局：官杀克日主）"""
+            return ELEMENT_CONTROLS.get(el) == day_element
+
+        # 完整三合
         for group_tuple in BRANCH_SANHE_GROUPS:
-            group = set(group_tuple)
-            el = SANHE_ELEMENT.get(frozenset(group))
-            if group.issubset(branch_set) and el and (
-                    el == day_element or ELEMENT_PRODUCES.get(el) == day_element):
-                bonus += SANHE_BONUS
-                logger.info(f"   R: {''.join(group_tuple)} 三合{el}局 加成 +{SANHE_BONUS}")
-        # 三会
+            group = frozenset(group_tuple)
+            el = SANHE_ELEMENT.get(group)
+            if not el or not group.issubset(branch_set):
+                continue
+            if _is_yinbi(el):
+                r_bonus += SANHE_YINBI_BONUS
+                logger.info(f"   R: {''.join(sorted(group))} 三合{el}局(印比) +{SANHE_YINBI_BONUS}")
+            elif _is_caiguan(el):
+                k_bonus += SANHE_CAIGUAN_BONUS
+                logger.info(f"   K: {''.join(sorted(group))} 三合{el}局(财官) +{SANHE_CAIGUAN_BONUS}")
+
+        # 完整三会
         for group_tuple in BRANCH_SANHUI_GROUPS:
-            group = set(group_tuple)
-            el = SANHUI_ELEMENT.get(frozenset(group))
-            if el and group.issubset(branch_set) and (
-                    el == day_element or ELEMENT_PRODUCES.get(el) == day_element):
-                bonus += SANHE_BONUS
-                logger.info(f"   R: {''.join(group_tuple)} 三会{el}局 加成 +{SANHE_BONUS}")
-        return bonus
+            group = frozenset(group_tuple)
+            el = SANHUI_ELEMENT.get(group)
+            if not el or not group.issubset(branch_set):
+                continue
+            if _is_yinbi(el):
+                r_bonus += SANHUI_BONUS
+                logger.info(f"   R: {''.join(sorted(group))} 三会{el}局(印比) +{SANHUI_BONUS}")
+
+        # 半合（两合，帮身）
+        for pair, el in BANHE_PAIRS.items():
+            if pair.issubset(branch_set) and _is_yinbi(el):
+                r_bonus += BANHE_BONUS
+                logger.info(f"   R: {''.join(sorted(pair))} 半合{el}(印比) +{BANHE_BONUS}")
+
+        # 拱合（两端拱合，帮身）
+        for pair, el in GONGHE_PAIRS.items():
+            if pair.issubset(branch_set) and _is_yinbi(el):
+                r_bonus += GONGHE_BONUS
+                logger.info(f"   R: {''.join(sorted(pair))} 拱合{el}(印比) +{GONGHE_BONUS}")
+
+        return r_bonus, k_bonus
 
     # ═══════════════════════════════════════════════════════
     #  S 因子：天干生助能量
@@ -584,16 +672,37 @@ class WangShuaiAnalyzer:
     #  特殊格局检测
     # ═══════════════════════════════════════════════════════
 
-    def _detect_special_patterns(self, M: float, R: float,
-                                  S: float, K: float) -> Optional[str]:
-        """检测从旺格/从弱格（使用原始因子值，不加权重）"""
+    def _detect_special_patterns(self, M: float, R: float, S: float, K: float,
+                                  bazi: Dict, branch_rels: Dict) -> Optional[str]:
+        """
+        检测从旺格/从弱格（使用原始因子值，不加权重）。
+
+        从旺格：M+R+S > 300 AND K < 50 AND 日主无强根被破
+        从弱格：K > 300 AND M+R+S < 50 AND 日主无禄刃根（帝旺/临官根）
+        """
         mrs = M + R + S
+        day_stem = bazi['day_stem']
+        day_element = STEM_ELEMENTS.get(day_stem, '')
+        branches = branch_rels['branches']
+        chong_set = branch_rels['chong']
+
         if mrs > CONGWANG_MRS_MIN and K < CONGWANG_K_MAX:
-            logger.info(f"   🔮 从旺格：M+R+S={mrs:.1f} > {CONGWANG_MRS_MIN}, K={K:.1f} < {CONGWANG_K_MAX}")
+            logger.info(f"   从旺格：M+R+S={mrs:.1f} > {CONGWANG_MRS_MIN}, K={K:.1f} < {CONGWANG_K_MAX}")
             return '从旺格'
+
         if K > CONGRUO_K_MIN and mrs < CONGRUO_MRS_MAX:
-            logger.info(f"   🔮 从弱格：K={K:.1f} > {CONGRUO_K_MIN}, M+R+S={mrs:.1f} < {CONGRUO_MRS_MAX}")
-            return '从弱格'
+            # 第3条件：日主在地支无禄刃根（帝旺根/临官根）
+            has_lu_ren = any(
+                ROOT_TYPE.get(day_element, {}).get(b, '') in STRONG_ROOT_TYPES
+                and b not in chong_set
+                for b in branches
+            )
+            if not has_lu_ren:
+                logger.info(f"   从弱格：K={K:.1f}>{CONGRUO_K_MIN}, MRS={mrs:.1f}<{CONGRUO_MRS_MAX}, 无禄刃根")
+                return '从弱格'
+            else:
+                logger.info(f"   K={K:.1f}>{CONGRUO_K_MIN} 但日主有禄刃根，从弱格不触发")
+
         return None
 
     # ═══════════════════════════════════════════════════════
@@ -601,24 +710,29 @@ class WangShuaiAnalyzer:
     # ═══════════════════════════════════════════════════════
 
     def _determine_wangshuai_v2(self, P: float) -> str:
-        """根据 P 值判定5级旺衰"""
+        """根据 P 值判定3级旺衰（特殊格局已在上游处理）"""
         for name, threshold in WANGSHUAI_THRESHOLDS:
             if threshold is None or P >= threshold:
                 return name
-        return '从弱'
+        return '身弱'  # 兜底
 
     def _calculate_wangshuai_degree_v2(self, P: float, wangshuai: str) -> int:
-        """将 P 值映射到 0-100 旺衰程度"""
-        if wangshuai in ('从强',):
-            degree = 90 + min(10, (P - 220) / 10)
+        """将 P 值映射到 0-100 旺衰程度（v3：3级 + 特殊格局）"""
+        if wangshuai == '从强':
+            # 从旺格触发，P通常较高，映射到 90-100
+            degree = 90 + min(10, max(0, (P - 300) / 30))
         elif wangshuai == '身强':
-            degree = 70 + (P - 160) / 6.0
+            # P ≥ 160，映射到 60-90
+            degree = 60 + min(30, (P - 160) / 4.67)
         elif wangshuai == '中和':
-            degree = 40 + (P - 80) / 2.67
+            # 80 ≤ P < 160，映射到 30-60
+            degree = 30 + (P - 80) / 2.67
         elif wangshuai == '身弱':
-            degree = 15 + (P - 30) / 2.0
+            # P < 80，映射到 5-30
+            degree = max(5, 30 - (80 - P) / 4.0)
         elif wangshuai == '从弱':
-            degree = max(0, 15 + P / 2.0)
+            # 从弱格触发，P通常极低，映射到 0-10
+            degree = max(0, 10 - max(0, 50 - P) / 5)
         else:
             degree = 50.0
         return int(min(100, max(0, round(degree))))
@@ -628,12 +742,207 @@ class WangShuaiAnalyzer:
     # ═══════════════════════════════════════════════════════
 
     def _determine_xi_ji(self, wangshuai: str) -> Dict[str, List[str]]:
-        """根据5级旺衰返回喜忌十神列表"""
+        """根据旺衰级别返回喜忌十神列表（静态映射，中和格由_determine_xi_ji_zhonghe处理）"""
         mapping = XI_JI_MAPPING.get(wangshuai, {})
         return {
             'xi_shen': list(mapping.get('喜神', [])),
             'ji_shen': list(mapping.get('忌神', [])),
         }
+
+    # ═══════════════════════════════════════════════════════
+    #  中和格喜忌：动态四法（调候>通关>扶抑>气势）
+    # ═══════════════════════════════════════════════════════
+
+    def _determine_xi_ji_zhonghe(
+        self, bazi: Dict, day_element: str,
+        M: float, R: float, S: float, K: float,
+        element_counts: Dict[str, int], branch_rels: Dict
+    ) -> Dict[str, List[str]]:
+        """
+        中和格喜忌：依次执行调候法>通关法>扶抑法>气势法，合并结果。
+        """
+        day_stem = bazi['day_stem']
+        stems = [bazi['year_stem'], bazi['month_stem'], bazi['hour_stem']]
+        month_branch = bazi['month_branch']
+
+        xi_shen: List[str] = []
+        ji_shen: List[str] = []
+
+        def _add_xi(*gods):
+            for g in gods:
+                if g not in xi_shen:
+                    xi_shen.append(g)
+
+        def _add_ji(*gods):
+            for g in gods:
+                if g not in ji_shen:
+                    ji_shen.append(g)
+
+        # 五行 → 十神 映射（根据日主推导）
+        prod_el = ELEMENT_PRODUCES.get(day_element, '')        # 食伤
+        ctrl_el = ELEMENT_CONTROLS.get(day_element, '')        # 财星
+        ctrl_by_el = next((k for k, v in ELEMENT_CONTROLS.items() if v == day_element), '')  # 官杀
+        prod_by_el = next((k for k, v in ELEMENT_PRODUCES.items() if v == day_element), '')  # 印星
+
+        def _el_to_xi_gods(el: str) -> List[str]:
+            """五行 → 对应的十神（喜神类）"""
+            if el == day_element:
+                return ['比肩', '劫财']
+            if el == prod_by_el:
+                return ['偏印', '正印']
+            if el == ctrl_by_el:
+                return ['七杀', '正官']
+            if el == prod_el:
+                return ['食神', '伤官']
+            if el == ctrl_el:
+                return ['偏财', '正财']
+            return []
+
+        # ═══ 法一：调候法 ═══
+        tiaohou_el = self._get_tiaohou_for_zhonghe(month_branch, element_counts)
+        if tiaohou_el:
+            gods = _el_to_xi_gods(tiaohou_el)
+            _add_xi(*gods)
+            logger.info(f"   中和喜忌-调候法：喜{tiaohou_el} → {gods}")
+
+        # ═══ 法二：通关法 ═══
+        tongguan_el = self._detect_tongguan_zhonghe(element_counts, day_element)
+        if tongguan_el:
+            gods = _el_to_xi_gods(tongguan_el)
+            _add_xi(*gods)
+            logger.info(f"   中和喜忌-通关法：通关{tongguan_el} → {gods}")
+
+        # ═══ 法三：扶抑法 ═══
+        fuyi_xi, fuyi_ji = self._detect_fuyi_zhonghe(
+            stems, day_stem, day_element, element_counts,
+            ctrl_by_el, prod_el, ctrl_el, prod_by_el
+        )
+        _add_xi(*fuyi_xi)
+        _add_ji(*fuyi_ji)
+        if fuyi_xi or fuyi_ji:
+            logger.info(f"   中和喜忌-扶抑法：喜{fuyi_xi} 忌{fuyi_ji}")
+
+        # ═══ 法四：气势法 ═══
+        qishi_xi = self._detect_qishi_zhonghe(stems, day_stem, prod_by_el, ctrl_by_el, prod_el)
+        _add_xi(*qishi_xi)
+        if qishi_xi:
+            logger.info(f"   中和喜忌-气势法：喜{qishi_xi}")
+
+        # 兜底：若四法均无结果，按中和格通用原则：调候为主
+        if not xi_shen:
+            # 无明确调候需求时，中和格倾向于维持平衡，微调喜食伤（泄秀）
+            xi_shen = ['食神', '伤官']
+            logger.info("   中和喜忌-兜底：无明确喜神，以食伤泄秀为喜")
+
+        logger.info(f"   中和格最终喜忌 xi={xi_shen} ji={ji_shen}")
+        return {'xi_shen': xi_shen, 'ji_shen': ji_shen}
+
+    def _get_tiaohou_for_zhonghe(self, month_branch: str,
+                                  element_counts: Dict[str, int]) -> Optional[str]:
+        """调候法：根据月令和五行偏颇判断调候五行"""
+        # 偏寒（冬月 or 水多）→ 喜火
+        if month_branch in ('亥', '子', '丑') or element_counts.get('水', 0) >= 3:
+            return '火'
+        # 偏暖（夏月 or 火多）→ 喜水
+        if month_branch in ('巳', '午', '未') or element_counts.get('火', 0) >= 3:
+            return '水'
+        # 偏燥（土火多）→ 喜水
+        if (element_counts.get('土', 0) + element_counts.get('火', 0)) >= 4:
+            return '水'
+        # 偏湿（水金多）→ 喜火
+        if (element_counts.get('水', 0) + element_counts.get('金', 0)) >= 4:
+            return '火'
+        return None
+
+    def _detect_tongguan_zhonghe(self, element_counts: Dict[str, int],
+                                  day_element: str) -> Optional[str]:
+        """通关法：检测两行相战，返回通关五行"""
+        # 通关对应表：{(强行A, 强行B): 通关五行}
+        tongguan_table = {
+            frozenset({'木', '金'}): '水',   # 木金相战 → 通关用水（水生木，金生水不通...其实水通木金：金生水，水生木）
+            frozenset({'水', '火'}): '木',   # 水火相战 → 通关用木（水生木，木生火）
+            frozenset({'火', '金'}): '土',   # 火金相战 → 通关用土（火生土，土生金）
+            frozenset({'土', '水'}): '金',   # 土水相战 → 通关用金（土生金，金生水）
+            frozenset({'木', '土'}): '火',   # 木土相战 → 通关用火（木生火，火生土）
+        }
+        STRONG_THRESHOLD = 2  # 两行各有≥2个才算"相战"
+        for (a, b), tongguan in tongguan_table.items():
+            pair = list(frozenset({a, b}))
+            if (element_counts.get(pair[0], 0) >= STRONG_THRESHOLD and
+                    element_counts.get(pair[1], 0) >= STRONG_THRESHOLD):
+                # 确认是相克关系（不是所有两行都算相战）
+                if (ELEMENT_CONTROLS.get(pair[0]) == pair[1] or
+                        ELEMENT_CONTROLS.get(pair[1]) == pair[0]):
+                    logger.info(f"   通关法：{pair[0]}-{pair[1]}相战，通关五行={tongguan}")
+                    return tongguan
+        return None
+
+    def _detect_fuyi_zhonghe(
+        self, stems: List[str], day_stem: str, day_element: str,
+        element_counts: Dict[str, int],
+        ctrl_by_el: str, prod_el: str, ctrl_el: str, prod_by_el: str
+    ) -> Tuple[List[str], List[str]]:
+        """
+        扶抑法：检查各十神类别的强弱，过强则抑，过弱则扶。
+        返回 (喜神十神列表, 忌神十神列表)
+        """
+        xi_gods: List[str] = []
+        ji_gods: List[str] = []
+
+        # 统计各类别元素数量
+        guansha_cnt = element_counts.get(ctrl_by_el, 0)   # 官杀五行
+        shishen_cnt = element_counts.get(prod_el, 0)       # 食伤五行
+        cai_cnt = element_counts.get(ctrl_el, 0)           # 财星五行
+        yin_cnt = element_counts.get(prod_by_el, 0)        # 印星五行
+        biji_cnt = element_counts.get(day_element, 0)      # 比劫五行（含日主本身=1）
+
+        OVER_STRONG = 2   # ≥2个为过强（中和格中相对过旺）
+        VERY_WEAK = 0     # =0个为极弱（需补充）
+
+        # 官杀过强 → 喜食伤制官杀，或喜印化官杀
+        if guansha_cnt >= OVER_STRONG:
+            xi_gods.extend(['食神', '伤官'])
+        # 食伤过强 → 喜印制食伤，或喜财泄食伤
+        if shishen_cnt >= OVER_STRONG:
+            xi_gods.extend(['偏印', '正印'])
+        # 财星过强 → 喜比劫帮身担财，或喜印生身
+        if cai_cnt >= OVER_STRONG:
+            xi_gods.extend(['比肩', '劫财'])
+        # 印星过强 → 喜财制印，或喜比劫泄印
+        if yin_cnt >= OVER_STRONG:
+            xi_gods.extend(['偏财', '正财'])
+            ji_gods.extend(['偏印', '正印'])
+        # 官杀极弱 → 喜官杀（身强中和可用官）
+        if guansha_cnt == VERY_WEAK and biji_cnt >= OVER_STRONG:
+            xi_gods.extend(['七杀', '正官'])
+
+        return xi_gods, ji_gods
+
+    def _detect_qishi_zhonghe(
+        self, stems: List[str], day_stem: str,
+        prod_by_el: str, ctrl_by_el: str, prod_el: str
+    ) -> List[str]:
+        """
+        气势法：检测特殊天干组合，顺其气势取喜神。
+        """
+        xi_gods: List[str] = []
+        # 判断各十神是否出现在天干
+        has_shishen = any(_get_ten_god(day_stem, s) in ('食神', '伤官') for s in stems)
+        has_yin = any(_get_ten_god(day_stem, s) in ('偏印', '正印') for s in stems)
+        has_guansha = any(_get_ten_god(day_stem, s) in ('七杀', '正官') for s in stems)
+        has_cai = any(_get_ten_god(day_stem, s) in ('偏财', '正财') for s in stems)
+
+        # 伤官佩印（伤官+印星同见）→ 喜印官
+        if has_shishen and has_yin:
+            xi_gods.extend(['偏印', '正印'])
+        # 杀印相生（官杀+印星同见）→ 喜印比
+        if has_guansha and has_yin:
+            xi_gods.extend(['比肩', '劫财'])
+        # 食神生财（食神+财星同见）→ 喜财官
+        if has_shishen and has_cai:
+            xi_gods.extend(['偏财', '正财', '七杀', '正官'])
+
+        return xi_gods
 
     def _calculate_xi_ji_elements(self, xi_ji: Dict, day_stem: str,
                                    day_element: str) -> Dict[str, List[str]]:

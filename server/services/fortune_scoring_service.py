@@ -336,11 +336,14 @@ class FortuneScoring:
                     favorable_factors.append(f'{season}{tiaohou_element}充足，调候得当')
                     score += 0.5
         
-        # 3. 旺衰状态（5级制）
-        # 中和最佳；身强/从强或身弱/从弱偏离平衡，需调理
-        if wangshuai in ('从强', '身强', '身弱', '从弱'):
+        # 3. 旺衰状态（3级+特殊格局）
+        # 中和最佳；身强/身弱偏离平衡；从强/从弱极端偏离，需调理
+        if wangshuai in ('从强', '从弱'):
+            risk_factors.append(f'身体状态：{wangshuai}，极端偏颇，需顺势调理')
+            score -= 0.5
+        elif wangshuai in ('身强', '身弱'):
             risk_factors.append(f'身体状态：{wangshuai}，需适当调理')
-            score -= 0.3 if wangshuai in ('身强', '身弱') else 0.5
+            score -= 0.3
         elif wangshuai == '中和':
             favorable_factors.append('身体状态中和，气血调和')
             score += 0.3
