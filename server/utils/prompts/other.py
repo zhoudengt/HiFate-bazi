@@ -483,6 +483,38 @@ def format_face_analysis_input_data_for_coze(input_data: Dict[str, Any]) -> str:
 
 # 办公桌风水分析格式化函数
 
+def format_home_fengshui_input_data_for_coze(input_data: Dict[str, Any]) -> str:
+    """
+    将居家风水分析结构化数据格式化为 JSON 字符串（用于百炼智能体报告生成）
+
+    Args:
+        input_data: 居家风水分析结果数据
+
+    Returns:
+        str: JSON 格式字符串，可直接作为智能体输入
+    """
+    if isinstance(input_data, dict) and 'success' in input_data:
+        data = input_data.get('data', input_data)
+    else:
+        data = input_data
+
+    optimized_data = {
+        'room_type': data.get('room_type', ''),
+        'door_direction': data.get('door_direction', ''),
+        'overall_score': data.get('overall_score', 0),
+        'mingua_score': data.get('mingua_score', 0),
+        'furnitures': data.get('furnitures', []),
+        'furnitures_text': data.get('furnitures_text', ''),
+        'critical_issues': data.get('critical_issues', []),
+        'suggestions': data.get('suggestions', []),
+        'tips': data.get('tips', []),
+        'mingua_info': data.get('mingua_info'),
+        'summary': data.get('summary', ''),
+    }
+
+    return json.dumps(optimized_data, ensure_ascii=False, indent=2)
+
+
 def format_desk_fengshui_input_data_for_coze(input_data: Dict[str, Any]) -> str:
     """
     将办公桌风水分析结构化数据格式化为 JSON 字符串（用于 Coze Bot System Prompt 的 {{input}} 占位符）

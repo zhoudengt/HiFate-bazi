@@ -1,0 +1,52 @@
+-- 居家风水规则表
+CREATE TABLE IF NOT EXISTS `home_fengshui_rules` (
+  `id`              INT PRIMARY KEY AUTO_INCREMENT,
+  `rule_code`       VARCHAR(60) UNIQUE NOT NULL    COMMENT '如 HOME_BED_DIRECTION_001',
+  `room_type`       VARCHAR(30) NOT NULL            COMMENT 'bedroom/living_room/study/kitchen/dining_room/all',
+  `rule_category`   VARCHAR(30) NOT NULL            COMMENT 'position/taboo/element/bagua/mingua/general',
+  `item_name`       VARCHAR(60) NOT NULL            COMMENT '物品英文名，如 bed/sofa/desk',
+  `item_label`      VARCHAR(60) NOT NULL            COMMENT '物品中文名',
+  `condition_json`  JSON                            COMMENT '触发条件：方位、命卦、房间特征等',
+  `rule_type`       ENUM('must','should','optional') DEFAULT 'should',
+  `severity`        ENUM('critical','warning','tip') DEFAULT 'warning',
+  `direction_req`   VARCHAR(5) DEFAULT 'no'         COMMENT '需要大门朝向才能触发：yes/no',
+  `mingua_req`      VARCHAR(5) DEFAULT 'no'         COMMENT '需要命卦才能触发：yes/no',
+  `ideal_direction` VARCHAR(20)                     COMMENT '推荐朝向（绝对方位）',
+  `avoid_direction` VARCHAR(20)                     COMMENT '禁忌朝向',
+  `reason`          TEXT                            COMMENT '风水依据',
+  `suggestion`      TEXT                            COMMENT '具体调整建议',
+  `priority`        INT DEFAULT 5                   COMMENT '1-10，越大越优先',
+  `related_element` VARCHAR(10)                     COMMENT '五行属性',
+  `enabled`         TINYINT(1) DEFAULT 1,
+  `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX `idx_room_type`     (`room_type`),
+  INDEX `idx_item_name`     (`item_name`),
+  INDEX `idx_rule_category` (`rule_category`),
+  INDEX `idx_severity`      (`severity`),
+  INDEX `idx_enabled`       (`enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='居家风水规则表';
+
+-- 居家风水分析记录表
+CREATE TABLE IF NOT EXISTS `home_analysis_records` (
+  `id`              INT PRIMARY KEY AUTO_INCREMENT,
+  `user_id`         VARCHAR(100),
+  `room_type`       VARCHAR(30)       COMMENT '房间类型',
+  `door_direction`  VARCHAR(10)       COMMENT '大门朝向',
+  `mingua`          INT               COMMENT '用户命卦 1-9',
+  `mingua_type`     VARCHAR(10)       COMMENT '东四命/西四命',
+  `house_type`      VARCHAR(10)       COMMENT '东四宅/西四宅',
+  `matched_rules`   JSON              COMMENT '匹配的规则',
+  `detected_items`  JSON              COMMENT '识别的家具',
+  `bazi_info`       JSON              COMMENT '八字信息',
+  `recommendations` JSON              COMMENT '建议结果',
+  `score`           INT               COMMENT '综合评分 0-100',
+  `mingua_score`    INT               COMMENT '命宅相配分 0-100',
+  `image_count`     INT DEFAULT 1     COMMENT '上传照片数量',
+  `analysis_duration` INT             COMMENT '耗时（毫秒）',
+  `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_user_id`         (`user_id`),
+  INDEX `idx_room_type`       (`room_type`),
+  INDEX `idx_door_direction`  (`door_direction`),
+  INDEX `idx_created_at`      (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='居家风水分析记录表';

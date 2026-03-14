@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package home.fengshui;
+
+// 居家风水分析服务
+
+service HomeFengshuiService {
+  rpc AnalyzeRoom(RoomAnalysisRequest) returns (RoomAnalysisResponse);
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// 分析请求
+message RoomAnalysisRequest {
+  repeated bytes  image_data     = 1;  // 1-4 张房间照片
+  string          room_type      = 2;  // bedroom/living_room/study/kitchen/dining_room
+  string          door_direction = 3;  // 大门朝向：北/东北/东/东南/南/西南/西/西北（可空）
+  string          solar_date     = 4;  // 出生日期（可空）
+  string          solar_time     = 5;  // 出生时间（可空）
+  string          gender         = 6;  // male/female（可空）
+  bool            use_bazi       = 7;  // 是否启用八字/命卦分析
+}
+
+// 识别到的家具
+message DetectedFurniture {
+  string          name           = 1;  // 英文名
+  string          label          = 2;  // 中文名
+  double          confidence     = 3;
+  repeated double bbox           = 4;  // [x1,y1,x2,y2]
+  string          position_zone  = 5;  // 九宫格位置：center/north/south/east/west/northeast/northwest/southeast/southwest
+  string          element        = 6;  // 五行属性
+  string          state          = 7;  // 状态描述（如：正对门/背靠实墙）
+}
+
+// 风水建议项
+message FengshuiSuggestion {
+  string          item_name      = 1;
+  string          item_label     = 2;
+  string          severity       = 3;  // critical/warning/tip
+  string          issue          = 4;  // 问题描述
+  string          suggestion     = 5;  // 调整建议
+  string          reason         = 6;  // 风水依据
+  string          priority       = 7;  // high/medium/low
+  string          rule_code      = 8;  // 触发的规则编码
+}
+
+// 命卦信息
+message MinguaInfo {
+  int32           mingua         = 1;  // 命卦数字 1-9
+  string          mingua_name    = 2;  // 坎/离/震/巽/乾/坤/艮/兑
+  string          mingua_type    = 3;  // 东四命/西四命
+  string          house_type     = 4;  // 东四宅/西四宅（需大门朝向）
+  bool            is_compatible  = 5;  // 命宅相配
+  map<string,string> direction_map = 6; // 方位→吉凶名称
+  string          compatibility_message = 7; // 命宅相配说明
+}
+
+// 分析响应
+message RoomAnalysisResponse {
+  bool            success              = 1;
+  string          error                = 2;
+  repeated DetectedFurniture furnitures = 3;
+  repeated FengshuiSuggestion critical_issues = 4;  // 必须调整
+  repeated FengshuiSuggestion suggestions     = 5;  // 建议调整
+  repeated FengshuiSuggestion tips            = 6;  // 可选优化
+  MinguaInfo      mingua_info          = 7;
+  int32           overall_score        = 8;   // 0-100
+  int32           mingua_score         = 9;   // 命宅相配分 0-100
+  string          summary              = 10;
+  string          annotated_image_b64  = 11;  // 标注图
+  string          ideal_layout_b64     = 12;  // 理想布局图
+  string          room_type            = 13;  // 房间类型
+  string          door_direction       = 14;  // 大门朝向
+}
+
+message HealthCheckRequest {}
+message HealthCheckResponse { string status = 1; }

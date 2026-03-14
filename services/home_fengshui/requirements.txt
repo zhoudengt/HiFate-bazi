@@ -1,0 +1,21 @@
+# Home Fengshui Service Dependencies
+# 注意：版本需要与主 requirements.txt 兼容
+
+# Core dependencies（与主依赖保持一致）
+grpcio>=1.60.0
+grpcio-tools>=1.60.0
+protobuf>=4.25.3,<5
+
+# Image processing
+Pillow>=10.0.0
+numpy>=1.26.0,<2
+
+# Database
+PyMySQL>=1.1.0
+redis>=7.0.0
+
+# DashScope SDK（百炼 Qwen-VL）
+dashscope>=1.19.0
+
+# Utilities
+python-dotenv>=1.0.0

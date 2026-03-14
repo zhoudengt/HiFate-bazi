@@ -717,7 +717,23 @@ def _register_all_routers_to_manager(router_manager):
         tags=["办公桌风水"],
         enabled_getter=lambda: get_desk_fengshui_router() is not None
     )
-    
+
+    # 居家风水分析路由（动态导入）
+    def get_home_fengshui_router():
+        try:
+            from server.api.v2.home_fengshui_stream import router as home_fengshui_router
+            return home_fengshui_router
+        except ImportError:
+            return None
+
+    router_manager.register_router(
+        "home_fengshui",
+        get_home_fengshui_router,
+        prefix="/api/v2/home-fengshui",
+        tags=["居家风水"],
+        enabled_getter=lambda: get_home_fengshui_router() is not None
+    )
+
     # 服务治理路由（动态导入）
     def get_governance_router():
         try:
