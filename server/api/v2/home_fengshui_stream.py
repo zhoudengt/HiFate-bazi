@@ -69,7 +69,7 @@ def _safe_import_home_fengshui_analyzer():
 @router.post('/analyze/stream', summary='流式生成居家风水分析报告（支持多房间）')
 async def home_fengshui_stream(
     photos: List[UploadFile] = File(..., description='房间照片（1-4张）'),
-    room_types: Optional[List[str]] = Form(None, description='每张照片对应的房间类型（与 photos 一一对应）；留空或传 auto 则自动识别'),
+    room_types: Optional[str] = Form(None, description='每张照片对应的房间类型，JSON 数组字符串，如 ["living_room","bedroom","study"]；留空或传 auto 则自动识别'),
     room_type: Optional[str] = Form(None, description='[兼容旧版] 单一房间类型；多张照片时建议用 room_types'),
     door_direction: Optional[str] = Form(None, description='大门朝向（可选）'),
     solar_date: Optional[str] = Form(None, description='出生日期（可选）'),
@@ -79,6 +79,11 @@ async def home_fengshui_stream(
 ):
     """
     流式居家风水分析（支持多张照片 × 多房间类型）
+
+    room_types 传值方式：
+    - JSON 数组字符串：room_types=["living_room","bedroom","study"]
+    - 单个字符串（单张照片时）：room_types=bedroom
+    - 不传或传 auto：自动识别
 
     SSE 事件流（多房间模式）：
     - request_id
@@ -91,8 +96,20 @@ async def home_fengshui_stream(
     - home_score（全屋综合评分）
     - full_report（全屋综合报告，LLM 流式）× N → complete → full_report
     """
+    # 解析 room_types：支持 JSON 数组字符串 或 单个字符串
+    parsed_room_types: List[str] = []
+    if room_types:
+        stripped = room_types.strip()
+        if stripped.startswith('['):
+            try:
+                parsed_room_types = json.loads(stripped)
+            except json.JSONDecodeError:
+                parsed_room_types = [stripped]
+        else:
+            parsed_room_types = [stripped]
+
     # 兼容旧版：若只传了 room_type，转为 room_types
-    effective_room_types: List[str] = room_types or []
+    effective_room_types: List[str] = parsed_room_types
     if not effective_room_types and room_type:
         effective_room_types = [room_type] * len(photos)
 
