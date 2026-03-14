@@ -260,6 +260,7 @@ async def wuxing_proportion_test(request: WuxingProportionRequest):
         
         # 5. 格式化数据（JSON字符串，与流式接口一致）
         formatted_data = json.dumps(input_data, ensure_ascii=False, indent=2)
+        formatted_data_llm = _format_wuxing_for_llm(input_data)
         
         # 6. 返回格式化后的数据
         return {
@@ -267,6 +268,8 @@ async def wuxing_proportion_test(request: WuxingProportionRequest):
             "input_data": input_data,
             "formatted_data": formatted_data,
             "formatted_data_length": len(formatted_data),
+            "formatted_data_llm": formatted_data_llm,
+            "formatted_data_llm_length": len(formatted_data_llm),
             "usage": {
                 "description": "此接口返回的结构化数据可以直接用于 Coze Bot 或百炼智能体的输入（使用 {{input}} 占位符）",
                 "test_command": f'curl -X POST "http://localhost:8001/api/v1/bazi/wuxing-proportion/test" -H "Content-Type: application/json" -d \'{{"solar_date": "{request.solar_date}", "solar_time": "{request.solar_time}", "gender": "{request.gender}", "calendar_type": "{request.calendar_type or "solar"}"}}\''

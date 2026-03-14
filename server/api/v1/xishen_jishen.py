@@ -466,6 +466,8 @@ async def xishen_jishen_test(request: XishenJishenRequest):
             "input_data": input_data,
             "formatted_data": formatted_data,
             "formatted_data_length": formatted_data_length,
+            "formatted_data_llm": formatted_for_llm,
+            "formatted_data_llm_length": formatted_data_length_optimized,
             "formatted_data_length_optimized": formatted_data_length_optimized,
             "usage": {
                 "description": "此接口返回的结构化数据可以直接用于 Coze Bot 或百炼智能体的输入（使用 {{input}} 占位符）",

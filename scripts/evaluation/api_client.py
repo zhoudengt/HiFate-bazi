@@ -936,14 +936,12 @@ class BaziApiClient:
             else:
                 raise
         if result and result.get('success'):
-            input_data = result.get('input_data', {})
-            from server.api.v1.wuxing_proportion import _format_wuxing_for_llm
-            formatted_data = _format_wuxing_for_llm(input_data)
+            formatted_data = result.get('formatted_data_llm') or result.get('formatted_data', '')
             return {
                 "success": True,
                 "formatted_data": formatted_data,
                 "formatted_data_length": len(formatted_data),
-                "input_data": input_data,
+                "input_data": result.get('input_data', {}),
             }
         return result
     
@@ -967,14 +965,12 @@ class BaziApiClient:
             else:
                 raise
         if result and result.get('success'):
-            input_data = result.get('input_data', {})
-            from server.api.v1.xishen_jishen import _format_xishen_jishen_for_llm
-            formatted_data = _format_xishen_jishen_for_llm(input_data)
+            formatted_data = result.get('formatted_data_llm') or result.get('formatted_data', '')
             return {
                 "success": True,
                 "formatted_data": formatted_data,
                 "formatted_data_length": len(formatted_data),
-                "input_data": input_data,
+                "input_data": result.get('input_data', {}),
             }
         return result
     
