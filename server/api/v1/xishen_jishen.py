@@ -432,10 +432,20 @@ async def xishen_jishen_test(request: XishenJishenRequest):
             xishen_jishen_result = xishen_jishen_result.dict()
         
         if not xishen_jishen_result or not xishen_jishen_result.get('success'):
-            return {
-                "success": False,
-                "error": "获取喜神忌神数据失败"
-            }
+            # orchestrator 内部异常被吞，回退直接调用以暴露真实错误
+            import traceback as _tb
+            try:
+                direct_result = await get_xishen_jishen(request)
+                if direct_result and direct_result.success:
+                    xishen_jishen_result = direct_result.model_dump() if hasattr(direct_result, 'model_dump') else direct_result.dict()
+                else:
+                    return {"success": False, "error": "获取喜神忌神数据失败（直接调用也失败）"}
+            except Exception as _fallback_err:
+                return {
+                    "success": False,
+                    "error": f"获取喜神忌神数据失败: {_fallback_err}",
+                    "traceback": _tb.format_exc()
+                }
         
         data = xishen_jishen_result.get('data', xishen_jishen_result)
         
