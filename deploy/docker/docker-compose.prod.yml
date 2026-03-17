@@ -44,6 +44,14 @@ services:
       INTENT_SERVICE_URL: intent-service:9008
       PROMPT_OPTIMIZER_SERVICE_URL: prompt-optimizer:9009
       DESK_FENGSHUI_SERVICE_URL: desk-fengshui:9010
+      # 熔断器 + 重试保护
+      ENABLE_CIRCUIT_BREAKER: "true"
+      CIRCUIT_BREAKER_FAILURE_THRESHOLD: "5"
+      CIRCUIT_BREAKER_TIMEOUT: "30.0"
+      GRPC_MAX_RETRIES: "3"
+      # Worker 数量（适配容器 CPU 限制，避免 os.cpu_count() 读到宿主机核心数）
+      WEB_WORKERS: "2"
+      THREAD_POOL_MAX_WORKERS: "16"
       TZ: Asia/Shanghai
     volumes:
       - web_logs:/app/logs
@@ -72,7 +80,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2.0'
+          cpus: '1.5'
           memory: 2G
         reservations:
           memory: 1G
@@ -109,10 +117,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 800M
+          cpus: '1.5'
+          memory: 1536M
         reservations:
-          memory: 400M
+          memory: 800M
     depends_on:
       mysql:
         condition: service_healthy
@@ -146,8 +154,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 400M
+          cpus: '0.3'
+          memory: 300M
         reservations:
           memory: 200M
     depends_on:
@@ -183,10 +191,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.3'
+          cpus: '0.2'
           memory: 200M
         reservations:
-          memory: 120M
+          memory: 100M
     depends_on:
       mysql:
         condition: service_healthy
@@ -223,10 +231,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.3'
+          cpus: '0.2'
           memory: 200M
         reservations:
-          memory: 120M
+          memory: 100M
     depends_on:
       mysql:
         condition: service_healthy
@@ -265,10 +273,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.3'
+          cpus: '0.2'
           memory: 200M
         reservations:
-          memory: 120M
+          memory: 100M
     depends_on:
       mysql:
         condition: service_healthy

@@ -111,7 +111,7 @@ async def _fetch_special_liunians(
                     with contextlib.redirect_stdout(buf):
                         calc.calculate_dayun_liunian(current_time=current_time, dayun_index=None)
                     return calc.details.get('liunian_sequence', [])
-                full_liunian = await loop_inner.run_in_executor(None, _calc_full_liunian)
+                full_liunian = await loop_inner.run_in_executor(get_executor(), _calc_full_liunian)
                 if full_liunian and len(full_liunian) > len(effective_liunian_sequence or []):
                     effective_liunian_sequence = full_liunian
                     _logger.info(f"✅ [特殊流年修复] 完整计算流年: {len(full_liunian)} 条")
@@ -907,11 +907,7 @@ class BaziDataOrchestrator:
                 )
                 
                 cache = get_multi_cache()
-                # 设置缓存TTL（24小时）
-                cache.l2.ttl = 86400
-                cache.set(cache_key, result)
-                # 恢复默认TTL
-                cache.l2.ttl = 3600
+                cache.set(cache_key, result, ttl=86400)
                 
                 logger.info(f"[BaziDataOrchestrator] 缓存写入成功: {cache_key[:50]}...")
             except Exception as e:

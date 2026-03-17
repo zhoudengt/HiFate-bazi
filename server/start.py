@@ -147,19 +147,27 @@ def main() -> None:
 
     uvicorn = _load_uvicorn()
     
-    # 自动检测CPU核心数，匹配CPU核心数以提高性能
-    cpu_count = os.cpu_count() or 4
-    workers = cpu_count  # 8个workers（匹配8核心CPU）
+    # Worker 数量：优先读环境变量（Docker 场景下 os.cpu_count() 返回宿主机核心数，不准确）
+    env_workers = os.getenv("WEB_WORKERS")
+    if env_workers:
+        workers = int(env_workers)
+    else:
+        cpu_count = os.cpu_count() or 4
+        workers = max(2, cpu_count)
+    
+    port = int(os.getenv("WEB_PORT", "8001"))
+    
+    logger.info(f"Starting uvicorn: workers={workers}, port={port}")
     
     uvicorn.run(
         "server.main:app",
         host="0.0.0.0",
-        port=8001,
-        workers=workers,  # 根据CPU核心数自动调整（当前：8个workers）
+        port=port,
+        workers=workers,
         loop="asyncio",
-        limit_concurrency=1000,  # 最大并发数
-        limit_max_requests=10000,  # 最大请求数
-        backlog=2048,  # 等待队列大小
+        limit_concurrency=500,
+        limit_max_requests=10000,
+        backlog=2048,
         timeout_keep_alive=30,
         access_log=True
     )

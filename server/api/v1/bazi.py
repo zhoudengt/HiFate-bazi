@@ -583,9 +583,8 @@ def _calculate_shengong_minggong_details(
     
     logger = logging.getLogger(__name__)
     
-    # ✅ 优化：并行获取身宫命宫和八字基础信息（无依赖关系）
+    from server.utils.async_executor import get_executor
     import concurrent.futures
-    import threading
     
     def get_interface_data():
         """获取身宫和命宫的干支"""
@@ -613,17 +612,13 @@ def _calculate_shengong_minggong_details(
             logger.error(f"计算八字基础信息失败: {str(e)}", exc_info=True)
             raise ValueError(f"无法计算八字基础信息: {str(e)}")
     
-    # 并行执行（使用线程池）
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            interface_future = executor.submit(get_interface_data)
-            bazi_future = executor.submit(get_bazi_data)
-            
-            # 等待两个任务完成
-            interface_data = interface_future.result()
-            bazi_data, bazi_pillars, day_stem = bazi_future.result()
-            
-            logger.info("✅ 并行获取身宫命宫和八字基础信息完成")
+        executor = get_executor()
+        interface_future = executor.submit(get_interface_data)
+        bazi_future = executor.submit(get_bazi_data)
+        
+        interface_data = interface_future.result()
+        bazi_data, bazi_pillars, day_stem = bazi_future.result()
     except Exception as e:
         logger.error(f"并行执行失败: {str(e)}", exc_info=True)
         raise

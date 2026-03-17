@@ -134,8 +134,9 @@ async def lifespan(app: FastAPI):
     try:
         import asyncio
         from server.utils.cache_warmer import warmup_on_startup
+        from server.utils.async_executor import get_executor
         loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, warmup_on_startup)
+        loop.run_in_executor(get_executor(), warmup_on_startup)
         logger.info("✓ 缓存预热任务已提交（后台执行）")
     except Exception as e:
         logger.warning(f"⚠ 缓存预热任务提交失败（不影响正常使用）: {e}")

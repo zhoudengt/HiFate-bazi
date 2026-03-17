@@ -10,6 +10,7 @@ import os
 import json
 import logging
 import asyncio
+from server.utils.async_executor import get_executor
 
 logger = logging.getLogger(__name__)
 
@@ -1413,9 +1414,10 @@ async def _scenario_2_generator(
         yield f"data: {json.dumps({'type': 'request_id', 'request_id': request_id}, ensure_ascii=False)}\n\n"
         # ==================== 并行获取会话数据（非阻塞，2个Redis调用并行执行） ====================
         loop = asyncio.get_event_loop()
+        _pool = get_executor()
         complete_bazi_data, history_context = await asyncio.gather(
-            loop.run_in_executor(None, BaziSessionService.get_bazi_session, user_id),
-            loop.run_in_executor(None, ConversationHistoryService.get_history_from_redis, user_id)
+            loop.run_in_executor(_pool, BaziSessionService.get_bazi_session, user_id),
+            loop.run_in_executor(_pool, ConversationHistoryService.get_history_from_redis, user_id)
         )
         
         if not complete_bazi_data:
@@ -1574,7 +1576,7 @@ async def _scenario_2_generator(
                         "keywords": keywords,
                         "summary": summary
                     }
-                    await loop.run_in_executor(None, ConversationHistoryService.save_history_to_redis, user_id, round_data)
+                    await loop.run_in_executor(get_executor(), ConversationHistoryService.save_history_to_redis, user_id, round_data)
                     
                     logger.info(f"✅ 场景2：第{current_round}轮对话完成，关键词={keywords}，摘要={summary[:50]}...")
                     break

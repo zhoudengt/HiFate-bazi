@@ -60,6 +60,10 @@ router = APIRouter()
 # 获取服务地址
 FORTUNE_ANALYSIS_SERVICE_URL = os.getenv("FORTUNE_ANALYSIS_SERVICE_URL", "localhost:9001")
 
+# gRPC channel 复用（避免每次请求创建新连接）
+_grpc_channel = None
+_grpc_channel_address = None
+
 # 简单认证：API Key（必须从环境变量读取）
 # 安全规范：生产环境不允许使用默认值
 _app_env = os.getenv("APP_ENV", "development").lower()
@@ -114,18 +118,39 @@ except ImportError as e:
     FACE_STREAM_ANALYZER_AVAILABLE = False
 
 
-def get_grpc_client():
-    """获取 gRPC 客户端地址"""
-    address = FORTUNE_ANALYSIS_SERVICE_URL
+def _parse_grpc_address(url: str) -> str:
+    address = url
     if address.startswith("http://"):
         address = address[7:]
     elif address.startswith("https://"):
         address = address[8:]
-    
     if ":" not in address:
         address = f"{address}:9001"
-    
     return address
+
+
+def get_grpc_channel():
+    """获取复用的 gRPC channel（模块级单例，进程内共享）"""
+    global _grpc_channel, _grpc_channel_address
+    address = _parse_grpc_address(FORTUNE_ANALYSIS_SERVICE_URL)
+    if _grpc_channel is None or _grpc_channel_address != address:
+        if _grpc_channel is not None:
+            try:
+                _grpc_channel.close()
+            except Exception:
+                pass
+        _grpc_channel = grpc.insecure_channel(
+            address,
+            options=[
+                ('grpc.keepalive_time_ms', 30000),
+                ('grpc.keepalive_timeout_ms', 10000),
+                ('grpc.keepalive_permit_without_calls', 1),
+                ('grpc.max_reconnect_backoff_ms', 5000),
+            ]
+        )
+        _grpc_channel_address = address
+        logger.info(f"gRPC channel created -> {address}")
+    return _grpc_channel
 
 
 async def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Key")):
@@ -270,12 +295,9 @@ async def analyze_hand_stream_generator(image_bytes: bytes, image_format: str,
             else:
                 request.bazi_info.use_bazi = False
             
-            # 调用 gRPC 服务
-            address = get_grpc_client()
-            
-            with grpc.insecure_channel(address) as channel:
-                stub = fortune_analysis_pb2_grpc.FortuneAnalysisServiceStub(channel)
-                response = stub.AnalyzeHand(request, timeout=60.0)
+            channel = get_grpc_channel()
+            stub = fortune_analysis_pb2_grpc.FortuneAnalysisServiceStub(channel)
+            response = stub.AnalyzeHand(request, timeout=60.0)
             
             if response.success:
                 report = json.loads(response.report_json) if response.report_json else {}
@@ -464,12 +486,9 @@ async def analyze_face_stream_generator(image_bytes: bytes, image_format: str,
             else:
                 request.bazi_info.use_bazi = False
             
-            # 调用 gRPC 服务
-            address = get_grpc_client()
-            
-            with grpc.insecure_channel(address) as channel:
-                stub = fortune_analysis_pb2_grpc.FortuneAnalysisServiceStub(channel)
-                response = stub.AnalyzeFace(request, timeout=60.0)
+            channel = get_grpc_channel()
+            stub = fortune_analysis_pb2_grpc.FortuneAnalysisServiceStub(channel)
+            response = stub.AnalyzeFace(request, timeout=60.0)
             
             if response.success:
                 report = json.loads(response.report_json) if response.report_json else {}

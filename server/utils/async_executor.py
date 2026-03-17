@@ -23,12 +23,9 @@ def get_executor() -> ThreadPoolExecutor:
     """
     获取全局线程池执行器（单例模式）
     
-    根据CPU核心数动态调整线程池大小：
+    优先读取 THREAD_POOL_MAX_WORKERS 环境变量，否则动态计算：
     - 本地开发：CPU核心数 * 2，最大16
-    - 生产环境：CPU核心数 * 2，最大100
-    
-    Returns:
-        ThreadPoolExecutor: 线程池执行器实例
+    - 生产环境：CPU核心数 * 4，最大32（I/O 密集型需要更多线程）
     """
     global _executor, _executor_lock
     
@@ -39,19 +36,20 @@ def get_executor() -> ThreadPoolExecutor:
     if _executor is None:
         with _executor_lock:
             if _executor is None:
-                cpu_count = os.cpu_count() or 4
-                
-                # 根据环境调整线程池大小
-                try:
-                    from server.config.env_config import get_env_config
-                    env_config = get_env_config()
-                    if env_config.is_local_dev:
-                        max_workers = min(cpu_count * 2, 16)  # 本地开发：较小线程池
-                    else:
-                        max_workers = min(cpu_count * 2, 100)  # 生产环境：较大线程池
-                except Exception:
-                    # 如果环境配置不可用，使用默认值
-                    max_workers = min(cpu_count * 2, 100)
+                env_max = os.getenv("THREAD_POOL_MAX_WORKERS")
+                if env_max:
+                    max_workers = int(env_max)
+                else:
+                    cpu_count = os.cpu_count() or 4
+                    try:
+                        from server.config.env_config import get_env_config
+                        env_config = get_env_config()
+                        if env_config.is_local_dev:
+                            max_workers = min(cpu_count * 2, 16)
+                        else:
+                            max_workers = min(cpu_count * 4, 32)
+                    except Exception:
+                        max_workers = min(cpu_count * 4, 32)
                 
                 _executor = ThreadPoolExecutor(
                     max_workers=max_workers,
