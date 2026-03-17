@@ -1,0 +1,36 @@
+---
+description: 本地开发环境配置（必须遵守）
+alwaysApply: true
+---
+
+# 本地开发环境
+
+## 关键事实
+
+- **本地没有 Docker**，禁止用 docker / docker compose 命令
+- **本地使用虚拟环境** `.venv`，必须用 `.venv/bin/python` 执行所有 Python 命令
+- 禁止用系统 python3 / pip3 安装或运行任何东西
+- 本地 Redis / MySQL 是 brew 原生安装，不是容器
+- **本地 MySQL 密码：123456**
+- 生产环境才用 Docker
+
+## 本地启动命令
+
+```bash
+# 激活虚拟环境
+source .venv/bin/activate
+
+# Redis / MySQL（brew 原生服务）
+brew services start redis
+brew services start mysql
+
+# Web 服务（必须用虚拟环境的 python）
+.venv/bin/python server/main.py
+```
+
+## 本地测试流程
+
+1. 先本地单元测试验证核心逻辑
+2. 再启动本地服务跑回归测试 `.venv/bin/python api_regression_test.py --env local`
+3. 全部通过后才提交发布到生产
+4. **禁止**未经本地完整测试就往生产部署

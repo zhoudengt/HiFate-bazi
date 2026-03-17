@@ -34,44 +34,19 @@
 
 ## 核心原则（必须遵守）
 
-### 0. 代码修改流程
-> 本地开发 → Git提交 → **增量发布**（先 Node2 测试 23 接口 + 24 API，合适则 Node1 部署）。禁止直接在服务器上修改代码。
-> 发布命令：`bash deploy/scripts/gated_deploy.sh`，详见 `@deploy.mdc`。
-> Phase 2 初始化：`bash deploy/scripts/init_staging.sh`（一次性，零停机）。
-
-### 0.1 零停机原则
-> 使用热更新，禁止重启服务。
-
-### 0.1.1 数据编排
-> 数据只计算一次，所有接口从 `BaziDataOrchestrator.fetch_data()` 统一获取。禁止流式接口直接调底层服务、禁止绕过编排器。详见 `@orchestrator-rules.mdc` 或 `standards/08_数据编排架构规范.md`。
-
-### 0.1.1.1 缓存
-> 缓存命中率 ≥ 98%，key 禁止高精度时间戳（最多到小时）。详见 `@cache-rules.mdc`。
-
-### 0.1.2 底层保护
+### 底层保护
 > `core/`、`server/engines/`、`server/services/` 核心逻辑禁止修改。必须改时先告知用户。
 
-### 0.2 热更新
-> 所有更新必须热更新。禁止 `docker restart`。详见 `standards/hot-reload.md`。
+> 部署/热更新/数据编排/缓存规则详见各 mdc 文件（始终加载，见下方条件规则引用）。
 
 ---
 
 ## 开发原则（摘要）
 
 1. 规范优先、安全优先、零停机优先
-2. gRPC 优先（`standards/grpc-protocol.md`）
-3. 规则数据库化（`standards/rule-development.md`）
-4. 向后兼容、先测试后提交
-5. **文件拆分用 shell 命令**（`cp`/`sed`/`head`/`tail` 搬代码，不逐字重写。减少 token 消耗和出错概率）
-6. **生产代码隔离**：与生产无关的代码（测试脚本、基准测试、诊断工具、临时脚本）必须放在专门目录，不得与生产代码混在一起
-
----
-
-## gRPC 与 API
-
-- 前端走 gRPC-Web（`/api/v1/*`）
-- 新增端点必须在 `grpc_gateway.py` 注册
-- 修改 `grpc_gateway.py` 或 `proto/` 时用 `@grpc-rules.mdc`
+2. 规则数据库化（`standards/rule-development.md`）
+3. 向后兼容、先测试后提交
+4. **生产代码隔离**：测试脚本、诊断工具、临时脚本必须放 `scripts/`/`tests/`/`tools/`，禁止放生产目录
 
 ---
 
@@ -146,24 +121,26 @@
 | 芝麻开门 dry-run | `bash deploy/scripts/gated_deploy.sh --dry-run` |
 | 芝麻开门 紧急 | `bash deploy/scripts/gated_deploy.sh --skip-node2` |
 | 芝麻开门 回滚 | `bash deploy/scripts/gated_deploy.sh --rollback` |
-| **测试** | `python3 scripts/evaluation/api_regression_test.py --env production --category basic --category stream --category payment --parallel` |
+| **测试** | `.venv/bin/python scripts/evaluation/api_regression_test.py --env production --category basic --category stream --category payment --parallel` |
 | 本地测试 | 同上，`--env local` |
-| 热更新 | `python3 scripts/ai/auto_hot_reload.py --trigger` |
-| 验证热更新 | `python3 scripts/ai/auto_hot_reload.py --verify` |
+| 热更新 | `.venv/bin/python scripts/ai/auto_hot_reload.py --trigger` |
+| 验证热更新 | `.venv/bin/python scripts/ai/auto_hot_reload.py --verify` |
 | 提交前检查 | 加载 `@dev-checklist.mdc` |
 
 ---
 
-## 条件规则引用
+## 规则文件总览
 
-| 场景 | 引用 |
-|------|------|
-| 部署/增量发布 | `@deploy.mdc` |
-| 提交前检查 | `@dev-checklist.mdc` |
-| 修改缓存 | `@cache-rules.mdc` |
-| 修改 gRPC/API | `@grpc-rules.mdc` |
-| 修改编排器 | `@orchestrator-rules.mdc` |
-| API/测试 | `@frontend-test-and-backend-only.mdc` |
+| 文件 | 加载方式 | 职责 |
+|------|---------|------|
+| `local-env.mdc` | 始终 | 本地环境、虚拟环境、禁止 Docker |
+| `deploy.mdc` | 始终 | 发布流程、热更新、零停机 |
+| `orchestrator-rules.mdc` | 始终 | 数据编排、禁止绕过 BaziDataOrchestrator |
+| `cache-rules.mdc` | 始终 | 缓存命中率、key 禁止高精度时间戳 |
+| `grpc-rules.mdc` | glob: grpc_gateway/proto | gRPC 注册规范 |
+| `frontend-test-and-backend-only.mdc` | glob: server/api, tests | 测试账号、接口契约约束 |
+| `file-splitting.mdc` | glob: *.py | 拆分文件用 shell 命令 |
+| `dev-checklist.mdc` | glob: *.py | 提交前检查清单 |
 
 ---
 

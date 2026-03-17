@@ -1,10 +1,6 @@
 ---
-description: 数据编排架构规范（修改编排器时生效）
-alwaysApply: false
-globs:
-  - server/orchestrators/**
-  - server/api/**/*stream*.py
-  - server/api/**/*fortune*.py
+description: 数据编排架构规范（始终生效）
+alwaysApply: true
 ---
 
 # 数据编排架构原则（最高优先级）

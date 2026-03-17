@@ -1,10 +1,6 @@
 ---
-description: 缓存有效性规范（修改缓存相关代码时生效）
-alwaysApply: false
-globs:
-  - server/utils/cache*.py
-  - server/utils/*cache*
-  - server/utils/*_cache*.py
+description: 缓存有效性规范（始终生效）
+alwaysApply: true
 ---
 
 # 缓存有效性原则（最高优先级）

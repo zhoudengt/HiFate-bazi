@@ -1,7 +1,8 @@
 ---
-description: 文件拆分/重构时的操作规范
+description: 文件拆分/重构时的操作规范（编辑 Python 文件时生效）
+alwaysApply: false
 globs:
-alwaysApply: true
+  - "**/*.py"
 ---
 
 # 文件拆分规范

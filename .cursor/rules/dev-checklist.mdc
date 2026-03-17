@@ -1,6 +1,8 @@
 ---
-description: 开发检查清单（提交前可用 @dev-checklist.mdc 引用）
+description: 开发检查清单（编辑 Python 文件时自动加载，提交前用 @dev-checklist.mdc 引用）
 alwaysApply: false
+globs:
+  - "**/*.py"
 ---
 
 # 开发检查清单

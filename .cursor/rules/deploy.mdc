@@ -1,9 +1,6 @@
 ---
-description: 增量发布流程（Node2 验证 → Node1 部署，含 23 接口测试）
-alwaysApply: false
-globs:
-  - deploy/**
-  - .github/workflows/**
+description: 增量发布流程与热更新规范（始终生效）
+alwaysApply: true
 ---
 
 # 增量发布规范
@@ -35,8 +32,8 @@ globs:
 
 ## 上线步骤速查
 
-1. **热更新验证**：`python3 scripts/ai/auto_hot_reload.py --trigger` + `--verify`
-2. **回归测试**：`python3 scripts/evaluation/api_regression_test.py --env production --category basic --category stream --category payment --parallel`
+1. **热更新验证**：`.venv/bin/python scripts/ai/auto_hot_reload.py --trigger` + `--verify`
+2. **回归测试**：`.venv/bin/python scripts/evaluation/api_regression_test.py --env production --category basic --category stream --category payment --parallel`
 3. **Git 提交** → `bash deploy/scripts/gated_deploy.sh`（增量发布：Node2 验证 23 接口 + 24 API → Node1）
 4. **生产验证**：health 接口 + 回归测试
 
