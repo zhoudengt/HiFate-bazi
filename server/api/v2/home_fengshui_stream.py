@@ -221,12 +221,17 @@ async def home_fengshui_stream_generator(
             annotated_b64 = None
             try:
                 from image_annotator import generate_annotated_image
-                annotated_b64 = generate_annotated_image(
-                    image_bytes_list[idx],
-                    result.get('furnitures', []),
-                    result,
-                    door_direction=door_direction,
-                    mingua_info=result.get('mingua_info'),
+                from server.utils.async_executor import get_executor
+                _loop = asyncio.get_event_loop()
+                annotated_b64 = await _loop.run_in_executor(
+                    get_executor(),
+                    lambda idx=idx: generate_annotated_image(
+                        image_bytes_list[idx],
+                        result.get('furnitures', []),
+                        result,
+                        door_direction=door_direction,
+                        mingua_info=result.get('mingua_info'),
+                    )
                 )
             except Exception as _e:
                 logger.warning(f'房间[{idx}]标注图生成失败: {_e}')

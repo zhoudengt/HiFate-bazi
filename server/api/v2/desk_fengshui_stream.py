@@ -293,7 +293,12 @@ async def desk_fengshui_stream_generator(
         # 生成标注图（原图 + 风水标记）
         try:
             from image_annotator import generate_annotated_image
-            result['annotated_image'] = generate_annotated_image(image_bytes, result.get('items', []), result)
+            from server.utils.async_executor import get_executor
+            _loop = asyncio.get_event_loop()
+            result['annotated_image'] = await _loop.run_in_executor(
+                get_executor(),
+                lambda: generate_annotated_image(image_bytes, result.get('items', []), result)
+            )
             logger.info("✅ 标注图生成成功")
         except Exception as _e:
             logger.warning(f"标注图生成失败（不影响主流程）: {_e}")

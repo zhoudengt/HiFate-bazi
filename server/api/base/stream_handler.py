@@ -241,11 +241,11 @@ class BaseAnalysisStreamHandler(ABC):
             cached_content = self.get_cached_llm(llm_cache_key)
             if cached_content:
                 logger.info(f"[{self.scene}] LLM 缓存命中: {llm_cache_key[:50]}...")
-                chunk_size = 50
+                chunk_size = 200
                 for i in range(0, len(cached_content), chunk_size):
                     chunk = cached_content[i:i + chunk_size]
                     yield _sse_yield({'type': 'progress', 'content': chunk})
-                    await asyncio.sleep(0.01)
+                    await asyncio.sleep(0)
                 yield _sse_yield({'type': 'complete', 'content': ''})
                 # 缓存命中也记录
                 self._log_stream_call(

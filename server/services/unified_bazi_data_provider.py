@@ -33,6 +33,7 @@ import asyncio
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
+from server.utils.async_executor import get_executor
 from server.models.stream_input_data import (
     UnifiedBaziData, 
     BasicInfoModel, 
@@ -115,7 +116,7 @@ class UnifiedBaziDataProvider:
         
         # 1. 并行获取所有数据
         loop = asyncio.get_event_loop()
-        executor = None
+        executor = get_executor()
         
         # 导入服务（延迟导入避免循环依赖）
         from server.services.bazi_display_service import BaziDisplayService

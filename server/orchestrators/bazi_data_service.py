@@ -18,6 +18,7 @@ sys.path.insert(0, project_root)
 
 from server.services.bazi_detail_service import BaziDetailService
 from server.services.special_liunian_service import SpecialLiunianService
+from server.utils.async_executor import get_executor
 from server.services.bazi_display_service import BaziDisplayService
 from server.utils.bazi_input_processor import BaziInputProcessor
 from server.models.bazi_detail import BaziDetailModel
@@ -96,7 +97,7 @@ class BaziDataService:
         
         # 2. 调用底层服务获取数据
         loop = asyncio.get_event_loop()
-        executor = None
+        executor = get_executor()
         
         detail_result = await loop.run_in_executor(
             executor,
@@ -211,7 +212,7 @@ class BaziDataService:
         
         # 2. 调用底层服务获取数据
         loop = asyncio.get_event_loop()
-        executor = None
+        executor = get_executor()
         
         detail_result = await loop.run_in_executor(
             executor,
@@ -547,7 +548,7 @@ class BaziDataService:
             # 2.1 如果没有传入，则调用 BaziDetailService.calculate_detail_full() 作为唯一数据源
             #     与排盘接口 /api/v1/bazi/fortune/display 完全一致
             loop = asyncio.get_event_loop()
-            executor = None
+            executor = get_executor()
             detail_result = await loop.run_in_executor(
                 executor,
                 BaziDetailService.calculate_detail_full,

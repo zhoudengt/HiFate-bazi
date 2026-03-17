@@ -63,7 +63,7 @@ def serve(port: int = 9001):
             add_servicer_to_server_func=bazi_core_pb2_grpc.add_BaziCoreServiceServicer_to_server,
             port=port,
             server_options=server_options,
-            max_workers=20,
+            max_workers=10,
             check_interval=30,
             listen_addr=f"[::]:{port}"
         )
@@ -98,7 +98,7 @@ def serve(port: int = 9001):
         logger.info(f"⚠️ 热更新模块不可用，使用传统模式: {e}")
 
         server = grpc.server(
-            futures.ThreadPoolExecutor(max_workers=20),
+            futures.ThreadPoolExecutor(max_workers=10),
             options=server_options
         )
 

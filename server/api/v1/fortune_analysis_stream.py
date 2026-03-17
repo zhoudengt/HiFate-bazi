@@ -17,6 +17,8 @@ from pydantic import BaseModel
 from typing import Optional
 import grpc
 
+from server.utils.async_executor import get_executor
+
 logger = logging.getLogger(__name__)
 
 # 添加项目根目录到路径
@@ -264,7 +266,10 @@ async def analyze_hand_stream_generator(image_bytes: bytes, image_format: str,
             # 先验证图像
             if IMAGE_VALIDATOR_AVAILABLE and image_validator:
                 logger.debug("🔍 验证图像...")
-                is_valid, error_msg = image_validator.validate_hand_image(image_bytes)
+                loop = asyncio.get_event_loop()
+                is_valid, error_msg = await loop.run_in_executor(
+                    get_executor(), image_validator.validate_hand_image, image_bytes
+                )
                 logger.debug(f"验证结果: 有效={is_valid}, 错误={error_msg}")
                 if not is_valid:
                     error_response = {
@@ -297,7 +302,10 @@ async def analyze_hand_stream_generator(image_bytes: bytes, image_format: str,
             
             channel = get_grpc_channel()
             stub = fortune_analysis_pb2_grpc.FortuneAnalysisServiceStub(channel)
-            response = stub.AnalyzeHand(request, timeout=60.0)
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                get_executor(), lambda: stub.AnalyzeHand(request, timeout=60.0)
+            )
             
             if response.success:
                 report = json.loads(response.report_json) if response.report_json else {}
@@ -455,7 +463,10 @@ async def analyze_face_stream_generator(image_bytes: bytes, image_format: str,
             # 先验证图像
             if IMAGE_VALIDATOR_AVAILABLE and image_validator:
                 logger.debug("🔍 验证图像...")
-                is_valid, error_msg = image_validator.validate_face_image(image_bytes)
+                loop = asyncio.get_event_loop()
+                is_valid, error_msg = await loop.run_in_executor(
+                    get_executor(), image_validator.validate_face_image, image_bytes
+                )
                 logger.debug(f"验证结果: 有效={is_valid}, 错误={error_msg}")
                 if not is_valid:
                     error_response = {
@@ -488,7 +499,10 @@ async def analyze_face_stream_generator(image_bytes: bytes, image_format: str,
             
             channel = get_grpc_channel()
             stub = fortune_analysis_pb2_grpc.FortuneAnalysisServiceStub(channel)
-            response = stub.AnalyzeFace(request, timeout=60.0)
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                get_executor(), lambda: stub.AnalyzeFace(request, timeout=60.0)
+            )
             
             if response.success:
                 report = json.loads(response.report_json) if response.report_json else {}

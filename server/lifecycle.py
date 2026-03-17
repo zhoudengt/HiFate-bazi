@@ -106,29 +106,36 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠ 缓存同步订阅器启动失败（单机模式）: {e}")
     
-    # ✅ 性能优化：预热节气表缓存（服务启动时预计算常用年份）
+    # ✅ 性能优化：预热节气表缓存（后台执行不阻塞启动）
     try:
-        from datetime import datetime
-        from core.calculators.bazi_calculator_docs import BaziCalculator as DocsBaziCalculator
-        
-        current_year = datetime.now().year
-        # 预热当前年份前后各5年的节气表（共11年）
-        warmup_years = list(range(current_year - 5, current_year + 6))
-        
-        # 使用一个临时计算器实例来预热缓存
-        temp_calc = DocsBaziCalculator("2000-01-01", "12:00", "male")
-        
-        from lunar_python import Solar
-        for year in warmup_years:
-            if year not in DocsBaziCalculator._jieqi_table_cache:
-                base_solar = Solar.fromYmdHms(year, 1, 1, 0, 0, 0)
-                lunar_year = base_solar.getLunar()
-                jieqi_table = lunar_year.getJieQiTable()
-                DocsBaziCalculator._jieqi_table_cache[year] = jieqi_table
-        
-        logger.info(f"✓ 节气表缓存预热完成（{len(warmup_years)}年: {warmup_years[0]}-{warmup_years[-1]}）")
+        import asyncio as _asyncio
+        from server.utils.async_executor import get_executor as _get_executor
+
+        def _warmup_jieqi():
+            try:
+                from datetime import datetime as _dt
+                from core.calculators.bazi_calculator_docs import BaziCalculator as DocsBaziCalculator
+                from lunar_python import Solar
+
+                current_year = _dt.now().year
+                warmup_years = list(range(current_year - 5, current_year + 6))
+                DocsBaziCalculator("2000-01-01", "12:00", "male")
+
+                for year in warmup_years:
+                    if year not in DocsBaziCalculator._jieqi_table_cache:
+                        base_solar = Solar.fromYmdHms(year, 1, 1, 0, 0, 0)
+                        lunar_year = base_solar.getLunar()
+                        DocsBaziCalculator._jieqi_table_cache[year] = lunar_year.getJieQiTable()
+
+                logger.info(f"✓ 节气表缓存预热完成（{len(warmup_years)}年: {warmup_years[0]}-{warmup_years[-1]}）")
+            except Exception as e:
+                logger.warning(f"⚠ 节气表缓存预热失败（不影响正常使用）: {e}")
+
+        _loop = _asyncio.get_event_loop()
+        _loop.run_in_executor(_get_executor(), _warmup_jieqi)
+        logger.info("✓ 节气表预热任务已提交（后台执行）")
     except Exception as e:
-        logger.warning(f"⚠ 节气表缓存预热失败（不影响正常使用）: {e}")
+        logger.warning(f"⚠ 节气表预热任务提交失败: {e}")
 
     # 启动时预热 API 缓存（每日运势 + 热门八字组合，后台执行不阻塞）
     try:

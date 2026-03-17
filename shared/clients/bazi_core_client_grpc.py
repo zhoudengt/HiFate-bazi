@@ -141,24 +141,24 @@ class BaziCoreClient(BaseGrpcClient):
             elements = {}
             if response.elements:
                 for key, value_json in response.elements.items():
-                    logger.info(f"DEBUG: elements['{key}'] raw value type={type(value_json).__name__}, value={repr(value_json)[:200]}")
+                    logger.debug(f"elements['{key}'] raw value type={type(value_json).__name__}, value={repr(value_json)[:200]}")
                     try:
                         if isinstance(value_json, str):
                             try:
                                 import ast
                                 parsed = ast.literal_eval(value_json) if value_json else {}
-                                logger.info(f"DEBUG: ast.literal_eval success for '{key}': {parsed}")
+                                logger.debug(f"ast.literal_eval success for '{key}'")
                             except (ValueError, SyntaxError) as e1:
-                                logger.info(f"DEBUG: ast.literal_eval failed for '{key}': {e1}, trying json.loads...")
+                                logger.debug(f"ast.literal_eval failed for '{key}': {e1}, trying json.loads...")
                                 parsed = json.loads(value_json) if value_json else {}
-                                logger.info(f"DEBUG: json.loads success for '{key}': {parsed}")
+                                logger.debug(f"json.loads success for '{key}'")
                             if isinstance(parsed, dict):
                                 elements[key] = parsed
                             else:
                                 logger.warning(f"DEBUG: parsed result for '{key}' is not dict (type={type(parsed)}), using empty dict")
                                 elements[key] = {}
                         elif isinstance(value_json, dict):
-                            logger.info(f"DEBUG: elements['{key}'] is already dict: {value_json}")
+                            logger.debug(f"elements['{key}'] is already dict")
                             elements[key] = value_json
                         else:
                             logger.warning(f"DEBUG: elements['{key}'] is unexpected type: {type(value_json)}")

@@ -10,6 +10,7 @@ import os
 import sys
 import time
 import json
+import asyncio
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import StreamingResponse
@@ -255,10 +256,15 @@ async def face_analysis_stream_generator(
             return
         
         try:
-            result = service.analyze_face_features(
-                image_data,
-                image_format='jpg',
-                birth_info=birth_info
+            from server.utils.async_executor import get_executor
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                get_executor(),
+                lambda: service.analyze_face_features(
+                    image_data,
+                    image_format='jpg',
+                    birth_info=birth_info
+                )
             )
         except BrokenPipeError as e:
             error_msg = {
