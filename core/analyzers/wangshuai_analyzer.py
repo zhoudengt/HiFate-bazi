@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-命局旺衰分析器 - 五因子能量积分制（v3）
+命局旺衰分析器 - 五因子能量积分制（校准版 V3.0）
 
-公式：P = (M×0.35) + (R×0.40) + (S×0.25) + (B×0.10) - (K×0.30)
+公式：P = M×3.5 + R×4.0 + S×2.5 + B×1.0 - K×3.0
+（系数为标准 0.35/0.40/0.25/0.10/0.30 的10倍，使 P 值与阈值 85/70/50/49 量级匹配）
 
 判定体系：
   P值阈值（3级）：P≥160→身强 / 80≤P<160→中和 / P<80→身弱
@@ -15,13 +16,16 @@ from typing import Dict, List, Any, Optional, Set, Tuple
 
 from core.data.wangshuai_config import (
     ROOT_SCORES, ROOT_TYPE, STRONG_ROOT_TYPES, MEDIUM_ROOT_TYPES, WEAK_ROOT_TYPES,
-    MONTH_STATUS_SCORES, SOLAR_TERM_COEFF_EARLY, SOLAR_TERM_COEFF_LATE,
-    S_TEN_GOD_SCORES, S_ROOT_COEFFICIENTS,
+    MONTH_STATUS_SCORES, SOLAR_TERM_CORRECTIONS, SOLAR_TERM_COEFF_EARLY, SOLAR_TERM_COEFF_LATE,
+    S_TEN_GOD_SCORES, S_ROOT_COEFFICIENTS, S_YINXING_WUGEN_SCORE, S_CAP,
     B_ROOT_SCORES, B_ROOT_COEFFICIENTS,
-    K_TEN_GOD_SCORES, K_GUANSHA_ROOT_COEFFICIENTS,
+    K_TEN_GOD_SCORES, K_ROOT_COEFFICIENTS, K_GUANSHA_ROOT_COEFFICIENTS,
+    K_BRANCH_GUANSHA_SCORE, K_BRANCH_CAISHISHEN_SCORE,
     BRANCH_DESTRUCTION, LIUHE_HUA, STEM_WUHE_HUA,
     WANGSHUAI_THRESHOLDS, XI_JI_MAPPING,
     CONGWANG_MRS_MIN, CONGWANG_K_MAX, CONGRUO_K_MIN, CONGRUO_MRS_MAX,
+    JIACONGWANG_K_MIN, JIACONGWANG_K_MAX, JIACONGRUO_MRS_MIN, JIACONGRUO_MRS_MAX,
+    R_CAP_WITH_LUREN, R_CAP_NO_LUREN,
     SANHE_ELEMENT, SANHUI_ELEMENT, SANHE_BONUS,
     BANHE_PAIRS, GONGHE_PAIRS,
     SANHE_YINBI_BONUS, SANHE_CAIGUAN_BONUS, SANHUI_BONUS, BANHE_BONUS, GONGHE_BONUS,
@@ -115,23 +119,27 @@ class WangShuaiAnalyzer:
         R, K_sanhe_bonus = self._calculate_R(bazi, effective_element, branch_rels)
         S = self._calculate_S(bazi, effective_element, branch_rels)
         B = self._calculate_B(bazi, effective_element, branch_rels)
-        K = self._calculate_K(bazi, effective_element, branch_rels)
-        K += K_sanhe_bonus  # 三合财官局加成
+        K, K_guansha = self._calculate_K(bazi, effective_element, branch_rels)
+        K += K_sanhe_bonus  # 三合财官局加成（不计入 guansha_k）
 
         # ─── Step 6: 动态修正 ──────────────────────────────
-        K = self._apply_tongguan(bazi, effective_element, K)
-        P_raw = (M * 0.35) + (R * 0.40) + (S * 0.25) + (B * 0.10) - (K * 0.30)
+        K = self._apply_tongguan(bazi, effective_element, K, K_guansha, B)
+        P_raw = (M * 3.5) + (R * 4.0) + (S * 2.5) + (B * 1.0) - (K * 3.0)
         P = self._apply_riganhe(bazi, effective_element, P_raw)
 
-        # ─── Step 7: 从旺/从弱格检测 ──────────────────────
+        # ─── Step 7: 从旺/假从旺/从弱/假从弱格检测 ────────
         if not special_pattern:
-            special_pattern = self._detect_special_patterns(M, R, S, K, bazi, branch_rels)
+            special_pattern = self._detect_special_patterns(M, R, S, B, K, bazi, branch_rels)
 
-        # ─── Step 8: 旺衰判定（3级P阈值 + 特殊格局覆盖）──
+        # ─── Step 8: 旺衰判定（4级P阈值 + 特殊格局覆盖）──
         if special_pattern == '从旺格':
             wangshuai = '从强'
+        elif special_pattern == '假从旺格':
+            wangshuai = '从强'    # 喜忌同从旺，大运遇克泄易破格
         elif special_pattern == '从弱格':
             wangshuai = '从弱'
+        elif special_pattern == '假从弱格':
+            wangshuai = '从弱'    # 喜忌同从弱，大运遇印比易破格
         elif special_pattern == '化气格':
             wangshuai = '化气格'
         else:
@@ -143,13 +151,9 @@ class WangShuaiAnalyzer:
         logger.info(f"   M={M:.1f} R={R:.1f} S={S:.1f} B={B:.1f} K={K:.1f} P={P:.1f} → {wangshuai}")
 
         # ─── Step 9: 喜忌 ──────────────────────────────────
-        if wangshuai == '中和':
-            # 中和格：动态四法（调候>通关>扶抑>气势）
-            xi_ji = self._determine_xi_ji_zhonghe(
-                bazi, effective_element, M, R, S, K, element_counts, branch_rels
-            )
-        else:
-            xi_ji = self._determine_xi_ji(wangshuai)
+        # V3.0：4级体系，中和偏强→同身强，中和偏弱→同身弱，统一走静态映射
+        # 调候优先覆盖由 TiaohouXijiAnalyzer.determine_final_xi_ji 处理
+        xi_ji = self._determine_xi_ji(wangshuai)
         xi_ji_elements = self._calculate_xi_ji_elements(xi_ji, day_stem, effective_element)
 
         # ─── Step 10: 调候 ─────────────────────────────────
@@ -251,13 +255,19 @@ class WangShuaiAnalyzer:
                 return max(0.0, delta.total_seconds() / 86400.0)
         except Exception as e:
             logger.debug(f"节气计算失败，使用默认值: {e}")
-        return 15.0  # 默认月中，取中气系数
+        return 10.0  # 默认取中气档位（7-14天）
+
+    def _get_solar_term_stage(self, days: float) -> str:
+        """根据入节天数返回节气档位（三档）"""
+        if days < 7:
+            return 'early'   # 初气（前 7 天）
+        if days < 14:
+            return 'mid'     # 中气（7-14 天）
+        return 'late'        # 末气（14 天以上）
 
     def _get_solar_term_coeff(self, days: float) -> int:
-        """根据入节天数返回节气系数"""
-        if days < 7:
-            return SOLAR_TERM_COEFF_EARLY   # 初气 +10
-        return SOLAR_TERM_COEFF_LATE        # 中气 +20
+        """兼容旧接口（不再使用），返回固定值"""
+        return SOLAR_TERM_COEFF_LATE
 
     # ═══════════════════════════════════════════════════════
     #  地支关系检测
@@ -389,7 +399,8 @@ class WangShuaiAnalyzer:
     def _calculate_M(self, bazi: Dict, day_element: str,
                      solar_term_days: float) -> float:
         """
-        月令能量：当令(100+系数) / 得生(60+系数) / 耗气(20) / 被克(0)
+        月令能量（V3.0）：当令(40) / 得生(30) / 耗气(10) / 被克(0)
+        加三档节气修正：初气(early) / 中气(mid) / 末气(late)
         """
         month_branch = bazi['month_branch']
         month_main_stem = self._branch_main_stem(month_branch)
@@ -399,21 +410,22 @@ class WangShuaiAnalyzer:
         from core.data.constants import BRANCH_ELEMENTS
         month_element = BRANCH_ELEMENTS.get(month_branch, month_element)
 
-        coeff = self._get_solar_term_coeff(solar_term_days)
-
         if month_element == day_element:
-            score = MONTH_STATUS_SCORES['当令'] + coeff
-            logger.info(f"   M: 当令({month_branch}/{month_element}) = {score}")
+            status = '当令'
         elif ELEMENT_PRODUCES.get(month_element) == day_element:
-            score = MONTH_STATUS_SCORES['得生'] + coeff
-            logger.info(f"   M: 得生({month_branch}/{month_element}生{day_element}) = {score}")
+            status = '得生'
         elif ELEMENT_PRODUCES.get(day_element) == month_element:
-            score = MONTH_STATUS_SCORES['耗气']
-            logger.info(f"   M: 耗气({day_element}生{month_branch}/{month_element}) = {score}")
+            status = '耗气'
         else:
-            score = MONTH_STATUS_SCORES['被克']
-            logger.info(f"   M: 被克/反克({month_branch}/{month_element}↔{day_element}) = {score}")
+            status = '被克'
 
+        base = MONTH_STATUS_SCORES[status]
+        stage = self._get_solar_term_stage(solar_term_days)
+        correction = SOLAR_TERM_CORRECTIONS[status][stage]
+        score = base + correction
+
+        logger.info(f"   M: {status}({month_branch}/{month_element}) "
+                    f"base={base} +{correction}({stage}) = {score}")
         return float(score)
 
     # ═══════════════════════════════════════════════════════
@@ -422,14 +434,18 @@ class WangShuaiAnalyzer:
 
     def _calculate_R(self, bazi: Dict, day_element: str, branch_rels: Dict) -> Tuple[float, float]:
         """
-        地支通根能量。
-        返回 (R总值, K加成)：
-          - R总值：印比通根 + 各类合局帮身加成
-          - K加成：三合财官局（克泄耗日主）→ 额外加入K
+        地支通根能量（V3.0）。
+        规则：
+          - 禄/刃根(帝旺/临官)=40，长生根=20，余气/墓库根=10
+          - 有禄刃根：上限 R_CAP_WITH_LUREN(40)；若禄刃受损可累加弱根但仍上限40
+          - 无禄刃根：累加弱根，上限 R_CAP_NO_LUREN(30)
+        返回 (R总值, K加成)
         """
         element_roots = ROOT_SCORES.get(day_element, {})
         branches = branch_rels['branches']
-        total_r = 0.0
+
+        lu_ren_score = 0.0   # 最强禄/刃根得分（取最高分的一个）
+        other_score = 0.0    # 其他根（长生/余气/墓库）累加
 
         for branch in branches:
             base = element_roots.get(branch, 0)
@@ -439,14 +455,31 @@ class WangShuaiAnalyzer:
             score = base * factor
             root_type = ROOT_TYPE.get(day_element, {}).get(branch, '?')
             logger.info(f"   R: {branch}({root_type}) base={base} ×{factor:.2f} = {score:.1f}")
-            total_r += score
 
-        # 各类合局加成（分类细化 v3）
+            if root_type in STRONG_ROOT_TYPES:   # 帝旺根/临官根（禄/刃）
+                lu_ren_score = max(lu_ren_score, score)
+            else:
+                other_score += score
+
+        # 应用上限规则
+        if lu_ren_score > 0:
+            if lu_ren_score >= R_CAP_WITH_LUREN:
+                total_r = float(R_CAP_WITH_LUREN)
+            else:
+                # 禄刃受损，可补充弱根，但总分不超上限
+                total_r = min(lu_ren_score + other_score, R_CAP_WITH_LUREN)
+        else:
+            # 无禄刃根，累加弱根，上限30
+            total_r = min(other_score, R_CAP_NO_LUREN)
+
+        # 各类合局加成
         r_bonus, k_bonus = self._calculate_branch_group_bonuses(branches, day_element)
         if r_bonus > 0:
-            total_r += r_bonus
+            # 合局视为"强根"，上限同有禄刃情况
+            total_r = min(total_r + r_bonus, R_CAP_WITH_LUREN)
 
-        logger.info(f"   R总计: {total_r:.1f}（合局K加成: {k_bonus:.1f}）")
+        logger.info(f"   R总计: {total_r:.1f}（禄刃={lu_ren_score:.1f} 弱根={other_score:.1f} "
+                    f"合局R+={r_bonus:.1f} 合局K+={k_bonus:.1f}）")
         return total_r, k_bonus
 
     def _calculate_branch_group_bonuses(self, branches: List[str],
@@ -512,7 +545,10 @@ class WangShuaiAnalyzer:
 
     def _calculate_S(self, bazi: Dict, day_element: str, branch_rels: Dict) -> float:
         """
-        天干生助能量：年干/月干/时干中的比劫(50)和印星(40)，乘以真假系数。
+        天干生助能量（V3.0）：
+          - 比肩/劫财：一律 10（有无根均等）
+          - 正印/偏印：有根 = 5，虚浮无根 = 2.5
+          - 累计上限 S_CAP(20)
         """
         stems = [bazi['year_stem'], bazi['month_stem'], bazi['hour_stem']]
         branches = branch_rels['branches']
@@ -523,14 +559,22 @@ class WangShuaiAnalyzer:
             tg = _get_ten_god(day_stem, stem)
             if tg not in S_TEN_GOD_SCORES:
                 continue
-            base = S_TEN_GOD_SCORES[tg]
-            stem_el = STEM_ELEMENTS.get(stem, '')
-            root_type = self._get_stem_root_kind(stem_el, branches, branch_rels, day_element)
-            coeff = S_ROOT_COEFFICIENTS[root_type]
-            score = base * coeff
-            logger.info(f"   S: {stem}({tg}) base={base} ×{coeff} ({root_type}) = {score:.1f}")
+
+            if tg in ('比肩', '劫财'):
+                score = 10.0   # 比劫一律10，不论有无根
+            else:
+                # 印星：有根=5，虚浮=2.5
+                stem_el = STEM_ELEMENTS.get(stem, '')
+                root_type = self._get_stem_root_kind(stem_el, branches, branch_rels, day_element)
+                if root_type == '虚浮无根':
+                    score = S_YINXING_WUGEN_SCORE   # 2.5
+                else:
+                    score = S_TEN_GOD_SCORES[tg]    # 5
+
+            logger.info(f"   S: {stem}({tg}) = {score:.1f}")
             total_s += score
 
+        total_s = min(total_s, S_CAP)   # 上限 20
         logger.info(f"   S总计: {total_s:.1f}")
         return total_s
 
@@ -556,7 +600,10 @@ class WangShuaiAnalyzer:
 
     def _calculate_B(self, bazi: Dict, day_element: str, branch_rels: Dict) -> float:
         """
-        印星根基能量：对每个印星天干，检查其在地支的根气强度。
+        印星根基能量（V3.0）：
+          - 禄/刃根=30，长生根=20，余气/墓库根=10
+          - 不再使用额外系数，仅乘地支破坏系数
+          - 每个印星天干只计最强的一个根
         """
         stems = [bazi['year_stem'], bazi['month_stem'], bazi['hour_stem']]
         branches = branch_rels['branches']
@@ -578,18 +625,11 @@ class WangShuaiAnalyzer:
                 base = B_ROOT_SCORES.get(root_tp, 0)
                 if base == 0:
                     continue
-                # 权重系数
-                if root_tp in STRONG_ROOT_TYPES | MEDIUM_ROOT_TYPES:
-                    coeff = B_ROOT_COEFFICIENTS['真通根']
-                elif root_tp in WEAK_ROOT_TYPES:
-                    coeff = B_ROOT_COEFFICIENTS['墓库根']
-                else:
-                    coeff = B_ROOT_COEFFICIENTS['半真根']
-                # 破坏系数
+                # 仅乘地支破坏系数（V3.0 不再乘额外权重系数）
                 factor = self._get_branch_factor(branch, stem_el, branch_rels)
-                score = base * coeff * factor
+                score = base * factor
                 logger.info(f"   B: {stem}({tg})根于{branch}({root_tp}) "
-                            f"base={base} ×{coeff} ×{factor:.2f} = {score:.1f}")
+                            f"base={base} ×{factor:.2f} = {score:.1f}")
                 total_b += score
                 break  # 每个印星只计最强的一个根
 
@@ -600,50 +640,89 @@ class WangShuaiAnalyzer:
     #  K 因子：克泄耗能量
     # ═══════════════════════════════════════════════════════
 
-    def _calculate_K(self, bazi: Dict, day_element: str, branch_rels: Dict) -> float:
+    def _calculate_K(self, bazi: Dict, day_element: str,
+                     branch_rels: Dict) -> Tuple[float, float]:
         """
-        克泄耗能量：七杀(120)/正官(60)/食伤(40)/财星(50)
-        官杀根据根气强弱附加系数（1.3 / 1.0 / 0.5）
+        克泄耗能量（V3.0）：
+          - 所有克泄耗十神（官杀/食伤/财）均使用根气系数：有根×1.2 / 半根×1.0 / 虚浮×0.5
+          - 地支克泄耗补充：天干未透的克泄耗主气，官杀+20 / 食伤财+10（避免重复计入）
+        返回 (total_k, guansha_k)：guansha_k 用于通关减克
         """
         stems = [bazi['year_stem'], bazi['month_stem'], bazi['hour_stem']]
         branches = branch_rels['branches']
         day_stem = bazi['day_stem']
         total_k = 0.0
+        guansha_k = 0.0   # 仅官杀部分，供通关减克使用
+
+        # 记录天干中已有的十神类型（用于地支补充时避免重复）
+        stem_tg_set: set = set()
 
         for stem in stems:
             tg = _get_ten_god(day_stem, stem)
             if tg not in K_TEN_GOD_SCORES:
                 continue
+            stem_tg_set.add(tg)
             base = K_TEN_GOD_SCORES[tg]
-            if tg in ('七杀', '正官'):
-                stem_el = STEM_ELEMENTS.get(stem, '')
-                root_kind = self._get_stem_root_kind(stem_el, branches, branch_rels, day_element)
-                coeff = K_GUANSHA_ROOT_COEFFICIENTS[root_kind]
-            else:
-                coeff = 1.0
+            # V3.0：所有克泄耗十神统一使用根气系数
+            stem_el = STEM_ELEMENTS.get(stem, '')
+            root_kind = self._get_stem_root_kind(stem_el, branches, branch_rels, day_element)
+            coeff = K_ROOT_COEFFICIENTS[root_kind]
             score = base * coeff
-            logger.info(f"   K: {stem}({tg}) base={base} ×{coeff:.2f} = {score:.1f}")
+            logger.info(f"   K: {stem}({tg}) base={base} ×{coeff:.2f}({root_kind}) = {score:.1f}")
             total_k += score
+            if tg in ('七杀', '正官'):
+                guansha_k += score
 
-        logger.info(f"   K总计: {total_k:.1f}")
-        return total_k
+        # 地支克泄耗补充（天干未透时）
+        guansha_in_stems = any(t in ('七杀', '正官') for t in stem_tg_set)
+        shishen_in_stems = any(t in ('食神', '伤官') for t in stem_tg_set)
+        cai_in_stems = any(t in ('偏财', '正财') for t in stem_tg_set)
+
+        from core.data.constants import HIDDEN_STEMS
+        for branch in branches:
+            hidden = HIDDEN_STEMS.get(branch, [])
+            if not hidden:
+                continue
+            main_stem_char = hidden[0][0]
+            tg = _get_ten_god(day_stem, main_stem_char)
+            if tg not in K_TEN_GOD_SCORES:
+                continue
+
+            if tg in ('七杀', '正官') and not guansha_in_stems:
+                logger.info(f"   K(地支): {branch}藏{main_stem_char}({tg}) +{K_BRANCH_GUANSHA_SCORE}")
+                total_k += K_BRANCH_GUANSHA_SCORE
+            elif tg in ('食神', '伤官') and not shishen_in_stems:
+                logger.info(f"   K(地支): {branch}藏{main_stem_char}({tg}) +{K_BRANCH_CAISHISHEN_SCORE}")
+                total_k += K_BRANCH_CAISHISHEN_SCORE
+            elif tg in ('偏财', '正财') and not cai_in_stems:
+                logger.info(f"   K(地支): {branch}藏{main_stem_char}({tg}) +{K_BRANCH_CAISHISHEN_SCORE}")
+                total_k += K_BRANCH_CAISHISHEN_SCORE
+
+        logger.info(f"   K总计: {total_k:.1f}（官杀K: {guansha_k:.1f}）")
+        return total_k, guansha_k
 
     # ═══════════════════════════════════════════════════════
     #  动态修正
     # ═══════════════════════════════════════════════════════
 
-    def _apply_tongguan(self, bazi: Dict, day_element: str, K: float) -> float:
+    def _apply_tongguan(self, bazi: Dict, day_element: str,
+                        K: float, K_guansha: float, B: float) -> float:
         """
-        通关减克：若有印星介于日主与官杀之间（官杀→印→日主连续相生），
-        官杀克力减半。
+        通关减克（V3.0）：
+          - 条件：印星透干且有力（B > 0），且命中有官杀
+          - 效果：仅官杀部分 K 减半（食伤财部分不受影响）
         """
+        if B <= 0:
+            return K   # 印星无力，通关无效
         day_stem = bazi['day_stem']
         stems = [bazi['year_stem'], bazi['month_stem'], bazi['hour_stem']]
         has_guansha = any(_get_ten_god(day_stem, s) in ('七杀', '正官') for s in stems)
         has_yin = any(_get_ten_god(day_stem, s) in ('偏印', '正印') for s in stems)
         if has_guansha and has_yin:
-            logger.info(f"   通关减克：官杀克力减半 K: {K:.1f} → {K * 0.5:.1f}")
-            return K * 0.5
+            reduction = K_guansha * 0.5
+            logger.info(f"   通关减克（印星有力 B={B:.1f}）：官杀K减半 -{reduction:.1f} "
+                        f"K: {K:.1f} → {K - reduction:.1f}")
+            return K - reduction
         return K
 
     def _apply_riganhe(self, bazi: Dict, day_element: str, P: float) -> float:
@@ -672,36 +751,40 @@ class WangShuaiAnalyzer:
     #  特殊格局检测
     # ═══════════════════════════════════════════════════════
 
-    def _detect_special_patterns(self, M: float, R: float, S: float, K: float,
-                                  bazi: Dict, branch_rels: Dict) -> Optional[str]:
+    def _detect_special_patterns(self, M: float, R: float, S: float, B: float,
+                                  K: float, bazi: Dict, branch_rels: Dict) -> Optional[str]:
         """
-        检测从旺格/从弱格（使用原始因子值，不加权重）。
+        检测从旺/假从旺/从弱/假从弱格（V3.0）。
+        使用 MRS_B = M+R+S+B（原始值，非加权）。
 
-        从旺格：M+R+S > 300 AND K < 50 AND 日主无强根被破
-        从弱格：K > 300 AND M+R+S < 50 AND 日主无禄刃根（帝旺/临官根）
+        从旺格：  MRS_B ≥ 85 AND K ≤ 20
+        假从旺格：MRS_B ≥ 85 AND 21 ≤ K ≤ 40（大势旺但有小疵）
+        从弱格：  R = 0 AND MRS_B ≤ 20 AND K ≥ 60
+        假从弱格：R = 0 AND 21 ≤ MRS_B ≤ 40 AND K ≥ 60
         """
-        mrs = M + R + S
-        day_stem = bazi['day_stem']
-        day_element = STEM_ELEMENTS.get(day_stem, '')
-        branches = branch_rels['branches']
-        chong_set = branch_rels['chong']
+        mrs_b = M + R + S + B
 
-        if mrs > CONGWANG_MRS_MIN and K < CONGWANG_K_MAX:
-            logger.info(f"   从旺格：M+R+S={mrs:.1f} > {CONGWANG_MRS_MIN}, K={K:.1f} < {CONGWANG_K_MAX}")
+        # 从旺格
+        if mrs_b >= CONGWANG_MRS_MIN and K <= CONGWANG_K_MAX:
+            logger.info(f"   从旺格：MRS_B={mrs_b:.1f} ≥ {CONGWANG_MRS_MIN}, K={K:.1f} ≤ {CONGWANG_K_MAX}")
             return '从旺格'
 
-        if K > CONGRUO_K_MIN and mrs < CONGRUO_MRS_MAX:
-            # 第3条件：日主在地支无禄刃根（帝旺根/临官根）
-            has_lu_ren = any(
-                ROOT_TYPE.get(day_element, {}).get(b, '') in STRONG_ROOT_TYPES
-                and b not in chong_set
-                for b in branches
-            )
-            if not has_lu_ren:
-                logger.info(f"   从弱格：K={K:.1f}>{CONGRUO_K_MIN}, MRS={mrs:.1f}<{CONGRUO_MRS_MAX}, 无禄刃根")
+        # 假从旺格
+        if mrs_b >= CONGWANG_MRS_MIN and JIACONGWANG_K_MIN <= K <= JIACONGWANG_K_MAX:
+            logger.info(f"   假从旺格：MRS_B={mrs_b:.1f} ≥ {CONGWANG_MRS_MIN}, "
+                        f"K={K:.1f} ∈ [{JIACONGWANG_K_MIN},{JIACONGWANG_K_MAX}]")
+            return '假从旺格'
+
+        # 从弱格/假从弱格：前提是日主无根（R = 0）
+        if R == 0 and K >= CONGRUO_K_MIN:
+            if mrs_b <= CONGRUO_MRS_MAX:
+                logger.info(f"   从弱格：R=0, MRS_B={mrs_b:.1f} ≤ {CONGRUO_MRS_MAX}, "
+                            f"K={K:.1f} ≥ {CONGRUO_K_MIN}")
                 return '从弱格'
-            else:
-                logger.info(f"   K={K:.1f}>{CONGRUO_K_MIN} 但日主有禄刃根，从弱格不触发")
+            if JIACONGRUO_MRS_MIN <= mrs_b <= JIACONGRUO_MRS_MAX:
+                logger.info(f"   假从弱格：R=0, MRS_B={mrs_b:.1f} ∈ "
+                            f"[{JIACONGRUO_MRS_MIN},{JIACONGRUO_MRS_MAX}], K={K:.1f} ≥ {CONGRUO_K_MIN}")
+                return '假从弱格'
 
         return None
 
@@ -710,29 +793,32 @@ class WangShuaiAnalyzer:
     # ═══════════════════════════════════════════════════════
 
     def _determine_wangshuai_v2(self, P: float) -> str:
-        """根据 P 值判定3级旺衰（特殊格局已在上游处理）"""
+        """根据 P 值判定4级旺衰（V3.0：身强/中和偏强/中和偏弱/身弱）"""
         for name, threshold in WANGSHUAI_THRESHOLDS:
             if threshold is None or P >= threshold:
                 return name
         return '身弱'  # 兜底
 
     def _calculate_wangshuai_degree_v2(self, P: float, wangshuai: str) -> int:
-        """将 P 值映射到 0-100 旺衰程度（v3：3级 + 特殊格局）"""
+        """将 P 值映射到 0-100 旺衰程度（V3.0：4级 + 特殊格局）"""
         if wangshuai == '从强':
-            # 从旺格触发，P通常较高，映射到 90-100
-            degree = 90 + min(10, max(0, (P - 300) / 30))
+            # 从旺格，P 通常远超 85，映射到 90-100
+            degree = 90 + min(10, max(0, (P - 85) / 8.5))
         elif wangshuai == '身强':
-            # P ≥ 160，映射到 60-90
-            degree = 60 + min(30, (P - 160) / 4.67)
-        elif wangshuai == '中和':
-            # 80 ≤ P < 160，映射到 30-60
-            degree = 30 + (P - 80) / 2.67
+            # P ≥ 85，映射到 65-90
+            degree = 65 + min(25, max(0, (P - 85) / 2.6))
+        elif wangshuai == '中和偏强':
+            # 70 ≤ P < 85，映射到 50-64
+            degree = 50 + min(14, max(0, (P - 70) / 1.07))
+        elif wangshuai == '中和偏弱':
+            # 50 ≤ P < 70，映射到 35-49
+            degree = 35 + min(14, max(0, (P - 50) / 1.43))
         elif wangshuai == '身弱':
-            # P < 80，映射到 5-30
-            degree = max(5, 30 - (80 - P) / 4.0)
+            # P < 50，映射到 5-34
+            degree = max(5, 34 - (49 - min(P, 49)) * 0.59)
         elif wangshuai == '从弱':
-            # 从弱格触发，P通常极低，映射到 0-10
-            degree = max(0, 10 - max(0, 50 - P) / 5)
+            # 从弱格，P 通常极低，映射到 0-10
+            degree = max(0, 10 - max(0, 20 - P) / 2)
         else:
             degree = 50.0
         return int(min(100, max(0, round(degree))))
