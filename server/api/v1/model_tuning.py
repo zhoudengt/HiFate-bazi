@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import logging
+from server.utils.async_executor import run_in_executor
 
 from services.model_tuning_service.service import ModelTuningService
 from services.model_tuning_service.keyword_extractor import KeywordRuleExtractor
@@ -102,9 +103,8 @@ async def list_training_batches(
     status: Optional[str] = Query(None, description="批次状态: pending/training/completed/failed")
 ):
     """获取训练批次列表"""
-    try:
+    def _query():
         from shared.config.database import get_mysql_connection, return_mysql_connection
-        
         conn = get_mysql_connection()
         try:
             with conn.cursor() as cursor:
@@ -115,8 +115,7 @@ async def list_training_batches(
                                training_duration_sec
                         FROM intent_model_training_batches
                         WHERE training_status = %s
-                        ORDER BY created_at DESC
-                        LIMIT %s
+                        ORDER BY created_at DESC LIMIT %s
                     """
                     cursor.execute(sql, (status, limit))
                 else:
@@ -125,19 +124,16 @@ async def list_training_batches(
                                training_status, created_at, training_start_time, training_end_time,
                                training_duration_sec
                         FROM intent_model_training_batches
-                        ORDER BY created_at DESC
-                        LIMIT %s
+                        ORDER BY created_at DESC LIMIT %s
                     """
                     cursor.execute(sql, (limit,))
-                
-                batches = cursor.fetchall()
-                return {
-                    "success": True,
-                    "batches": batches,
-                    "total": len(batches)
-                }
+                return cursor.fetchall()
         finally:
             return_mysql_connection(conn)
+    
+    try:
+        batches = await run_in_executor(_query)
+        return {"success": True, "batches": batches, "total": len(batches)}
     except Exception as e:
         logger.error(f"获取训练批次列表失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -225,70 +221,63 @@ async def extract_keyword_rules(
 @router.get("/stats", summary="获取统计信息")
 async def get_stats():
     """获取训练数据统计信息"""
-    try:
+    def _query_stats():
         from shared.config.database import get_mysql_connection, return_mysql_connection
-        
         conn = get_mysql_connection()
         try:
             with conn.cursor() as cursor:
-                # 总问题数
                 cursor.execute("SELECT COUNT(*) as total FROM intent_user_questions")
                 total_questions = cursor.fetchone()['total']
-                
-                # 已标注数
                 cursor.execute("SELECT COUNT(*) as total FROM intent_user_questions WHERE is_labeled = TRUE")
                 labeled_count = cursor.fetchone()['total']
-                
-                # 未标注数
-                unlabeled_count = total_questions - labeled_count
-                
-                # 训练批次统计
                 cursor.execute("""
-                    SELECT 
-                        COUNT(*) as total,
+                    SELECT COUNT(*) as total,
                         SUM(CASE WHEN training_status = 'completed' THEN 1 ELSE 0 END) as completed,
                         SUM(CASE WHEN training_status = 'training' THEN 1 ELSE 0 END) as training,
                         SUM(CASE WHEN training_status = 'failed' THEN 1 ELSE 0 END) as failed
                     FROM intent_model_training_batches
                 """)
                 batch_stats = cursor.fetchone()
-                
-                # 关键词规则数
                 cursor.execute("SELECT COUNT(*) as total FROM intent_keyword_rules WHERE enabled = TRUE")
                 keyword_rules_count = cursor.fetchone()['total']
-                
-                # 模型版本数
                 cursor.execute("SELECT COUNT(*) as total FROM intent_model_versions")
                 model_versions_count = cursor.fetchone()['total']
-                
-                # 激活的模型版本
                 cursor.execute("SELECT version FROM intent_model_versions WHERE is_active = TRUE LIMIT 1")
                 active_model = cursor.fetchone()
-                
                 return {
-                    "success": True,
-                    "questions": {
-                        "total": total_questions,
-                        "labeled": labeled_count,
-                        "unlabeled": unlabeled_count,
-                        "labeling_rate": labeled_count / total_questions if total_questions > 0 else 0
-                    },
-                    "training_batches": {
-                        "total": batch_stats['total'],
-                        "completed": batch_stats['completed'],
-                        "training": batch_stats['training'],
-                        "failed": batch_stats['failed']
-                    },
-                    "keyword_rules": {
-                        "total": keyword_rules_count
-                    },
-                    "model_versions": {
-                        "total": model_versions_count,
-                        "active": active_model['version'] if active_model else None
-                    }
+                    "total_questions": total_questions,
+                    "labeled_count": labeled_count,
+                    "batch_stats": batch_stats,
+                    "keyword_rules_count": keyword_rules_count,
+                    "model_versions_count": model_versions_count,
+                    "active_model": active_model
                 }
         finally:
             return_mysql_connection(conn)
+    
+    try:
+        s = await run_in_executor(_query_stats)
+        total_questions = s['total_questions']
+        labeled_count = s['labeled_count']
+        return {
+            "success": True,
+            "questions": {
+                "total": total_questions, "labeled": labeled_count,
+                "unlabeled": total_questions - labeled_count,
+                "labeling_rate": labeled_count / total_questions if total_questions > 0 else 0
+            },
+            "training_batches": {
+                "total": s['batch_stats']['total'],
+                "completed": s['batch_stats']['completed'],
+                "training": s['batch_stats']['training'],
+                "failed": s['batch_stats']['failed']
+            },
+            "keyword_rules": {"total": s['keyword_rules_count']},
+            "model_versions": {
+                "total": s['model_versions_count'],
+                "active": s['active_model']['version'] if s['active_model'] else None
+            }
+        }
     except Exception as e:
         logger.error(f"获取统计信息失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

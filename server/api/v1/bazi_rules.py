@@ -45,7 +45,8 @@ USE_ORCHESTRATOR_BAZI_RULES = os.environ.get("USE_ORCHESTRATOR_BAZI_RULES", "fal
 
 # 简单内存限流存储（如果 slowapi 不可用时的降级方案）
 _rate_limit_storage = {}  # {key: [(timestamp, count), ...]}
-_rate_limit_lock = __import__('threading').Lock()  # 线程锁
+_rate_limit_lock = __import__('threading').Lock()
+_rate_limit_last_purge = 0.0
 
 # 限流依赖函数（如果 slowapi 可用）
 def check_rate_limit_dependency(http_request: Request):
@@ -78,7 +79,14 @@ def check_rate_limit_dependency(http_request: Request):
     
     # 使用锁确保线程安全
     with _rate_limit_lock:
-        # 清理过期记录
+        global _rate_limit_last_purge
+        if current_time - _rate_limit_last_purge > 300:
+            stale = [k for k, v in _rate_limit_storage.items()
+                     if not v or current_time - v[-1][0] > limit_seconds * 2]
+            for k in stale:
+                del _rate_limit_storage[k]
+            _rate_limit_last_purge = current_time
+        
         if key in _rate_limit_storage:
             _rate_limit_storage[key] = [
                 (ts, cnt) for ts, cnt in _rate_limit_storage[key]
@@ -87,20 +95,13 @@ def check_rate_limit_dependency(http_request: Request):
         else:
             _rate_limit_storage[key] = []
         
-        # 计算当前时间窗口内的请求数
         current_count = sum(cnt for _, cnt in _rate_limit_storage[key])
         
-        # 调试信息（生产环境可移除）
-        import logging
-        logger = logging.getLogger(__name__)
-        if current_count > 25:  # 接近限流时记录
-            logger.info(f"限流检查: key={key}, count={current_count}/{limit_count}")
-        
         if current_count >= limit_count:
-            logger.warning(f"触发限流: key={key}, count={current_count}")
+            import logging
+            logging.getLogger(__name__).warning(f"触发限流: key={key}, count={current_count}")
             raise HTTPException(status_code=429, detail="请求过于频繁，每分钟最多60次，请稍后再试")
         
-        # 增加计数
         _rate_limit_storage[key].append((current_time, 1))
 
 

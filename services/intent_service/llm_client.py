@@ -27,21 +27,25 @@ class IntentLLMClient:
         self.bot_id = INTENT_BOT_ID
         self.base_url = "https://api.coze.cn/v3/chat"
         
-        # 初始化 Redis 缓存
         try:
-            self.redis_client = redis.Redis(
-                host=REDIS_HOST,
-                port=REDIS_PORT,
-                db=REDIS_DB,
-                decode_responses=True
-            )
+            from shared.config.redis import get_redis_client_str
+            self.redis_client = get_redis_client_str()
             self.redis_client.ping()
             self.cache_enabled = True
-            logger.info("Redis cache initialized successfully")
-        except Exception as e:
-            logger.warning(f"Redis connection failed, cache disabled: {e}")
-            self.redis_client = None
-            self.cache_enabled = False
+            logger.info("Redis cache initialized (shared pool)")
+        except Exception:
+            try:
+                self.redis_client = redis.Redis(
+                    host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB,
+                    decode_responses=True
+                )
+                self.redis_client.ping()
+                self.cache_enabled = True
+                logger.info("Redis cache initialized (standalone)")
+            except Exception as e:
+                logger.warning(f"Redis connection failed, cache disabled: {e}")
+                self.redis_client = None
+                self.cache_enabled = False
     
     def _generate_cache_key(self, question: str, prompt_version: str) -> str:
         """生成缓存键"""

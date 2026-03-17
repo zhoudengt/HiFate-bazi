@@ -337,7 +337,7 @@ class DeskFengshuiEngine:
                 'host': os.getenv('MYSQL_HOST', '127.0.0.1'),
                 'port': int(os.getenv('MYSQL_PORT', 3306)),
                 'user': os.getenv('MYSQL_USER', 'root'),
-                'password': os.getenv('MYSQL_PASSWORD', '123456'),
+                'password': os.getenv('MYSQL_PASSWORD', ''),
                 'database': os.getenv('MYSQL_DATABASE', 'hifate_bazi'),
                 'charset': 'utf8mb4',
                 'use_unicode': True
@@ -569,17 +569,14 @@ class DeskFengshuiEngine:
             if cached_rules:
                 return cached_rules
         
+        conn = None
         try:
             import pymysql
             
-            # 使用连接池（必须）
             from shared.config.database import get_mysql_connection, return_mysql_connection
             conn = get_mysql_connection()
-            use_pool = True
             
-            # 设置连接字符集（双重保险）
             conn.set_charset('utf8mb4')
-            # 执行SET NAMES确保会话级别字符集
             cursor = conn.cursor(pymysql.cursors.DictCursor)
             cursor.execute("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci")
             
@@ -688,11 +685,7 @@ class DeskFengshuiEngine:
             
             cursor.close()
             
-            # 返回连接到连接池
-            return_mysql_connection(conn)
-            
-            # 保存到缓存
-            self._save_rules_to_cache(rules, ttl=3600)  # 缓存1小时
+            self._save_rules_to_cache(rules, ttl=3600)
             logger.info(f"加载了 {len(rules)} 条风水规则")
             
             return rules
@@ -700,8 +693,14 @@ class DeskFengshuiEngine:
         except Exception as e:
             logger.error(f"加载规则失败: {e}")
             logger.warning("⚠️ 使用内置规则作为fallback")
-            # 使用内置规则作为fallback
             return self._get_builtin_rules()
+        finally:
+            if conn is not None:
+                try:
+                    from shared.config.database import return_mysql_connection
+                    return_mysql_connection(conn)
+                except Exception:
+                    pass
     
     def analyze_item_fengshui(self, item: Dict, bazi_info: Optional[Dict] = None) -> Dict:
         """

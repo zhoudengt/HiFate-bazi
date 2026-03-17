@@ -115,20 +115,17 @@ class BaziRuleClientAdapter(IBaziRuleClient):
                     )
                 raise CircuitBreakerOpen("bazi-rule", "Circuit breaker is open")
         
-        # 重试逻辑
         max_retries = int(os.getenv("GRPC_MAX_RETRIES", "3"))
-        retry_delay = float(os.getenv("GRPC_RETRY_DELAY", "1.0"))
+        base_delay = float(os.getenv("GRPC_RETRY_DELAY", "0.5"))
         last_exception = None
         
         for attempt in range(max_retries):
             try:
                 result = self._client.match_rules(solar_date, solar_time, gender, rule_types)
                 
-                # 记录成功
                 if self._enable_circuit_breaker and self._circuit_breaker:
                     self._circuit_breaker.record_success()
                 
-                # 记录监控指标
                 if self._enable_metrics and self._metrics_collector:
                     duration = time.time() - start_time
                     self._metrics_collector.record_grpc_call(
@@ -142,11 +139,9 @@ class BaziRuleClientAdapter(IBaziRuleClient):
                 last_exception = e
                 error_type = type(e).__name__
                 
-                # 记录失败
                 if self._enable_circuit_breaker and self._circuit_breaker:
                     self._circuit_breaker.record_failure(e)
                 
-                # 如果是最后一次重试，记录失败并抛出异常
                 if attempt == max_retries - 1:
                     if self._enable_metrics and self._metrics_collector:
                         duration = time.time() - start_time
@@ -156,12 +151,12 @@ class BaziRuleClientAdapter(IBaziRuleClient):
                         )
                     raise
                 
-                # 等待后重试
+                delay = min(base_delay * (2 ** attempt), 8.0)
                 logger.warning(
                     f"bazi-rule 调用失败（尝试 {attempt + 1}/{max_retries}）: {e}，"
-                    f"{retry_delay} 秒后重试..."
+                    f"{delay:.1f}s 后重试..."
                 )
-                time.sleep(retry_delay)
+                time.sleep(delay)
         
         # 所有重试都失败
         if last_exception:

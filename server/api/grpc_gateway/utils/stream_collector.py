@@ -5,6 +5,7 @@ SSE 流式响应收集器
 将流式生成器的输出收集为统一的响应格式。
 """
 
+import asyncio
 import json
 import logging
 from typing import Any, Dict
@@ -174,10 +175,17 @@ async def collect_sse_stream(generator) -> Dict[str, Any]:
 
         return result
 
+    except asyncio.CancelledError:
+        logger.info("[collect_sse_stream] 客户端断连，流提前终止")
+        stream_content = ''.join(stream_contents) if stream_contents else None
+        return {
+            "success": bool(stream_content),
+            "data": data_content if data_content else None,
+            "stream_content": stream_content,
+            "cancelled": True
+        }
     except Exception as e:
         logger.error(f"收集 SSE 流失败: {e}", exc_info=True)
-        import traceback
-        logger.error(f"堆栈跟踪: {traceback.format_exc()}")
         return {
             "success": False,
             "error": f"流式处理失败: {str(e)}"

@@ -10,77 +10,66 @@ import hashlib
 import random
 import threading
 import time
+from collections import OrderedDict
 from typing import Any, Optional, Dict
 from functools import lru_cache
 
 # L1: 本地内存缓存（热点数据）
 class L1MemoryCache:
-    """L1缓存：本地内存，存储最热的数据"""
+    """L1缓存：本地内存，存储最热的数据。使用 OrderedDict 实现 O(1) LRU 淘汰。"""
     
     def __init__(self, max_size: int = 50000, ttl: int = 300):
-        """
-        初始化 L1 缓存
-        
-        Args:
-            max_size: 最大缓存条目数（默认5万）
-            ttl: 缓存过期时间（秒），默认5分钟
-        """
-        self._cache = {}
-        self._cache_times = {}
-        self._cache_expiry = {}  # key -> expiry timestamp (for per-key TTL)
+        self._cache: OrderedDict = OrderedDict()
+        self._cache_expiry: dict = {}
         self.max_size = max_size
         self.ttl = ttl
         self._lock = threading.Lock()
-        # 缓存统计
         self._hits = 0
         self._misses = 0
     
     def get(self, key: str) -> Optional[Any]:
-        """从缓存获取结果"""
         with self._lock:
             if key not in self._cache:
                 self._misses += 1
                 return None
-            expiry = self._cache_expiry.get(key, self._cache_times[key] + self.ttl)
-            if time.time() > expiry:
+            expiry = self._cache_expiry.get(key)
+            if expiry and time.time() > expiry:
                 del self._cache[key]
-                del self._cache_times[key]
-                if key in self._cache_expiry:
-                    del self._cache_expiry[key]
+                self._cache_expiry.pop(key, None)
                 self._misses += 1
                 return None
+            self._cache.move_to_end(key)
             self._hits += 1
             return self._cache[key]
 
     def set(self, key: str, value: Any, ttl: Optional[int] = None):
-        """设置缓存；ttl 为可选，不传则使用实例默认 TTL。TTL 会加 0–10% 随机偏移以防雪崩。"""
         with self._lock:
             effective = ttl if ttl is not None else self.ttl
             if effective:
                 effective = effective + random.randint(0, max(1, int(effective * 0.1)))
-            if len(self._cache) >= self.max_size:
-                oldest = min(self._cache_times.keys(), key=lambda k: self._cache_times[k])
-                del self._cache[oldest]
-                del self._cache_times[oldest]
-                if oldest in self._cache_expiry:
-                    del self._cache_expiry[oldest]
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            else:
+                if len(self._cache) >= self.max_size:
+                    oldest_key, _ = self._cache.popitem(last=False)
+                    self._cache_expiry.pop(oldest_key, None)
             self._cache[key] = value
-            self._cache_times[key] = time.time()
             if effective:
                 self._cache_expiry[key] = time.time() + effective
     
+    def delete(self, key: str):
+        with self._lock:
+            self._cache.pop(key, None)
+            self._cache_expiry.pop(key, None)
+    
     def clear(self):
-        """清空缓存"""
         with self._lock:
             self._cache.clear()
-            self._cache_times.clear()
             self._cache_expiry.clear()
     
     def stats(self) -> dict:
-        """获取缓存统计信息"""
         total_requests = self._hits + self._misses
         hit_rate = (self._hits / total_requests * 100) if total_requests > 0 else 0.0
-        
         return {
             "size": len(self._cache),
             "max_size": self.max_size,
@@ -250,12 +239,7 @@ class MultiLevelCache:
     
     def delete(self, key: str):
         """删除缓存（所有层级）"""
-        # L1: 从内存缓存删除
-        if key in self.l1._cache:
-            del self.l1._cache[key]
-        if key in self.l1._cache_times:
-            del self.l1._cache_times[key]
-        # L2: 从Redis删除
+        self.l1.delete(key)
         self.l2.delete(key)
     
     def clear(self):
@@ -303,25 +287,14 @@ class MultiLevelCache:
         }
     
     def invalidate_pattern(self, pattern: str):
-        """
-        按模式删除缓存（支持通配符）
+        """按模式删除缓存（支持通配符）"""
+        with self.l1._lock:
+            keys_to_delete = [k for k in self.l1._cache if self._match_pattern(k, pattern)]
+            for key in keys_to_delete:
+                self.l1._cache.pop(key, None)
+                self.l1._cache_expiry.pop(key, None)
         
-        Args:
-            pattern: 缓存键模式（支持 * 通配符）
-        """
-        # L1: 遍历内存缓存
-        keys_to_delete = []
-        for key in list(self.l1._cache.keys()):
-            if self._match_pattern(key, pattern):
-                keys_to_delete.append(key)
-        
-        for key in keys_to_delete:
-            if key in self.l1._cache:
-                del self.l1._cache[key]
-            if key in self.l1._cache_times:
-                del self.l1._cache_times[key]
-        
-        # L2: Redis支持模式删除（使用SCAN）
+        # L2: Redis 支持模式删除（使用 SCAN）
         if self.l2._available:
             try:
                 # 使用Redis的SCAN命令查找匹配的键
