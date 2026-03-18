@@ -699,9 +699,27 @@ async def marriage_analysis_stream_generator(
         
         logger.info("✓ 数据完整性验证通过")
         
+        # 6.5 运行推理引擎（安全降级：失败时走原有逻辑）
+        inference_conclusions = None
+        try:
+            from core.inference.marriage_engine import MarriageInferenceEngine
+            engine = MarriageInferenceEngine.get_instance()
+            inference_input = engine.build_input(bazi_data, wangshuai_result, detail_result, gender)
+            inference_conclusions = engine.infer(inference_input)
+            if inference_conclusions and inference_conclusions.has_conclusions():
+                logger.info(f"[{trace_id}] 推理引擎返回 {len(inference_conclusions.chains)} 条结论")
+            else:
+                inference_conclusions = None
+        except Exception as e:
+            logger.warning(f"[{trace_id}] 推理引擎降级（不影响功能）: {e}")
+            inference_conclusions = None
+        
         # 7. ⚠️ 优化：使用精简中文文本格式（Token 减少 83%）
         formatted_data = format_marriage_for_llm(input_data)
-        logger.info(f"格式化数据长度: {len(formatted_data)} 字符（优化后）")
+        if inference_conclusions:
+            from server.utils.prompts.inference_formatter import format_with_inference
+            formatted_data = format_with_inference(formatted_data, inference_conclusions)
+        logger.info(f"格式化数据长度: {len(formatted_data)} 字符" + ("（含推理结论）" if inference_conclusions else "（优化后）"))
         logger.debug(f"格式化数据:\n{formatted_data}")
         
         # ✅ 性能优化：检查 LLM 缓存

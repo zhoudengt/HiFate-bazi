@@ -68,6 +68,24 @@ class RuleReloader:
             return False
 
 
+class InferenceRuleReloader:
+    """推理规则重载器（inference_rules 表）"""
+
+    @staticmethod
+    def reload() -> bool:
+        try:
+            from core.inference.rule_loader import InferenceRuleLoader
+            InferenceRuleLoader.reload_all()
+            from core.inference.base_engine import BaseInferenceEngine
+            for instance in BaseInferenceEngine._instances.values():
+                instance.reload_rules()
+            logger.info("✓ 推理规则已重新加载")
+            return True
+        except Exception as e:
+            logger.warning(f"⚠ 推理规则重载失败: {e}")
+            return False
+
+
 class ContentReloader:
     """内容重载器"""
     
@@ -761,6 +779,7 @@ class ConfigReloaderEnhanced:
 # 重载器注册表
 RELOADERS = {
     'rules': RuleReloader,
+    'inference_rules': InferenceRuleReloader,
     'content': ContentReloader,
     'config': ConfigReloaderEnhanced,  # 使用增强版配置重载器
     'cache': CacheReloader,
@@ -777,6 +796,7 @@ RELOADERS = {
 RELOAD_ORDER = [
     'config',       # 1. 先更新配置（环境变量、数据库连接等）
     'rules',        # 2. 更新规则
+    'inference_rules',  # 2.5 更新推理规则
     'content',      # 3. 更新内容
     'source',       # 4. 更新源代码（触发模块重新导入和注册）
     'singleton',    # 5. 重置单例（清理旧实例，强制用新代码重建）
