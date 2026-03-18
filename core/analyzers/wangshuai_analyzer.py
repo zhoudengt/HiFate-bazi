@@ -23,8 +23,10 @@ from core.data.wangshuai_config import (
     K_BRANCH_GUANSHA_SCORE, K_BRANCH_CAISHISHEN_SCORE,
     BRANCH_DESTRUCTION, LIUHE_HUA, STEM_WUHE_HUA,
     WANGSHUAI_THRESHOLDS, XI_JI_MAPPING,
-    CONGWANG_MRS_MIN, CONGWANG_K_MAX, CONGRUO_K_MIN, CONGRUO_MRS_MAX,
-    JIACONGWANG_K_MIN, JIACONGWANG_K_MAX, JIACONGRUO_MRS_MIN, JIACONGRUO_MRS_MAX,
+    CONGWANG_P_MIN, CONGWANG_K_MAX, CONGWANG_MRS_MIN,
+    JIACONGWANG_K_MIN, JIACONGWANG_K_MAX,
+    CONGRUO_P_MAX, CONGRUO_K_MIN, CONGRUO_MRS_MAX,
+    JIACONGRUO_MRS_MIN, JIACONGRUO_MRS_MAX,
     R_CAP_WITH_LUREN, R_CAP_NO_LUREN,
     SANHE_ELEMENT, SANHUI_ELEMENT, SANHE_BONUS,
     BANHE_PAIRS, GONGHE_PAIRS,
@@ -131,7 +133,7 @@ class WangShuaiAnalyzer:
 
         # ─── Step 7: 从旺/假从旺/从弱/假从弱格检测 ────────
         if not special_pattern:
-            special_pattern = self._detect_special_patterns(M, R, S, K, bazi, branch_rels)
+            special_pattern = self._detect_special_patterns(M, R, S, K, P, bazi, branch_rels)
 
         # ─── Step 8: 旺衰判定（4级P阈值 + 特殊格局覆盖）──
         if special_pattern == '从旺格':
@@ -748,39 +750,93 @@ class WangShuaiAnalyzer:
         return P
 
     # ═══════════════════════════════════════════════════════
+    #  特殊格局辅助检测
+    # ═══════════════════════════════════════════════════════
+
+    def _has_broken_strong_root(self, day_element: str, branch_rels: Dict) -> bool:
+        """
+        从旺格"无强根被破"辅助判断。
+        若四柱中有日主的帝旺根/临官根（禄刃根）且该地支被六冲，返回 True（有强根被破）。
+        从旺格要求此方法返回 False。
+        """
+        chong_set = branch_rels['chong']
+        el_root_type = ROOT_TYPE.get(day_element, {})
+        el_root_scores = ROOT_SCORES.get(day_element, {})
+        for branch in branch_rels['branches']:
+            if branch in el_root_scores:
+                if el_root_type.get(branch, '') in STRONG_ROOT_TYPES and branch in chong_set:
+                    logger.info(f"   强根被破：{branch}({el_root_type[branch]}) 在冲集")
+                    return True
+        return False
+
+    def _has_independent_root(self, day_element: str, branch_rels: Dict) -> bool:
+        """
+        从弱格"无独立根气"辅助判断（返回 True = 有独立根气 → 不满足从弱格）。
+        有独立根气：
+          - 有禄刃根（帝旺/临官），哪怕被冲，OR
+          - 有完整弱根（长生/余气/墓库）且未被冲
+        从弱格要求此方法返回 False。
+        """
+        branches = branch_rels['branches']
+        chong_set = branch_rels['chong']
+        el_root_type = ROOT_TYPE.get(day_element, {})
+        el_root_scores = ROOT_SCORES.get(day_element, {})
+
+        for branch in branches:
+            if branch not in el_root_scores:
+                continue
+            root_tp = el_root_type.get(branch, '')
+            if not root_tp:
+                continue
+            if root_tp in STRONG_ROOT_TYPES:
+                # 有禄刃根存在（即使被冲）→ 有独立根气
+                logger.info(f"   有独立根气（禄刃根）：{branch}({root_tp})")
+                return True
+            # 弱根未被冲 → 有独立根气
+            if branch not in chong_set:
+                logger.info(f"   有独立根气（完整弱根）：{branch}({root_tp})")
+                return True
+        return False
+
+    # ═══════════════════════════════════════════════════════
     #  特殊格局检测
     # ═══════════════════════════════════════════════════════
 
     def _detect_special_patterns(self, M: float, R: float, S: float,
-                                  K: float, bazi: Dict, branch_rels: Dict) -> Optional[str]:
+                                  K: float, P: float, bazi: Dict, branch_rels: Dict) -> Optional[str]:
         """
-        检测从旺/假从旺/从弱/假从弱格（V新版）。
-        使用 MRS = M+R+S（原始值，非加权，已删除 B 项）。
+        检测从旺/假从旺/从弱/假从弱格。
 
-        从旺格：  MRS ≥ 25 AND K ≤ 2
-        假从旺格：MRS ≥ 25 AND 3 ≤ K ≤ 4（大势旺但有小疵）
-        从弱格：  R = 0 AND MRS ≤ 2 AND K ≥ 6
-        假从弱格：R = 0 AND 3 ≤ MRS ≤ 4 AND K ≥ 6
+        从旺格：  P ≥ 25 AND K ≤ 2 AND 无强根被破
+        假从旺格：MRS ≥ 25 AND 3 ≤ K ≤ 4（大势旺但有小疵，不变）
+        从弱格：  R = 0 AND P ≤ 4 AND K ≥ 6 AND 无独立根气
+        假从弱格：R = 0 AND 3 ≤ MRS ≤ 4 AND K ≥ 6（不变）
         """
+        day_element = STEM_ELEMENTS.get(bazi['day_stem'], '')
         mrs = M + R + S
 
-        # 从旺格
-        if mrs >= CONGWANG_MRS_MIN and K <= CONGWANG_K_MAX:
-            logger.info(f"   从旺格：MRS={mrs:.1f} ≥ {CONGWANG_MRS_MIN}, K={K:.1f} ≤ {CONGWANG_K_MAX}")
-            return '从旺格'
+        # 从旺格：P ≥ 25, K ≤ 2, 无强根被破
+        if P >= CONGWANG_P_MIN and K <= CONGWANG_K_MAX:
+            if not self._has_broken_strong_root(day_element, branch_rels):
+                logger.info(f"   从旺格：P={P:.1f} ≥ {CONGWANG_P_MIN}, K={K:.1f} ≤ {CONGWANG_K_MAX}, 无强根被破")
+                return '从旺格'
+            else:
+                logger.info(f"   P={P:.1f}/K={K:.1f} 满足从旺条件但有强根被破，不构成从旺格")
 
-        # 假从旺格
+        # 假从旺格：MRS ≥ 25, 3 ≤ K ≤ 4（不变）
         if mrs >= CONGWANG_MRS_MIN and JIACONGWANG_K_MIN <= K <= JIACONGWANG_K_MAX:
             logger.info(f"   假从旺格：MRS={mrs:.1f} ≥ {CONGWANG_MRS_MIN}, "
                         f"K={K:.1f} ∈ [{JIACONGWANG_K_MIN},{JIACONGWANG_K_MAX}]")
             return '假从旺格'
 
-        # 从弱格/假从弱格：前提是日主无根（R = 0）
+        # 从弱格/假从弱格：前提是日主无根（R = 0）且 K ≥ 6
         if R == 0 and K >= CONGRUO_K_MIN:
-            if mrs <= CONGRUO_MRS_MAX:
-                logger.info(f"   从弱格：R=0, MRS={mrs:.1f} ≤ {CONGRUO_MRS_MAX}, "
-                            f"K={K:.1f} ≥ {CONGRUO_K_MIN}")
+            # 从弱格：P ≤ 4, 无独立根气
+            if P <= CONGRUO_P_MAX and not self._has_independent_root(day_element, branch_rels):
+                logger.info(f"   从弱格：R=0, P={P:.1f} ≤ {CONGRUO_P_MAX}, "
+                            f"K={K:.1f} ≥ {CONGRUO_K_MIN}, 无独立根气")
                 return '从弱格'
+            # 假从弱格：3 ≤ MRS ≤ 4（不变）
             if JIACONGRUO_MRS_MIN <= mrs <= JIACONGRUO_MRS_MAX:
                 logger.info(f"   假从弱格：R=0, MRS={mrs:.1f} ∈ "
                             f"[{JIACONGRUO_MRS_MIN},{JIACONGRUO_MRS_MAX}], K={K:.1f} ≥ {CONGRUO_K_MIN}")

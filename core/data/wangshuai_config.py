@@ -219,16 +219,22 @@ XI_JI_MAPPING = {
 
 # ─────────────────────────────────────────────
 # 11. 特殊格局触发阈值（V新版）
-#     MRS = M + R + S（原始值相加，非加权，已删除 B 项）
+#
+#   从旺格：P ≥ 25, K ≤ 2, 无强根被破
+#   假从旺格：MRS ≥ 25, 3 ≤ K ≤ 4（不变）
+#   从弱格：R=0, P ≤ 4, K ≥ 6, 无独立根气
+#   假从弱格：R=0, 3 ≤ MRS ≤ 4, K ≥ 6（不变）
 # ─────────────────────────────────────────────
-CONGWANG_MRS_MIN = 25      # 从旺格：MRS ≥ 25
+CONGWANG_P_MIN = 25        # 从旺格：P ≥ 25（加权总分）
 CONGWANG_K_MAX = 2         # 从旺格：K ≤ 2
 
-JIACONGWANG_K_MIN = 3      # 假从旺格：3 ≤ K ≤ 4（MRS 仍 ≥ 25）
+CONGWANG_MRS_MIN = 25      # 假从旺格：MRS ≥ 25（M+R+S 原始值，不变）
+JIACONGWANG_K_MIN = 3      # 假从旺格：3 ≤ K ≤ 4
 JIACONGWANG_K_MAX = 4
 
-CONGRUO_K_MIN = 6          # 从弱格：K ≥ 6，且 R = 0
-CONGRUO_MRS_MAX = 2        # 从弱格：MRS ≤ 2
+CONGRUO_P_MAX = 4          # 从弱格：P ≤ 4（加权总分）
+CONGRUO_K_MIN = 6          # 从弱格/假从弱格：K ≥ 6，且 R = 0
+CONGRUO_MRS_MAX = 2        # 保留兼容（原从弱格阈值，不再使用）
 
 JIACONGRUO_MRS_MIN = 3     # 假从弱格：3 ≤ MRS ≤ 4，K ≥ 6，R = 0
 JIACONGRUO_MRS_MAX = 4
