@@ -452,11 +452,12 @@ trigger_changed_microservices() {
 
     echo "触发变更 gRPC 服务立即重载（$node_label）..."
     local reload_failed=false
-    $CHANGED_BAZI_COMPUTE && trigger_microservice_reload "$ssh_func" "hifate-bazi-compute"   "bazi_compute"    "$node_label" || reload_failed=true
-    $CHANGED_RULE_ENGINE  && trigger_microservice_reload "$ssh_func" "hifate-rule-engine"    "rule_engine"     "$node_label" || reload_failed=true
-    $CHANGED_PAYMENT      && trigger_microservice_reload "$ssh_func" "hifate-payment-service" "payment_service" "$node_label" || reload_failed=true
-    $CHANGED_INTENT       && trigger_microservice_reload "$ssh_func" "hifate-intent-service" "intent_service"  "$node_label" || reload_failed=true
-    $CHANGED_PROMPT_OPT   && trigger_microservice_reload "$ssh_func" "hifate-prompt-optimizer" "prompt_optimizer" "$node_label" || reload_failed=true
+    # 注意：用 if 而非 `$VAR && cmd || fallback`，避免 $VAR=false 时 || 误触发
+    if $CHANGED_BAZI_COMPUTE; then trigger_microservice_reload "$ssh_func" "hifate-bazi-compute"    "bazi_compute"    "$node_label" || reload_failed=true; fi
+    if $CHANGED_RULE_ENGINE;  then trigger_microservice_reload "$ssh_func" "hifate-rule-engine"     "rule_engine"     "$node_label" || reload_failed=true; fi
+    if $CHANGED_PAYMENT;      then trigger_microservice_reload "$ssh_func" "hifate-payment-service" "payment_service" "$node_label" || reload_failed=true; fi
+    if $CHANGED_INTENT;       then trigger_microservice_reload "$ssh_func" "hifate-intent-service"  "intent_service"  "$node_label" || reload_failed=true; fi
+    if $CHANGED_PROMPT_OPT;   then trigger_microservice_reload "$ssh_func" "hifate-prompt-optimizer" "prompt_optimizer" "$node_label" || reload_failed=true; fi
 
     if [ "$reload_failed" = "true" ]; then
         echo -e "${RED}部分 gRPC 服务 reload 失败，请检查代码后重试${NC}"
