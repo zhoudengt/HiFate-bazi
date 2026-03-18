@@ -704,7 +704,10 @@ async def marriage_analysis_stream_generator(
         try:
             from core.inference.marriage_engine import MarriageInferenceEngine
             engine = MarriageInferenceEngine.get_instance()
-            inference_input = engine.build_input(bazi_data, wangshuai_result, detail_result, gender)
+            inference_input = engine.build_input(
+                bazi_data, wangshuai_result, detail_result, gender,
+                matched_rules=matched_rules
+            )
             inference_conclusions = engine.infer(inference_input)
             if inference_conclusions and inference_conclusions.has_conclusions():
                 logger.info(f"[{trace_id}] 推理引擎返回 {len(inference_conclusions.chains)} 条结论")
