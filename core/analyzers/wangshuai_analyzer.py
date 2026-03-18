@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-命局旺衰分析器 - 五因子能量积分制（校准版 V3.0）
+命局旺衰分析器 - 四因子能量积分制（V新版）
 
-公式：P = M×3.5 + R×4.0 + S×2.5 + B×1.0 - K×3.0
-（系数为标准 0.35/0.40/0.25/0.10/0.30 的10倍，使 P 值与阈值 85/70/50/49 量级匹配）
+公式：P = M×0.35 + R×0.40 + S×0.25 - K×0.30
+核心改动：删除重复计分的 B（印星根基）项；K 归一化（÷10）：七杀12/正官6/财5/食伤4
 
-判定体系：
-  P值阈值（3级）：P≥160→身强 / 80≤P<160→中和 / P<80→身弱
-  条件触发（优先）：从旺格→从强 / 从弱格→从弱 / 化气格→化气格
+判定体系（4级）：
+  P≥25→身强 / 15-24→中和偏强 / 5-14→中和偏弱 / P<5→身弱
+  条件触发（优先）：从旺格→从强 / 假从旺格→从强 / 从弱格→从弱 / 假从弱格→从弱 / 化气格
 """
 
 import logging
@@ -118,18 +118,20 @@ class WangShuaiAnalyzer:
         M = self._calculate_M(bazi, effective_element, solar_term_days)
         R, K_sanhe_bonus = self._calculate_R(bazi, effective_element, branch_rels)
         S = self._calculate_S(bazi, effective_element, branch_rels)
+        # V新版：B 因子已从公式删除（避免与 S 中印星重复计分），保留计算仅供日志参考
         B = self._calculate_B(bazi, effective_element, branch_rels)
         K, K_guansha = self._calculate_K(bazi, effective_element, branch_rels)
         K += K_sanhe_bonus  # 三合财官局加成（不计入 guansha_k）
 
         # ─── Step 6: 动态修正 ──────────────────────────────
-        K = self._apply_tongguan(bazi, effective_element, K, K_guansha, B)
-        P_raw = (M * 3.5) + (R * 4.0) + (S * 2.5) + (B * 1.0) - (K * 3.0)
+        K = self._apply_tongguan(bazi, effective_element, K, K_guansha)
+        # V新版公式：P = M×0.35 + R×0.40 + S×0.25 - K×0.30（不含 B）
+        P_raw = (M * 0.35) + (R * 0.40) + (S * 0.25) - (K * 0.30)
         P = self._apply_riganhe(bazi, effective_element, P_raw)
 
         # ─── Step 7: 从旺/假从旺/从弱/假从弱格检测 ────────
         if not special_pattern:
-            special_pattern = self._detect_special_patterns(M, R, S, B, K, bazi, branch_rels)
+            special_pattern = self._detect_special_patterns(M, R, S, K, bazi, branch_rels)
 
         # ─── Step 8: 旺衰判定（4级P阈值 + 特殊格局覆盖）──
         if special_pattern == '从旺格':
@@ -182,7 +184,7 @@ class WangShuaiAnalyzer:
                 'M': round(M, 2),
                 'R': round(R, 2),
                 'S': round(S, 2),
-                'B': round(B, 2),
+                'B': 0.0,     # V新版：已从公式删除（避免与 S 中印星重复计分）
                 'K': round(K, 2),
             },
             'special_pattern': special_pattern,
@@ -706,21 +708,19 @@ class WangShuaiAnalyzer:
     # ═══════════════════════════════════════════════════════
 
     def _apply_tongguan(self, bazi: Dict, day_element: str,
-                        K: float, K_guansha: float, B: float) -> float:
+                        K: float, K_guansha: float) -> float:
         """
-        通关减克（V3.0）：
-          - 条件：印星透干且有力（B > 0），且命中有官杀
+        通关减克（V新版）：
+          - 条件：印星透干（S 中印星分值 > 0，即有印星在天干即可，无论有无根）
           - 效果：仅官杀部分 K 减半（食伤财部分不受影响）
         """
-        if B <= 0:
-            return K   # 印星无力，通关无效
         day_stem = bazi['day_stem']
         stems = [bazi['year_stem'], bazi['month_stem'], bazi['hour_stem']]
         has_guansha = any(_get_ten_god(day_stem, s) in ('七杀', '正官') for s in stems)
         has_yin = any(_get_ten_god(day_stem, s) in ('偏印', '正印') for s in stems)
         if has_guansha and has_yin:
             reduction = K_guansha * 0.5
-            logger.info(f"   通关减克（印星有力 B={B:.1f}）：官杀K减半 -{reduction:.1f} "
+            logger.info(f"   通关减克（印星透干）：官杀K减半 -{reduction:.1f} "
                         f"K: {K:.1f} → {K - reduction:.1f}")
             return K - reduction
         return K
@@ -751,38 +751,38 @@ class WangShuaiAnalyzer:
     #  特殊格局检测
     # ═══════════════════════════════════════════════════════
 
-    def _detect_special_patterns(self, M: float, R: float, S: float, B: float,
+    def _detect_special_patterns(self, M: float, R: float, S: float,
                                   K: float, bazi: Dict, branch_rels: Dict) -> Optional[str]:
         """
-        检测从旺/假从旺/从弱/假从弱格（V3.0）。
-        使用 MRS_B = M+R+S+B（原始值，非加权）。
+        检测从旺/假从旺/从弱/假从弱格（V新版）。
+        使用 MRS = M+R+S（原始值，非加权，已删除 B 项）。
 
-        从旺格：  MRS_B ≥ 85 AND K ≤ 20
-        假从旺格：MRS_B ≥ 85 AND 21 ≤ K ≤ 40（大势旺但有小疵）
-        从弱格：  R = 0 AND MRS_B ≤ 20 AND K ≥ 60
-        假从弱格：R = 0 AND 21 ≤ MRS_B ≤ 40 AND K ≥ 60
+        从旺格：  MRS ≥ 25 AND K ≤ 2
+        假从旺格：MRS ≥ 25 AND 3 ≤ K ≤ 4（大势旺但有小疵）
+        从弱格：  R = 0 AND MRS ≤ 2 AND K ≥ 6
+        假从弱格：R = 0 AND 3 ≤ MRS ≤ 4 AND K ≥ 6
         """
-        mrs_b = M + R + S + B
+        mrs = M + R + S
 
         # 从旺格
-        if mrs_b >= CONGWANG_MRS_MIN and K <= CONGWANG_K_MAX:
-            logger.info(f"   从旺格：MRS_B={mrs_b:.1f} ≥ {CONGWANG_MRS_MIN}, K={K:.1f} ≤ {CONGWANG_K_MAX}")
+        if mrs >= CONGWANG_MRS_MIN and K <= CONGWANG_K_MAX:
+            logger.info(f"   从旺格：MRS={mrs:.1f} ≥ {CONGWANG_MRS_MIN}, K={K:.1f} ≤ {CONGWANG_K_MAX}")
             return '从旺格'
 
         # 假从旺格
-        if mrs_b >= CONGWANG_MRS_MIN and JIACONGWANG_K_MIN <= K <= JIACONGWANG_K_MAX:
-            logger.info(f"   假从旺格：MRS_B={mrs_b:.1f} ≥ {CONGWANG_MRS_MIN}, "
+        if mrs >= CONGWANG_MRS_MIN and JIACONGWANG_K_MIN <= K <= JIACONGWANG_K_MAX:
+            logger.info(f"   假从旺格：MRS={mrs:.1f} ≥ {CONGWANG_MRS_MIN}, "
                         f"K={K:.1f} ∈ [{JIACONGWANG_K_MIN},{JIACONGWANG_K_MAX}]")
             return '假从旺格'
 
         # 从弱格/假从弱格：前提是日主无根（R = 0）
         if R == 0 and K >= CONGRUO_K_MIN:
-            if mrs_b <= CONGRUO_MRS_MAX:
-                logger.info(f"   从弱格：R=0, MRS_B={mrs_b:.1f} ≤ {CONGRUO_MRS_MAX}, "
+            if mrs <= CONGRUO_MRS_MAX:
+                logger.info(f"   从弱格：R=0, MRS={mrs:.1f} ≤ {CONGRUO_MRS_MAX}, "
                             f"K={K:.1f} ≥ {CONGRUO_K_MIN}")
                 return '从弱格'
-            if JIACONGRUO_MRS_MIN <= mrs_b <= JIACONGRUO_MRS_MAX:
-                logger.info(f"   假从弱格：R=0, MRS_B={mrs_b:.1f} ∈ "
+            if JIACONGRUO_MRS_MIN <= mrs <= JIACONGRUO_MRS_MAX:
+                logger.info(f"   假从弱格：R=0, MRS={mrs:.1f} ∈ "
                             f"[{JIACONGRUO_MRS_MIN},{JIACONGRUO_MRS_MAX}], K={K:.1f} ≥ {CONGRUO_K_MIN}")
                 return '假从弱格'
 
@@ -800,25 +800,28 @@ class WangShuaiAnalyzer:
         return '身弱'  # 兜底
 
     def _calculate_wangshuai_degree_v2(self, P: float, wangshuai: str) -> int:
-        """将 P 值映射到 0-100 旺衰程度（V3.0：4级 + 特殊格局）"""
+        """
+        将 P 值映射到 0-100 旺衰程度（V新版：4级 + 特殊格局）
+        P 理论最大值约 37（M=45×0.35 + R=40×0.40 + S=20×0.25 = 37.75），最小值约 -10
+        """
         if wangshuai == '从强':
-            # 从旺格，P 通常远超 85，映射到 90-100
-            degree = 90 + min(10, max(0, (P - 85) / 8.5))
+            # 从旺格，P 通常超过 25，映射到 90-100
+            degree = 90 + min(10, max(0, (P - 25) * 0.8))
         elif wangshuai == '身强':
-            # P ≥ 85，映射到 65-90
-            degree = 65 + min(25, max(0, (P - 85) / 2.6))
+            # P ≥ 25，理论最大约 37，映射到 65-90
+            degree = 65 + min(25, max(0, (P - 25) * 2.1))
         elif wangshuai == '中和偏强':
-            # 70 ≤ P < 85，映射到 50-64
-            degree = 50 + min(14, max(0, (P - 70) / 1.07))
+            # 15 ≤ P < 25，映射到 50-64
+            degree = 50 + min(14, max(0, (P - 15) * 1.4))
         elif wangshuai == '中和偏弱':
-            # 50 ≤ P < 70，映射到 35-49
-            degree = 35 + min(14, max(0, (P - 50) / 1.43))
+            # 5 ≤ P < 15，映射到 35-49
+            degree = 35 + min(14, max(0, (P - 5) * 1.4))
         elif wangshuai == '身弱':
-            # P < 50，映射到 5-34
-            degree = max(5, 34 - (49 - min(P, 49)) * 0.59)
+            # P < 5，映射到 5-34
+            degree = max(5, 34 - max(0, (4 - min(P, 4)) * 2.9))
         elif wangshuai == '从弱':
-            # 从弱格，P 通常极低，映射到 0-10
-            degree = max(0, 10 - max(0, 20 - P) / 2)
+            # 从弱格，P 通常极低（< 5 且 R=0），映射到 0-10
+            degree = max(0, 10 - max(0, (2 - P) * 2))
         else:
             degree = 50.0
         return int(min(100, max(0, round(degree))))
