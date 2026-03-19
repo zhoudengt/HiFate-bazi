@@ -328,13 +328,16 @@ def _select_health_key_dayuns(
     
     key_dayuns = []
     for dayun in dayun_sequence:
+        # 小运不参与业务分析（小运只通过特殊流年路径进入关键大运）
+        if dayun.get('is_xiaoyun', False):
+            continue
         relation_type = _analyze_dayun_health_relation(dayun, element_counts)
         if relation_type:
             dayun_copy = dayun.copy()
             dayun_copy['relation_type'] = relation_type
             dayun_copy['business_reason'] = f'健康风险：{relation_type}'
             key_dayuns.append(dayun_copy)
-    
+
     return key_dayuns
 
 
@@ -379,6 +382,9 @@ def _select_marriage_key_dayuns(
     
     for dayun in dayun_sequence:
         if dayun.get('step') == current_step:
+            continue
+        # 小运不参与婚姻业务分析（小运只通过特殊流年路径进入关键大运）
+        if dayun.get('is_xiaoyun', False):
             continue
         
         dayun_stem = dayun.get('stem', '')
@@ -439,6 +445,9 @@ def _select_career_key_dayuns(
     for dayun in dayun_sequence:
         if dayun.get('step') == current_step:
             continue
+        # 小运不参与事业业务分析（小运只通过特殊流年路径进入关键大运）
+        if dayun.get('is_xiaoyun', False):
+            continue
         
         dayun_stem = dayun.get('stem', '')
         
@@ -491,6 +500,9 @@ def _select_children_key_dayuns(
     
     for dayun in dayun_sequence:
         if dayun.get('step') == current_step:
+            continue
+        # 小运不参与子女业务分析（小运只通过特殊流年路径进入关键大运）
+        if dayun.get('is_xiaoyun', False):
             continue
         
         dayun_stem = dayun.get('stem', '')

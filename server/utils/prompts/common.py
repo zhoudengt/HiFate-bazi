@@ -149,29 +149,42 @@ _STEM_ELEMENTS = {
     '甲': '木', '乙': '木', '丙': '火', '丁': '火', '戊': '土',
     '己': '土', '庚': '金', '辛': '金', '壬': '水', '癸': '水',
 }
-_RELATION_NAMES = {
-    0: '比肩', 1: '劫财', 2: '食神', 3: '伤官', 4: '偏财',
-    5: '正财', 6: '七杀', 7: '正官', 8: '偏印', 9: '正印',
-}
-
-
-def format_ten_gods_reference(day_stem: str) -> str:
+def format_ten_gods_reference_from_details(details: Dict[str, Any], bazi_pillars: Dict[str, Any]) -> str:
     """
-    生成十神对照表，供 LLM 直接查阅，避免自行推算出错。
-    例: "庚日元：正财=乙(木)、偏财=甲(木)、正官=丁(火)、七杀=丙(火)、正印=己(土)、偏印=戊(土)、食神=壬(水)、伤官=癸(水)、劫财=辛(金)"
+    从底层已计算好的 details 和 bazi_pillars 组装十神对照表，不重新计算。
+    数据源：detail_result['details']（每柱含 main_star、hidden_stars、hidden_stems）。
+    返回格式例: "己日元：甲=正官(木)、乙=七杀(木)、..."（天干=十神(五行)）
     """
-    if day_stem not in _HEAVENLY_STEMS:
+    if not details or not bazi_pillars:
         return ''
-    day_idx = _HEAVENLY_STEMS.index(day_stem)
-    parts = []
-    for i, stem in enumerate(_HEAVENLY_STEMS):
-        if stem == day_stem:
+    day_pillar = bazi_pillars.get('day', {})
+    day_stem = day_pillar.get('stem', day_pillar.get('gan', ''))
+    if not day_stem:
+        return ''
+    stem_to_ten_god: Dict[str, str] = {}
+    for pillar_name in ['year', 'month', 'day', 'hour']:
+        pd = details.get(pillar_name, {})
+        if not pd:
             continue
-        rel_idx = (i - day_idx) % 10
-        name = _RELATION_NAMES.get(rel_idx, '')
-        elem = _STEM_ELEMENTS.get(stem, '')
-        parts.append(f"{name}={stem}({elem})")
-    return f"{day_stem}日元：{'、'.join(parts)}"
+        main_stem = bazi_pillars.get(pillar_name, {}).get('stem', bazi_pillars.get(pillar_name, {}).get('gan', ''))
+        if main_stem:
+            stem_to_ten_god[main_stem] = pd.get('main_star', '') or ''
+        hidden_stems = pd.get('hidden_stems', [])
+        hidden_stars = pd.get('hidden_stars', [])
+        for i, hstem in enumerate(hidden_stems):
+            if i < len(hidden_stars) and hstem:
+                star = hidden_stars[i]
+                stem_to_ten_god[hstem] = star if isinstance(star, str) else ''
+    ordered_stems = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']
+    parts = []
+    for s in ordered_stems:
+        if s == day_stem:
+            continue
+        tg = stem_to_ten_god.get(s)
+        if tg:
+            elem = _STEM_ELEMENTS.get(s, '')
+            parts.append(f"{s}={tg}({elem})")
+    return f"{day_stem}日元：{'、'.join(parts)}" if parts else ''
 
 
 def format_wuxing_distribution_text(element_counts: Dict[str, int]) -> str:
@@ -317,8 +330,13 @@ def format_key_dayuns_text(
         age_display = current_dayun.get('age_display', '')
         main_star = current_dayun.get('main_star', '')
         life_stage = _normalize_life_stage(age_display, current_dayun.get('life_stage', ''))
-        
-        cur_text = f"第{step}运{ganzhi}({age_display})"
+        is_xiaoyun = current_dayun.get('is_xiaoyun', False)
+
+        # 小运用「小运干支」标签，不用「第N运干支」（is_xiaoyun 由底层计算器设置）
+        if is_xiaoyun:
+            cur_text = f"小运{ganzhi}({age_display})"
+        else:
+            cur_text = f"第{step}运{ganzhi}({age_display})"
         if main_star:
             cur_text += f"，{main_star}"
         if life_stage:
@@ -352,8 +370,13 @@ def format_key_dayuns_text(
         main_star = dayun.get('main_star', '')
         life_stage = _normalize_life_stage(age_display, dayun.get('life_stage', ''))
         business_reason = dayun.get('business_reason', '')
-        
-        text = f"第{step}运{ganzhi}({age_display})"
+        is_xiaoyun = dayun.get('is_xiaoyun', False)
+
+        # 小运用「小运干支」标签（含特殊流年时出现），不用「第N运干支」
+        if is_xiaoyun:
+            text = f"小运{ganzhi}({age_display})"
+        else:
+            text = f"第{step}运{ganzhi}({age_display})"
         if main_star:
             text += f"，{main_star}"
         if life_stage:
@@ -516,8 +539,8 @@ def format_branch_relations_text(branch_relations: Dict[str, Any]) -> str:
         relations = branch_relations.get(key, [])
         if relations:
             if isinstance(relations[0], dict):
-                # 字典格式
-                items = [f"{r.get('branch1', '')}{r.get('branch2', '')}" for r in relations]
+                # 字典格式：底层 BaziCoreCalculator 返回 branches 列表，与底层字段名一致
+                items = [''.join(r.get('branches', [])) for r in relations if r.get('branches')]
             else:
                 # 字符串格式
                 items = relations

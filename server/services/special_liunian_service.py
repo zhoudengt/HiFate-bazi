@@ -156,8 +156,8 @@ class SpecialLiunianService:
                 dayun_year_end = dayun.get('year_end')
                 dayun_stem = dayun.get('stem', '')
                 
-                # 跳过小运
-                if dayun_stem == '小运':
+                # 跳过小运（用 is_xiaoyun 字段判断，stem 是真实干支不是"小运"字符串）
+                if dayun.get('is_xiaoyun', False):
                     continue
                 
                 # 检查流年是否在该大运的年份范围内
