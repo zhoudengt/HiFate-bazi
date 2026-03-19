@@ -385,13 +385,14 @@ def build_marriage_input_data(
     
     # 构建input_data
     input_data = {
-        # 命盘总论数据（包含：八字排盘、十神、旺衰、地支刑冲破害、日柱）
+        # 命盘总论数据（包含：八字排盘、十神、旺衰、地支刑冲破害、日柱、details 供十神对照从底层数据组装）
         'mingpan_zonglun': {
             'bazi_pillars': bazi_pillars,
             'ten_gods': ten_gods_data,
             'wangshuai': wangshuai,
             'branch_relations': branch_relations,
-            'day_pillar': day_pillar
+            'day_pillar': day_pillar,
+            'details': detail_result.get('details', {}),
         },
         # 配偶特征数据（包含：十神、神煞、婚姻判词、桃花判词、婚配判词、正缘判词）
         'peiou_tezheng': {
@@ -623,8 +624,8 @@ async def marriage_analysis_stream_generator(
             # 提取 detail
             detail_result = unified_data.get('detail', {}) or {}
             
-            # 提取大运序列和特殊流年
-            dayun_sequence = detail_result.get('dayun_sequence', [])
+            # 提取大运序列和特殊流年（与 fortune/display 单一数据源：优先顶层，否则从 details 取）
+            dayun_sequence = detail_result.get('dayun_sequence') or (detail_result.get('details') or {}).get('dayun_sequence', [])
             special_liunians_data = unified_data.get('special_liunians', {})
             if isinstance(special_liunians_data, dict) and 'list' in special_liunians_data:
                 special_liunians = special_liunians_data.get('list', [])
