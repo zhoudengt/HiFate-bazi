@@ -17,6 +17,13 @@ CATEGORY_LABELS = {
     'marriage_palace': '婚姻宫推理',
     'dynamic_balance': '大运力场推理',
     'marriage_timing': '婚恋时机推理',
+    'ten_gods_combo': '十神组合推理',
+    'deity_combo': '神煞组合推理',
+    'branch_combo': '地支组合推理',
+    'stem_combo': '天干组合推理',
+    'bazi_pattern': '八字格局推理',
+    'day_pillar_special': '日柱特殊推理',
+    'wangshuai_spouse': '旺衰配偶推理',
     'health_organ': '脏腑推理',
     'health_timing': '健康时机推理',
     'career_star': '事业星推理',
@@ -45,9 +52,23 @@ CATEGORY_LABELS = {
     'formula_judgment': '命理公式断语',
 }
 
+CORE_CATEGORIES = {
+    'spouse_star', 'marriage_palace', 'ten_gods_combo',
+    'health_organ', 'career_star', 'wealth_star',
+}
+
+HIGH_CONFIDENCE_THRESHOLD = 0.82
+
 
 def format_inference_conclusions(result: InferenceResult) -> str:
-    """将推理结论格式化为 LLM 可读文本"""
+    """
+    将推理结论格式化为 LLM 可读文本。
+
+    分层标记：
+    - ★★ 核心类别 + 高置信度 → 必须采用
+    - ★  核心类别或高置信度 → 重点参考
+    - 无标记 → 辅助参考
+    """
     if not result or not result.has_conclusions():
         return ''
 
@@ -58,15 +79,22 @@ def format_inference_conclusions(result: InferenceResult) -> str:
         if chain.category not in categories_seen:
             categories_seen.append(chain.category)
 
-    for cat in categories_seen:
+    core_cats = [c for c in categories_seen if c in CORE_CATEGORIES]
+    ref_cats = [c for c in categories_seen if c not in CORE_CATEGORIES]
+
+    for cat in core_cats + ref_cats:
         cat_chains = result.get_chains_by_category(cat)
         if not cat_chains:
             continue
 
         label = CATEGORY_LABELS.get(cat, cat)
-        lines.append(f"〔{label}〕")
+        is_core = cat in CORE_CATEGORIES
+        section_tag = '（核心）' if is_core else '（参考）'
+        lines.append(f"〔{label}〕{section_tag}")
 
         for chain in cat_chains:
+            star = _confidence_stars(chain.confidence, is_core)
+
             parts = []
             if chain.condition:
                 parts.append(chain.condition)
@@ -78,17 +106,25 @@ def format_inference_conclusions(result: InferenceResult) -> str:
                 suffix_parts.append(chain.time_range)
             if chain.source:
                 suffix_parts.append(f"据{chain.source}")
-            if chain.confidence >= 0.85:
+            if chain.confidence >= HIGH_CONFIDENCE_THRESHOLD:
                 suffix_parts.append("可信度高")
-            elif chain.confidence < 0.7:
+            elif chain.confidence < 0.6:
                 suffix_parts.append("仅供参考")
 
-            line = '  ' + '，'.join(parts[:2])
+            line = f"  {star}{'，'.join(parts[:2])}"
             if suffix_parts:
                 line += f"（{'，'.join(suffix_parts)}）"
             lines.append(line)
 
     return '\n'.join(lines)
+
+
+def _confidence_stars(confidence: float, is_core: bool) -> str:
+    if is_core and confidence >= HIGH_CONFIDENCE_THRESHOLD:
+        return '★★ '
+    if is_core or confidence >= HIGH_CONFIDENCE_THRESHOLD:
+        return '★ '
+    return ''
 
 
 def format_with_inference(

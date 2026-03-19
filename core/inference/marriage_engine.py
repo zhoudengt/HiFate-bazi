@@ -17,6 +17,10 @@ from typing import Dict, List, Any, Optional
 from core.inference.base_engine import BaseInferenceEngine
 from core.inference.models import InferenceInput, InferenceResult, CausalChain
 from core.inference.force_balancer import DynamicForceBalancer
+from core.inference.condition_matcher import InferenceConditionMatcher
+from core.inference.condition_checkers.marriage import MarriageMatchContext
+from core.inference.quality_filter import InferenceQualityFilter, FilterConfig, MARRIAGE_CONTRADICTIONS
+import core.inference.condition_checkers  # noqa: F401 trigger registration
 from core.data.constants import STEM_ELEMENTS, BRANCH_ELEMENTS
 from core.data.relations import BRANCH_LIUHE
 
@@ -94,6 +98,17 @@ class MarriageInferenceEngine(BaseInferenceEngine):
         'formula_marriage': 'formula_judgment',
     }
 
+    FILTER_CONFIG = FilterConfig(
+        confidence_threshold=0.5,
+        category_top_n=8,
+        dedup_prefix_len=15,
+        category_limits={
+            'marriage_timing': 5,
+            'dynamic_balance': 4,
+        },
+        contradiction_pairs=list(MARRIAGE_CONTRADICTIONS),
+    )
+
     def _run_inference(self, inp: InferenceInput) -> InferenceResult:
         chains: List[CausalChain] = []
 
@@ -104,21 +119,9 @@ class MarriageInferenceEngine(BaseInferenceEngine):
         chains.extend(self._infer_from_db_rules(inp))
         chains.extend(self._infer_from_bazi_rules(inp))
 
-        chains = self._deduplicate_chains(chains)
+        chains = InferenceQualityFilter.apply(chains, self.FILTER_CONFIG)
 
         return InferenceResult(domain='marriage', chains=chains)
-
-    @staticmethod
-    def _deduplicate_chains(chains: List[CausalChain]) -> List[CausalChain]:
-        """去重：同 category 下结论相似的链条只保留 confidence 最高的"""
-        seen: Dict[str, CausalChain] = {}
-        for chain in chains:
-            conclusion_core = chain.conclusion[:20] if chain.conclusion else ''
-            dedup_key = f"{chain.category}::{conclusion_core}"
-            existing = seen.get(dedup_key)
-            if existing is None or chain.confidence > existing.confidence:
-                seen[dedup_key] = chain
-        return list(seen.values())
 
     # ─── 类别1：配偶星分析 ───────────────────────────────
 
@@ -525,7 +528,7 @@ class MarriageInferenceEngine(BaseInferenceEngine):
         priority_bonus = max(0, (priority - 100)) * 0.001
         return min(0.95, base + priority_bonus)
 
-    # ─── 数据库规则匹配 ──────────────────────────────────
+    # ─── 数据库规则匹配（通过 ConditionMatcher 严格匹配）─────
 
     def _infer_from_db_rules(self, inp: InferenceInput) -> List[CausalChain]:
         chains = []
@@ -533,63 +536,27 @@ class MarriageInferenceEngine(BaseInferenceEngine):
         if not rules:
             return chains
 
-        spouse_stars = self._find_spouse_stars(inp)
-        spouse_star_types = set(s['shishen'] for s in spouse_stars)
-        xi_elements = set(inp.xi_ji_elements.get('xi_shen', []))
-
-        all_deities = []
-        for d_list in inp.deities.values():
-            all_deities.extend(d_list)
-
-        has_special_liunians = bool(inp.special_liunians)
-        if not has_special_liunians:
-            for d in inp.dayun_sequence:
-                if d.get('liunians') or d.get('key_liunians'):
-                    has_special_liunians = True
-                    break
+        ctx = MarriageMatchContext.from_input(inp)
+        matched = 0
+        skipped = 0
 
         for rule in rules:
             cond = rule.get('conditions', {})
             conc = rule.get('conclusions', {})
-            category = rule.get('category', '')
 
-            if not cond and category == 'marriage_timing' and not has_special_liunians:
-                continue
+            if InferenceConditionMatcher.match(cond, ctx):
+                matched += 1
+                chains.append(CausalChain(
+                    category=rule.get('category', 'db_rule'),
+                    condition=conc.get('causal_chain', rule.get('rule_name', '')).split('→')[0].strip() if conc.get('causal_chain') else rule.get('rule_name', ''),
+                    mechanism=conc.get('causal_chain', ''),
+                    conclusion=conc.get('spouse_character', '') or conc.get('conclusion', '') or conc.get('marriage_quality', ''),
+                    confidence=conc.get('confidence', 0.7),
+                    source=rule.get('source', ''),
+                    details={'rule_code': rule.get('rule_code'), 'db_rule': True}
+                ))
+            else:
+                skipped += 1
 
-            if cond.get('gender') and cond['gender'] != inp.gender:
-                continue
-            if cond.get('wangshuai') and cond['wangshuai'] != inp.wangshuai:
-                continue
-            if cond.get('spouse_star_type') and cond['spouse_star_type'] not in spouse_star_types:
-                continue
-
-            required_strength = cond.get('spouse_star_strength')
-            if required_strength:
-                actual_strong = len(spouse_stars) > 0
-                if required_strength == 'strong' and not actual_strong:
-                    continue
-                if required_strength == 'absent' and actual_strong:
-                    continue
-
-            if cond.get('spouse_star_is_xi') is not None:
-                has_xi_spouse = any(
-                    s.get('element') in xi_elements for s in spouse_stars if s.get('element')
-                )
-                if cond['spouse_star_is_xi'] != has_xi_spouse:
-                    continue
-
-            if cond.get('has_deity'):
-                if cond['has_deity'] not in all_deities:
-                    continue
-
-            chains.append(CausalChain(
-                category=rule.get('category', 'db_rule'),
-                condition=conc.get('causal_chain', rule.get('rule_name', '')).split('→')[0].strip() if conc.get('causal_chain') else rule.get('rule_name', ''),
-                mechanism=conc.get('causal_chain', ''),
-                conclusion=conc.get('spouse_character', '') or conc.get('conclusion', '') or conc.get('marriage_quality', ''),
-                confidence=conc.get('confidence', 0.7),
-                source=rule.get('source', ''),
-                details={'rule_code': rule.get('rule_code'), 'db_rule': True}
-            ))
-
+        logger.info(f"DB规则匹配完成: {matched} 条命中 / {skipped} 条跳过 / 共 {len(rules)} 条")
         return chains
