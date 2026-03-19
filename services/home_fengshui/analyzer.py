@@ -1,35 +1,41 @@
 # -*- coding: utf-8 -*-
 """
 居家风水主分析器
-整合视觉识别、命卦计算、规则匹配、图片生成
+整合视觉识别、命卦计算、规则匹配、方位计算、户型图分析、煞位分析
 """
 
 import logging
 import time
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 from vision_analyzer import HomeFengshuiVisionAnalyzer
 from rule_engine import HomeFengshuiEngine
-from mingua_calculator import get_mingua_info
+from mingua_calculator import get_mingua_info, get_house_directions
 from direction_mapper import parse_solar_year
+from floor_plan_analyzer import FloorPlanAnalyzer
+from position_calculator import get_all_positions
+from sha_analyzer import ShaAnalyzer
 
 logger = logging.getLogger(__name__)
 
-_executor = ThreadPoolExecutor(max_workers=6, thread_name_prefix='home_fengshui')
+_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix='home_fengshui')
 
-VISION_TIMEOUT = 45
-RULE_TIMEOUT   = 10
-BAZI_TIMEOUT   = 5
+VISION_TIMEOUT     = 45
+FLOOR_PLAN_TIMEOUT = 60
+RULE_TIMEOUT       = 10
+BAZI_TIMEOUT       = 5
 
 
 class HomeFengshuiAnalyzer:
     """居家风水主分析器"""
 
     def __init__(self):
-        self.vision   = HomeFengshuiVisionAnalyzer()
-        self.engine   = HomeFengshuiEngine()
+        self.vision         = HomeFengshuiVisionAnalyzer()
+        self.engine         = HomeFengshuiEngine()
+        self.floor_analyzer = FloorPlanAnalyzer()
+        self.sha_analyzer   = ShaAnalyzer()
         logger.info('✅ HomeFengshuiAnalyzer 初始化成功')
 
     async def analyze_multi_async(
@@ -220,3 +226,254 @@ class HomeFengshuiAnalyzer:
             photo_index=0,
             preload_rules=True,
         )
+
+    # ------------------------------------------------------------------
+    # 全屋分析（户型图 + 多房间 + 方位 + 煞位）
+    # ------------------------------------------------------------------
+
+    async def analyze_full_house_async(
+        self,
+        image_bytes_list: List[bytes],
+        room_types: Optional[List[str]] = None,
+        floor_plan_bytes: Optional[bytes] = None,
+        door_direction: Optional[str] = None,
+        birth_year: Optional[int] = None,
+        gender: Optional[str] = None,
+        solar_date: Optional[str] = None,
+        solar_time: Optional[str] = None,
+        progress_callback=None,
+    ) -> Dict[str, Any]:
+        """
+        全屋风水分析（编排所有子模块）
+
+        处理流程：
+        阶段1（并行）：户型图分析 + 规则加载 + 命卦计算
+        阶段2（并行）：各房间视觉识别
+        阶段3（串行）：方位计算 → 煞位分析 → 方位规则匹配
+        阶段4：数据汇总
+
+        Args:
+            image_bytes_list: 房间照片列表
+            room_types: 房间类型列表
+            floor_plan_bytes: 户型图字节（可选）
+            door_direction: 大门朝向
+            birth_year: 出生年份
+            gender: 性别
+            solar_date: 出生日期（用于命卦计算）
+            solar_time: 出生时间
+            progress_callback: async 回调函数，(stage, data) -> None
+
+        Yields (via progress_callback):
+            ('floor_plan_result', {...})
+            ('room_result', {...})
+            ('position_analysis', {...})
+            ('sha_analysis', {...})
+        """
+        total_start = time.time()
+        stages_time = {}
+
+        result = {
+            'success': True,
+            'is_whole_house': floor_plan_bytes is not None,
+            'door_direction': door_direction or '',
+            'floor_plan': None,
+            'room_results': [],
+            'position_data': None,
+            'sha_data': None,
+            'position_rules': None,
+            'mingua_info': None,
+            'overall_score': 0,
+            'summary': '',
+        }
+
+        async def _notify(stage: str, data: Any):
+            if progress_callback:
+                try:
+                    await progress_callback(stage, data)
+                except Exception as e:
+                    logger.warning(f'progress_callback 失败: {e}')
+
+        try:
+            # ==================== 阶段1：并行预处理 ====================
+            stage_start = time.time()
+
+            tasks_phase1 = []
+
+            if floor_plan_bytes:
+                tasks_phase1.append(('floor_plan', self._run_floor_plan_analysis(floor_plan_bytes, door_direction)))
+
+            loop = asyncio.get_event_loop()
+            tasks_phase1.append(('rules', loop.run_in_executor(_executor, self.engine.load_rules, False)))
+
+            mingua_info = None
+            if birth_year and gender:
+                tasks_phase1.append(('mingua', loop.run_in_executor(
+                    _executor, get_mingua_info, birth_year, gender, door_direction
+                )))
+            elif solar_date and gender:
+                by = parse_solar_year(solar_date)
+                if by:
+                    birth_year = by
+                    tasks_phase1.append(('mingua', loop.run_in_executor(
+                        _executor, get_mingua_info, by, gender, door_direction
+                    )))
+
+            phase1_results = {}
+            if tasks_phase1:
+                gathered = await asyncio.gather(
+                    *[t[1] for t in tasks_phase1], return_exceptions=True
+                )
+                for (name, _), res in zip(tasks_phase1, gathered):
+                    if isinstance(res, Exception):
+                        logger.warning(f'阶段1 {name} 失败: {res}')
+                        phase1_results[name] = None
+                    else:
+                        phase1_results[name] = res
+
+            stages_time['phase1'] = time.time() - stage_start
+
+            floor_plan_result = phase1_results.get('floor_plan')
+            if floor_plan_result and floor_plan_result.get('success'):
+                result['floor_plan'] = floor_plan_result
+                await _notify('floor_plan_result', floor_plan_result)
+
+                detected_door = floor_plan_result.get('door_position', {})
+                if not door_direction and detected_door.get('detected'):
+                    door_direction = detected_door.get('zone_cn', '')
+                    result['door_direction'] = door_direction
+                    logger.info(f'从户型图检测到大门方位: {door_direction}')
+
+            mingua_info = phase1_results.get('mingua')
+            result['mingua_info'] = mingua_info
+
+            # ==================== 阶段2：并行房间分析 ====================
+            stage_start = time.time()
+            room_types = room_types or []
+            while len(room_types) < len(image_bytes_list):
+                room_types.append('auto')
+
+            room_tasks = []
+            for idx, (img_bytes, rt) in enumerate(zip(image_bytes_list, room_types)):
+                room_tasks.append(self._analyze_single(
+                    image_bytes=img_bytes,
+                    room_type=rt or 'auto',
+                    door_direction=door_direction,
+                    solar_date=solar_date,
+                    solar_time=solar_time,
+                    gender=gender,
+                    use_bazi=False,
+                    photo_index=idx,
+                    preload_rules=False,
+                ))
+
+            room_results = await asyncio.gather(*room_tasks, return_exceptions=True)
+            for i, rr in enumerate(room_results):
+                if isinstance(rr, Exception):
+                    rr = {'success': False, 'error': str(rr), 'photo_index': i}
+                result['room_results'].append(rr)
+                await _notify('room_result', rr)
+
+            stages_time['phase2_rooms'] = time.time() - stage_start
+
+            # ==================== 阶段3：方位计算 + 煞位分析 ====================
+            stage_start = time.time()
+
+            house_dirs = get_house_directions(door_direction) if door_direction else None
+
+            position_data = await loop.run_in_executor(
+                _executor, get_all_positions, door_direction, birth_year, gender, None
+            )
+            result['position_data'] = position_data
+            await _notify('position_analysis', position_data)
+
+            room_positions = {}
+            if floor_plan_result and floor_plan_result.get('success'):
+                room_positions = floor_plan_result.get('room_positions', {})
+
+            all_vision_items = []
+            for rr in result['room_results']:
+                if rr.get('success'):
+                    for item in rr.get('furnitures', []):
+                        item_copy = dict(item)
+                        item_copy['room_type'] = rr.get('room_type', '')
+                        all_vision_items.append(item_copy)
+
+            missing_corners = []
+            if floor_plan_result and floor_plan_result.get('success'):
+                missing_corners = floor_plan_result.get('missing_corners', [])
+
+            sha_result = self.sha_analyzer.analyze_all(
+                missing_corners=missing_corners,
+                house_directions=house_dirs,
+                room_positions=room_positions,
+                vision_items=all_vision_items,
+                door_direction=door_direction,
+            )
+            result['sha_data'] = sha_result
+            await _notify('sha_analysis', sha_result)
+
+            position_rules = self.engine.match_position_rules(
+                missing_corners=missing_corners,
+                house_directions=house_dirs,
+                room_positions=room_positions,
+                position_data=position_data,
+                mingua_info=mingua_info,
+            )
+            result['position_rules'] = position_rules
+
+            stages_time['phase3_positions'] = time.time() - stage_start
+
+            # ==================== 阶段4：评分汇总 ====================
+            room_scores = [rr.get('overall_score', 0) for rr in result['room_results'] if rr.get('success')]
+            avg_room_score = sum(room_scores) / len(room_scores) if room_scores else 70
+            position_deduction = position_rules.get('score_deduction', 0) if position_rules else 0
+
+            overall_score = max(0, min(100, int(avg_room_score - position_deduction * 0.3)))
+            result['overall_score'] = overall_score
+
+            all_critical = []
+            all_suggestions = []
+            all_tips = []
+            for rr in result['room_results']:
+                if rr.get('success'):
+                    all_critical.extend(rr.get('critical_issues', []))
+                    all_suggestions.extend(rr.get('suggestions', []))
+                    all_tips.extend(rr.get('tips', []))
+            if position_rules:
+                all_critical.extend(position_rules.get('critical_issues', []))
+                all_suggestions.extend(position_rules.get('suggestions', []))
+                all_tips.extend(position_rules.get('tips', []))
+
+            result['all_critical_issues'] = all_critical
+            result['all_suggestions'] = all_suggestions
+            result['all_tips'] = all_tips
+            result['summary'] = self.engine._build_summary(overall_score, all_critical, all_suggestions)
+
+            total_time = time.time() - total_start
+            result['duration_ms'] = int(total_time * 1000)
+            result['performance'] = {'total_time': total_time, 'stages_time': stages_time}
+            logger.info(f'✅ 全屋分析完成，耗时 {total_time:.2f}s，评分 {overall_score}')
+
+            return result
+
+        except Exception as e:
+            logger.error(f'❌ 全屋分析失败: {e}', exc_info=True)
+            result['success'] = False
+            result['error'] = str(e)
+            return result
+
+    async def _run_floor_plan_analysis(
+        self, floor_plan_bytes: bytes, door_direction: Optional[str]
+    ) -> Dict:
+        """运行户型图分析（带超时）"""
+        try:
+            return await asyncio.wait_for(
+                self.floor_analyzer.analyze(floor_plan_bytes, door_direction),
+                timeout=FLOOR_PLAN_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f'户型图分析超时（>{FLOOR_PLAN_TIMEOUT}s）')
+            return {'success': False, 'error': '户型图分析超时'}
+        except Exception as e:
+            logger.error(f'户型图分析异常: {e}', exc_info=True)
+            return {'success': False, 'error': str(e)}

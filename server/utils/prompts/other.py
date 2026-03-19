@@ -483,12 +483,17 @@ def format_face_analysis_input_data_for_coze(input_data: Dict[str, Any]) -> str:
 
 # 办公桌风水分析格式化函数
 
-def format_home_fengshui_input_data_for_coze(input_data: Dict[str, Any]) -> str:
+def format_home_fengshui_input_data_for_coze(
+    input_data: Dict[str, Any],
+    is_whole_house: bool = False,
+) -> str:
     """
     将居家风水分析结构化数据格式化为 JSON 字符串（用于百炼智能体报告生成）
+    支持单房间模式和全屋模式
 
     Args:
         input_data: 居家风水分析结果数据
+        is_whole_house: 是否全屋模式
 
     Returns:
         str: JSON 格式字符串，可直接作为智能体输入
@@ -498,21 +503,180 @@ def format_home_fengshui_input_data_for_coze(input_data: Dict[str, Any]) -> str:
     else:
         data = input_data
 
-    optimized_data = {
-        'room_type': data.get('room_type', ''),
-        'door_direction': data.get('door_direction', ''),
-        'overall_score': data.get('overall_score', 0),
-        'mingua_score': data.get('mingua_score', 0),
-        'furnitures': data.get('furnitures', []),
-        'furnitures_text': data.get('furnitures_text', ''),
-        'critical_issues': data.get('critical_issues', []),
-        'suggestions': data.get('suggestions', []),
-        'tips': data.get('tips', []),
-        'mingua_info': data.get('mingua_info'),
-        'summary': data.get('summary', ''),
-    }
+    if is_whole_house:
+        optimized_data = _format_whole_house_data(data)
+    else:
+        optimized_data = {
+            'room_type': data.get('room_type', ''),
+            'door_direction': data.get('door_direction', ''),
+            'overall_score': data.get('overall_score', 0),
+            'mingua_score': data.get('mingua_score', 0),
+            'furnitures': data.get('furnitures', []),
+            'furnitures_text': data.get('furnitures_text', ''),
+            'critical_issues': data.get('critical_issues', []),
+            'suggestions': data.get('suggestions', []),
+            'tips': data.get('tips', []),
+            'mingua_info': data.get('mingua_info'),
+            'summary': data.get('summary', ''),
+        }
 
     return json.dumps(optimized_data, ensure_ascii=False, indent=2)
+
+
+def _format_whole_house_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    """格式化全屋分析数据（含方位、缺角、煞位等新字段）"""
+    result: Dict[str, Any] = {
+        'is_whole_house': True,
+        'door_direction': data.get('door_direction', ''),
+        'overall_score': data.get('overall_score', 0),
+    }
+
+    # 命卦信息
+    mingua = data.get('mingua_info')
+    if mingua:
+        result['mingua_info'] = {
+            'mingua_name': mingua.get('mingua_name', ''),
+            'mingua_type': mingua.get('mingua_type', ''),
+            'house_name': mingua.get('house_name', ''),
+            'house_type': mingua.get('house_type', ''),
+            'is_compatible': mingua.get('is_compatible', False),
+            'compatibility_message': mingua.get('compatibility_message', ''),
+            'auspicious_directions': mingua.get('auspicious_directions', []),
+            'inauspicious_directions': mingua.get('inauspicious_directions', []),
+        }
+
+    # 户型图分析
+    fp = data.get('floor_plan')
+    if fp and fp.get('success'):
+        result['floor_plan'] = {
+            'shape': fp.get('floor_plan_shape', ''),
+            'total_rooms': fp.get('total_rooms', 0),
+            'summary': fp.get('summary', ''),
+        }
+
+        missing_corners = fp.get('missing_corners', [])
+        if missing_corners:
+            result['missing_corners'] = [
+                {
+                    'direction': mc.get('direction', ''),
+                    'gua': mc.get('gua', ''),
+                    'missing_percent': mc.get('missing_percent', 0),
+                    'severity': mc.get('severity', ''),
+                }
+                for mc in missing_corners
+            ]
+
+        rp = fp.get('room_positions', {})
+        if rp:
+            result['room_layout'] = {
+                rt: {'zone': info.get('zone_cn', ''), 'gua': info.get('gua', '')}
+                for rt, info in rp.items()
+            }
+
+    # 八宅方位分析
+    pos = data.get('position_data') or {}
+
+    wealth = pos.get('wealth_position')
+    if wealth:
+        result['wealth_position'] = {
+            'bright': wealth.get('bright', {}).get('positions', []),
+            'bright_desc': wealth.get('bright', {}).get('description', ''),
+            'dark_primary': wealth.get('dark', {}).get('primary', ''),
+            'dark_desc': wealth.get('dark', {}).get('description', ''),
+            'overlap': wealth.get('has_overlap', False),
+            'overlap_desc': wealth.get('overlap_description', ''),
+        }
+
+    wc = pos.get('wenzhang_position')
+    if wc:
+        result['wenzhang_position'] = {}
+        if wc.get('personal'):
+            result['wenzhang_position']['personal'] = wc['personal'].get('direction', '')
+            result['wenzhang_position']['personal_desc'] = wc['personal'].get('description', '')
+        if wc.get('house'):
+            result['wenzhang_position']['house'] = wc['house'].get('direction', '')
+            result['wenzhang_position']['house_desc'] = wc['house'].get('description', '')
+        result['wenzhang_position']['overlap'] = wc.get('overlap', False)
+        result['wenzhang_position']['overlap_desc'] = wc.get('overlap_description', '')
+
+    pb = pos.get('peach_blossom_position')
+    if pb:
+        result['peach_blossom_position'] = {}
+        if pb.get('zodiac'):
+            result['peach_blossom_position']['zodiac'] = pb['zodiac'].get('direction', '')
+            result['peach_blossom_position']['zodiac_desc'] = pb['zodiac'].get('description', '')
+        if pb.get('annual'):
+            result['peach_blossom_position']['annual'] = pb['annual'].get('direction', '')
+            result['peach_blossom_position']['annual_desc'] = pb['annual'].get('description', '')
+        if pb.get('house'):
+            result['peach_blossom_position']['house'] = pb['house'].get('direction', '')
+            result['peach_blossom_position']['house_desc'] = pb['house'].get('description', '')
+        result['peach_blossom_position']['overlap'] = pb.get('has_overlap', False)
+
+    tianyi = pos.get('tianyi_position')
+    if tianyi:
+        result['tianyi_position'] = {
+            'direction': tianyi.get('direction', ''),
+            'description': tianyi.get('description', ''),
+        }
+
+    # 煞位分析
+    sha = data.get('sha_data')
+    if sha:
+        result['sha_analysis'] = {
+            'total_sha_count': sha.get('summary', {}).get('total_sha_count', 0),
+            'critical_count': sha.get('summary', {}).get('critical_count', 0),
+        }
+        mc_sha = sha.get('missing_corner_sha', [])
+        if mc_sha:
+            result['sha_analysis']['missing_corner_sha'] = [
+                {
+                    'direction': s.get('direction', ''),
+                    'element': s.get('element', ''),
+                    'severity': s.get('severity', ''),
+                    'affected_family': s.get('affected_family', ''),
+                    'impact': s.get('impact_description', ''),
+                    'remedies': s.get('remedies', []),
+                }
+                for s in mc_sha
+            ]
+        em_sha = sha.get('eight_mansion_sha', [])
+        if em_sha:
+            result['sha_analysis']['eight_mansion_sha'] = [
+                {
+                    'star': s.get('star', ''),
+                    'room_type': s.get('room_type', ''),
+                    'room_zone': s.get('room_zone', ''),
+                    'severity': s.get('severity', ''),
+                    'description': s.get('description', ''),
+                    'remedies': s.get('remedies', []),
+                }
+                for s in em_sha
+            ]
+
+    # 汇总问题
+    result['all_critical_issues'] = data.get('all_critical_issues', [])
+    result['all_suggestions'] = data.get('all_suggestions', [])
+    result['all_tips'] = data.get('all_tips', [])
+
+    # 各房间摘要
+    room_results = data.get('room_results', [])
+    if room_results:
+        result['rooms'] = []
+        for rr in room_results:
+            if not rr.get('success'):
+                continue
+            result['rooms'].append({
+                'room_type': rr.get('room_type', ''),
+                'score': rr.get('overall_score', 0),
+                'furnitures_text': rr.get('furnitures_text', ''),
+                'critical_count': len(rr.get('critical_issues', [])),
+                'suggestion_count': len(rr.get('suggestions', [])),
+            })
+
+    result['summary'] = data.get('summary', '')
+
+    return result
 
 
 def format_desk_fengshui_input_data_for_coze(input_data: Dict[str, Any]) -> str:
