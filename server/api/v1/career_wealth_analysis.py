@@ -1100,7 +1100,7 @@ async def career_wealth_stream_generator(
                 
                 if result.get('type') == 'progress':
                     content = result.get('content', '')
-                    llm_output_chunks.append(content)  # 收集输出内容
+                    llm_output_chunks.append(content)
                     if '对不起' in content and '无法回答' in content:
                         logger.warning(f"检测到错误消息片段: {content[:100]}")
                         continue
@@ -1112,15 +1112,34 @@ async def career_wealth_stream_generator(
                 elif result.get('type') == 'complete':
                     has_content = True
                     complete_content = result.get('content', '')
-                    llm_output_chunks.append(complete_content)  # 收集完整内容
-                    msg = {'type': 'complete', 'content': complete_content}
-                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                    
-                    # ✅ 性能优化：缓存 LLM 生成结果
                     if complete_content:
-                        set_llm_cache("career_wealth", input_data_hash, complete_content, LLM_CACHE_TTL)
+                        llm_output_chunks.append(complete_content)
+                    
+                    full_llm_content = ''.join(llm_output_chunks).strip()
+                    if full_llm_content:
+                        set_llm_cache("career_wealth", input_data_hash, full_llm_content, LLM_CACHE_TTL)
                         logger.info(f"[{trace_id}] ✅ LLM 缓存已写入: career_wealth")
                     
+                    api_end_time = time.time()
+                    llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
+                    stream_logger = get_stream_call_logger()
+                    stream_logger.log_async(
+                        function_type='wealth',
+                        frontend_api='/api/v1/bazi/career-wealth-analysis/stream',
+                        frontend_input=frontend_input,
+                        input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
+                        llm_output=full_llm_content,
+                        api_total_ms=int((api_end_time - api_start_time) * 1000),
+                        llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+                        llm_total_ms=llm_total_time_ms,
+                        bot_id=actual_bot_id,
+                        llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
+                        status='success',
+                        request_id=request_id,
+                    )
+                    
+                    msg = {'type': 'complete', 'content': complete_content}
+                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
                     logger.info(f"流式生成完成，共 {chunk_count} 个chunk")
                     break
                 elif result.get('type') == 'error':
@@ -1134,27 +1153,6 @@ async def career_wealth_stream_generator(
                 logger.warning(f"未收到任何内容，chunk_count: {chunk_count}")
                 error_msg = {'type': 'error', 'content': f'Coze Bot 未返回内容，请检查 Bot 配置'}
                 yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
-            
-            # 记录交互数据（异步，不阻塞）
-            api_end_time = time.time()
-            llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
-            llm_output = ''.join(llm_output_chunks)
-            
-            stream_logger = get_stream_call_logger()
-            stream_logger.log_async(
-                function_type='wealth',
-                frontend_api='/api/v1/bazi/career-wealth-analysis/stream',
-                frontend_input=frontend_input,
-                input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
-                llm_output=llm_output,
-                api_total_ms=int((api_end_time - api_start_time) * 1000),
-                llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
-                llm_total_ms=llm_total_time_ms,
-                bot_id=actual_bot_id,
-                llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
-                status='success' if has_content else 'failed',
-                request_id=request_id,
-            )
                 
         except Exception as e:
             import traceback

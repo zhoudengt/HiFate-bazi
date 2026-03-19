@@ -814,44 +814,44 @@ async def general_review_analysis_stream_generator(
             if chunk_type == 'progress':
                 chunk_count += 1
                 content = chunk.get('content', '')
-                llm_output_chunks.append(content)  # 收集输出内容
+                llm_output_chunks.append(content)
                 total_content_length += len(content)
                 has_content = True
                 if chunk_count == 1:
                     logger.info(f"✅ [步骤5-Coze调用] 收到第一个响应块，类型: {chunk_type}")
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
             elif chunk_type == 'complete':
                 complete_content = chunk.get('content', '')
-                llm_output_chunks.append(complete_content)  # 收集完整内容
+                if complete_content:
+                    llm_output_chunks.append(complete_content)
                 logger.info(f"✅ [步骤5-Coze调用] 收到完成响应，总块数: {chunk_count}, 总内容长度: {total_content_length}")
                 has_content = True
+                
+                api_end_time = time.time()
+                api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+                llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
+                llm_output = ''.join(llm_output_chunks)
+                stream_logger = get_stream_call_logger()
+                stream_logger.log_async(
+                    function_type='general',
+                    frontend_api='/api/v1/bazi/general-review/stream',
+                    frontend_input=frontend_input,
+                    input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
+                    llm_output=llm_output,
+                    api_total_ms=api_response_time_ms,
+                    llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+                    llm_total_ms=llm_total_time_ms,
+                    bot_id=used_bot_id,
+                    llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
+                    status='success',
+                    request_id=request_id,
+                )
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                break
             elif chunk_type == 'error':
                 logger.error(f"❌ [步骤5-Coze调用] 收到错误响应: {chunk.get('content', '')}")
-            
-            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-            if chunk_type in ['complete', 'error']:
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
                 break
-        
-        # 记录交互数据（异步，不阻塞）
-        api_end_time = time.time()
-        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-        llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
-        llm_output = ''.join(llm_output_chunks)
-        
-        stream_logger = get_stream_call_logger()
-        stream_logger.log_async(
-            function_type='general',
-            frontend_api='/api/v1/bazi/general-review/stream',
-            frontend_input=frontend_input,
-            input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
-            llm_output=llm_output,
-            api_total_ms=api_response_time_ms,
-            llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
-            llm_total_ms=llm_total_time_ms,
-            bot_id=used_bot_id,
-            llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
-            status='success' if has_content else 'failed',
-            request_id=request_id,
-        )
                 
     except ValueError as e:
         # 配置错误

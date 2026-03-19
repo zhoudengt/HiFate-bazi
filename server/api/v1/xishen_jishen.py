@@ -718,6 +718,31 @@ async def xishen_jishen_stream_generator(
                         logger.info(f"[喜神忌神] LLM 结果已缓存: {llm_cache_key[:30]}..., 长度={len(llm_output)}")
                     except Exception as e:
                         logger.warning(f"[喜神忌神] LLM 缓存写入失败: {e}")
+                
+                api_end_time = time.time()
+                api_response_time_ms = int((api_end_time - api_start_time) * 1000)
+                llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
+                has_content = len(llm_output_chunks) > 0
+                try:
+                    from server.services.stream_call_logger import get_stream_call_logger
+                    stream_logger = get_stream_call_logger()
+                    stream_logger.log_async(
+                        function_type='xishen_jishen',
+                        frontend_api='/api/v1/bazi/xishen-jishen/stream',
+                        frontend_input=frontend_input,
+                        input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
+                        llm_output=llm_output,
+                        api_total_ms=api_response_time_ms,
+                        llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+                        llm_total_ms=llm_total_time_ms,
+                        bot_id=actual_bot_id if 'actual_bot_id' in locals() else None,
+                        llm_platform='bailian' if isinstance(llm_service, BailianStreamService) else 'coze',
+                        status='success' if has_content else 'failed',
+                        request_id=request_id,
+                    )
+                except Exception as e:
+                    logger.warning(f"[喜神忌神流式] 数据库记录失败: {e}", exc_info=True)
+                
                 msg = {'type': 'complete', 'content': complete_content}
                 yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
                 break
@@ -726,36 +751,8 @@ async def xishen_jishen_stream_generator(
                 yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
                 break
         else:
-            # 流结束但未收到 complete，补发完成消息
             msg = {'type': 'complete', 'content': ''}
             yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-        
-        # 12. 记录交互数据到数据库（异步，不阻塞）
-        api_end_time = time.time()
-        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-        llm_total_time_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
-        llm_output = ''.join(llm_output_chunks)
-        has_content = len(llm_output_chunks) > 0
-        
-        try:
-            from server.services.stream_call_logger import get_stream_call_logger
-            stream_logger = get_stream_call_logger()
-            stream_logger.log_async(
-                function_type='xishen_jishen',
-                frontend_api='/api/v1/bazi/xishen-jishen/stream',
-                frontend_input=frontend_input,
-                input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
-                llm_output=llm_output,
-                api_total_ms=api_response_time_ms,
-                llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
-                llm_total_ms=llm_total_time_ms,
-                bot_id=actual_bot_id if 'actual_bot_id' in locals() else None,
-                llm_platform='bailian' if isinstance(llm_service, BailianStreamService) else 'coze',
-                status='success' if has_content else 'failed',
-                request_id=request_id,
-            )
-        except Exception as e:
-            logger.warning(f"[喜神忌神流式] 数据库记录失败: {e}", exc_info=True)
                 
     except Exception as e:
         error_msg = {

@@ -69,6 +69,42 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _write_stream_log(
+    trace_id: str,
+    frontend_input: Dict[str, Any],
+    formatted_data: str,
+    llm_output_chunks: list,
+    api_start_time: float,
+    llm_first_token_time: Optional[float],
+    actual_bot_id: Optional[str],
+    llm_service: Any,
+    has_content: bool,
+    request_id: Optional[str],
+):
+    """在 yield 之前写入日志，确保客户端断连时日志不丢失"""
+    try:
+        from server.services.bailian_stream_service import BailianStreamService
+        api_end_time = time.time()
+        llm_output = ''.join(llm_output_chunks)
+        stream_logger = get_stream_call_logger()
+        stream_logger.log_async(
+            function_type='marriage',
+            frontend_api='/api/v1/bazi/marriage-analysis/stream',
+            frontend_input=frontend_input,
+            input_data=formatted_data or '',
+            llm_output=llm_output,
+            api_total_ms=int((api_end_time - api_start_time) * 1000),
+            llm_first_token_ms=int((llm_first_token_time - api_start_time) * 1000) if llm_first_token_time else None,
+            bot_id=actual_bot_id,
+            llm_platform='bailian' if isinstance(llm_service, BailianStreamService) else 'coze',
+            status='success' if has_content else 'failed',
+            request_id=request_id,
+        )
+        logger.info(f"[{trace_id}] ✅ 调用日志已提交（异步写入）")
+    except Exception as log_err:
+        logger.warning(f"[{trace_id}] 流式调用日志记录失败: {log_err}")
+
+
 def build_marriage_input_data(
     bazi_data: Dict[str, Any],
     wangshuai_result: Dict[str, Any],
@@ -731,16 +767,7 @@ async def marriage_analysis_stream_generator(
         
         if cached_llm_content:
             logger.info(f"[{trace_id}] ✅ LLM 缓存命中: marriage")
-            
-            complete_msg = {
-                'type': 'complete',
-                'content': cached_llm_content
-            }
-            yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
             total_duration = time.time() - api_start_time
-            logger.info(f"[{trace_id}] ✅ 从缓存返回完成: 耗时={total_duration:.2f}s")
-            
-            # 缓存命中也记录
             try:
                 stream_logger = get_stream_call_logger()
                 stream_logger.log_async(
@@ -756,6 +783,12 @@ async def marriage_analysis_stream_generator(
                 )
             except Exception as log_err:
                 logger.warning(f"[{trace_id}] 流式调用日志记录失败: {log_err}")
+            complete_msg = {
+                'type': 'complete',
+                'content': cached_llm_content
+            }
+            yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
+            logger.info(f"[{trace_id}] ✅ 从缓存返回完成: 耗时={total_duration:.2f}s")
             return
         
         logger.info(f"[{trace_id}] ❌ LLM 缓存未命中: marriage")
@@ -809,20 +842,17 @@ async def marriage_analysis_stream_generator(
         try:
             chunk_count = 0
             has_content = False
-            complete_content = None
+            received_complete = False
             
             logger.info(f"[{trace_id}] 📤 开始调用 LLM API: bot_id={actual_bot_id}, data_length={len(formatted_data)}")
 
             async for result in llm_service.stream_analysis(formatted_data, trace_id=trace_id, bot_id=actual_bot_id):
                 chunk_count += 1
                 
-                # 转换为SSE格式
                 if result.get('type') == 'progress':
                     content = result.get('content', '')
-                    # 检测是否为错误消息
                     if '对不起' in content and '无法回答' in content:
                         logger.warning(f"检测到错误消息片段 (Bot ID: {actual_bot_id}): {content[:100]}")
-                        # 跳过这个内容块，不显示给用户
                         continue
                     else:
                         has_content = True
@@ -835,20 +865,27 @@ async def marriage_analysis_stream_generator(
                         await asyncio.sleep(0)
                 elif result.get('type') == 'complete':
                     has_content = True
+                    received_complete = True
                     complete_content = result.get('content', '')
-                    llm_output_chunks.append(complete_content)
-                    msg = {
-                        'type': 'complete',
-                        'content': complete_content
-                    }
-                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                    if complete_content:
+                        llm_output_chunks.append(complete_content)
                     
-                    # ✅ 性能优化：缓存 LLM 生成结果（用 progress 累积内容，不依赖 complete.content）
                     full_llm_content = ''.join(llm_output_chunks).strip()
                     if full_llm_content:
                         set_llm_cache("marriage", input_data_hash, full_llm_content, LLM_CACHE_TTL)
                         logger.info(f"[{trace_id}] ✅ LLM 缓存已写入: marriage, 长度={len(full_llm_content)}")
                     
+                    _write_stream_log(
+                        trace_id, frontend_input, formatted_data,
+                        llm_output_chunks, api_start_time, llm_first_token_time,
+                        actual_bot_id, llm_service, has_content, request_id
+                    )
+                    
+                    msg = {
+                        'type': 'complete',
+                        'content': complete_content
+                    }
+                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
                     logger.info(f"[{trace_id}] ✅ 流式生成完成: chunks={chunk_count}")
                     break
                 elif result.get('type') == 'error':
@@ -861,101 +898,64 @@ async def marriage_analysis_stream_generator(
                     yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
                     break
             
-            # 如果收到内容但没有收到 complete 消息，说明流式响应异常结束
-            if has_content and not complete_content:
+            if has_content and not received_complete:
                 logger.warning(f"[{trace_id}] ⚠️ 流式响应异常结束: 收到 {chunk_count} 个 chunks，但未收到 complete 消息")
+                _write_stream_log(
+                    trace_id, frontend_input, formatted_data,
+                    llm_output_chunks, api_start_time, llm_first_token_time,
+                    actual_bot_id, llm_service, has_content, request_id
+                )
                 complete_msg = {
                     'type': 'complete',
                     'content': ''
                 }
                 yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
             elif not has_content:
-                # 完全没有收到任何内容
                 logger.warning(f"[{trace_id}] ⚠️ 未收到任何内容: chunks={chunk_count}")
+                _write_stream_log(
+                    trace_id, frontend_input, formatted_data,
+                    llm_output_chunks, api_start_time, llm_first_token_time,
+                    actual_bot_id, llm_service, False, request_id
+                )
                 error_msg = {
                     'type': 'error',
                     'content': f'Coze Bot 未返回内容（Bot ID: {actual_bot_id}），请检查 Bot 配置和提示词'
                 }
                 yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
-            
-            # 统一记录调用日志（循环结束后执行）
-            try:
-                api_end_time = time.time()
-                llm_output = ''.join(llm_output_chunks)
-                stream_logger = get_stream_call_logger()
-                stream_logger.log_async(
-                    function_type='marriage',
-                    frontend_api='/api/v1/bazi/marriage-analysis/stream',
-                    frontend_input=frontend_input,
-                    input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
-                    llm_output=llm_output,
-                    api_total_ms=int((api_end_time - api_start_time) * 1000),
-                    llm_first_token_ms=int((llm_first_token_time - api_start_time) * 1000) if llm_first_token_time else None,
-                    bot_id=actual_bot_id,
-                    llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
-                    status='success' if has_content else 'failed',
-                    request_id=request_id,
-                )
-            except Exception as log_err:
-                logger.warning(f"[{trace_id}] 流式调用日志记录失败: {log_err}")
                 
         except Exception as e:
             import traceback
             logger.error(f"[{trace_id}] ❌ 流式生成异常: {e}\n{traceback.format_exc()}")
+            _write_stream_log(
+                trace_id, frontend_input,
+                formatted_data if 'formatted_data' in locals() else '',
+                [], api_start_time, None,
+                actual_bot_id if 'actual_bot_id' in locals() else None,
+                llm_service if 'llm_service' in locals() else None,
+                False, request_id
+            )
             error_msg = {
                 'type': 'error',
                 'content': f"流式生成失败: {str(e)}"
             }
             yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
-            
-            # 记录错误
-            api_end_time = time.time()
-            api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-            stream_logger = get_stream_call_logger()
-            stream_logger.log_async(
-                function_type='marriage',
-                frontend_api='/api/v1/bazi/marriage-analysis/stream',
-                frontend_input=frontend_input,
-                input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
-                llm_output='',
-                api_total_ms=api_response_time_ms,
-                llm_first_token_ms=None,
-                llm_total_ms=None,
-                bot_id=actual_bot_id if 'actual_bot_id' in locals() else None,
-                llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
-                status='failed',
-                error_message=str(e),
-                request_id=request_id,
-            )
     
     except Exception as e:
         import traceback
         logger.error(f"[{trace_id}] ❌ 流式生成器异常: {e}\n{traceback.format_exc()}")
+        _write_stream_log(
+            trace_id, frontend_input if 'frontend_input' in locals() else {},
+            '', [], api_start_time if 'api_start_time' in locals() else time.time(),
+            None,
+            actual_bot_id if 'actual_bot_id' in locals() else (bot_id if 'bot_id' in locals() else None),
+            llm_service if 'llm_service' in locals() else None,
+            False, request_id
+        )
         error_msg = {
             'type': 'error',
             'content': f"流式生成失败: {str(e)}"
         }
         yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
-        
-        # 记录错误
-        api_end_time = time.time()
-        api_response_time_ms = int((api_end_time - api_start_time) * 1000)
-        stream_logger = get_stream_call_logger()
-        stream_logger.log_async(
-            function_type='marriage',
-            frontend_api='/api/v1/bazi/marriage-analysis/stream',
-            frontend_input=frontend_input,
-            input_data='',
-            llm_output='',
-            api_total_ms=api_response_time_ms,
-            llm_first_token_ms=None,
-            llm_total_ms=None,
-            bot_id=actual_bot_id if 'actual_bot_id' in locals() else bot_id,
-            llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
-            status='failed',
-            error_message=str(e),
-            request_id=request_id,
-        )
 
 
 async def extract_marriage_analysis_data(

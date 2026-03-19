@@ -676,16 +676,7 @@ async def children_study_analysis_stream_generator(
         
         if cached_llm_content:
             logger.info(f"✅ LLM 缓存命中: children_study")
-            # 发送缓存的内容（模拟流式响应）
-            complete_msg = {
-                'type': 'complete',
-                'content': cached_llm_content
-            }
-            yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
             total_duration = time.time() - api_start_time
-            logger.info(f"✅ 从缓存返回完成: 耗时={total_duration:.2f}s")
-            
-            # 记录缓存命中日志
             try:
                 stream_logger = get_stream_call_logger()
                 stream_logger.log_async(
@@ -696,13 +687,19 @@ async def children_study_analysis_stream_generator(
                     llm_output=cached_llm_content,
                     api_total_ms=int(total_duration * 1000),
                     bot_id=used_bot_id,
-                    llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
+                    llm_platform='coze',
                     status='cache_hit',
                     cache_hit=True,
                     request_id=request_id,
                 )
             except Exception as log_err:
                 logger.warning(f"缓存命中日志记录失败: {log_err}")
+            complete_msg = {
+                'type': 'complete',
+                'content': cached_llm_content
+            }
+            yield f"data: {json.dumps(complete_msg, ensure_ascii=False)}\n\n"
+            logger.info(f"✅ 从缓存返回完成: 耗时={total_duration:.2f}s")
             return
         
         logger.info(f"❌ LLM 缓存未命中: children_study")
@@ -723,45 +720,44 @@ async def children_study_analysis_stream_generator(
             if llm_first_token_time is None and chunk.get('type') == 'progress':
                 llm_first_token_time = time.time()
             
-            # 收集输出内容
             if chunk.get('type') == 'progress':
                 llm_output_chunks.append(chunk.get('content', ''))
                 has_content = True
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
             elif chunk.get('type') == 'complete':
                 complete_content = chunk.get('content', '')
-                llm_output_chunks.append(complete_content)
+                if complete_content:
+                    llm_output_chunks.append(complete_content)
                 has_content = True
                 
-                # ✅ 性能优化：缓存 LLM 生成结果
-                if complete_content:
-                    set_llm_cache("children_study", input_data_hash, complete_content, LLM_CACHE_TTL)
+                full_llm_content = ''.join(llm_output_chunks).strip()
+                if full_llm_content:
+                    set_llm_cache("children_study", input_data_hash, full_llm_content, LLM_CACHE_TTL)
                     logger.info(f"✅ LLM 缓存已写入: children_study")
-            
-            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-            if chunk.get('type') in ['complete', 'error']:
+                
+                api_end_time = time.time()
+                api_total_ms = int((api_end_time - api_start_time) * 1000)
+                llm_total_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
+                stream_logger = get_stream_call_logger()
+                stream_logger.log_async(
+                    function_type='children',
+                    frontend_api='/api/v1/bazi/children-study/stream',
+                    frontend_input=frontend_input,
+                    input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
+                    llm_output=full_llm_content,
+                    llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
+                    api_total_ms=api_total_ms,
+                    llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
+                    llm_total_ms=llm_total_ms,
+                    bot_id=used_bot_id,
+                    status='success',
+                    request_id=request_id,
+                )
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
                 break
-        
-        # 记录交互数据（异步，不阻塞）
-        api_end_time = time.time()
-        api_total_ms = int((api_end_time - api_start_time) * 1000)
-        llm_total_ms = int((api_end_time - llm_start_time) * 1000) if llm_start_time else None
-        llm_output = ''.join(llm_output_chunks)
-        
-        stream_logger = get_stream_call_logger()
-        stream_logger.log_async(
-            function_type='children',
-            frontend_api='/api/v1/bazi/children-study/stream',
-            frontend_input=frontend_input,
-            input_data=formatted_data if 'formatted_data' in locals() and formatted_data else '',
-            llm_output=llm_output,
-            llm_platform='bailian' if 'llm_service' in locals() and isinstance(llm_service, BailianStreamService) else 'coze',
-            api_total_ms=api_total_ms,
-            llm_first_token_ms=int((llm_first_token_time - llm_start_time) * 1000) if llm_first_token_time and llm_start_time else None,
-            llm_total_ms=llm_total_ms,
-            bot_id=used_bot_id,
-            status='success' if has_content else 'failed',
-            request_id=request_id,
-        )
+            elif chunk.get('type') == 'error':
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                break
                 
     except ValueError as e:
         # 配置错误
