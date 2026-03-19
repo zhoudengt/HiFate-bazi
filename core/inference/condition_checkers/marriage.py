@@ -44,6 +44,7 @@ class MarriageMatchContext(BaseMatchContext):
         self.marriage_palace_chong: bool = False
         self.marriage_palace_he: bool = False
         self.marriage_palace_xing: bool = False
+        self.marriage_palace_hai: bool = False
         self.marriage_palace_clash_count: int = 0
 
     def _populate(self, inp: InferenceInput):
@@ -86,10 +87,11 @@ class MarriageMatchContext(BaseMatchContext):
         )
 
     def _build_marriage_palace_relations(self):
-        """预计算婚姻宫（日支）的冲/合/刑"""
+        """预计算婚姻宫（日支）的冲/合/刑/害"""
         self.marriage_palace_chong = self.day_branch_has_chong
         self.marriage_palace_he = self.day_branch_has_he
         self.marriage_palace_xing = self.day_branch_has_xing
+        self.marriage_palace_hai = self.day_branch_has_hai
         self.marriage_palace_clash_count = self.day_branch_clash_count + self.day_branch_xing_count
 
 
@@ -218,3 +220,9 @@ def check_marriage_palace_multi_clash(value: bool, ctx: BaseMatchContext, cond: 
         total = ctx.day_branch_clash_count + ctx.day_branch_xing_count
         return (total >= 2) == value
     return (ctx.marriage_palace_clash_count >= 2) == value
+
+
+@register('marriage_palace_hai')
+def check_marriage_palace_hai(value: bool, ctx: BaseMatchContext, cond: Dict) -> bool:
+    """婚姻宫（日支）是否被其他柱地支所害"""
+    return ctx.day_branch_has_hai == value

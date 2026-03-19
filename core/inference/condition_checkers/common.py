@@ -352,3 +352,23 @@ def check_day_has(value: list, ctx: BaseMatchContext, cond: Dict) -> bool:
     day_deities = set(ctx.deities_by_pillar.get('day', []))
     combined = day_stars | day_deities
     return all(v in combined for v in value)
+
+
+@register('day_branch_hai')
+def check_day_branch_hai(value: bool, ctx: BaseMatchContext, cond: Dict) -> bool:
+    """日支是否被其他柱地支所害"""
+    return ctx.day_branch_has_hai == value
+
+
+@register('branch_hai')
+def check_branch_hai(value: str, ctx: BaseMatchContext, cond: Dict) -> bool:
+    """指定两柱之间是否存在害关系，如 month_day"""
+    parts = value.split('_')
+    if len(parts) < 2:
+        return False
+    ba = ctx.branches.get(parts[0], '')
+    bb = ctx.branches.get(parts[1], '')
+    if not ba or not bb:
+        return False
+    from core.data.relations import BRANCH_HAI
+    return bb in BRANCH_HAI.get(ba, [])

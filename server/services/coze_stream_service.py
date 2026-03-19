@@ -367,7 +367,7 @@ class CozeStreamService(BaseLLMStreamService):
                                         else:
                                             yield {
                                                 'type': 'complete',
-                                                'content': buffer.strip()
+                                                'content': ''
                                             }
                                     else:
                                         yield {
@@ -941,7 +941,7 @@ class CozeStreamService(BaseLLMStreamService):
                                         else:
                                             yield {
                                                 'type': 'complete',
-                                                'content': buffer.strip()
+                                                'content': ''
                                             }
                                     else:
                                         yield {
