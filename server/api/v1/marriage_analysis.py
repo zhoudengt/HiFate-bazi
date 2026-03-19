@@ -809,6 +809,7 @@ async def marriage_analysis_stream_generator(
         try:
             chunk_count = 0
             has_content = False
+            complete_content = None
             
             logger.info(f"[{trace_id}] 📤 开始调用 LLM API: bot_id={actual_bot_id}, data_length={len(formatted_data)}")
 
@@ -842,10 +843,11 @@ async def marriage_analysis_stream_generator(
                     }
                     yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
                     
-                    # ✅ 性能优化：缓存 LLM 生成结果
-                    if complete_content:
-                        set_llm_cache("marriage", input_data_hash, complete_content, LLM_CACHE_TTL)
-                        logger.info(f"[{trace_id}] ✅ LLM 缓存已写入: marriage")
+                    # ✅ 性能优化：缓存 LLM 生成结果（用 progress 累积内容，不依赖 complete.content）
+                    full_llm_content = ''.join(llm_output_chunks).strip()
+                    if full_llm_content:
+                        set_llm_cache("marriage", input_data_hash, full_llm_content, LLM_CACHE_TTL)
+                        logger.info(f"[{trace_id}] ✅ LLM 缓存已写入: marriage, 长度={len(full_llm_content)}")
                     
                     logger.info(f"[{trace_id}] ✅ 流式生成完成: chunks={chunk_count}")
                     break

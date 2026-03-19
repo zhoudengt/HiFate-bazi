@@ -199,11 +199,16 @@ class MarriageInferenceEngine(BaseInferenceEngine):
                     'shishen': main_star, 'pillar': pillar_name,
                     'stem': stem, 'element': element
                 })
-            for hs in tg.get('hidden_stars', []):
+            hidden_stars = tg.get('hidden_stars', [])
+            hidden_stems = tg.get('hidden_stems', [])
+            for idx, hs in enumerate(hidden_stars):
                 if isinstance(hs, str) and hs in target_set:
+                    stem_info = hidden_stems[idx] if idx < len(hidden_stems) else ''
+                    stem = stem_info[0] if stem_info else ''
+                    element = STEM_ELEMENTS.get(stem, '')
                     stars.append({
                         'shishen': hs, 'pillar': pillar_name,
-                        'stem': '', 'element': '', 'hidden': True
+                        'stem': stem, 'element': element, 'hidden': True
                     })
         return stars
 

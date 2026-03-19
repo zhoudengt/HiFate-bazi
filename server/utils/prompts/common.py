@@ -144,6 +144,36 @@ def format_ten_gods_text(ten_gods: Dict[str, Any], include_hidden: bool = False)
     return '、'.join(parts)
 
 
+_HEAVENLY_STEMS = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']
+_STEM_ELEMENTS = {
+    '甲': '木', '乙': '木', '丙': '火', '丁': '火', '戊': '土',
+    '己': '土', '庚': '金', '辛': '金', '壬': '水', '癸': '水',
+}
+_RELATION_NAMES = {
+    0: '比肩', 1: '劫财', 2: '食神', 3: '伤官', 4: '偏财',
+    5: '正财', 6: '七杀', 7: '正官', 8: '偏印', 9: '正印',
+}
+
+
+def format_ten_gods_reference(day_stem: str) -> str:
+    """
+    生成十神对照表，供 LLM 直接查阅，避免自行推算出错。
+    例: "庚日元：正财=乙(木)、偏财=甲(木)、正官=丁(火)、七杀=丙(火)、正印=己(土)、偏印=戊(土)、食神=壬(水)、伤官=癸(水)、劫财=辛(金)"
+    """
+    if day_stem not in _HEAVENLY_STEMS:
+        return ''
+    day_idx = _HEAVENLY_STEMS.index(day_stem)
+    parts = []
+    for i, stem in enumerate(_HEAVENLY_STEMS):
+        if stem == day_stem:
+            continue
+        rel_idx = (i - day_idx) % 10
+        name = _RELATION_NAMES.get(rel_idx, '')
+        elem = _STEM_ELEMENTS.get(stem, '')
+        parts.append(f"{name}={stem}({elem})")
+    return f"{day_stem}日元：{'、'.join(parts)}"
+
+
 def format_wuxing_distribution_text(element_counts: Dict[str, int]) -> str:
     """
     格式化五行分布为简洁中文文本

@@ -1,0 +1,171 @@
+---
+description: 推理引擎设计开发规范（修改 core/inference/ 下的文件时生效）
+alwaysApply: false
+globs:
+  - core/inference/**
+  - server/utils/prompts/inference_formatter.py
+---
+
+# 推理引擎设计开发规范
+
+> 从感情婚姻领域提炼，适用于所有领域（健康/事业/子女/财富等）的推理引擎开发。
+
+## 架构总览
+
+```
+InferenceInput → BaseMatchContext → ConditionMatcher → QualityFilter → Formatter → LLM
+                ↑ 子类扩展              ↑ 注册表
+        MarriageMatchContext    common.py + marriage.py
+        HealthMatchContext      common.py + health.py
+```
+
+## 新增领域标准流程（9 步）
+
+### 第 1 步：创建领域 MatchContext
+- 文件：`core/inference/condition_checkers/{domain}.py`
+- 继承 `BaseMatchContext`，添加领域特有预计算字段
+- 实现 `_populate()` 调 `super()._populate(inp)` 后计算特有数据
+- 参考：`MarriageMatchContext`（配偶星、婚姻宫关系）
+
+### 第 2 步：注册领域条件检查函数
+- 文件：`core/inference/condition_checkers/{domain}.py`
+- 每个条件键一个函数，用 `@register('key_name')` 装饰
+- 签名：`(value, ctx: BaseMatchContext, cond: Dict) -> bool`
+- 函数内用 `isinstance(ctx, DomainMatchContext)` 安全转型
+
+### 第 3 步：更新 `__init__.py`
+- 文件：`core/inference/condition_checkers/__init__.py`
+- 加一行 `from core.inference.condition_checkers import {domain}`
+
+### 第 4 步：写入 DB 规则
+- 表：`bazi_stream_inference_rules`
+- SQL 必须 `SET NAMES utf8mb4;` 开头
+- 用 `ON DUPLICATE KEY UPDATE` 保证幂等
+- conditions 为 JSON，键名必须在 checker 注册表中
+
+### 第 5 步：创建领域推理引擎
+- 文件：`core/inference/{domain}_engine.py`
+- 继承 `BaseInferenceEngine`
+- `_infer_from_db_rules()` 必须使用 `DomainMatchContext.from_input(inp)` + `InferenceConditionMatcher.match()`
+
+### 第 6 步：配置质量过滤
+- 在引擎类中定义 `FILTER_CONFIG = FilterConfig(...)`
+- 设置领域特有的 `contradiction_pairs`、`category_limits`
+
+### 第 7 步：注册 Formatter 分类标签
+- 文件：`server/utils/prompts/inference_formatter.py`
+- 在 `CATEGORY_LABELS` 中添加新类别
+- 在 `CORE_CATEGORIES` 中标记核心类别
+
+### 第 8 步：集成到流式接口
+- 文件：`server/api/v1/{domain}_analysis.py`
+- 构建 `InferenceInput` → 调 `engine.infer()` → `format_with_inference()`
+
+### 第 9 步：测试验证
+- 构造真实命盘数据，验证匹配率合理（< 25%）
+- 检查无明显误匹配（应全部通过条件检查）
+- 验证格式化输出有核心/参考分层
+
+## 关键原则
+
+### 严格匹配（零误匹配原则）
+- `InferenceConditionMatcher.match()` 遇到未注册的条件键 → 整条规则不匹配
+- 宁可漏判不可误判
+- 每个领域部署前必须用真实命盘验证误匹配率
+
+### 通用与特有分离
+- `condition_matcher.py`、`common.py`、`quality_filter.py`、`inference_formatter.py` 是通用框架
+- 领域特有数据放在 `condition_checkers/{domain}.py` 和 `{domain}_engine.py`
+- 禁止在通用代码中硬编码领域逻辑
+
+### 数据质量
+- 规则 SQL 必须 UTF-8 编码（`SET NAMES utf8mb4`）
+- 用 `INSERT ... ON DUPLICATE KEY UPDATE` 保证幂等
+- conditions 中的键必须在注册表中能找到对应 checker
+
+### 质量过滤四层
+1. 置信度门槛（< 0.5 丢弃）
+2. 矛盾检测（互斥结论保留高置信度方）
+3. 增强去重（同类别前缀去重）
+4. 分类限数（每类 Top-N）
+
+## 文件清单
+
+| 文件 | 职责 | 修改频率 |
+|------|------|---------|
+| `core/inference/condition_matcher.py` | 通用框架：BaseMatchContext + 注册表 + Matcher | 极低 |
+| `core/inference/condition_checkers/common.py` | 29 个通用条件检查器 | 低（新增通用键时改）|
+| `core/inference/condition_checkers/{domain}.py` | 领域 MatchContext + 特有检查器 | 中（新增领域时加）|
+| `core/inference/quality_filter.py` | 通用质量过滤器 | 低 |
+| `core/inference/{domain}_engine.py` | 领域推理引擎 | 中 |
+| `server/utils/prompts/inference_formatter.py` | 通用输出格式化 | 低 |
+
+## 已踩坑清单（后续模块必须避免）
+
+> 从婚姻模块实际部署中提炼，每条都对应一个真实 Bug。
+
+### 1. 流式输出内容重复（Coze 特有）
+- **现象**：LLM 报告完整出现两遍
+- **原因**：`coze_stream_service.py` 的 `[DONE]` handler 把完整 buffer 作为 `complete.content` 再发一次，而 `stream_collector.py` 又会 append 这个 content
+- **规则**：`complete` 事件的 `content` 必须为空字符串，仅作结束标记。内容已通过 `progress` 逐块发送
+- **适用**：所有领域的 Coze 流式接口
+
+### 2. 地支「害」关系必须覆盖
+- **现象**：酉戌害（月令害婚姻宫）完全遗漏，影响分析准确性
+- **规则**：`BaseMatchContext` 已预计算 `day_branch_has_hai`。每个领域的 DB 规则必须覆盖害关系（冲/合/刑/害四大关系缺一不可）
+- **适用**：所有领域。健康模块的月日害可能影响脏腑判断
+
+### 3. DB 规则 conditions 禁止为空 JSON `{}`
+- **现象**：7 条 `marriage_timing` 规则 conditions 为空，对所有命盘无差别匹配，产出模糊文本
+- **规则**：DB 规则的 `conditions` 必须至少包含一个有效条件键。动态时机分析（大运/流年）应在引擎代码中用 `_infer_{domain}_timing()` 实现，不要写成 DB 规则
+- **适用**：所有领域。健康时机、事业时机同理
+
+### 4. 规则 causal_chain 第一段必须精确
+- **现象**：`causal_chain` 首段（如"偏财在年月透出"）直接作为 LLM 输入的 `condition` 字段。若描述不精确会误导 LLM
+- **规则**：causal_chain 的第一段（→ 前的部分）必须精确描述匹配条件，不能笼统概括
+  - ❌ "偏财在年月透出"（歧义：实际只在年柱）
+  - ✅ "配偶星（财星）在年柱或月柱出现"
+- **适用**：所有领域的 DB 规则
+
+### 5. rule_code 不可被不同含义的规则复用
+- **现象**：生产 DB 中 `marriage_bc_010/011/012` 已被占用，ON DUPLICATE KEY UPDATE 覆盖了原有规则
+- **规则**：新增规则前必须先查询生产 DB，确认 rule_code 未被占用。建议用领域前缀+子类前缀+三位序号，如 `marriage_hai_001`
+- **适用**：所有领域
+
+### 6. 藏干配偶星必须有五行信息（禁止 element 为空）
+- **现象**：`_find_spouse_stars()` 和 `_build_spouse_stars()` 对藏干星设置 `element=''`，导致所有藏干配偶星被判为忌神
+- **原因**：`hidden_stars` 只有十神名（如"正财"），没有天干字符和五行。而 BaZi 计算器的 `hidden_stems` 字段已有完整数据（如"乙木"），但未传入推理引擎
+- **规则**：`build_input()` 必须将 `hidden_stems` 传入 `ten_gods` 数据。消费侧用平行数组 `hidden_stems[idx]` 取天干首字符，再查 `STEM_ELEMENTS` 得五行。**禁止自行计算十神五行关系，直接用 BaZi 计算器已有数据**
+- **适用**：所有领域。健康模块的藏干七杀/偏印判断同理需要五行
+
+### 7. 分项十神计数须用专属条件键
+- **现象**：规则 `marriage_ss_015` 用 `spouse_star_count_min:3` 检查所有配偶星总数，但结论写"偏财3个以上"，1偏财+3正财也匹配
+- **规则**：检查某一类十神数量时，使用专属条件键（`piancai_count_min`、`zhengcai_count_min`、`qisha_count_min`、`zhengguan_count_min`），不要用 `spouse_star_count_min` 代替
+- **适用**：所有领域
+
+### 8. LLM prompt 必须包含十神对照表
+- **现象**：LLM 写出"正财=戊土"（庚日元正财应为乙木）、"丙火=正官"（应为七杀）
+- **规则**：格式化数据时必须调用 `format_ten_gods_reference(day_stem)` 输出 `【十神对照】庚日元：正财=乙(木)、偏财=甲(木)…`，让 LLM 直接查表不自行推算
+- **适用**：所有领域
+
+### 9. 流式 complete 事件后 LLM 缓存须用 progress 累积内容
+- **现象**：`set_llm_cache()` 使用 `complete_content` 写缓存，但 `complete.content` 为空（见踩坑 1），导致缓存永远不写入
+- **规则**：缓存内容使用 `''.join(llm_output_chunks).strip()`，不依赖 `complete_content`
+- **适用**：所有领域的流式接口
+
+## 禁止操作
+
+- ❌ 在 `_infer_from_db_rules()` 中手写条件检查（必须走 Matcher）
+- ❌ 新增条件键不注册 checker 就写入 DB（会导致规则静默跳过）
+- ❌ 在通用框架文件中写领域特有逻辑
+- ❌ 跳过 `SET NAMES utf8mb4` 导入中文 SQL
+- ❌ 不设置 FilterConfig 直接输出（可能出现矛盾结论）
+- ❌ DB 规则 conditions 为空 JSON `{}`（会无差别匹配所有命盘）
+- ❌ causal_chain 首段使用模糊描述（LLM 会直接采用作为条件说明）
+- ❌ 流式 `complete` 事件携带完整 content（与 `progress` 重复导致输出翻倍）
+- ❌ 遗漏冲/合/刑/害任一地支关系（四大关系必须全覆盖）
+- ❌ 藏干星设置 `element=''`（必须从 `hidden_stems` 取五行）
+- ❌ 自行计算十神五行关系（直接用 BaZi 计算器已有数据）
+- ❌ 用 `spouse_star_count_min` 代替分项计数（偏财/正财/七杀/正官各有专属条件键）
+- ❌ LLM prompt 中不带十神对照表（LLM 会自行推算并出错）
+- ❌ 用 `complete_content` 写 LLM 缓存（必须用 `''.join(llm_output_chunks)`）

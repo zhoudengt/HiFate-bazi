@@ -37,6 +37,10 @@ class MarriageMatchContext(BaseMatchContext):
         self.spouse_stars: List[Dict[str, Any]] = []
         self.spouse_star_types: Set[str] = set()
         self.spouse_star_count: int = 0
+        self.zhengcai_count: int = 0
+        self.piancai_count: int = 0
+        self.zhengguan_count: int = 0
+        self.qisha_count: int = 0
         self.spouse_star_has_xi: bool = False
         self.spouse_star_has_ji: bool = False
         self.spouse_star_positions: List[str] = []
@@ -65,16 +69,25 @@ class MarriageMatchContext(BaseMatchContext):
                     'shishen': main_star, 'pillar': pillar_name,
                     'stem': stem, 'element': element, 'hidden': False,
                 })
-            for hs in tg.get('hidden_stars', []):
+            hidden_stars = tg.get('hidden_stars', [])
+            hidden_stems = tg.get('hidden_stems', [])
+            for idx, hs in enumerate(hidden_stars):
                 if isinstance(hs, str) and hs in target_set:
+                    stem_info = hidden_stems[idx] if idx < len(hidden_stems) else ''
+                    stem = stem_info[0] if stem_info else ''
+                    element = STEM_ELEMENTS.get(stem, '')
                     stars.append({
                         'shishen': hs, 'pillar': pillar_name,
-                        'stem': '', 'element': '', 'hidden': True,
+                        'stem': stem, 'element': element, 'hidden': True,
                     })
 
         self.spouse_stars = stars
         self.spouse_star_types = {s['shishen'] for s in stars}
         self.spouse_star_count = len(stars)
+        self.zhengcai_count = sum(1 for s in stars if s['shishen'] == '正财')
+        self.piancai_count = sum(1 for s in stars if s['shishen'] == '偏财')
+        self.zhengguan_count = sum(1 for s in stars if s['shishen'] == '正官')
+        self.qisha_count = sum(1 for s in stars if s['shishen'] == '七杀')
         self.spouse_star_positions = [s['pillar'] for s in stars if not s.get('hidden')]
 
         xi_elements = self.xi_elements
@@ -125,6 +138,38 @@ def check_spouse_star_count_min(value: int, ctx: BaseMatchContext, cond: Dict) -
     if not isinstance(ctx, MarriageMatchContext):
         return False
     return ctx.spouse_star_count >= value
+
+
+@register('piancai_count_min')
+def check_piancai_count_min(value: int, ctx: BaseMatchContext, cond: Dict) -> bool:
+    """偏财数量 >= N（男命用）"""
+    if not isinstance(ctx, MarriageMatchContext):
+        return False
+    return ctx.piancai_count >= value
+
+
+@register('zhengcai_count_min')
+def check_zhengcai_count_min(value: int, ctx: BaseMatchContext, cond: Dict) -> bool:
+    """正财数量 >= N（男命用）"""
+    if not isinstance(ctx, MarriageMatchContext):
+        return False
+    return ctx.zhengcai_count >= value
+
+
+@register('qisha_count_min')
+def check_qisha_count_min(value: int, ctx: BaseMatchContext, cond: Dict) -> bool:
+    """七杀数量 >= N（女命用）"""
+    if not isinstance(ctx, MarriageMatchContext):
+        return False
+    return ctx.qisha_count >= value
+
+
+@register('zhengguan_count_min')
+def check_zhengguan_count_min(value: int, ctx: BaseMatchContext, cond: Dict) -> bool:
+    """正官数量 >= N（女命用）"""
+    if not isinstance(ctx, MarriageMatchContext):
+        return False
+    return ctx.zhengguan_count >= value
 
 
 @register('spouse_star_early')

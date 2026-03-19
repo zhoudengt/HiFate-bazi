@@ -121,10 +121,20 @@ class BaseInferenceEngine(ABC):
                     if isinstance(pd, dict) and pd.get('main_star'):
                         ten_gods[pn] = {
                             'main_star': pd.get('main_star', ''),
-                            'hidden_stars': pd.get('hidden_stars', [])
+                            'hidden_stars': pd.get('hidden_stars', []),
+                            'hidden_stems': pd.get('hidden_stems', []),
                         }
                 if ten_gods:
                     break
+
+        # 补充 hidden_stems：如果 ten_gods 来自 data_assembler 缺少此字段，从 details 中取
+        all_details = detail_result.get('details', {}) or bazi_data.get('details', {})
+        if all_details:
+            for pn in ['year', 'month', 'day', 'hour']:
+                tg_pn = ten_gods.get(pn)
+                if isinstance(tg_pn, dict) and 'hidden_stems' not in tg_pn:
+                    pd = all_details.get(pn, {})
+                    tg_pn['hidden_stems'] = pd.get('hidden_stems', [])
 
         deities = {}
         details = bazi_data.get('details', {})
