@@ -140,7 +140,7 @@ async def health_analysis_debug(request: HealthAnalysisRequest):
             wangshuai_data = wangshuai_result if isinstance(wangshuai_result, dict) else {}
         
         detail_result = unified_data.get('detail', {})
-        dayun_sequence = detail_result.get('dayun_sequence', [])
+        dayun_sequence = detail_result.get('dayun_sequence') or (detail_result.get('details') or {}).get('dayun_sequence', [])
         special_liunians_data = unified_data.get('special_liunians', {})
         special_liunians = special_liunians_data.get('list', []) if isinstance(special_liunians_data, dict) else []
         health_rules = unified_data.get('rules', [])
@@ -323,8 +323,8 @@ async def health_analysis_stream_generator(
             if not detail_result:
                 raise ValueError("详细数据获取失败，无法继续分析")
             
-            # 提取大运序列和特殊流年
-            dayun_sequence = detail_result.get('dayun_sequence', [])
+            # 提取大运序列和特殊流年（与 fortune/display 单一数据源：优先顶层，否则从 details 取）
+            dayun_sequence = detail_result.get('dayun_sequence') or (detail_result.get('details') or {}).get('dayun_sequence', [])
             special_liunians_data = unified_data.get('special_liunians', {})
             if isinstance(special_liunians_data, dict) and 'list' in special_liunians_data:
                 special_liunians = special_liunians_data.get('list', [])
@@ -725,7 +725,9 @@ def build_health_input_data(
             'elements': element_counts,
             'wangshuai': wangshuai,
             'yue_ling': yue_ling,
-            'wuxing_balance': wuxing_balance
+            'wuxing_balance': wuxing_balance,
+            'details': detail_result.get('details', {}),
+            'branch_relations': bazi_data.get('relationships', {}).get('branch_relations', {}),
         },
         
         # 2. 五行病理推演

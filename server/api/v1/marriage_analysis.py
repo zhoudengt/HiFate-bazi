@@ -393,6 +393,7 @@ def build_marriage_input_data(
             'branch_relations': branch_relations,
             'day_pillar': day_pillar,
             'details': detail_result.get('details', {}),
+            'element_counts': bazi_data.get('element_counts', {}),
         },
         # 配偶特征数据（包含：十神、神煞、婚姻判词、桃花判词、婚配判词、正缘判词）
         'peiou_tezheng': {

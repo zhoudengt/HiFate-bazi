@@ -65,7 +65,7 @@ class AnnualReportService:
         try:
             # 1. 提取命盘分析数据
             mingpan_analysis = AnnualReportService._extract_mingpan_analysis(
-                bazi_data, wangshuai_result
+                bazi_data, wangshuai_result, detail_result
             )
             
             # 2. 提取流月解读数据（1-12月）
@@ -236,15 +236,17 @@ class AnnualReportService:
     @staticmethod
     def _extract_mingpan_analysis(
         bazi_data: Dict[str, Any],
-        wangshuai_result: Dict[str, Any]
+        wangshuai_result: Dict[str, Any],
+        detail_result: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
         提取命盘分析数据
-        
+
         Args:
             bazi_data: 八字基础数据
             wangshuai_result: 旺衰分析结果
-            
+            detail_result: 详细计算结果（用于十神对照）
+
         Returns:
             dict: 命盘分析数据
         """
@@ -285,7 +287,9 @@ class AnnualReportService:
                 'bazi_pillars': bazi_pillars,
                 'element_counts': element_counts,
                 'wangshuai': wangshuai,
-                'xi_ji': xi_ji
+                'xi_ji': xi_ji,
+                'details': (detail_result or {}).get('details', {}),
+                'branch_relations': bazi_data.get('relationships', {}).get('branch_relations', {}),
             }
         except Exception as e:
             logger.error(f"提取命盘分析数据失败: {e}", exc_info=True)

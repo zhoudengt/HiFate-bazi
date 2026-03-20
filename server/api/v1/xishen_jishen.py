@@ -128,6 +128,29 @@ def _format_xishen_jishen_for_llm(data: Dict[str, Any]) -> str:
         if parts:
             lines.append(f"【十神】{'、'.join(parts)}")
     
+    # 十神对照（从底层 detail_result.details 组装，不重算）
+    try:
+        from server.utils.prompts.common import format_ten_gods_reference_from_details, format_branch_relations_text, format_key_dayuns_text
+        ten_gods_ref = format_ten_gods_reference_from_details(data.get('_details', {}), data.get('_bazi_pillars', {}))
+        if ten_gods_ref:
+            lines.append(f"【十神对照】{ten_gods_ref}")
+        branch_relations = data.get('_branch_relations', {})
+        if branch_relations:
+            relations_text = format_branch_relations_text(branch_relations)
+            if relations_text and relations_text != "无":
+                lines.append(f"【地支关系】{relations_text}")
+        key_dayuns = data.get('_key_dayuns', [])
+        current_dayun = data.get('_current_dayun', {})
+        special_liunians = data.get('_special_liunians', [])
+        if current_dayun or key_dayuns:
+            lines.extend(format_key_dayuns_text(
+                key_dayuns=key_dayuns,
+                current_dayun=current_dayun,
+                special_liunians=special_liunians
+            ))
+    except Exception:
+        pass
+    
     return '\n'.join(lines)
 
 # 双轨并行：编排层开关，默认关闭
@@ -545,9 +568,11 @@ async def xishen_jishen_stream_generator(
         modules = {
             'bazi': True,
             'wangshuai': True,
-            'xishen_jishen': True,  # 统一数据服务会自动组装
+            'xishen_jishen': True,
+            'detail': True,
+            'special_liunians': True,
             'rules': {
-                'types': ['shishen']  # 获取十神命格规则
+                'types': ['shishen']
             }
         }
         
@@ -643,6 +668,28 @@ async def xishen_jishen_stream_generator(
             'content': response_data
         }
         yield f"data: {json.dumps(data_msg, ensure_ascii=False)}\n\n"
+        
+        # 6.5 注入统一数据源的扩展字段（十神对照、地支关系、大运流年）
+        try:
+            bazi_module = unified_data.get('bazi', {})
+            bazi_data_raw = bazi_module.get('bazi', bazi_module) if isinstance(bazi_module, dict) and 'bazi' in bazi_module else bazi_module
+            detail_result = unified_data.get('detail', {}) or {}
+            data['_details'] = detail_result.get('details', {})
+            data['_bazi_pillars'] = data.get('bazi_pillars', {}) or bazi_data_raw.get('bazi_pillars', {})
+            data['_branch_relations'] = bazi_data_raw.get('relationships', {}).get('branch_relations', {})
+            dayun_sequence = detail_result.get('dayun_sequence') or (detail_result.get('details') or {}).get('dayun_sequence', [])
+            special_liunians_data = unified_data.get('special_liunians', {})
+            special_liunians = special_liunians_data.get('list', []) if isinstance(special_liunians_data, dict) else []
+            from server.utils.dayun_liunian_helper import calculate_user_age, get_current_dayun, select_dayuns_with_priority
+            birth_date = bazi_data_raw.get('basic_info', {}).get('solar_date', '')
+            current_age = calculate_user_age(birth_date) if birth_date else 0
+            current_dayun = get_current_dayun(dayun_sequence, current_age) or {}
+            key_dayuns = select_dayuns_with_priority(dayun_sequence, current_dayun, count=5)
+            data['_current_dayun'] = current_dayun
+            data['_key_dayuns'] = key_dayuns
+            data['_special_liunians'] = special_liunians
+        except Exception as e:
+            logger.warning(f"[喜神忌神] 提取扩展数据失败（不影响核心功能）: {e}")
         
         # 7. 格式化为简洁中文描述（与五行占比一致，减少 token、去冗余）
         formatted_data = _format_xishen_jishen_for_llm(data)

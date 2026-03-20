@@ -371,8 +371,8 @@ async def children_study_analysis_debug(request: ChildrenStudyRequest):
             bazi_data = bazi_result
         bazi_data = validate_bazi_data(bazi_data)
         
-        # 获取大运序列（从detail_result，不是bazi_data）
-        dayun_sequence = detail_result.get('dayun_sequence', [])
+        # 获取大运序列（从detail_result，优先顶层，否则从 details 取）
+        dayun_sequence = detail_result.get('dayun_sequence') or (detail_result.get('details') or {}).get('dayun_sequence', [])
         
         # 获取五行统计
         element_counts = bazi_data.get('element_counts', {})
@@ -573,7 +573,7 @@ async def children_study_analysis_stream_generator(
             
             wangshuai_result = unified_data.get('wangshuai', {})
             detail_result = unified_data.get('detail', {}) or {}
-            dayun_sequence = detail_result.get('dayun_sequence', [])
+            dayun_sequence = detail_result.get('dayun_sequence') or (detail_result.get('details') or {}).get('dayun_sequence', [])
             special_liunians_data = unified_data.get('special_liunians', {})
             special_liunians = special_liunians_data.get('list', []) if isinstance(special_liunians_data, dict) else []
             children_rules = unified_data.get('rules', [])
@@ -1068,7 +1068,9 @@ def build_children_study_input_data(
             'bazi_pillars': bazi_pillars,
             'elements': element_counts,
             'wangshuai': wangshuai,
-            'gender': gender
+            'gender': gender,
+            'details': detail_result.get('details', {}),
+            'branch_relations': bazi_data.get('relationships', {}).get('branch_relations', {}),
         },
         
         # 2. 子女星与子女宫

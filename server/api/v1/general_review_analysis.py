@@ -158,8 +158,8 @@ async def general_review_analysis_test(request: GeneralReviewRequest):
         # ✅ 修复：从 orchestrator 的 unified_data 中提取大运序列和特殊流年（确保与 fortune/display 一致）
         # ⚠️ 不再调用 BaziDataService.get_fortune_data()，避免绕过 orchestrator 导致数据不一致
         
-        # 从 detail_result 中提取大运序列和流年序列
-        dayun_sequence = detail_result.get('dayun_sequence', []) if isinstance(detail_result, dict) else []
+        # 从 detail_result 中提取大运序列和流年序列（优先顶层，否则从 details 取）
+        dayun_sequence = (detail_result.get('dayun_sequence') or (detail_result.get('details') or {}).get('dayun_sequence', [])) if isinstance(detail_result, dict) else []
         liunian_sequence = detail_result.get('liunian_sequence', []) if isinstance(detail_result, dict) else []
         
         # 从 unified_data 中提取特殊流年（已由 orchestrator 统一获取，与 fortune/display 一致）
@@ -641,8 +641,8 @@ async def general_review_analysis_stream_generator(
         # ✅ 修复：从 orchestrator 的 unified_data 中提取大运序列和特殊流年（确保与 fortune/display 一致）
         # ⚠️ 不再调用 BaziDataService.get_fortune_data()，避免绕过 orchestrator 导致数据不一致
         
-        # 从 detail_data 中提取大运序列（已由 orchestrator 统一获取）
-        dayun_sequence = detail_data.get('dayun_sequence', []) if isinstance(detail_data, dict) else []
+        # 从 detail_data 中提取大运序列（已由 orchestrator 统一获取，优先顶层，否则从 details 取）
+        dayun_sequence = (detail_data.get('dayun_sequence') or (detail_data.get('details') or {}).get('dayun_sequence', [])) if isinstance(detail_data, dict) else []
         
         # 从 unified_data 中提取特殊流年（已由 orchestrator 统一获取，与 fortune/display 一致）
         special_liunians_data = unified_data.get('special_liunians', {})
@@ -1242,9 +1242,12 @@ def build_general_review_input_data(
             'wangshuai_detail': wangshuai_detail_str,  # ⚠️ 使用提取的旺衰详细数据
             'yue_ling': yue_ling,
             'geju_type': geju_type,
-            'wuxing_liutong': wuxing_liutong
+            'wuxing_liutong': wuxing_liutong,
+            'element_counts': element_counts,
+            'details': detail_result.get('details', {}),
+            'branch_relations': bazi_data.get('relationships', {}).get('branch_relations', {}),
         },
-        
+
         # 2. 性格特质
         'xingge_tezhi': {
             'day_master_personality': personality_result.get('descriptions', []) if personality_result else [],

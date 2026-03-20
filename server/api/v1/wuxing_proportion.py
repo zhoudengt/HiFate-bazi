@@ -35,12 +35,32 @@ class WuxingStreamHandler(BaseAnalysisStreamHandler):
     frontend_api = "/api/v1/bazi/wuxing-proportion/stream"
 
     def get_modules(self, request: Any) -> Dict[str, Any]:
-        return {'bazi': True, 'wangshuai': True, 'wuxing_proportion': True}
+        return {'bazi': True, 'wangshuai': True, 'wuxing_proportion': True, 'detail': True, 'special_liunians': True}
 
     def extract_and_validate(self, unified_data: Dict[str, Any], request: Any) -> Any:
         proportion_data = unified_data.get('wuxing_proportion')
         if not proportion_data or not proportion_data.get('success'):
             raise ValueError('获取五行占比数据失败')
+        try:
+            bazi_module = unified_data.get('bazi', {})
+            bazi_data = bazi_module.get('bazi', bazi_module) if isinstance(bazi_module, dict) and 'bazi' in bazi_module else bazi_module
+            detail_result = unified_data.get('detail', {}) or {}
+            proportion_data['_details'] = detail_result.get('details', {})
+            proportion_data['_bazi_pillars'] = bazi_data.get('bazi_pillars', {})
+            proportion_data['_branch_relations'] = bazi_data.get('relationships', {}).get('branch_relations', {})
+            dayun_sequence = detail_result.get('dayun_sequence') or (detail_result.get('details') or {}).get('dayun_sequence', [])
+            special_liunians_data = unified_data.get('special_liunians', {})
+            special_liunians = special_liunians_data.get('list', []) if isinstance(special_liunians_data, dict) else []
+            from server.utils.dayun_liunian_helper import calculate_user_age, get_current_dayun, select_dayuns_with_priority
+            birth_date = bazi_data.get('basic_info', {}).get('solar_date', '')
+            current_age = calculate_user_age(birth_date) if birth_date else 0
+            current_dayun = get_current_dayun(dayun_sequence, current_age) or {}
+            key_dayuns = select_dayuns_with_priority(dayun_sequence, current_dayun, count=5)
+            proportion_data['_current_dayun'] = current_dayun
+            proportion_data['_key_dayuns'] = key_dayuns
+            proportion_data['_special_liunians'] = special_liunians
+        except Exception as e:
+            logger.warning(f"[五行占比] 提取扩展数据失败（不影响核心功能）: {e}")
         return proportion_data
 
     def get_initial_data_chunk(
@@ -85,12 +105,12 @@ def _format_wuxing_for_llm(proportion_data: Dict[str, Any]) -> str:
     Returns:
         str: 格式化后的中文描述（约300字符，原JSON约2700字符）
     """
+    from server.utils.prompts.common import format_ten_gods_reference_from_details, format_branch_relations_text, format_key_dayuns_text
     lines = []
     
     # 1. 五行占比
     proportions = proportion_data.get('proportions', {})
     if proportions:
-        # 按占比从高到低排序
         sorted_elements = sorted(
             proportions.items(),
             key=lambda x: x[1].get('percentage', 0),
@@ -109,7 +129,6 @@ def _format_wuxing_for_llm(proportion_data: Dict[str, Any]) -> str:
         ws_level = wangshuai.get('wangshuai', '')
         total_score = wangshuai.get('total_score', 0)
         
-        # 优先使用 final_xi_ji 中的五行喜忌（最终结果）
         final_xi_ji = wangshuai.get('final_xi_ji', {})
         xi_elements = final_xi_ji.get('xi_shen_elements') or wangshuai.get('xi_shen_elements', [])
         ji_elements = final_xi_ji.get('ji_shen_elements') or wangshuai.get('ji_shen_elements', [])
@@ -119,7 +138,6 @@ def _format_wuxing_for_llm(proportion_data: Dict[str, Any]) -> str:
         
         lines.append(f"【旺衰】{ws_level}({total_score}分)，喜用五行：{xi_str}，忌讳五行：{ji_str}")
         
-        # 调候信息
         tiaohou = wangshuai.get('tiaohou', {})
         if tiaohou:
             season = tiaohou.get('season', '')
@@ -140,20 +158,41 @@ def _format_wuxing_for_llm(proportion_data: Dict[str, Any]) -> str:
         if parts:
             lines.append(f"【十神】{'、'.join(parts)}")
     
+    # 3.5 十神对照（从底层 detail_result.details 组装，不重算）
+    ten_gods_ref = format_ten_gods_reference_from_details(proportion_data.get('_details', {}), proportion_data.get('_bazi_pillars', {}))
+    if ten_gods_ref:
+        lines.append(f"【十神对照】{ten_gods_ref}")
+    
+    # 3.6 地支关系
+    branch_relations = proportion_data.get('_branch_relations', {})
+    if branch_relations:
+        relations_text = format_branch_relations_text(branch_relations)
+        if relations_text and relations_text != "无":
+            lines.append(f"【地支关系】{relations_text}")
+    
     # 4. 五行关系（只取生克，去除反向的被生被克）
     element_relations = proportion_data.get('element_relations', {})
     if element_relations:
-        # 生关系
         produces = element_relations.get('produces', [])
         if produces:
             produce_parts = [f"{r['from']}生{r['to']}" for r in produces]
             lines.append(f"【相生】{'、'.join(produce_parts)}")
         
-        # 克关系
         controls = element_relations.get('controls', [])
         if controls:
             control_parts = [f"{r['from']}克{r['to']}" for r in controls]
             lines.append(f"【相克】{'、'.join(control_parts)}")
+    
+    # 5. 大运流年（从 orchestrator 统一数据源获取）
+    key_dayuns = proportion_data.get('_key_dayuns', [])
+    current_dayun = proportion_data.get('_current_dayun', {})
+    special_liunians = proportion_data.get('_special_liunians', [])
+    if current_dayun or key_dayuns:
+        lines.extend(format_key_dayuns_text(
+            key_dayuns=key_dayuns,
+            current_dayun=current_dayun,
+            special_liunians=special_liunians
+        ))
     
     return '\n'.join(lines)
 

@@ -369,7 +369,9 @@ def build_career_wealth_input_data(
             'gender': gender,
             'geju_type': geju_type,
             'geju_description': wangshuai_data.get('geju_description', ''),
-            'ten_gods': ten_gods_data
+            'ten_gods': ten_gods_data,
+            'details': detail_result.get('details', {}),
+            'branch_relations': bazi_data.get('relationships', {}).get('branch_relations', {}),
         },
         # 事业星与事业宫
         'shiye_xing_gong': {
@@ -928,7 +930,7 @@ async def career_wealth_stream_generator(
             
             wangshuai_result = unified_data.get('wangshuai', {})
             detail_result = unified_data.get('detail', {}) or {}
-            dayun_sequence = detail_result.get('dayun_sequence', [])
+            dayun_sequence = detail_result.get('dayun_sequence') or (detail_result.get('details') or {}).get('dayun_sequence', [])
             special_liunians_data = unified_data.get('special_liunians', {})
             special_liunians = special_liunians_data.get('list', []) if isinstance(special_liunians_data, dict) else []
             all_matched_rules = unified_data.get('rules', [])

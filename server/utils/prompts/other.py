@@ -4,7 +4,7 @@
 
 import json
 from typing import Dict, Any, Optional
-from .common import format_bazi_pillars_text, format_ten_gods_text, format_wuxing_distribution_text, format_xi_ji_text, format_deities_text, format_dayun_text, format_liunian_text, format_judgments_text, format_branch_relations_text, format_key_dayuns_text, _simplify_dayun
+from .common import format_bazi_pillars_text, format_ten_gods_text, format_ten_gods_reference_from_details, format_wuxing_distribution_text, format_xi_ji_text, format_deities_text, format_dayun_text, format_liunian_text, format_judgments_text, format_branch_relations_text, format_key_dayuns_text, _simplify_dayun
 
 def format_smart_fortune_for_llm(
     bazi_data: Dict[str, Any],
@@ -13,7 +13,9 @@ def format_smart_fortune_for_llm(
     question: str,
     intent: str,
     category: Optional[str] = None,
-    history_context: list = None
+    history_context: list = None,
+    details: Dict[str, Any] = None,
+    branch_relations: Dict[str, Any] = None,
 ) -> str:
     """
     将智能运势分析数据格式化为精简中文文本（用于 LLM Prompt 优化）
@@ -75,6 +77,16 @@ def format_smart_fortune_for_llm(
     ten_gods_text = format_ten_gods_text(ten_gods)
     if ten_gods_text:
         lines.append(f"【十神】{ten_gods_text}")
+    ten_gods_ref = format_ten_gods_reference_from_details(details or {}, bazi_pillars)
+    if ten_gods_ref:
+        lines.append(f"【十神对照】{ten_gods_ref}")
+    
+    # 4.5 地支关系
+    _branch_relations = branch_relations or bazi_data.get('relationships', {}).get('branch_relations', {})
+    if _branch_relations:
+        relations_text = format_branch_relations_text(_branch_relations)
+        if relations_text and relations_text != "无":
+            lines.append(f"【地支关系】{relations_text}")
     
     # 5. 五行分布
     element_counts = (
@@ -87,9 +99,14 @@ def format_smart_fortune_for_llm(
         if wuxing_text:
             lines.append(f"【五行】{wuxing_text}")
     
-    # 6. 喜忌
+    # 6. 旺衰与喜忌
     wangshuai = bazi_data.get('wangshuai', {})
     if wangshuai:
+        ws_level = wangshuai.get('wangshuai', '')
+        if ws_level:
+            total_score = wangshuai.get('total_score', '')
+            ws_text = f"{ws_level}({total_score}分)" if total_score else ws_level
+            lines.append(f"【旺衰】{ws_text}")
         final_xi_ji = wangshuai.get('final_xi_ji', {})
         xi_elements = final_xi_ji.get('xi_shen_elements', [])
         ji_elements = final_xi_ji.get('ji_shen_elements', [])
@@ -230,6 +247,17 @@ def format_annual_report_for_llm(input_data: Dict[str, Any]) -> str:
         wuxing_text = format_wuxing_distribution_text(element_counts)
         if wuxing_text:
             lines.append(f"【五行分布】{wuxing_text}")
+    
+    # 2.5 十神对照（从底层 detail_result.details 组装，不重算）
+    ten_gods_ref = format_ten_gods_reference_from_details(mingpan.get('details', {}), mingpan.get('bazi_pillars', {}))
+    if ten_gods_ref:
+        lines.append(f"【十神对照】{ten_gods_ref}")
+    
+    # 2.6 地支关系
+    branch_relations = mingpan.get('branch_relations', {})
+    relations_text = format_branch_relations_text(branch_relations)
+    if relations_text and relations_text != "无":
+        lines.append(f"【地支关系】{relations_text}")
     
     # 3. 旺衰
     wangshuai = mingpan.get('wangshuai', '')

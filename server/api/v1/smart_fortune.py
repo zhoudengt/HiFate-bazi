@@ -1033,8 +1033,7 @@ async def _fetch_bazi_data_via_orchestrator(
     # format_smart_fortune_for_llm 读 fortune_context['current_dayun'] / fortune_context['key_dayuns']
     # 但 FortuneContextService 返回的 fortune_context 没有这两个字段，需要用 build_enhanced_dayun_structure 构建
     # ⚠️ 关键：即使 fortune_context 为 None（FortuneContextService 未返回），也要构建
-    details_data = detail_result.get('details', detail_result) if isinstance(detail_result, dict) else {}
-    dayun_sequence = details_data.get('dayun_sequence', [])
+    dayun_sequence = (detail_result.get('dayun_sequence') or (detail_result.get('details') or {}).get('dayun_sequence', [])) if isinstance(detail_result, dict) else []
     if fortune_context is None and dayun_sequence:
         fortune_context = {}  # 创建空的 fortune_context，后续注入 current_dayun/key_dayuns
         logger.info("⚠️ fortune_context 为 None，从 detail_result 构建")
@@ -1506,7 +1505,9 @@ async def _scenario_2_generator(
                 question=question,
                 intent=main_intent,
                 category=category,
-                history_context=history_context
+                history_context=history_context,
+                details=(detail_result or {}).get('details', {}),
+                branch_relations=bazi_result.get('relationships', {}).get('branch_relations', {}),
             )
             logger.info(f"📤 场景2 Prompt 构建完成: intent={main_intent}, category={category}, size={len(formatted_prompt)}字符")
             

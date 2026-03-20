@@ -123,6 +123,11 @@ def format_marriage_for_llm(input_data: Dict[str, Any]) -> str:
     if relations_text and relations_text != "无":
         lines.append(f"【地支关系】{relations_text}")
     
+    # 4.5 五行分布
+    wuxing_text = format_wuxing_distribution_text(mingpan.get('element_counts', {}))
+    if wuxing_text:
+        lines.append(f"【五行分布】{wuxing_text}")
+    
     # 5. 神煞
     deities = peiou.get('deities', {})
     deities_text = format_deities_text(deities)

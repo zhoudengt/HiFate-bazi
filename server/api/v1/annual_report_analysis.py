@@ -136,10 +136,9 @@ async def annual_report_test(request: AnnualReportRequest):
         wangshuai_result = unified_data.get('wangshuai', {})
         detail_data = unified_data.get('detail', {})
         bazi_data = validate_bazi_data(bazi_data)
-        # 大运序列提取：与 stream 相同逻辑，支持顶层/嵌套两种结构
+        # 大运序列提取：优先顶层，否则从 details 取（与婚姻等端点统一回退模式）
         if detail_data:
-            details = detail_data.get('details', detail_data)
-            dayun_sequence = details.get('dayun_sequence', [])
+            dayun_sequence = detail_data.get('dayun_sequence') or (detail_data.get('details') or {}).get('dayun_sequence', [])
         else:
             dayun_sequence = unified_data.get('dayun', [])
         detail_result = detail_data if detail_data else {'details': {'dayun_sequence': dayun_sequence}}
@@ -367,10 +366,9 @@ async def annual_report_stream_generator(
         # 验证八字数据
         bazi_data = validate_bazi_data(bazi_data)
         
-        # 提取大运序列
+        # 提取大运序列（优先顶层，否则从 details 取，与婚姻等端点统一回退模式）
         if detail_data:
-            details = detail_data.get('details', detail_data)
-            dayun_sequence = details.get('dayun_sequence', [])
+            dayun_sequence = detail_data.get('dayun_sequence') or (detail_data.get('details') or {}).get('dayun_sequence', [])
         else:
             dayun_sequence = unified_data.get('dayun', [])
         
