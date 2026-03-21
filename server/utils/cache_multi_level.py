@@ -185,7 +185,7 @@ _version_lock = threading.Lock()
 
 
 def _is_cache_version_enabled() -> bool:
-    return os.getenv("ENABLE_CACHE_VERSION", "false").lower() == "true"
+    return os.getenv("ENABLE_CACHE_VERSION", "true").lower() == "true"
 
 
 def _get_cache_version(redis_client) -> str:

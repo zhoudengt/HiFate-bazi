@@ -498,7 +498,7 @@ class BaziApiClient:
                 "liunian": True,
                 "rules": {"types": ["shishen"]}
             },
-            "use_cache": True,
+            "use_cache": False,  # 评测脚本永远不用缓存，确保拿到实时计算结果
             "parallel": True
         }
         return await self._post_json(ApiEndpoints.BAZI_DATA, data)

@@ -115,18 +115,7 @@ class BaziDataCache:
         try:
             cache = get_multi_cache()
             cache_key = BaziDataCache._generate_cache_key(solar_date, solar_time, gender, modules)
-            
-            # 如果指定了 TTL，临时设置
-            if ttl is not None:
-                original_ttl = cache.l2.ttl
-                cache.l2.ttl = ttl
-            
-            cache.set(cache_key, data)
-            
-            # 恢复原始 TTL
-            if ttl is not None:
-                cache.l2.ttl = original_ttl
-            
+            cache.set(cache_key, data, ttl=ttl)
             logger.debug(f"缓存已设置: {cache_key[:100]}...")
         except Exception as e:
             logger.warning(f"设置缓存失败（不影响业务）: {e}")

@@ -567,24 +567,24 @@ if [ "$SKIP_NODE2" = "false" ]; then
         echo ""
         gate_compose_sync node2_ssh "$PROJECT_DIR" "node2" "$NODE2_COMPOSE_HASH_BEFORE" "Node2"
 
-        # 3.3 Node2 热更新 + 端点恢复（不做 21 端点验证）
+        # 3.3 先清理缓存 + bump 版本（消除竞态：避免热更新后请求把旧 Redis 数据搬回 L1）
+        echo ""
+        gate_clear_business_cache node2_ssh "hifate-redis-slave" "Node2"
+        gate_bump_cache_version node2_ssh "hifate-redis-slave" "Node2"
+
+        # 3.4 Node2 热更新 + 端点恢复（不做 21 端点验证）
         echo ""
         gate_hot_reload "$NODE2_PUBLIC_IP" "Node2" 2 "${NODE2_PORT:-8001}" "$NODE2_PUBLIC_IP" "$SSH_PASSWORD" || echo -e "${YELLOW}Node2 热更新超时，继续（代码已落盘）${NC}"
         echo ""
         gate_reload_endpoints_multi "$NODE2_PUBLIC_IP" "Node2" 4 "${NODE2_PORT:-8001}"
 
-        # 3.3.1 选择性触发变更 gRPC 服务立即重载（确保测试前新代码已生效，不依赖 30s watchdog）
+        # 3.5 选择性触发变更 gRPC 服务立即重载（确保测试前新代码已生效，不依赖 30s watchdog）
         echo ""
         trigger_changed_microservices "node2_ssh" "Node2" || {
             echo -e "${RED}Node2 gRPC 服务 reload 失败，停止部署${NC}"
             record_deploy_history "$DEPLOYMENT_ID" "failed" "node2_grpc_reload" "gRPC 服务 reload 失败" "$LOCAL_COMMIT"
             exit 1
         }
-
-        # 3.4 清理缓存 + bump 版本（ENABLE_CACHE_VERSION 时使旧 key 失效）
-        echo ""
-        gate_clear_business_cache node2_ssh "hifate-redis-slave" "Node2"
-        gate_bump_cache_version node2_ssh "hifate-redis-slave" "Node2"
 
         echo ""
         echo -e "${GREEN}Node2 部署完成${NC}"
@@ -779,6 +779,11 @@ echo ""
 echo -e "${BLUE}[Step 5/6] Node1 热更新 + 生产验证${NC}"
 echo "----------------------------------------"
 
+# 先清理缓存 + bump 版本（消除竞态：避免热更新后请求把旧 Redis 数据搬回 L1）
+echo ""
+gate_clear_business_cache run_on_node1 "hifate-redis-master" "Node1"
+gate_bump_cache_version run_on_node1 "hifate-redis-master" "Node1"
+
 if [ "$NO_VERIFY" = "true" ]; then
     echo "重启 Node1 web 容器（--no-verify 模式）..."
     ssh_exec $NODE1_PUBLIC_IP "cd $PROJECT_DIR/deploy/docker && docker compose -f docker-compose.prod.yml -f docker-compose.node1.yml --env-file $PROJECT_DIR/.env restart web" || {
@@ -849,11 +854,6 @@ else
         NODE1_VERIFY="WARN"
     fi
 fi
-
-# 清理缓存 + bump 版本（ENABLE_CACHE_VERSION 时使旧 key 失效）
-echo ""
-gate_clear_business_cache run_on_node1 "hifate-redis-master" "Node1"
-gate_bump_cache_version run_on_node1 "hifate-redis-master" "Node1"
 
 echo ""
 echo -e "${GREEN}[Step 5] Node1 验证完成${NC}"
