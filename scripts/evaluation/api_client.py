@@ -492,9 +492,10 @@ class BaziApiClient:
             "modules": {
                 "bazi": True,
                 "wangshuai": True,
+                "wuxing_proportion": True,
                 "xishen_jishen": True,
-                "dayun": {"mode": "count", "count": 8},  # 8步大运，每步包含完整流年
-                "liunian": True,  # 包含完整流年数据
+                "dayun": {"mode": "count", "count": 8},
+                "liunian": True,
                 "rules": {"types": ["shishen"]}
             },
             "use_cache": True,

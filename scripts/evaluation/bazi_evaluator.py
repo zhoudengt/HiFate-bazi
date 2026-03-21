@@ -125,14 +125,21 @@ class BaziEvaluator:
         day_branch = day_pillar.get('branch', '')
         result['day_stem'] = f"{day_stem}{day_branch}" if day_stem and day_branch else day_stem
         
-        # 五行
-        element_counts = bazi_data.get('element_counts', {})
-        if element_counts:
+        # 五行（与 /api/v1/bazi/wuxing-proportion/stream 给 LLM 的数据同源）
+        wuxing_proportion = data.get('wuxing_proportion', {})
+        proportions = wuxing_proportion.get('proportions', {})
+        if proportions:
+            sorted_elements = sorted(
+                proportions.items(),
+                key=lambda x: x[1].get('percentage', 0),
+                reverse=True
+            )
             wuxing_parts = []
-            for element in ['金', '木', '水', '火', '土']:
-                count = element_counts.get(element, 0)
-                wuxing_parts.append(f"{element}{count}")
-            result['wuxing'] = ' '.join(wuxing_parts)
+            for element, info in sorted_elements:
+                pct = info.get('percentage', 0)
+                details = ''.join(info.get('details', []))
+                wuxing_parts.append(f"{element}{pct}%({details})")
+            result['wuxing'] = '、'.join(wuxing_parts)
         
         # 十神（按四柱分组显示每柱的主星+副星）
         # 优先从 details 中获取每个柱的主星和副星
@@ -196,33 +203,41 @@ class BaziEvaluator:
                     shishen_str += " | 副星: " + '、'.join(branch_parts)
                 result['shishen'] = shishen_str
         
-        # 旺衰数据（从 wangshuai 模块获取，注意嵌套结构：{success, data: {...}}）
+        # 旺衰数据（与流式接口给 LLM 的数据同源：优先使用 final_xi_ji 调候后喜忌）
         wangshuai_outer = data.get('wangshuai', {})
         wangshuai_data = wangshuai_outer.get('data', wangshuai_outer) if isinstance(wangshuai_outer, dict) else {}
         
-        # 喜忌
-        xi_elements = wangshuai_data.get('xi_shen_elements', [])
-        ji_elements = wangshuai_data.get('ji_shen_elements', [])
+        # 喜忌（优先 final_xi_ji 调候后结果，与 _format_wuxing_for_llm / _format_xishen_jishen_for_llm 一致）
+        final_xi_ji = wangshuai_data.get('final_xi_ji', {})
+        if final_xi_ji and final_xi_ji.get('xi_shen_elements'):
+            xi_elements = final_xi_ji.get('xi_shen_elements', [])
+            ji_elements = final_xi_ji.get('ji_shen_elements', [])
+        else:
+            xi_elements = wangshuai_data.get('xi_shen_elements', [])
+            ji_elements = wangshuai_data.get('ji_shen_elements', [])
         if xi_elements or ji_elements:
             xi_str = '、'.join(xi_elements) if xi_elements else '无'
             ji_str = '、'.join(ji_elements) if ji_elements else '无'
             result['xi_ji'] = f"喜：{xi_str}；忌：{ji_str}"
         
-        # 旺衰（详细格式）
+        # 旺衰（与 _format_wuxing_for_llm 格式一致：旺衰+总分+喜忌+调候）
         wangshuai_value = wangshuai_data.get('wangshuai', '')
+        total_score = wangshuai_data.get('total_score', 0)
         xi_str = '、'.join(xi_elements) if xi_elements else '无'
         ji_str = '、'.join(ji_elements) if ji_elements else '无'
-        element_scores = wangshuai_data.get('element_scores', {})
-        scores_str = ''
-        if element_scores:
-            scores_parts = [f"{k}:{v}" for k, v in element_scores.items()]
-            scores_str = ', '.join(scores_parts)
         
-        wangshuai_full = f"日主{wangshuai_value}"
+        wangshuai_full = f"{wangshuai_value}({total_score}分)"
         if xi_str != '无' or ji_str != '无':
-            wangshuai_full += f" | 喜神：{xi_str} | 忌神：{ji_str}"
-        if scores_str:
-            wangshuai_full += f" | 五行得分：{scores_str}"
+            wangshuai_full += f"，喜用五行：{xi_str}，忌讳五行：{ji_str}"
+        
+        # 调候信息（与 _format_wuxing_for_llm 一致）
+        tiaohou = wangshuai_data.get('tiaohou', {})
+        if tiaohou:
+            season = tiaohou.get('season', '')
+            desc = tiaohou.get('description', '')
+            if season and desc:
+                wangshuai_full += f" | 调候：{desc}"
+        
         result['wangshuai'] = wangshuai_full
         
         # 格局（从 xishen_jishen 模块中的十神命格获取）
