@@ -202,7 +202,15 @@ async def get_fengshui_rules(
     规则列表
     """
     try:
-        from rule_engine import DeskFengshuiEngine
+        import importlib.util as _ilu
+        _rk = '_desk_rule_engine'
+        if _rk not in sys.modules:
+            _rf = os.path.join(BASE_DIR, 'services', 'desk_fengshui', 'rule_engine.py')
+            _sp = _ilu.spec_from_file_location(_rk, _rf)
+            _rm = _ilu.module_from_spec(_sp)
+            sys.modules[_rk] = _rm
+            _sp.loader.exec_module(_rm)
+        DeskFengshuiEngine = sys.modules[_rk].DeskFengshuiEngine
         
         engine = DeskFengshuiEngine()
         rules = engine.load_rules()

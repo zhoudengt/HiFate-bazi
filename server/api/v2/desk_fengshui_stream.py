@@ -50,7 +50,8 @@ def _safe_import_desk_fengshui_analyzer():
         sys.path.insert(0, desk_fengshui_path)
 
     # 预加载 desk_fengshui 模块，覆盖 fortune_analysis 同名缓存（避免 rule_engine 等指向错误文件）
-    _DESK_DEPS = ['rule_engine', 'item_detector', 'position_calculator', 'bazi_client', 'vision_analyzer']
+    _DESK_DEPS = ['rule_engine', 'item_detector', 'position_calculator', 'bazi_client', 'vision_analyzer',
+                  'image_annotator', 'layout_generator']
     for _dep in _DESK_DEPS:
         _dep_file = os.path.join(desk_fengshui_path, f'{_dep}.py')
         if os.path.exists(_dep_file):
@@ -78,6 +79,24 @@ def _safe_import_desk_fengshui_analyzer():
         spec.loader.exec_module(mod)
 
     return mod.DeskFengshuiAnalyzer
+
+
+def _load_desk_module(module_name: str):
+    """
+    按绝对路径加载 services/desk_fengshui/ 下的模块，
+    避免与 home_fengshui 同名模块冲突（如 layout_generator、image_annotator）。
+    """
+    import importlib.util
+    cache_key = f'_desk_{module_name}'
+    mod = sys.modules.get(cache_key)
+    if mod is not None:
+        return mod
+    desk_path = os.path.join(project_root, 'services', 'desk_fengshui', f'{module_name}.py')
+    spec = importlib.util.spec_from_file_location(cache_key, desk_path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[cache_key] = mod
+    spec.loader.exec_module(mod)
+    return mod
 
 
 class DeskFengshuiStreamRequest(BaseModel):
@@ -302,7 +321,8 @@ async def desk_fengshui_stream_generator(
 
         async def _generate_annotated():
             try:
-                from image_annotator import generate_annotated_image
+                _mod = _load_desk_module('image_annotator')
+                generate_annotated_image = _mod.generate_annotated_image
                 from server.utils.async_executor import get_executor
                 _loop = asyncio.get_event_loop()
                 b64 = await _loop.run_in_executor(
@@ -317,7 +337,8 @@ async def desk_fengshui_stream_generator(
 
         async def _generate_layout():
             try:
-                from layout_generator import generate_layout_image
+                _mod = _load_desk_module('layout_generator')
+                generate_layout_image = _mod.generate_layout_image
                 b64 = await asyncio.wait_for(
                     generate_layout_image(result.get('items', []), result),
                     timeout=60.0

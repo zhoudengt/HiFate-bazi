@@ -42,6 +42,7 @@ def _safe_import_home_fengshui_analyzer():
     _DEPS = [
         'rule_engine', 'vision_analyzer', 'mingua_calculator', 'direction_mapper',
         'floor_plan_analyzer', 'position_calculator', 'sha_analyzer',
+        'image_annotator', 'layout_generator',
     ]
     for dep in _DEPS:
         dep_file = os.path.join(home_path, f'{dep}.py')
@@ -67,6 +68,24 @@ def _safe_import_home_fengshui_analyzer():
         spec.loader.exec_module(mod)
 
     return mod.HomeFengshuiAnalyzer
+
+
+def _load_home_module(module_name: str):
+    """
+    按绝对路径加载 services/home_fengshui/ 下的模块，
+    避免与 desk_fengshui 同名模块冲突（如 image_annotator、layout_generator）。
+    """
+    import importlib.util
+    cache_key = f'_home_{module_name}'
+    mod = sys.modules.get(cache_key)
+    if mod is not None:
+        return mod
+    home_path = os.path.join(project_root, 'services', 'home_fengshui', f'{module_name}.py')
+    spec = importlib.util.spec_from_file_location(cache_key, home_path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[cache_key] = mod
+    spec.loader.exec_module(mod)
+    return mod
 
 
 @router.post('/analyze/stream', summary='流式生成居家风水分析报告（支持全屋 + 多房间）')
@@ -310,12 +329,13 @@ async def home_fengshui_stream_generator(
 
                 annotated_b64 = None
                 try:
-                    from image_annotator import generate_annotated_image
+                    _ann_mod = _load_home_module('image_annotator')
+                    _gen_annotated = _ann_mod.generate_annotated_image
                     from server.utils.async_executor import get_executor
                     _loop = asyncio.get_event_loop()
                     annotated_b64 = await _loop.run_in_executor(
                         get_executor(),
-                        lambda idx=idx: generate_annotated_image(
+                        lambda idx=idx: _gen_annotated(
                             image_bytes_list[idx],
                             result.get('furnitures', []),
                             result,
