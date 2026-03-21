@@ -41,7 +41,6 @@ class BaziService:
         try:
             from server.utils.cache_multi_level import get_multi_cache
             cache = get_multi_cache()
-            cache.l2.ttl = 86400  # 24h
             cached_result = cache.get(cache_key)
             if cached_result:
                 logger.debug("✅ [缓存命中] BaziService.calculate_bazi_full")
@@ -137,7 +136,6 @@ class BaziService:
         try:
             from server.utils.cache_multi_level import get_multi_cache
             cache = get_multi_cache()
-            cache.l2.ttl = 86400
             cache.set(cache_key, result, ttl=86400)
         except Exception:
             pass

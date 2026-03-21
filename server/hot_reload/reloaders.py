@@ -167,49 +167,34 @@ class CacheReloader:
             # 清理 L1 内存缓存
             cache.clear()
             
-            # 清理 L2 Redis 缓存中的特定模式（bazi_detail 和 special_liunians）
+            # 清理 L2 Redis 缓存（与 gate_clear_business_cache 模式一致，含 bazi_full:* 等）
             try:
                 from shared.config.redis import get_redis_client
+                from server.utils.cache_patterns import get_redis_clear_patterns
+                from server.utils.cache_multi_level import bump_cache_version, _is_cache_version_enabled
+
                 redis_client = get_redis_client()
                 if redis_client:
-                    # 清理 bazi_detail:* 模式的键
-                    cursor = 0
-                    deleted_count = 0
-                    while True:
-                        cursor, keys = redis_client.scan(cursor, match='bazi_detail:*', count=100)
-                        if keys:
-                            redis_client.delete(*keys)
-                            deleted_count += len(keys)
-                        if cursor == 0:
-                            break
-                    if deleted_count > 0:
-                        logger.info(f"   ✓ 清理了 {deleted_count} 个 bazi_detail 缓存键")
-                    
-                    # 清理 special_liunians:* 模式的键
-                    cursor = 0
-                    deleted_count = 0
-                    while True:
-                        cursor, keys = redis_client.scan(cursor, match='special_liunians:*', count=100)
-                        if keys:
-                            redis_client.delete(*keys)
-                            deleted_count += len(keys)
-                        if cursor == 0:
-                            break
-                    if deleted_count > 0:
-                        logger.info(f"   ✓ 清理了 {deleted_count} 个 special_liunians 缓存键")
-                    # 清理大运流年相关缓存
-                    for pattern in ('bazi_data:*', 'bazi:base:*', 'bazi:dayun:*', 'bazi:full:*', 'bazi:ready:*', 'fortune_display:*'):
+                    # 若启用缓存版本，先 bump 使所有旧 key 自动失效
+                    if _is_cache_version_enabled():
+                        bump_cache_version(redis_client)
+                        logger.info("   ✓ 缓存版本已 bump，旧缓存自动失效")
+                    total_deleted = 0
+                    for pattern in get_redis_clear_patterns():
                         cursor = 0
-                        dayun_liunian_deleted = 0
+                        deleted = 0
                         while True:
                             cursor, keys = redis_client.scan(cursor, match=pattern, count=100)
                             if keys:
                                 redis_client.delete(*keys)
-                                dayun_liunian_deleted += len(keys)
+                                deleted += len(keys)
                             if cursor == 0:
                                 break
-                        if dayun_liunian_deleted > 0:
-                            logger.info(f"   ✓ 清理了 {dayun_liunian_deleted} 个 {pattern} 缓存键")
+                        if deleted > 0:
+                            logger.info(f"   ✓ 清理了 {deleted} 个 {pattern} 缓存键")
+                            total_deleted += deleted
+                    if total_deleted > 0:
+                        logger.info(f"   ✓ Redis 业务缓存共清理 {total_deleted} 个 key")
             except Exception as e:
                 logger.warning(f"   ⚠ Redis 特定缓存清理失败: {e}")
                 # 不设置 success = False，因为这是可选的

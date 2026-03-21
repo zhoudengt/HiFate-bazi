@@ -56,6 +56,15 @@ except ImportError as e:
     hot_reload_router = None
     HOT_RELOAD_ROUTER_AVAILABLE = False
 
+# 缓存管理 Admin 路由
+try:
+    from server.api.v1.admin_cache import router as admin_cache_router
+    ADMIN_CACHE_ROUTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"缓存管理路由导入失败（可选功能）: {e}")
+    admin_cache_router = None
+    ADMIN_CACHE_ROUTER_AVAILABLE = False
+
 # 新增：LLM 生成路由（类似 FateTell）
 try:
     from server.api.v1.llm_generate import router as llm_generate_router
@@ -387,6 +396,15 @@ def _register_all_routers_to_manager(router_manager):
         prefix="/api/v1",
         tags=["热更新"],
         enabled_getter=lambda: HOT_RELOAD_ROUTER_AVAILABLE and hot_reload_router is not None
+    )
+
+    # 缓存管理 Admin 路由（可选）
+    router_manager.register_router(
+        "admin_cache",
+        lambda: admin_cache_router,
+        prefix="/api/v1",
+        tags=["缓存管理"],
+        enabled_getter=lambda: ADMIN_CACHE_ROUTER_AVAILABLE and admin_cache_router is not None
     )
     
     # 安全监控路由（可选）

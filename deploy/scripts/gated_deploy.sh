@@ -581,9 +581,10 @@ if [ "$SKIP_NODE2" = "false" ]; then
             exit 1
         }
 
-        # 3.4 清理缓存
+        # 3.4 清理缓存 + bump 版本（ENABLE_CACHE_VERSION 时使旧 key 失效）
         echo ""
         gate_clear_business_cache node2_ssh "hifate-redis-slave" "Node2"
+        gate_bump_cache_version node2_ssh "hifate-redis-slave" "Node2"
 
         echo ""
         echo -e "${GREEN}Node2 部署完成${NC}"
@@ -849,9 +850,10 @@ else
     fi
 fi
 
-# 清理缓存
+# 清理缓存 + bump 版本（ENABLE_CACHE_VERSION 时使旧 key 失效）
 echo ""
 gate_clear_business_cache run_on_node1 "hifate-redis-master" "Node1"
+gate_bump_cache_version run_on_node1 "hifate-redis-master" "Node1"
 
 echo ""
 echo -e "${GREEN}[Step 5] Node1 验证完成${NC}"

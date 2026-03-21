@@ -41,6 +41,33 @@ gate_clear_business_cache() {
 }
 
 # ----------------------------------------
+# gate_bump_cache_version <ssh_func> <redis_container> <label>
+# 部署后 bump 缓存版本，使 ENABLE_CACHE_VERSION=true 时旧 key 自动失效
+# ----------------------------------------
+gate_bump_cache_version() {
+    local ssh_func="$1"
+    local redis_container="$2"
+    local label="$3"
+    local cmd="docker exec $redis_container sh -c '
+        cur=\$(redis-cli GET _cache_version 2>/dev/null || echo v1)
+        cur=\${cur:-v1}
+        cur=\${cur//\"/}
+        num=\$(echo \"\$cur\" | sed \"s/^v//\" | grep -E \"^[0-9]+\$\" || echo 1)
+        new=\$((num + 1))
+        redis-cli SET _cache_version \"v\$new\" >/dev/null 2>&1
+        echo \"v\$new\"
+    '"
+    echo "bump ${label} 缓存版本..."
+    if result=$($ssh_func "$cmd" 2>/dev/null); then
+        echo -e "${GREEN}${label} 缓存版本已更新: ${result:-v2}${NC}"
+        return 0
+    else
+        echo -e "${YELLOW}${label} 缓存版本 bump 失败（Redis 不可用或未启用版本机制），继续...${NC}"
+        return 0
+    fi
+}
+
+# ----------------------------------------
 # gate_reload_endpoints_multi <host> <label> [count] [port]
 # 多次调用 reload-endpoints，覆盖多 worker
 # ----------------------------------------

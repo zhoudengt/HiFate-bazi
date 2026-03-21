@@ -3,16 +3,28 @@
 """
 多级缓存系统 - 支持500万用户
 架构：L1(内存) -> L2(Redis) -> L3(数据库/持久化)
+
+缓存版本机制（ENABLE_CACHE_VERSION=true 时）：
+- 所有 key 自动加版本前缀，版本号存 Redis，多 worker 共享
+- 部署/热更新时 bump_cache_version() 使旧缓存自动失效，无需逐个清理
 """
 
 import json
 import hashlib
+import logging
+import os
 import random
 import threading
 import time
 from collections import OrderedDict
 from typing import Any, Optional, Dict
 from functools import lru_cache
+
+logger = logging.getLogger(__name__)
+
+# Redis 中存储的版本 key
+_CACHE_VERSION_REDIS_KEY = "_cache_version"
+_VERSION_REFRESH_TTL = 60  # 内存缓存版本的有效秒数
 
 # L1: 本地内存缓存（热点数据）
 class L1MemoryCache:
@@ -167,6 +179,79 @@ class L2RedisCache:
 _NULL_VALUE = "__NULL__"
 
 
+# 版本缓存（进程内，定期从 Redis 刷新）
+_version_cache: Dict[str, Any] = {"version": "v1", "expiry": 0.0}
+_version_lock = threading.Lock()
+
+
+def _is_cache_version_enabled() -> bool:
+    return os.getenv("ENABLE_CACHE_VERSION", "false").lower() == "true"
+
+
+def _get_cache_version(redis_client) -> str:
+    """从 Redis 获取当前缓存版本，带 60s 内存缓存"""
+    if not _is_cache_version_enabled():
+        return ""
+    with _version_lock:
+        now = time.time()
+        if now < _version_cache["expiry"]:
+            return _version_cache["version"]
+    if not redis_client:
+        return "v1"
+    try:
+        v = redis_client.get(_CACHE_VERSION_REDIS_KEY)
+        ver = (v.decode() if isinstance(v, bytes) else v) or "v1"
+        with _version_lock:
+            _version_cache["version"] = ver
+            _version_cache["expiry"] = now + _VERSION_REFRESH_TTL
+        return ver
+    except Exception:
+        return "v1"
+
+
+def _effective_key(redis_client, key: str) -> str:
+    """获取带版本前缀的 key（若启用版本机制）"""
+    if not _is_cache_version_enabled():
+        return key
+    ver = _get_cache_version(redis_client)
+    if not ver:
+        return key
+    if key.startswith(f"{ver}:"):
+        return key
+    return f"{ver}:{key}"
+
+
+def bump_cache_version(redis_client=None) -> str:
+    """
+    增加缓存版本号，使所有旧缓存自动失效。
+    部署/热更新时调用。
+    """
+    if not redis_client:
+        try:
+            from shared.config.redis import get_redis_client
+            redis_client = get_redis_client()
+        except Exception as e:
+            logger.warning(f"bump_cache_version: Redis 不可用: {e}")
+            return "v1"
+    try:
+        cur = redis_client.get(_CACHE_VERSION_REDIS_KEY)
+        cur_str = (cur.decode() if isinstance(cur, bytes) else cur) or "v1"
+        try:
+            num = int(cur_str.lstrip("v"))
+        except ValueError:
+            num = 1
+        ver_str = f"v{num + 1}"
+        redis_client.set(_CACHE_VERSION_REDIS_KEY, ver_str)
+        with _version_lock:
+            _version_cache["version"] = ver_str
+            _version_cache["expiry"] = 0  # 强制下次刷新
+        logger.info(f"缓存版本已更新: {cur_str} -> {ver_str}")
+        return ver_str
+    except Exception as e:
+        logger.warning(f"bump_cache_version 失败: {e}")
+        return "v1"
+
+
 # 多级缓存管理器
 class MultiLevelCache:
     """多级缓存管理器（支持空值缓存，防穿透）"""
@@ -188,6 +273,10 @@ class MultiLevelCache:
         """
         self.l1 = L1MemoryCache(max_size=l1_max_size, ttl=l1_ttl)
         self.l2 = L2RedisCache(redis_client=redis_client, ttl=redis_ttl)
+        self._redis = redis_client
+
+    def _key(self, key: str) -> str:
+        return _effective_key(getattr(self.l2, "redis", None), key)
     
     def get(self, key: str) -> Optional[Any]:
         """
@@ -199,20 +288,21 @@ class MultiLevelCache:
         Returns:
             缓存值，如果不存在则返回None
         """
+        k = self._key(key)
         # L1: 本地内存（最快）
-        value = self.l1.get(key)
+        value = self.l1.get(k)
         if value is not None:
             if value == self.NULL_VALUE:
                 return None
             return value
 
         # L2: Redis（较快）
-        value = self.l2.get(key)
+        value = self.l2.get(k)
         if value is not None:
             if value == self.NULL_VALUE:
                 return None
             # 回填L1
-            self.l1.set(key, value)
+            self.l1.set(k, value)
             return value
 
         return None
@@ -226,12 +316,13 @@ class MultiLevelCache:
             value: 缓存值
             ttl: 可选，过期时间（秒）；不传则使用各层默认 TTL
         """
+        k = self._key(key)
         if ttl is not None:
-            self.l1.set(key, value, ttl=ttl)
-            self.l2.set(key, value, ttl=ttl)
+            self.l1.set(k, value, ttl=ttl)
+            self.l2.set(k, value, ttl=ttl)
         else:
-            self.l1.set(key, value)
-            self.l2.set(key, value)
+            self.l1.set(k, value)
+            self.l2.set(k, value)
 
     def set_null(self, key: str, ttl: int = 60):
         """缓存空值，防止穿透（同一 key 短时间内不再请求下游）"""
@@ -239,8 +330,9 @@ class MultiLevelCache:
     
     def delete(self, key: str):
         """删除缓存（所有层级）"""
-        self.l1.delete(key)
-        self.l2.delete(key)
+        k = self._key(key)
+        self.l1.delete(k)
+        self.l2.delete(k)
     
     def clear(self):
         """清空所有缓存"""
