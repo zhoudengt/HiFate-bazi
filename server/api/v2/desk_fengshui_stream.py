@@ -280,41 +280,13 @@ async def desk_fengshui_stream_generator(
         
         logger.info(f"分析成功，评分: {result.get('score', 0)}")
         
-        # 6. 先返回基础数据（type: 'data'，带填充）
-        # 将 items 的 name 字段统一替换为中文 label
+        # 6. 先返回基础数据（type: 'data'，不含图片，立即推送）
         for _item in result.get('items', []):
             if _item.get('label'):
                 _item['name'] = _item['label']
-        # 添加一行中文物品汇总（逗号分隔，不换行）
         result['items_text'] = '、'.join(
             _item.get('label', _item.get('name', '')) for _item in result.get('items', [])
         )
-
-        # 生成标注图（原图 + 风水标记）
-        try:
-            from image_annotator import generate_annotated_image
-            from server.utils.async_executor import get_executor
-            _loop = asyncio.get_event_loop()
-            result['annotated_image'] = await _loop.run_in_executor(
-                get_executor(),
-                lambda: generate_annotated_image(image_bytes, result.get('items', []), result)
-            )
-            logger.info("✅ 标注图生成成功")
-        except Exception as _e:
-            logger.warning(f"标注图生成失败（不影响主流程）: {_e}")
-
-        # 生成 AI 布局图（通义万相）
-        try:
-            from layout_generator import generate_layout_image
-            _layout_b64 = await asyncio.wait_for(
-                generate_layout_image(result.get('items', []), result),
-                timeout=60.0
-            )
-            if _layout_b64:
-                result['layout_image'] = _layout_b64
-                logger.info("✅ AI布局图生成成功")
-        except Exception as _e:
-            logger.warning(f"AI布局图生成失败（不影响主流程）: {_e}")
 
         PADDING = ' ' * 16384
         data_msg = {
@@ -323,12 +295,46 @@ async def desk_fengshui_stream_generator(
             '_padding': PADDING
         }
         yield f"data: {json.dumps(data_msg, ensure_ascii=False)}\n\n"
-        
-        # 7. 格式化数据为 prompt
+        logger.info(f"✅ data 事件已推送（不含图片），耗时: {time.time() - api_start_time:.2f}s")
+
+        # 7. 并行启动：标注图 + 布局图生成（后台任务），不阻塞 LLM 文字流
+        image_queue: asyncio.Queue = asyncio.Queue()
+
+        async def _generate_annotated():
+            try:
+                from image_annotator import generate_annotated_image
+                from server.utils.async_executor import get_executor
+                _loop = asyncio.get_event_loop()
+                b64 = await _loop.run_in_executor(
+                    get_executor(),
+                    lambda: generate_annotated_image(image_bytes, result.get('items', []), result)
+                )
+                if b64:
+                    await image_queue.put(('annotated_image', b64))
+                    logger.info("✅ 标注图生成成功")
+            except Exception as _e:
+                logger.warning(f"标注图生成失败（不影响主流程）: {_e}")
+
+        async def _generate_layout():
+            try:
+                from layout_generator import generate_layout_image
+                b64 = await asyncio.wait_for(
+                    generate_layout_image(result.get('items', []), result),
+                    timeout=60.0
+                )
+                if b64:
+                    await image_queue.put(('layout_image', b64))
+                    logger.info("✅ AI布局图生成成功")
+            except Exception as _e:
+                logger.warning(f"AI布局图生成失败（不影响主流程）: {_e}")
+
+        annotated_task = asyncio.create_task(_generate_annotated())
+        layout_task = asyncio.create_task(_generate_layout())
+
+        # 8. 格式化数据为 prompt + LLM 流式生成（与图片生成并行）
         formatted_data = format_desk_fengshui_input_data_for_coze(result)
         logger.info(f"[Desk Fengshui Stream] 格式化数据长度: {len(formatted_data)} 字符")
         
-        # 8. 调用 LLM 服务流式生成
         llm_service = LLMServiceFactory.get_service(scene="desk_fengshui", bot_id=used_bot_id)
         llm_start_time = time.time()
         chunk_count = 0
@@ -338,7 +344,6 @@ async def desk_fengshui_stream_generator(
         async for chunk in llm_service.stream_analysis(formatted_data, bot_id=used_bot_id):
             chunk_type = chunk.get('type', 'unknown')
             
-            # 记录第一个token时间
             if llm_first_token_time is None and chunk_type == 'progress':
                 llm_first_token_time = time.time()
             
@@ -359,8 +364,29 @@ async def desk_fengshui_stream_generator(
                 logger.error(f"❌ [Desk Fengshui Stream] 收到错误响应: {chunk.get('content', '')}")
             
             yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+
+            # LLM 流式输出间隙，检查图片是否已就绪并推送
+            while not image_queue.empty():
+                img_type, img_b64 = await image_queue.get()
+                img_msg = {'type': img_type, 'image_base64': img_b64, 'format': 'png'}
+                yield f"data: {json.dumps(img_msg, ensure_ascii=False)}\n\n"
+                logger.info(f"✅ {img_type} 事件已推送（LLM流期间）")
+
             if chunk_type in ['complete', 'error']:
                 break
+
+        # 9. LLM 流结束后，等待剩余图片任务完成并推送
+        for task in [annotated_task, layout_task]:
+            if not task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(task), timeout=45.0)
+                except (asyncio.TimeoutError, Exception) as _e:
+                    logger.warning(f"图片生成任务超时或异常: {_e}")
+        while not image_queue.empty():
+            img_type, img_b64 = await image_queue.get()
+            img_msg = {'type': img_type, 'image_base64': img_b64, 'format': 'png'}
+            yield f"data: {json.dumps(img_msg, ensure_ascii=False)}\n\n"
+            logger.info(f"✅ {img_type} 事件已推送（LLM流结束后）")
         
         # 9. 记录流式接口调用（异步，不阻塞）
         api_end_time = time.time()
