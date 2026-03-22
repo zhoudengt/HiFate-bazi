@@ -5,11 +5,9 @@
 ## 功能特点
 
 - **独立运行**：不影响现有系统功能，只做API调用
+- **数据同源**：批量调用流式接口，基础数据从 type=data 事件提取，与流式接口完全一致
 - **批量处理**：支持批量处理Excel中的多条数据
-- **全面覆盖**：调用所有八字分析接口，包括：
-  - 基础八字数据（日元、五行、十神、喜忌、旺衰等）
-  - 大模型分析（五行占比、事业财富、婚姻、健康等）
-  - AI多轮问答（3轮对话）
+- **全面覆盖**：调用所有流式分析接口（五行占比、喜神忌神、事业财富、婚姻、健康、子女、总评、每日运势、年运报告）
 - **进度显示**：支持显示详细的评测进度
 
 ## 使用方法
@@ -35,7 +33,7 @@ python scripts/evaluation/bazi_evaluator.py --input /Users/zhoudt/Desktop/10.xls
 | 参数 | 简写 | 说明 | 必填 |
 |------|------|------|------|
 | --input | -i | Excel文件路径 | 是 |
-| --row | -r | 只处理指定行（从2开始） | 否 |
+| --row | -r | 只处理指定行（从1开始） | 否 |
 | --verbose | -v | 显示详细进度 | 否 |
 | --base-url | | API服务地址 | 否 |
 
@@ -67,26 +65,23 @@ python scripts/evaluation/bazi_evaluator.py -i /Users/zhoudt/Desktop/10.xlsx --b
 
 | 列索引 | 列名 | 数据来源 |
 |--------|------|----------|
-| E (4) | 日元 | /bazi/rizhu-liujiazi |
-| F (5) | 五行 | /bazi/rizhu-liujiazi |
-| G (6) | 十神 | /bazi/rizhu-liujiazi |
-| H (7) | 喜忌 | /bazi/rizhu-liujiazi |
-| I (8) | 旺衰 | /bazi/rizhu-liujiazi |
-| P (15) | 日元-六十甲子 | /bazi/rizhu-liujiazi |
-| Q (16) | 五行占比分析 | /bazi/wuxing-proportion/stream |
-| R (17) | 喜神与忌神 | /bazi/xishen-jishen/stream |
-| S (18) | 事业财富 | /career-wealth/stream |
-| T (19) | 感情婚姻 | /bazi/marriage-analysis/stream |
-| U (20) | 身体健康 | /health/stream |
-| V (21) | 子女学习 | /children-study/stream |
-| W (22) | 总评 | /general-review/stream |
-| X (23) | 每日运势 | /daily-fortune-calendar/stream |
-| AA (26) | 业务场景（菜单） | 随机选择 |
-| AB (27) | output模型回答 | /smart-analyze-stream |
-| AC (28) | CUSMOTER_input2 | 从预设问题选择 |
-| AD (29) | output2模型回答 | /smart-analyze-stream |
-| AE (30) | CUSMOTER_input3 | 从相关问题选择 |
-| AF (31) | output3模型回答 | /smart-analyze-stream |
+| F (5) | 日柱 | wuxing_proportion/stream type=data |
+| G (6) | 五行 | wuxing_proportion/stream type=data |
+| H (7) | 十神 | wuxing_proportion/stream type=data |
+| I (8) | 喜忌 | wuxing_proportion/stream type=data |
+| J (9) | 旺衰 | wuxing_proportion/stream type=data |
+| K (10) | 格局 | xishen_jishen/stream type=data |
+| L (11) | 大运流年 | wuxing_proportion/stream type=data |
+| M (12) | 日元六十甲子 | /bazi/rizhu-liujiazi |
+| N (13) | 五行占比分析 | wuxing_proportion/stream content |
+| O (14) | 喜神与忌神 | xishen_jishen/stream content |
+| P (15) | 事业财富 | career-wealth/stream |
+| Q (16) | 感情婚姻 | marriage-analysis/stream |
+| R (17) | 身体健康 | health/stream |
+| S (18) | 子女学习 | children-study/stream |
+| T (19) | 总评 | general-review/stream |
+| U (20) | 每日运势 | daily-fortune-calendar/stream |
+| V (21) | 年运报告 | annual-report/stream |
 
 ## 配置说明
 
@@ -103,15 +98,15 @@ default_hour = "12:00"
 request_timeout = 60
 stream_timeout = 120
 
-# AI问答业务场景
-ai_qa_categories = ["事业财富", "婚姻", "健康", "子女", "流年运势", "年运报告"]
+# 批量并发数
+batch_concurrency = 3
 ```
 
 ## 注意事项
 
 1. **网络要求**：需要能访问生产环境 API 服务
 2. **权限要求**：需要有Excel文件的读写权限
-3. **运行时间**：每条数据约需要 10-15 分钟（取决于网络和API响应速度，大模型接口响应较慢）
+3. **运行时间**：每条数据约需数分钟（取决于网络和 LLM 响应速度，已去除 AI 多轮问答以节省时间）
 4. **数据安全**：评测完成后会直接修改原Excel文件
 5. **超时处理**：流式接口默认超时5分钟，超时后会记录"[请求超时]"到对应列
 

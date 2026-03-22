@@ -128,7 +128,7 @@ class ExcelHandler:
             self._write_cell(excel_row, ExcelColumns.GEJU, basic.get('geju', ''))
             self._write_cell(excel_row, ExcelColumns.DAYUN_LIUNIAN, basic.get('dayun_liunian', ''))
 
-        # Coze/百炼分析结果
+        # 日元六十甲子 + LLM 分析（从流式接口 content 提取）
         self._write_cell(excel_row, ExcelColumns.RIZHU_LIUJIAZI, result.get('rizhu_liujiazi', ''))
         self._write_cell(excel_row, ExcelColumns.WUXING_ANALYSIS, result.get('wuxing_analysis', ''))
         self._write_cell(excel_row, ExcelColumns.XISHEN_JISHEN, result.get('xishen_jishen', ''))
@@ -139,27 +139,6 @@ class ExcelHandler:
         self._write_cell(excel_row, ExcelColumns.GENERAL_REVIEW, result.get('general_review', ''))
         self._write_cell(excel_row, ExcelColumns.DAILY_FORTUNE, result.get('daily_fortune', ''))
         self._write_cell(excel_row, ExcelColumns.YEAR_FORTUNE, result.get('annual_report', ''))
-
-        # AI 问答
-        ai_qa = result.get('ai_qa', {})
-        if isinstance(ai_qa, dict):
-            self._write_cell(excel_row, ExcelColumns.AI_CATEGORY, ai_qa.get('category', ''))
-            self._write_cell(excel_row, ExcelColumns.AI_OUTPUT1, ai_qa.get('output1', ''))
-            self._write_cell(excel_row, ExcelColumns.AI_INPUT2, ai_qa.get('input2', ''))
-            self._write_cell(excel_row, ExcelColumns.AI_OUTPUT2, ai_qa.get('output2', ''))
-            self._write_cell(excel_row, ExcelColumns.AI_INPUT3, ai_qa.get('input3', ''))
-            self._write_cell(excel_row, ExcelColumns.AI_OUTPUT3, ai_qa.get('output3', ''))
-
-        # 百炼对比列（platform=both 时）
-        self._write_cell(excel_row, ExcelColumns.BAILIAN_WUXING_ANALYSIS, result.get('bailian_wuxing_analysis', ''))
-        self._write_cell(excel_row, ExcelColumns.BAILIAN_XISHEN_JISHEN, result.get('bailian_xishen_jishen', ''))
-        self._write_cell(excel_row, ExcelColumns.BAILIAN_CAREER_WEALTH, result.get('bailian_career_wealth', ''))
-        self._write_cell(excel_row, ExcelColumns.BAILIAN_MARRIAGE, result.get('bailian_marriage', ''))
-        self._write_cell(excel_row, ExcelColumns.BAILIAN_HEALTH, result.get('bailian_health', ''))
-        self._write_cell(excel_row, ExcelColumns.BAILIAN_CHILDREN_STUDY, result.get('bailian_children_study', ''))
-        self._write_cell(excel_row, ExcelColumns.BAILIAN_GENERAL_REVIEW, result.get('bailian_general_review', ''))
-        self._write_cell(excel_row, ExcelColumns.BAILIAN_DAILY_FORTUNE, result.get('bailian_daily_fortune', ''))
-        self._write_cell(excel_row, ExcelColumns.BAILIAN_ANNUAL_REPORT, result.get('bailian_annual_report', ''))
 
     def _write_cell(self, row: int, col: int, value: Any) -> None:
         """写入单元格（openpyxl 行列从 1 开始）"""
