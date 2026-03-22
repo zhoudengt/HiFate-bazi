@@ -36,7 +36,8 @@ class BaziDetailService:
                               include_rules: bool = True,
                               include_wuxing_proportion: bool = True,
                               include_rizhu_liujiazi: bool = True,
-                              rule_types: list = None) -> dict:
+                              rule_types: list = None,
+                              use_cache: bool = True) -> dict:
         """
         完整计算详细八字信息（包含所有数据：基础八字、大运流年、旺衰、身宫命宫、规则匹配、五行比例、日柱六十甲子）
         
@@ -55,6 +56,7 @@ class BaziDetailService:
             include_wuxing_proportion: 是否包含五行比例数据（默认True）
             include_rizhu_liujiazi: 是否包含日柱六十甲子数据（默认True）
             rule_types: 规则类型过滤（可选）
+            use_cache: 是否使用缓存（评测/校验场景传 False 确保实时计算）
         
         Returns:
             dict: 格式化的详细八字数据（包含所有数据源）
@@ -85,18 +87,17 @@ class BaziDetailService:
         cache_key = ':'.join(cache_key_parts)
         
         # 2. 先查缓存（L1内存 + L2 Redis）
-        try:
-            from server.utils.cache_multi_level import get_multi_cache
-            cache = get_multi_cache()
-            # 设置 L2 Redis TTL 为 30 天（2592000秒）
-            cache.l2.ttl = 2592000
-            cached_result = cache.get(cache_key)
-            if cached_result:
-                logger.info(f"✅ [缓存命中] BaziDetailService.calculate_detail_full: {cache_key[:50]}...")
-                return cached_result
-        except Exception as e:
-            # Redis不可用，降级到直接计算
-            logger.warning(f"⚠️  Redis缓存不可用，降级到直接计算: {e}")
+        if use_cache:
+            try:
+                from server.utils.cache_multi_level import get_multi_cache
+                cache = get_multi_cache()
+                cached_result = cache.get(cache_key)
+                if cached_result:
+                    logger.info(f"✅ [缓存命中] BaziDetailService.calculate_detail_full: {cache_key[:50]}...")
+                    return cached_result
+            except Exception as e:
+                # Redis不可用，降级到直接计算
+                logger.warning(f"⚠️  Redis缓存不可用，降级到直接计算: {e}")
         
         # 3. 缓存未命中，执行计算
         logger.info(f"⏱️ [缓存未命中] BaziDetailService.calculate_detail_full: {cache_key[:50]}...")
@@ -114,14 +115,14 @@ class BaziDetailService:
                     gender,
                     current_time=current_time.isoformat() if current_time else None,
                 )
-                # 写入缓存
-                try:
-                    cache = get_multi_cache()
-                    cache.l2.ttl = 2592000  # 30天
-                    cache.set(cache_key, result)
-                    logger.info(f"✅ [缓存写入] BaziDetailService.calculate_detail_full: {cache_key[:50]}...")
-                except Exception:
-                    pass  # 缓存写入失败不影响业务
+                # 写入缓存（仅 use_cache 时）
+                if use_cache:
+                    try:
+                        cache = get_multi_cache()
+                        cache.set(cache_key, result, ttl=2592000)  # 30天
+                        logger.info(f"✅ [缓存写入] BaziDetailService.calculate_detail_full: {cache_key[:50]}...")
+                    except Exception:
+                        pass  # 缓存写入失败不影响业务
                 return result
             except Exception as exc:  # pragma: no cover
                 logger.warning("调用 bazi-fortune-service 失败，自动回退本地计算: %s", exc)
@@ -177,7 +178,7 @@ class BaziDetailService:
         if include_wangshuai:
             try:
                 from server.services.wangshuai_service import WangShuaiService
-                wangshuai_result = WangShuaiService.calculate_wangshuai(solar_date, solar_time, gender)
+                wangshuai_result = WangShuaiService.calculate_wangshuai(solar_date, solar_time, gender, use_cache)
                 if wangshuai_result.get('success'):
                     result['wangshuai'] = wangshuai_result.get('data', {})
                 else:
@@ -261,14 +262,14 @@ class BaziDetailService:
             except Exception as e:
                 logger.warning(f"异步预热触发失败（不影响业务）: {e}")
         
-        # 4. 写入缓存（仅成功时）
-        try:
-            cache = get_multi_cache()
-            cache.l2.ttl = 2592000  # 30天
-            cache.set(cache_key, result)
-            logger.info(f"✅ [缓存写入] BaziDetailService.calculate_detail_full: {cache_key[:50]}...")
-        except Exception:
-            pass  # 缓存写入失败不影响业务
+        # 4. 写入缓存（仅成功且 use_cache 时）
+        if use_cache:
+            try:
+                cache = get_multi_cache()
+                cache.set(cache_key, result, ttl=2592000)  # 30天
+                logger.info(f"✅ [缓存写入] BaziDetailService.calculate_detail_full: {cache_key[:50]}...")
+            except Exception:
+                pass  # 缓存写入失败不影响业务
         
         return result
     

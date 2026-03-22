@@ -247,11 +247,11 @@ class BaziDataOrchestrator:
         if need_bazi:
             bazi_task = loop.run_in_executor(
                 executor, BaziService.calculate_bazi_full,
-                final_solar_date, final_solar_time, gender
+                final_solar_date, final_solar_time, gender, use_cache
             )
             wangshuai_task = loop.run_in_executor(
                 executor, WangShuaiService.calculate_wangshuai,
-                final_solar_date, final_solar_time, gender
+                final_solar_date, final_solar_time, gender, use_cache
             )
             tasks.extend([
                 ('bazi', bazi_task),
@@ -292,7 +292,10 @@ class BaziDataOrchestrator:
                 resolved_dayun_index,
                 target_year,
                 True,   # quick_mode=True
-                False   # async_warmup
+                False,  # async_warmup
+                True, True, True, True, True,  # include_* defaults
+                None,   # rule_types
+                use_cache
             )
             tasks.append(('detail', detail_task))
             logger.debug(f"[Orchestrator] 已添加 detail_task 到 tasks (quick_mode=True, dayun_index={resolved_dayun_index})")
@@ -483,7 +486,8 @@ class BaziDataOrchestrator:
             logger.debug("special_liunians 已启用但 detail_data 不存在，开始获取 detail_data")
             detail_task = loop.run_in_executor(
                 executor, BaziDetailService.calculate_detail_full,
-                final_solar_date, final_solar_time, gender, current_time
+                final_solar_date, final_solar_time, gender, current_time,
+                None, None, False, False, True, True, True, True, True, None, use_cache
             )
             detail_data = await detail_task
             task_data['detail'] = detail_data
@@ -519,7 +523,8 @@ class BaziDataOrchestrator:
                 detail_task_2 = loop.run_in_executor(
                     executor, BaziDetailService.calculate_detail_full,
                     final_solar_date, final_solar_time, gender, current_time,
-                    target_step, target_year, True, False
+                    target_step, target_year, True, False,
+                    True, True, True, True, True, None, use_cache
                 )
                 detail_data = await detail_task_2
                 task_data['detail'] = detail_data

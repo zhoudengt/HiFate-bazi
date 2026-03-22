@@ -24,7 +24,7 @@ class BaziService:
     """八字计算服务类"""
     
     @staticmethod
-    def calculate_bazi_full(solar_date: str, solar_time: str, gender: str) -> dict:
+    def calculate_bazi_full(solar_date: str, solar_time: str, gender: str, use_cache: bool = True) -> dict:
         """
         完整计算八字信息
         
@@ -32,21 +32,23 @@ class BaziService:
             solar_date: 阳历日期，格式：YYYY-MM-DD
             solar_time: 出生时间，格式：HH:MM
             gender: 性别，'male' 或 'female'
+            use_cache: 是否使用缓存（评测/校验场景传 False 确保实时计算）
         
         Returns:
             dict: 格式化的八字数据
         """
         # 0. 查 L1+L2 缓存（八字四柱只取决于出生时间，无 current_time）
         cache_key = f"bazi_full:{solar_date}:{solar_time}:{gender}"
-        try:
-            from server.utils.cache_multi_level import get_multi_cache
-            cache = get_multi_cache()
-            cached_result = cache.get(cache_key)
-            if cached_result:
-                logger.debug("✅ [缓存命中] BaziService.calculate_bazi_full")
-                return cached_result
-        except Exception as e:
-            logger.debug(f"BaziService 缓存不可用: {e}")
+        if use_cache:
+            try:
+                from server.utils.cache_multi_level import get_multi_cache
+                cache = get_multi_cache()
+                cached_result = cache.get(cache_key)
+                if cached_result:
+                    logger.debug("✅ [缓存命中] BaziService.calculate_bazi_full")
+                    return cached_result
+            except Exception as e:
+                logger.debug(f"BaziService 缓存不可用: {e}")
 
         # 1. 优先尝试调用 bazi-core-service（使用较短的超时时间，快速失败）
         bazi_result = None
@@ -127,18 +129,19 @@ class BaziService:
         # 这里只返回空列表，避免重复调用和超时
         matched_rules = []
         
-        # 4. 格式化输出并写入缓存
+        # 4. 格式化输出并写入缓存（仅 use_cache 时写入）
         result = {
             "bazi": BaziService._format_bazi_result(bazi_result),
             "rizhu": rizhu,
             "matched_rules": matched_rules
         }
-        try:
-            from server.utils.cache_multi_level import get_multi_cache
-            cache = get_multi_cache()
-            cache.set(cache_key, result, ttl=86400)
-        except Exception:
-            pass
+        if use_cache:
+            try:
+                from server.utils.cache_multi_level import get_multi_cache
+                cache = get_multi_cache()
+                cache.set(cache_key, result, ttl=86400)
+            except Exception:
+                pass
         return result
     
     @staticmethod

@@ -47,7 +47,7 @@ class WangShuaiService:
         return ':'.join(key_parts)
     
     @staticmethod
-    def calculate_wangshuai(solar_date: str, solar_time: str, gender: str) -> Dict[str, Any]:
+    def calculate_wangshuai(solar_date: str, solar_time: str, gender: str, use_cache: bool = True) -> Dict[str, Any]:
         """
         计算命局旺衰（带Redis缓存）
         
@@ -55,6 +55,7 @@ class WangShuaiService:
             solar_date: 出生日期
             solar_time: 出生时间
             gender: 性别
+            use_cache: 是否使用缓存（评测/校验场景传 False 确保实时计算）
         
         Returns:
             旺衰分析结果
@@ -63,18 +64,17 @@ class WangShuaiService:
         cache_key = WangShuaiService._generate_cache_key(solar_date, solar_time, gender)
         
         # 2. 先查缓存（L1内存 + L2 Redis）
-        try:
-            from server.utils.cache_multi_level import get_multi_cache
-            cache = get_multi_cache()
-            # 设置 L2 Redis TTL 为 30 天
-            cache.l2.ttl = WangShuaiService.CACHE_TTL
-            cached_result = cache.get(cache_key)
-            if cached_result:
-                logger.info(f"✅ [缓存命中] WangShuaiService.calculate_wangshuai: {cache_key[:50]}...")
-                return cached_result
-        except Exception as e:
-            # Redis不可用，降级到直接计算
-            logger.warning(f"⚠️  Redis缓存不可用，降级到直接计算: {e}")
+        if use_cache:
+            try:
+                from server.utils.cache_multi_level import get_multi_cache
+                cache = get_multi_cache()
+                cached_result = cache.get(cache_key)
+                if cached_result:
+                    logger.info(f"✅ [缓存命中] WangShuaiService.calculate_wangshuai: {cache_key[:50]}...")
+                    return cached_result
+            except Exception as e:
+                # Redis不可用，降级到直接计算
+                logger.warning(f"⚠️  Redis缓存不可用，降级到直接计算: {e}")
         
         # 3. 缓存未命中，执行计算
         logger.info(f"⏱️ [缓存未命中] WangShuaiService.calculate_wangshuai: {cache_key[:50]}...")
@@ -104,12 +104,11 @@ class WangShuaiService:
                 'data': result
             }
             
-            # 4. 写入缓存（仅成功时）
-            if response.get('success'):
+            # 4. 写入缓存（仅成功且 use_cache 时）
+            if response.get('success') and use_cache:
                 try:
                     cache = get_multi_cache()
-                    cache.l2.ttl = WangShuaiService.CACHE_TTL
-                    cache.set(cache_key, response)
+                    cache.set(cache_key, response, ttl=WangShuaiService.CACHE_TTL)
                     logger.info(f"✅ [缓存写入] WangShuaiService.calculate_wangshuai: {cache_key[:50]}...")
                 except Exception as e:
                     # 缓存写入失败不影响业务
