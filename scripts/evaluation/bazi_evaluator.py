@@ -54,15 +54,18 @@ class BaziEvaluator:
         self,
         wuxing_resp: Any,
         xishen_resp: Any,
+        fortune_resp: Any = None,
         day_pillar_from_excel: str = "",
     ) -> Dict[str, str]:
         """
         从流式接口的 type=data 事件中提取排盘基础数据。
         数据源头与流式接口完全一致（wuxing_proportion + xishen_jishen 的 SSE data 事件）。
+        大运流年优先从 fortune/display 接口获取（完整 8+ 大运），失败时回退到 _key_dayuns。
 
         Args:
             wuxing_resp: wuxing_proportion/stream 的 StreamResponse（含 .data）
             xishen_resp: xishen_jishen/stream 的 StreamResponse（含 .data）
+            fortune_resp: fortune/display 的 JSON 响应（含 dayun.list，可选）
             day_pillar_from_excel: 若 Excel 八字列解析出日柱，优先使用
         """
         result = {
@@ -187,20 +190,36 @@ class BaziEvaluator:
             geju_names = [mg.get("name", "") for mg in shishen_mingge[:3] if isinstance(mg, dict) and mg.get("name")]
             result["geju"] = "、".join(geju_names) if geju_names else ""
 
-        # 大运流年：_key_dayuns 或 _current_dayun
-        key_dayuns = wuxing_data.get("_key_dayuns", []) or []
-        current_dayun = wuxing_data.get("_current_dayun", {}) or {}
+        # 大运流年：优先 fortune/display（完整 8+ 大运），失败时回退 _key_dayuns
         dayun_parts = []
+
+        def _normalize_stem_branch(dy):
+            """兼容 fortune/display（stem/branch 为 dict）与 _key_dayuns（直接字符串）"""
+            stem = dy.get("stem", "")
+            branch = dy.get("branch", "")
+            if isinstance(stem, dict):
+                stem = stem.get("char", "")
+            if isinstance(branch, dict):
+                branch = branch.get("char", "")
+            if not stem and not branch:
+                ganzhi = dy.get("ganzhi", "")
+                if isinstance(ganzhi, str) and len(ganzhi) >= 2:
+                    stem, branch = ganzhi[0], ganzhi[1]
+            return stem, branch
+
+        def _format_liunian(ln):
+            """格式化单个流年：年:干支(主星) 或 年:干支"""
+            if not isinstance(ln, dict):
+                return ""
+            y = ln.get("year", "")
+            g = ln.get("ganzhi", "") or f"{ln.get('stem','')}{ln.get('branch','')}"
+            ms = ln.get("main_star", "")
+            return f"{y}:{g}({ms})" if ms else f"{y}:{g}"
 
         def _format_dayun(dy):
             if not isinstance(dy, dict):
                 return ""
-            stem = dy.get("stem", "")
-            branch = dy.get("branch", "")
-            if not stem and not branch:
-                ganzhi = dy.get("ganzhi", "")
-                if len(ganzhi) >= 2:
-                    stem, branch = ganzhi[0], ganzhi[1]
+            stem, branch = _normalize_stem_branch(dy)
             if not stem and not branch:
                 return ""
             gz = f"{stem}{branch}" if stem and branch else stem or branch
@@ -213,28 +232,40 @@ class BaziEvaluator:
                 s += f"({main_star})"
             if start and end:
                 s += f" [{start}-{end}岁]"
-            liunians = dy.get("liunians", []) or dy.get("liunian_sequence", [])
+            liunians = dy.get("liunian_sequence", []) or dy.get("liunians", [])
+            if not liunians:
+                # 回退 liunian_simple（仅 year+ganzhi）
+                simple = dy.get("liunian_simple", []) or []
+                liunians = [{"year": x.get("year"), "ganzhi": x.get("ganzhi", "")} for x in simple if isinstance(x, dict)]
             if liunians:
-                ln_parts = []
-                for ln in liunians[:10]:
-                    if isinstance(ln, dict):
-                        y = ln.get("year", "")
-                        g = ln.get("ganzhi", "") or f"{ln.get('stem','')}{ln.get('branch','')}"
-                        ms = ln.get("main_star", "")
-                        ln_parts.append(f"{y}:{g}({ms})" if ms else f"{y}:{g}")
+                ln_parts = [_format_liunian(ln) for ln in liunians[:10] if _format_liunian(ln)]
                 if ln_parts:
                     s += " 流年:" + ", ".join(ln_parts)
             return s
 
-        if key_dayuns:
-            for dy in key_dayuns[:8]:
+        # 1. 优先从 fortune/display 提取
+        if isinstance(fortune_resp, dict) and fortune_resp.get("success"):
+            dayun_list = (fortune_resp.get("dayun") or {}).get("list", []) or []
+            for dy in dayun_list:
+                if dy.get("is_xiaoyun"):
+                    continue
                 part = _format_dayun(dy)
                 if part:
                     dayun_parts.append(part)
-        elif current_dayun:
-            part = _format_dayun(current_dayun)
-            if part:
-                dayun_parts.append(part)
+
+        # 2. 回退到 wuxing 的 _key_dayuns
+        if not dayun_parts:
+            key_dayuns = wuxing_data.get("_key_dayuns", []) or []
+            current_dayun = wuxing_data.get("_current_dayun", {}) or {}
+            if key_dayuns:
+                for dy in key_dayuns[:8]:
+                    part = _format_dayun(dy)
+                    if part:
+                        dayun_parts.append(part)
+            elif current_dayun:
+                part = _format_dayun(current_dayun)
+                if part:
+                    dayun_parts.append(part)
 
         result["dayun_liunian"] = "\n".join(dayun_parts) if dayun_parts else ""
 
@@ -280,9 +311,10 @@ class BaziEvaluator:
         try:
             self._log_progress("  并行调用所有接口...")
 
-            # 单阶段：并行调用 rizhu_liujiazi + 9 个流式接口
+            # 单阶段：并行调用 rizhu_liujiazi + fortune_display + 9 个流式接口
             tasks = [
                 self.api_client.call_rizhu_liujiazi(solar_date, solar_time, gender),
+                self.api_client.call_fortune_display(solar_date, solar_time, gender),
                 self.api_client.call_wuxing_proportion_stream(solar_date, solar_time, gender),
                 self.api_client.call_xishen_jishen_stream(solar_date, solar_time, gender),
                 self.api_client.call_career_wealth_stream(solar_date, solar_time, gender),
@@ -297,13 +329,15 @@ class BaziEvaluator:
             all_responses = await asyncio.gather(*tasks, return_exceptions=True)
 
             rizhu_resp = all_responses[0]
-            wuxing_resp = all_responses[1]
-            xishen_resp = all_responses[2]
+            fortune_resp = all_responses[1]
+            wuxing_resp = all_responses[2]
+            xishen_resp = all_responses[3]
 
-            # 基础数据：从 wuxing_proportion + xishen_jishen 的 type=data 提取
+            # 基础数据：从 wuxing_proportion + xishen_jishen 的 type=data 提取，大运流年优先从 fortune_display
             results["basic"] = self._extract_basic_data_from_streams(
                 wuxing_resp=wuxing_resp,
                 xishen_resp=xishen_resp,
+                fortune_resp=fortune_resp,
                 day_pillar_from_excel=test_case.day_pillar or "",
             )
 
@@ -323,7 +357,7 @@ class BaziEvaluator:
                 "annual_report",
             ]
             for i, key in enumerate(stream_keys):
-                results[key] = self._format_stream_content(all_responses[i + 1])
+                results[key] = self._format_stream_content(all_responses[i + 2])
 
             total_time = time.time() - start_time
             self._log(f"完成评测: {test_case.user_name} (总耗时: {total_time:.1f}秒)")

@@ -321,6 +321,20 @@ class BaziApiClient:
         }
         return await self._post_json(ApiEndpoints.RIZHU_LIUJIAZI, data)
     
+    async def call_fortune_display(self, solar_date: str, solar_time: str,
+                                   gender: str) -> Dict[str, Any]:
+        """
+        调用大运流年流月展示接口
+        
+        返回完整大运列表（含 liunian_sequence），用于评测脚本大运流年列输出。
+        """
+        data = {
+            "solar_date": solar_date,
+            "solar_time": solar_time,
+            "gender": gender
+        }
+        return await self._post_json(ApiEndpoints.FORTUNE_DISPLAY, data)
+    
     async def call_wuxing_proportion_stream(self, solar_date: str, solar_time: str,
                                             gender: str) -> StreamResponse:
         """

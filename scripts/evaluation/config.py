@@ -42,6 +42,7 @@ class ApiEndpoints:
     
     # 非流式接口
     RIZHU_LIUJIAZI = "/bazi/rizhu-liujiazi"
+    FORTUNE_DISPLAY = "/bazi/fortune/display"
     
     # 流式分析接口
     WUXING_PROPORTION_STREAM = "/bazi/wuxing-proportion/stream"
