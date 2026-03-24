@@ -91,17 +91,20 @@ def format_marriage_for_llm(input_data: Dict[str, Any]) -> str:
     ganqing = input_data.get('ganqing_zoushi', {})
     jianyi = input_data.get('jianyi_fangxiang', {})
     
-    # 1. 命主基本信息
+    # 1. 命主基本信息（与事业财富、子女学业一致，命主行须含男命/女命，供模型判定配偶称谓）
     bazi_pillars = mingpan.get('bazi_pillars', {})
     day_pillar = mingpan.get('day_pillar', {})
     day_stem = day_pillar.get('stem', bazi_pillars.get('day', {}).get('stem', ''))
     day_branch = day_pillar.get('branch', bazi_pillars.get('day', {}).get('branch', ''))
     wangshuai = mingpan.get('wangshuai', '')
+    gender = mingpan.get('gender', '')
+    gender_display = '男命' if gender == 'male' else '女命' if gender == 'female' else ''
     
     # 从喜忌中判断身强身弱
     xi_ji = jianyi.get('xi_ji', {})
     
-    lines.append(f"【命主】{day_stem}日元，配偶宫{day_branch}，{wangshuai}")
+    prefix = f"{gender_display}，" if gender_display else ""
+    lines.append(f"【命主】{prefix}{day_stem}日元，配偶宫{day_branch}，{wangshuai}")
     
     # 2. 四柱
     pillars_text = format_bazi_pillars_text(bazi_pillars)

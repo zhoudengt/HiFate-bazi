@@ -394,6 +394,7 @@ def build_marriage_input_data(
             'day_pillar': day_pillar,
             'details': detail_result.get('details', {}),
             'element_counts': bazi_data.get('element_counts', {}),
+            'gender': gender,
         },
         # 配偶特征数据（包含：十神、神煞、婚姻判词、桃花判词、婚配判词、正缘判词）
         'peiou_tezheng': {
@@ -754,6 +755,9 @@ async def marriage_analysis_stream_generator(
         except Exception as e:
             logger.warning(f"[{trace_id}] 推理引擎降级（不影响功能）: {e}")
             inference_conclusions = None
+        
+        # 6.6 确保 mingpan_zonglun 含 gender（数据库格式路径可能未包含，兜底保证命主行能展示男命/女命）
+        input_data.setdefault('mingpan_zonglun', {})['gender'] = gender
         
         # 7. ⚠️ 优化：使用精简中文文本格式（Token 减少 83%）
         formatted_data = format_marriage_for_llm(input_data)
