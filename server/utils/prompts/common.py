@@ -4,7 +4,40 @@
 
 import json
 import copy
+from datetime import datetime
 from typing import Dict, Any, Optional
+
+
+def format_current_date_line(current_time: Optional[datetime] = None) -> str:
+    """生成当前日期行，告知 LLM 公历「今天」；大运流年仍以输入数据为准。"""
+    now = current_time if current_time is not None else datetime.now()
+    return (
+        f"【当前日期】{now.year}年{now.month}月{now.day}日"
+        "（大运流年以输入数据为准，禁止自行推算）"
+    )
+
+
+def format_birth_age_line(basic_info: Optional[Dict[str, Any]] = None) -> str:
+    """生成命主出生日期与虚岁行。
+
+    唯一年龄计算源：calculate_user_age（虚岁），与大运选择口径一致。
+    若 basic_info 缺失 solar_date 则返回空串（调用方不追加该行）。
+    """
+    if not basic_info:
+        return ""
+    solar_date = basic_info.get('solar_date', '')
+    if not solar_date:
+        return ""
+    solar_time = basic_info.get('solar_time', '')
+
+    from server.utils.dayun_liunian_helper import calculate_user_age
+    age = calculate_user_age(solar_date)
+
+    date_part = solar_date
+    if solar_time:
+        date_part = f"{solar_date} {solar_time}"
+    return f"【命主出生】公历{date_part}，当前虚岁{age}"
+
 
 def _filter_empty_deities(data: Any) -> Any:
     """

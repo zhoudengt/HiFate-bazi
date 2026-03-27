@@ -753,7 +753,8 @@ def build_health_input_data(
             'zangfu_yanghu': zangfu_care
         }
     }
-    
+
+    input_data['basic_info'] = bazi_data.get('basic_info', {})
     return input_data
 
 

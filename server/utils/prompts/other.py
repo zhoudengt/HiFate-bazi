@@ -4,7 +4,7 @@
 
 import json
 from typing import Dict, Any, Optional
-from .common import format_bazi_pillars_text, format_ten_gods_text, format_ten_gods_reference_from_details, format_wuxing_distribution_text, format_xi_ji_text, format_deities_text, format_dayun_text, format_liunian_text, format_judgments_text, format_branch_relations_text, format_key_dayuns_text, _simplify_dayun
+from .common import format_bazi_pillars_text, format_ten_gods_text, format_ten_gods_reference_from_details, format_wuxing_distribution_text, format_xi_ji_text, format_deities_text, format_dayun_text, format_liunian_text, format_judgments_text, format_branch_relations_text, format_key_dayuns_text, _simplify_dayun, format_current_date_line, format_birth_age_line
 
 def format_smart_fortune_for_llm(
     bazi_data: Dict[str, Any],
@@ -38,7 +38,8 @@ def format_smart_fortune_for_llm(
         str: 精简的中文文本格式
     """
     lines = []
-    
+    lines.append(format_current_date_line())
+
     # 1. 提取八字数据
     bazi_pillars = (
         bazi_data.get('bazi_pillars') or 
@@ -56,6 +57,10 @@ def format_smart_fortune_for_llm(
         bazi_data.get('bazi', {}).get('basic_info') or
         {}
     )
+    
+    birth_age = format_birth_age_line(basic_info)
+    if birth_age:
+        lines.append(birth_age)
     
     gender = basic_info.get('gender', '')
     gender_display = '男命' if gender == 'male' else '女命' if gender == 'female' else ''

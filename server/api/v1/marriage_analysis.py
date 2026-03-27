@@ -424,7 +424,8 @@ def build_marriage_input_data(
             'key_dayuns': key_dayuns_data
         }
     }
-    
+
+    input_data['basic_info'] = bazi_data.get('basic_info', {})
     return input_data
 
 # ✅ _filter_empty_deities 和 format_input_data_for_coze 函数已移至 server/utils/prompt_builders.py

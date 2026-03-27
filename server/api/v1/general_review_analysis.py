@@ -1310,7 +1310,8 @@ def build_general_review_input_data(
         'dayun_count': len(dayun_sequence),
         'special_liunian_count': len(special_liunians)
     }
-    
+
+    input_data['basic_info'] = bazi_data.get('basic_info', {})
     return input_data
 
 

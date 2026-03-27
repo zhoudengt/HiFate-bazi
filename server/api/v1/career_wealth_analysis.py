@@ -453,7 +453,8 @@ def build_career_wealth_input_data(
             'wuxing_hangye': IndustryService.get_industry_mapping()
         }
     }
-    
+
+    input_data['basic_info'] = bazi_data.get('basic_info', {})
     return input_data
 
 # ✅ format_input_data_for_coze 函数已移至 server/utils/prompt_builders.py

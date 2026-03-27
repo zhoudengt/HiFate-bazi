@@ -3,7 +3,7 @@
 """总评分析 prompt 构建"""
 
 from typing import Dict, Any, List, Optional
-from .common import format_bazi_pillars_text, format_ten_gods_text, format_ten_gods_reference_from_details, format_wuxing_distribution_text, format_xi_ji_text, format_deities_text, format_dayun_text, format_liunian_text, format_judgments_text, format_branch_relations_text, format_key_dayuns_text, _simplify_dayun
+from .common import format_bazi_pillars_text, format_ten_gods_text, format_ten_gods_reference_from_details, format_wuxing_distribution_text, format_xi_ji_text, format_deities_text, format_dayun_text, format_liunian_text, format_judgments_text, format_branch_relations_text, format_key_dayuns_text, _simplify_dayun, format_current_date_line, format_birth_age_line
 
 def format_general_review_input_data_for_coze(input_data: Dict[str, Any]) -> str:
     """
@@ -117,7 +117,11 @@ def format_general_review_for_llm(input_data: Dict[str, Any]) -> str:
         str: 精简的中文文本格式
     """
     lines = []
-    
+    lines.append(format_current_date_line())
+    birth_age = format_birth_age_line(input_data.get('basic_info'))
+    if birth_age:
+        lines.append(birth_age)
+
     # 获取各部分数据
     mingpan = input_data.get('mingpan_hexin_geju', {})
     xingge = input_data.get('xingge_tezhi', {})

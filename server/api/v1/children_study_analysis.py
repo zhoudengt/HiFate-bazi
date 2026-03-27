@@ -1098,7 +1098,8 @@ def build_children_study_input_data(
             'xi_ji': xi_ji_data
         }
     }
-    
+
+    input_data['basic_info'] = bazi_data.get('basic_info', {})
     return input_data
 
 # ✅ format_input_data_for_coze 函数已移至 server/utils/prompt_builders.py

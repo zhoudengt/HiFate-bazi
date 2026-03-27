@@ -33,6 +33,7 @@ from server.utils.api_cache_helper import (
     generate_cache_key, get_cached_result, set_cached_result, L2_TTL
 )
 from server.api.base.stream_handler import generate_request_id, _sse_request_id
+from server.utils.prompts.common import format_current_date_line
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +65,14 @@ def _format_xishen_jishen_for_llm(data: Dict[str, Any]) -> str:
             else:
                 names.append(str(x))
         return '、'.join(names) if names else '无'
-    
+
     lines = []
-    
+    lines.append(format_current_date_line())
+    from server.utils.prompts.common import format_birth_age_line
+    birth_age = format_birth_age_line(data.get('_basic_info'))
+    if birth_age:
+        lines.append(birth_age)
+
     logger.debug(f"[_format_xishen_jishen_for_llm] shishen_mingge={data.get('shishen_mingge', [])}")
     
     # 喜神五行
@@ -688,6 +694,7 @@ async def xishen_jishen_stream_generator(
             data['_current_dayun'] = current_dayun
             data['_key_dayuns'] = key_dayuns
             data['_special_liunians'] = special_liunians
+            data['_basic_info'] = bazi_data_raw.get('basic_info', {})
         except Exception as e:
             logger.warning(f"[喜神忌神] 提取扩展数据失败（不影响核心功能）: {e}")
         

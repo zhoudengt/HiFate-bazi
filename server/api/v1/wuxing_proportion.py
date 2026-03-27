@@ -48,6 +48,7 @@ class WuxingStreamHandler(BaseAnalysisStreamHandler):
             proportion_data['_details'] = detail_result.get('details', {})
             proportion_data['_bazi_pillars'] = bazi_data.get('bazi_pillars', {})
             proportion_data['_branch_relations'] = bazi_data.get('relationships', {}).get('branch_relations', {})
+            proportion_data['_basic_info'] = bazi_data.get('basic_info', {})
             dayun_sequence = detail_result.get('dayun_sequence') or (detail_result.get('details') or {}).get('dayun_sequence', [])
             special_liunians_data = unified_data.get('special_liunians', {})
             special_liunians = special_liunians_data.get('list', []) if isinstance(special_liunians_data, dict) else []
@@ -105,9 +106,19 @@ def _format_wuxing_for_llm(proportion_data: Dict[str, Any]) -> str:
     Returns:
         str: 格式化后的中文描述（约300字符，原JSON约2700字符）
     """
-    from server.utils.prompts.common import format_ten_gods_reference_from_details, format_branch_relations_text, format_key_dayuns_text
+    from server.utils.prompts.common import (
+        format_ten_gods_reference_from_details,
+        format_branch_relations_text,
+        format_key_dayuns_text,
+        format_current_date_line,
+        format_birth_age_line,
+    )
     lines = []
-    
+    lines.append(format_current_date_line())
+    birth_age = format_birth_age_line(proportion_data.get('_basic_info'))
+    if birth_age:
+        lines.append(birth_age)
+
     # 1. 五行占比
     proportions = proportion_data.get('proportions', {})
     if proportions:
