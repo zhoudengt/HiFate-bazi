@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import PageContainer from '../../components/layout/PageContainer';
 import { economyApi, type InventoryItem } from '../../api/economy';
 import { UI_COPY } from '../../utils/uiCopy';
+import { assetUrl } from '../../utils/assets';
 
 const { inventory: inv } = UI_COPY;
 
@@ -73,7 +74,7 @@ export default function InventoryPage() {
               className="flex flex-col rounded-2xl border border-gold/30 bg-marble/90 p-3 shadow-sm"
             >
               <div className="mx-auto flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border border-gold/35 bg-cream">
-                <img src={it.icon_url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                <img src={assetUrl(it.icon_url)} alt="" className="h-full w-full object-cover" loading="lazy" />
               </div>
               <h2 className="mt-2 text-center font-display text-sm text-ink">{it.name}</h2>
               <p className="mt-1 text-center font-body text-xs text-gold">{inv.quantityLabel(it.quantity)}</p>

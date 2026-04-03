@@ -5,6 +5,7 @@ import PageContainer from '../../components/layout/PageContainer';
 import { economyApi, type ShopItem } from '../../api/economy';
 import { useGameStore } from '../../stores/useGameStore';
 import { UI_COPY } from '../../utils/uiCopy';
+import { assetUrl } from '../../utils/assets';
 
 const { exchange: ex } = UI_COPY;
 
@@ -118,7 +119,7 @@ export default function ExchangeShop() {
               className="flex flex-col rounded-2xl border border-gold/35 bg-cream p-4 shadow-[0_8px_24px_rgba(26,60,52,0.1)]"
             >
               <div className="mx-auto flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border-2 border-gold/40 bg-marble">
-                <img src={it.icon_url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                <img src={assetUrl(it.icon_url)} alt="" className="h-full w-full object-cover" loading="lazy" />
               </div>
               <h2 className="mt-3 text-center font-display text-base text-ink">{it.name}</h2>
               {it.description ? (
