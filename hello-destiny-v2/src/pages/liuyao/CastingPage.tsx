@@ -16,8 +16,10 @@ function randomCoinValue(): number {
   return COIN_VALUES[Math.floor(Math.random() * COIN_VALUES.length)];
 }
 
-const COIN_FRONT = '/assets/coins/coin-front.png';
-const COIN_BACK = '/assets/coins/coin-back.png';
+import { assetUrl } from '../../utils/assets';
+
+const COIN_FRONT = assetUrl('assets/coins/coin-front.png');
+const COIN_BACK = assetUrl('assets/coins/coin-back.png');
 
 /** 少阳、老阳为「阳」面，对应铜钱正面；三枚钱各自一面，由本爻数值唯一确定 */
 function coinFacesForValue(v: number): [boolean, boolean, boolean] {

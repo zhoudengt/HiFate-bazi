@@ -4,6 +4,7 @@ import { useGameStore } from '../../stores/useGameStore';
 import { useUserStore } from '../../stores/useUserStore';
 import { formatCompactHudNumber } from '../../utils/format';
 import { UI_COPY } from '../../utils/uiCopy';
+import { assetUrl } from '../../utils/assets';
 
 function CoinIcon({ className }: { className?: string }) {
   return (
@@ -80,7 +81,7 @@ export default function TopBar() {
               aria-label={tb.backAria}
               title={tb.backAria}
             >
-              <img src="/assets/ui/back-btn.png" alt="" className="h-8 w-8 object-contain" draggable={false} />
+              <img src={assetUrl('assets/ui/back-btn.png')} alt="" className="h-8 w-8 object-contain" draggable={false} />
             </button>
           ) : null}
 

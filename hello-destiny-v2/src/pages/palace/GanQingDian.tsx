@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { SCENE_IMAGES } from '../../utils/assets';
+import { SCENE_IMAGES, assetUrl } from '../../utils/assets';
 import { PAGE_BELOW_HUD } from '../../utils/hudLayout';
 import DialogueBox from '../../components/dialogue/DialogueBox';
 import Modal from '../../components/common/Modal';
@@ -118,7 +118,7 @@ export default function GanQingDian() {
       {showStory && currentLine ? (
         <DialogueBox
           speaker={currentLine.speaker}
-          avatar={`/assets/story/${currentLine.avatar_id}.png`}
+          avatar={assetUrl(`assets/story/${currentLine.avatar_id}.png`)}
           text={currentLine.content}
           onNext={advanceStory}
           onSkip={skipStory}

@@ -2,9 +2,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 export type DialogueSide = 'left' | 'right';
 
-const DIALOGUE_FRAME = '/assets/dialogue/frame.png';
-const DIALOGUE_NAMEPLATE = '/assets/dialogue/nameplate.png';
-const DIALOGUE_ARROW = '/assets/dialogue/arrow.png';
+import { assetUrl } from '../../utils/assets';
+
+const DIALOGUE_FRAME = assetUrl('assets/dialogue/frame.png');
+const DIALOGUE_NAMEPLATE = assetUrl('assets/dialogue/nameplate.png');
+const DIALOGUE_ARROW = assetUrl('assets/dialogue/arrow.png');
 
 type DialogueBoxProps = {
   speaker: string;

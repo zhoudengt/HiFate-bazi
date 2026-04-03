@@ -5,6 +5,7 @@ import { useQuestStore } from '../../stores/useQuestStore';
 import { questApi } from '../../api/quest';
 import type { DailyQuest, MainQuest, BoxConfig } from '../../api/quest';
 import { useGameStore } from '../../stores/useGameStore';
+import { assetUrl } from '../../utils/assets';
 
 type TabKey = 'daily' | 'weekly' | 'main';
 
@@ -95,7 +96,7 @@ function DailyQuestCard({
       className="flex items-center gap-3 rounded-2xl border border-ink/10 bg-marble p-3 shadow-sm"
     >
       <img
-        src="/assets/items/20001.jpg"
+        src={assetUrl('assets/items/20001.jpg')}
         alt=""
         className="h-10 w-10 shrink-0 rounded-lg object-cover"
       />
@@ -150,7 +151,7 @@ function MainQuestCard({
       className="flex items-center gap-3 rounded-2xl border border-ink/10 bg-marble p-3 shadow-sm"
     >
       <img
-        src="/assets/items/20001.jpg"
+        src={assetUrl('assets/items/20001.jpg')}
         alt=""
         className="h-10 w-10 shrink-0 rounded-lg object-cover"
       />
