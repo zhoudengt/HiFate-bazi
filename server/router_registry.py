@@ -526,13 +526,138 @@ def _register_all_routers_to_manager(router_manager):
         enabled_getter=lambda: XISHEN_JISHEN_ROUTER_AVAILABLE and xishen_jishen_router is not None
     )
     
-    # 六爻占卜路由（条件可用）
+    # 六爻占卜路由（V1 已下线，统一走 /api/v2/liuyao）
     router_manager.register_router(
         "liuyao",
         lambda: liuyao_router,
         prefix="/api/v1",
         tags=["六爻"],
-        enabled_getter=lambda: LIUYAO_ROUTER_AVAILABLE and liuyao_router is not None
+        enabled_getter=lambda: False,
+    )
+
+    def get_liuyao_v2_router():
+        try:
+            from server.api.v2.liuyao import router as liuyao_v2_router
+            return liuyao_v2_router
+        except ImportError as e:
+            logger.warning("V2 六爻路由导入失败: %s", e)
+            return None
+
+    router_manager.register_router(
+        "liuyao_v2",
+        get_liuyao_v2_router,
+        prefix="/api/v2/liuyao",
+        tags=["V2-六爻"],
+        enabled_getter=lambda: get_liuyao_v2_router() is not None,
+    )
+
+    # === V2 游戏化 Mock API（前端联调用） ===
+    def _register_v2_mock(name, module_path, prefix, tag):
+        def _get():
+            try:
+                import importlib
+                mod = importlib.import_module(module_path)
+                return mod.router
+            except Exception as e:
+                logger.warning("V2 Mock 路由 %s 导入失败: %s", name, e)
+                return None
+        router_manager.register_router(
+            name, _get, prefix=prefix, tags=[tag],
+            enabled_getter=lambda _g=_get: _g() is not None,
+        )
+
+    def _get_game_api_router():
+        try:
+            from server.api.v2.game_api import router as game_api_router
+            return game_api_router
+        except Exception as e:
+            logger.warning("V2 game_api 路由导入失败: %s", e)
+            return None
+
+    router_manager.register_router(
+        "game_api",
+        _get_game_api_router,
+        prefix="/api/v2/game",
+        tags=["V2-游戏状态"],
+        enabled_getter=lambda _g=_get_game_api_router: _g() is not None,
+    )
+
+    def _get_profile_v2_router():
+        try:
+            from server.api.v2.profile_api import router as profile_v2_router
+            return profile_v2_router
+        except Exception as e:
+            logger.warning("V2 profile_api 路由导入失败: %s", e)
+            return None
+
+    router_manager.register_router(
+        "profile_v2",
+        _get_profile_v2_router,
+        prefix="/api/v2/profile",
+        tags=["V2-档案"],
+        enabled_getter=lambda _g=_get_profile_v2_router: _g() is not None,
+    )
+    _register_v2_mock("prayer_mock", "server.api.v2.prayer_mock", "/api/v2/prayer", "V2-祈福")
+    def _get_quest_api_router():
+        try:
+            from server.api.v2.quest_api import router as quest_api_router
+            return quest_api_router
+        except Exception as e:
+            logger.warning("V2 quest_api 路由导入失败: %s", e)
+            return None
+
+    router_manager.register_router(
+        "quest_api",
+        _get_quest_api_router,
+        prefix="/api/v2/quest",
+        tags=["V2-任务"],
+        enabled_getter=lambda _g=_get_quest_api_router: _g() is not None,
+    )
+
+    def _get_juqing_api_router():
+        try:
+            from server.api.v2.juqing_api import router as juqing_api_router
+            return juqing_api_router
+        except Exception as e:
+            logger.warning("V2 juqing_api 路由导入失败: %s", e)
+            return None
+
+    router_manager.register_router(
+        "juqing_api",
+        _get_juqing_api_router,
+        prefix="/api/v2/story",
+        tags=["V2-剧情"],
+        enabled_getter=lambda _g=_get_juqing_api_router: _g() is not None,
+    )
+    def _get_learning_api_router():
+        try:
+            from server.api.v2.learning_api import router as learning_api_router
+            return learning_api_router
+        except Exception as e:
+            logger.warning("V2 learning_api 路由导入失败: %s", e)
+            return None
+
+    router_manager.register_router(
+        "learning_api",
+        _get_learning_api_router,
+        prefix="/api/v2/learning",
+        tags=["V2-学堂"],
+        enabled_getter=lambda _g=_get_learning_api_router: _g() is not None,
+    )
+    def _get_economy_api_router():
+        try:
+            from server.api.v2.economy_api import router as economy_api_router
+            return economy_api_router
+        except Exception as e:
+            logger.warning("V2 economy_api 路由导入失败: %s", e)
+            return None
+
+    router_manager.register_router(
+        "economy_api",
+        _get_economy_api_router,
+        prefix="/api/v2/economy",
+        tags=["V2-经济"],
+        enabled_getter=lambda _g=_get_economy_api_router: _g() is not None,
     )
 
     # 感情婚姻分析路由（条件可用）

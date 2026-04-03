@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""六爻占卜 gRPC-Web 端点处理器"""
+# [DEPRECATED] V1 六爻 gRPC-Web 已下线，请使用 REST POST /api/v2/liuyao/divinate 与 /stream。
+"""六爻占卜 gRPC-Web 端点处理器（已不再从 grpc_gateway 加载）。"""
 
 import logging
 from typing import Any, Dict

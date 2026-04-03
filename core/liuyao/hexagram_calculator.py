@@ -6,23 +6,46 @@
 """
 
 from datetime import datetime
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
-# 八卦序号 1-8：乾兑离震巽坎艮坤
+# 八卦序号 1-8：乾兑离震巽坎艮坤（与 hexagram_texts.json 键 upper_lower 一致）
 TRIGRAM_NAMES = ["", "乾", "兑", "离", "震", "巽", "坎", "艮", "坤"]
+
+# 每卦三爻自下而上：True=阳 False=阴
+_KING_WEN_LINES: Dict[int, Tuple[bool, bool, bool]] = {
+    1: (True, True, True),
+    2: (True, True, False),
+    3: (True, False, True),
+    4: (True, False, False),
+    5: (False, True, True),
+    6: (False, True, False),
+    7: (False, False, True),
+    8: (False, False, False),
+}
+_LINES_TO_TRIGRAM = {v: k for k, v in _KING_WEN_LINES.items()}
 
 
 def _trigram_to_lines(trigram: int) -> List[bool]:
     """八卦序号(1-8)转三爻，True=阳 False=阴，从下往上。"""
-    # 乾111 兑110 离101 震100 巽011 坎010 艮001 坤000
-    bits = [((trigram - 1) >> (2 - i)) & 1 for i in range(3)]
-    return [bool(b) for b in bits]
+    if trigram not in _KING_WEN_LINES:
+        raise ValueError(f"八卦序号须在 1-8 之间，收到 {trigram}")
+    return list(_KING_WEN_LINES[trigram])
 
 
 def _lines_to_trigram(lines: List[bool]) -> int:
-    """下三爻转八卦序号 1-8。"""
-    n = sum(1 << (2 - i) for i, b in enumerate(lines) if b)
-    return n + 1
+    """下三爻转八卦序号 1-8（文王序）。"""
+    key = (bool(lines[0]), bool(lines[1]), bool(lines[2]))
+    t = _LINES_TO_TRIGRAM.get(key)
+    if t is None:
+        raise ValueError(f"无法识别的三爻组合: {key}")
+    return t
+
+
+def flip_trigram_line(trigram: int, line_idx: int) -> int:
+    """翻转经卦中某一爻（0=初爻…2=三爻），返回新卦序号。"""
+    bits = list(_trigram_to_lines(trigram))
+    bits[line_idx] = not bits[line_idx]
+    return _lines_to_trigram(bits)
 
 
 def coin_method(coin_results: List[int]) -> dict:

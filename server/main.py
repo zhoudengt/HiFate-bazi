@@ -164,6 +164,12 @@ router_manager.register_all_routers()
 # 健康检查路由
 app.include_router(health_router)
 
+# V2 用户头像等本地上传（/api/v2/profile/avatar 写入 uploads/v2/avatars）
+uploads_dir = os.path.join(project_root, "uploads")
+os.makedirs(uploads_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
+logger.info(f"✓ 静态上传目录已挂载: {uploads_dir}")
+
 # 静态文件（直连 8001 无 Nginx：/ 提供前端，/api 提供接口）
 local_frontend_dir = os.path.join(project_root, "local_frontend")
 if os.path.isdir(local_frontend_dir):

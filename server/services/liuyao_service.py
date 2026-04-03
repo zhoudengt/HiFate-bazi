@@ -28,22 +28,25 @@ def divinate(
         raise ValueError("method 必须为 coin / number / time 之一")
 
     raw: Dict[str, Any]
+    pan_dt: Optional[datetime] = None
     if method == "coin":
         if not coin_results or len(coin_results) != 6:
             raise ValueError("铜钱法需要 coin_results，且长度必须为 6")
         raw = coin_method(coin_results)
+        pan_dt = datetime.now()
     elif method == "number":
         if not number or len(number) != 3:
             raise ValueError("数字法需要 number，且为 3 个数字")
         raw = number_method(number)
+        pan_dt = datetime.now()
     else:
         if not divination_time or not divination_time.strip():
             raise ValueError("时间法需要 divination_time，格式 YYYY-MM-DD HH:mm")
         try:
-            dt = datetime.strptime(divination_time.strip(), "%Y-%m-%d %H:%M")
+            pan_dt = datetime.strptime(divination_time.strip(), "%Y-%m-%d %H:%M")
         except ValueError:
             raise ValueError("divination_time 格式应为 YYYY-MM-DD HH:mm")
-        raw = time_method(dt)
+        raw = time_method(pan_dt)
 
     upper, lower = raw["upper"], raw["lower"]
     lines = raw["lines"]
@@ -52,7 +55,7 @@ def divinate(
     lower_bian = raw.get("lower_bian", lower)
     lines_bian = raw.get("lines_bian", lines)
 
-    pan = plan_pan(upper, lower, lines, moving)
+    pan = plan_pan(upper, lower, lines, moving, dt=pan_dt)
     lines_with_pan = pan["lines"]
     shi_yao = pan["shi_yao"]
     ying_yao = pan["ying_yao"]
@@ -72,7 +75,7 @@ def divinate(
     name_bian = (texts_bian.get("name") or "未知") if texts_bian else "未知"
     yao_ci_bian = texts_bian.get("lines", ["", "", "", "", "", ""]) if texts_bian else ["", "", "", "", "", ""]
 
-    pan_bian = plan_pan(upper_bian, lower_bian, lines_bian, [])
+    pan_bian = plan_pan(upper_bian, lower_bian, lines_bian, [], dt=pan_dt)
     bian_lines: List[Dict[str, Any]] = []
     for i in range(6):
         line = dict(pan_bian["lines"][i])
@@ -89,4 +92,6 @@ def divinate(
         "bian_gua": {"name": name_bian, "lines": bian_lines},
         "gua_ci": gua_ci,
         "shi_ying": {"shi_yao": shi_yao, "ying_yao": ying_yao},
+        "gong": pan.get("gong"),
+        "gong_wuxing": pan.get("gong_wuxing"),
     }

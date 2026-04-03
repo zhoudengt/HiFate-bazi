@@ -50,7 +50,6 @@ def _reload_endpoints() -> bool:
         "server.api.grpc_gateway.handlers.admin_handlers",
         "server.api.grpc_gateway.handlers.bazi_handlers",
         "server.api.grpc_gateway.handlers.stream_handlers",
-        "server.api.grpc_gateway.handlers.liuyao_handlers",
     ]
 
     try:

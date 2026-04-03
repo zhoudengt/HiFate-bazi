@@ -73,7 +73,7 @@ def get_cors_config() -> Dict:
         "allow_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": [
             "Content-Type",
-            "Authorization", 
+            "Authorization",
             "X-API-Key",
             "X-Request-ID",
             "X-Grpc-Web",
@@ -82,6 +82,7 @@ def get_cors_config() -> Dict:
             "X-Requested-With",
             "X-Client-Version",
             "grpc-timeout",
+            "X-V2-Guest-Token",
         ],
     }
 
